@@ -1,0 +1,32 @@
+name: Upload Disney Heroes Assets to Internet Archive
+
+on:
+  workflow_dispatch:  # Lancement manuel
+
+jobs:
+  upload:
+    name: "Batch ${{ matrix.batch }}"
+    runs-on: ubuntu-latest
+    timeout-minutes: 350   # ~6h max par job
+    strategy:
+      fail-fast: false      # Les autres jobs continuent si un échoue
+      matrix:
+        batch: [0, 1, 2, 3, 4, 5, 6, 7, 8, 9]
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Setup Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+
+      - name: Install dependencies
+        run: pip install requests
+
+      - name: Upload batch ${{ matrix.batch }}
+        env:
+          IA_ACCESS_KEY: ${{ secrets.IA_ACCESS_KEY }}
+          IA_SECRET_KEY: ${{ secrets.IA_SECRET_KEY }}
+        run: python3 upload_batch.py ${{ matrix.batch }} 10
