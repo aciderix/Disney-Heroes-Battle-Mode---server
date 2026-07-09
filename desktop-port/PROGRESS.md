@@ -76,6 +76,36 @@ DragonSoul et Disney Heroes partagent le **même core libGDX PerBlue** → on **
 que repartir de zéro. Le launcher, le shim `DhDeviceInfo`, l'extraction assets/ressources et la
 redirection `ServerType` déjà écrits **restent valables**.
 
+## Analyse de portabilité de `dsbackend/` — PAS utilisable tel quel
+
+Vérification faite (lecture du source + comparaison des interfaces). `dsbackend/` est une
+**excellente référence** mais **ne se recopie pas** : il cible le libGDX de DragonSoul
+**obfusqué** (1.9.3), avec l'API `RPGMain`. Différences concrètes à traiter :
+
+| Aspect | DragonSoul (dsbackend) | Disney Heroes | Travail |
+|---|---|---|---|
+| Noms des interfaces libGDX | **obfusqués** (`com.badlogic.gdx.a`=Application, `f`=Graphics, `g`=Input, `e`=Files, `d`=Audio, `l`=Net, `m`=Preferences, `c_`=ApplicationListener, `k`=LifecycleListener) | **clairs** (`Application`, `Graphics`, …) | remap mécanique des `implements`/types |
+| Certaines méthodes | obfusquées (`getType$2826c76()` renvoie `int`) | claires (`getType()` renvoie `Application$ApplicationType`) | corriger signatures (ex. renvoyer `ApplicationType.Android`) |
+| Version libGDX | 1.9.3 | 1.9.7 | reconciler les deltas d'interface (mineurs) |
+| API plateforme du jeu | `RPGMain` | `GameMain` | idem structure (voir ci-dessous) |
+| Rustines contenu | marqueurs vides (assets perdus) | **inutile** (on sert le vrai contenu via archive.org) | supprimer |
+
+**Bonne nouvelle** : les **jeux d'interfaces coïncident** (même fork libGDX PerBlue). Ex.
+`com.badlogic.gdx.Application` de DH = **exactement les 18 méthodes** que `DsApplication`
+implémente ; `GL20` = 75/75 méthodes ; les setters plateforme de `GameMain`
+(`setNativeAccess(INative)`, `setAnalytics(IAnalytics)`, `setSocialNetworkManager(...)`,
+`setSupportManager(ISupport)`, `setTapjoyOfferwall(...)`, `setPlaybackRewards(...)`)
+**reproduisent** ceux de `RPGMain`. Donc les **corps de méthodes** (appels GL LWJGL, mapping
+clavier/souris GLFW, décodage OGG, FileHandles) sont **réutilisables presque tels quels** ;
+seul le « habillage » (noms de types, quelques signatures) change.
+
+### Méthode de port retenue (sûre, pas de copier-coller aveugle)
+Pour chaque shim : **partir de l'interface RÉELLE de DH** (`javap com.badlogic.gdx.<I>` →
+liste exacte des méthodes à implémenter, noms clairs), puis **porter le corps** depuis
+`dsbackend/`. Ainsi on colle au 1.9.7 exact (deltas gérés) et on récupère la logique éprouvée.
+Le launcher wire les shims dans **`com.badlogic.gdx.Gdx`** (champs clairs `Gdx.graphics/audio/
+input/files/net/gl/gl20/app`) au lieu du singleton obfusqué `com.badlogic.gdx.utils.b.a`.
+
 ## Prochaines étapes
 1. [ ] Adapter le backend LWJGL3 maison depuis `dsbackend/` (Application/Graphics/Input/Files/
    Audio/GL20/Net/Preferences) contre le core libGDX du jeu (interfaces standard).
