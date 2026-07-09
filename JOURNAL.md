@@ -105,7 +105,29 @@ et création du système de mémoire (MEMORY.md + JOURNAL.md) et de la documenta
   DragonSoul → à confirmer en décompilant `AssetUpdater`. RISK #1 reste ouvert.
 - Docs mises à jour : `PROTOCOL.md` (§0, §1.1), `RECON.md`, `MEMORY.md` §3/§7.
 
+**7. Décompilation de l'`AssetUpdater` → RISQUE #1 RÉSOLU.**
+Package `com.perblue.heroes.assets_external` : `ExternalAssetManager` (orchestre),
+`AssetIndexDownloader` (parse/décide), `ArchiveInfo`, `ContentServerKeys`, `AssetCategory`.
+- **`retainRowsForVersion(rows, gameVersion)`** : retire les lignes dont `GameVersion` >
+  version du client (`client.compareTo(new VersionNumber(row.GameVersion)) < 0`). ⇒ ne
+  bloque que le contenu **futur** ; garde l'égal/plus ancien.
+- **`checkArchives`** (par catégorie `shouldDownload()`) : décide **uniquement sur la
+  révision** — `getMostRecentCompleteArchive` (Mode==COMPLETE & Category, rev max),
+  `getLatestDownloadedRevision` (prefs), `getNeededIncrementalArchives`. Aucun test de
+  GameVersion. Logs : « complete download: rev N », « incremental download », « up-to-date! »,
+  « no prior complete archive ». Garde-fou `handleBootLoop`.
+- **Filtrage device** (`lambda$onComplete$0`) : ne retient que `Environment==LIVE` +
+  `Density`/`Compression` du device (SON/TEXT/PNG traités à part). ⇒ servir l'index d'origine
+  **tel quel**, le client sélectionne ses lignes.
+- **Conclusion RISQUE #1** : APK 12.1.0 > index 7.8.1/7.9 → **toutes les lignes retenues** ;
+  install neuve → télécharge `COMPLETE rev 325` puis `INCREMENTAL rev 326`. **L'APK accepte
+  les assets archivés.** Le libellé GameVersion de l'index n'est pas un critère de rejet.
+  Risque résiduel = complétude **runtime** (à constater en exécutant). Docs : `ASSETS.md`
+  (algorithme complet), `MEMORY.md` §7.
+
 ### Point de reprise
-Clé XOR + `ServerType` connus. Prochaine étape : décompiler la logique `AssetUpdater`
-(résoudre RISQUE #1 : quelle révision/marqueurs ce build exige), puis serveur de contenu v0
-(sert `index.txt` + redirige assets → archive.org). Voir MEMORY.md §7.
+Clé XOR + `ServerType` connus, RISQUE #1 résolu (assets archivés compatibles). **Prochaine
+étape : serveur de contenu v0** — sert `index.txt` tel quel + redirige `GET /live/<NOM>.zip`
+(302) vers `archive.org/download/disney-heroes-battle-mode-live-assets/<NOM>.zip` (ou copie
+locale). Puis rediriger `ServerType.LIVE` (réflexion) vers ce serveur, sans patch bytecode.
+Voir MEMORY.md §7.

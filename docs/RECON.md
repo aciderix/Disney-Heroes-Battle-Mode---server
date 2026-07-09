@@ -65,9 +65,16 @@ Regex hôtes  : ^https?://([a-z]+\.)?(perblue.com|disneyheroesgame.com)/?(.*)$
   - **APK NON patché** (LIVE = vrais domaines PerBlue) ; pas d'IP loopback. Le serveur de
     jeu TCP n'est pas dans `ServerType` → vient de la réponse de login (2 étapes).
 
+### AssetUpdater (`com.perblue.heroes.assets_external`) — décompilé
+- Décision de téléchargement **basée révision** (`checkArchives` → `getMostRecentCompleteArchive`
+  / `getNeededIncrementalArchives`), **pas** sur `GameVersion`. `retainRowsForVersion` ne retire
+  que le contenu *plus récent* que le client. Filtrage device via `Environment`/`Density`/
+  `Compression`. ⇒ **RISK #1 résolu** (APK 12.1.0 accepte l'index/assets rev 325/326). Détail
+  complet dans [`ASSETS.md`](ASSETS.md).
+
 ### Reste à extraire par décompilation
-- Révision de contenu exigée (RISK #1) : logique `AssetUpdater` (marqueurs de catégorie ?).
 - Séquence de login exacte (`RPGMain`/`GameMain`, `NetworkProvider`) + champs `BootData1`.
+- Complétude **runtime** des assets rev 325/326 pour le code 12.1.0 (à constater en exécutant).
 
 ## Mise à jour de contenu (AssetUpdater)
 - Même gate que DragonSoul. Logs observés :

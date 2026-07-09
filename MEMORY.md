@@ -91,11 +91,13 @@ Chez DragonSoul, `index.txt` était **perdu** et les assets additionnels **manqu
 l'archive (ou une copie locale)**, pour que l'`AssetUpdater` du jeu se déroule
 normalement, **sans modifier le jeu**. Détails : [`docs/ASSETS.md`](docs/ASSETS.md).
 
-> **RISQUE OUVERT #1 — cohérence version APK ↔ assets archivés.** L'APK est en `12.1.0`,
-> mais `index.txt` annonce `GameVersion 7.8.1 / Revision 325-326`. À **vérifier** : la
-> révision de contenu que cet APK exige (à extraire de l'`AssetUpdater`) correspond-elle
-> aux assets archivés ? Sinon, trouver l'APK correspondant OU les assets de la bonne
-> révision. **Ne pas rustiner** le contrôle de révision. (Voir JOURNAL 2026-07-09.)
+> **RISQUE #1 — ✅ RÉSOLU (2026-07-09).** L'`AssetUpdater` décompilé (`assets_external`)
+> décide **uniquement sur la révision**, jamais sur `GameVersion`. `retainRowsForVersion`
+> ne retire que le contenu **plus récent** que le client ; comme l'APK (12.1.0) est plus
+> récent que l'index (7.8.1/7.9), **toutes les lignes archivées sont conservées** →
+> l'APK **accepte les assets archivés** (install neuve : `COMPLETE 325` puis `INCREMENTAL 326`).
+> Détail + algorithme complet : [`docs/ASSETS.md`](docs/ASSETS.md). Risque résiduel = complétude
+> **runtime** (à constater en exécutant, pas un blocage du gate de téléchargement).
 
 ---
 
@@ -162,10 +164,11 @@ Dépôt de référence (`/workspace/dragonsoul-web`, branche `claude/game-transp
 ### À faire (ordre conseillé)
 1. [x] ~~Extraire clé XOR + `ServerType`~~ (fait via androguard — voir RECON/PROTOCOL).
    Reste : décompiler en `libs/game-remapped.jar` régénérable (pour réutiliser les classes).
-2. [ ] **Résoudre le RISQUE #1** : révision de contenu exigée par l'APK vs assets archivés
-   (décompiler la logique `AssetUpdater` : marqueurs de catégorie / comparaison de révision).
-3. [ ] **Serveur de contenu v0** : servir `index.txt` + rediriger les archives vers
-   archive.org / copie locale (débloquer l'AssetUpdater sans toucher au jeu).
+2. [x] ~~**RISQUE #1**~~ ✅ résolu : l'APK accepte les assets archivés (décision par révision,
+   pas par GameVersion). Algorithme AssetUpdater documenté dans `docs/ASSETS.md`.
+3. [ ] **Serveur de contenu v0** : servir `index.txt` (tel quel) + rediriger les archives
+   (HTTP 302) vers `archive.org/download/disney-heroes-battle-mode-live-assets/<NOM>.zip`
+   ou une copie locale (débloquer l'AssetUpdater sans toucher au jeu). ← PROCHAINE ÉTAPE.
 4. [ ] **Backend desktop** (LWJGL3) minimal pour lancer le jeu (miroir `dsbackend/`).
 5. [ ] **Serveur login v1** : `ClientInfo1` → `BootData1` via les classes du jeu.
 6. [ ] **Persistance** (SQLite) + **multi-serveur** (liste, mot de passe).

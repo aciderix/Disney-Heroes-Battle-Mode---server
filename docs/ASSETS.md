@@ -47,15 +47,51 @@ Ainsi l'`AssetUpdater` s'exécute **normalement** : le jeu télécharge/valide s
 comme en production, mais depuis l'archive. **Aucune rustine** : on ne force pas le flag
 `MISSING_ADDITIONAL`, on fournit réellement le contenu.
 
-> **RISQUE #1 (à résoudre)** : l'APK est en 12.1.0 alors que `index.txt` annonce
-> `GameVersion 7.8.1 / Revision 325-326`. Il faut vérifier, par décompilation de
-> l'`AssetUpdater`, **quelle révision/version de contenu cet APK exige**, et si les assets
-> archivés (rev 325/326) la satisfont. Trois cas :
-> - **Match** → on sert tel quel.
-> - **L'APK exige une révision plus récente** → retrouver l'`index.txt`/les assets de la
->   bonne révision, ou l'APK correspondant à la révision archivée.
-> - **Incrémental requis** → servir COMPLETE(325) + INCREMENTAL(326) tel que le jeu l'attend.
-> Ne **jamais** contourner le contrôle de révision (principe §2).
+## Algorithme de l'AssetUpdater (décompilé — `com.perblue.heroes.assets_external`)
+
+Classes : `ExternalAssetManager` (orchestre), `AssetIndexDownloader` (télécharge/parse
+`index.txt`, décide), `ArchiveInfo` (une ligne : `url`, `revision`, `expectedFileSize`),
+`ContentServerKeys` (noms de colonnes), `AssetCategory` (enum des catégories).
+
+**1. Parse + filtrage des lignes** (`AssetIndexDownloader$3.onComplete` → `lambda$onComplete$0`) :
+le client ne **retient** que les lignes dont :
+- `Environment` == son environnement (`LIVE`) ;
+- `Density`/`Compression` == celles de son device (SON : `soundDensity`/`soundCompression` ;
+  TEXT : `Density` + compression enum ; PNG/monde : `density` + `compression`, ex. `XHDPI` +
+  `ETC1`/`ETC2`/`PVRTC` selon GPU). ⇒ **on sert l'`index.txt` d'origine tel quel** ; le
+  client sélectionne lui-même les lignes de son device.
+
+**2. Filtrage par version** (`retainRowsForVersion(rows, gameVersion)`) :
+retire les lignes dont `GameVersion` est **plus récente que la version du client**
+(`gameVersion.compareTo(new VersionNumber(row.GameVersion)) < 0`). Autrement dit, un client
+ne télécharge **jamais** du contenu prévu pour une version **plus récente** que lui ; le
+contenu **égal ou plus ancien est conservé**.
+
+**3. Décision par catégorie** (`checkArchives`, revision-based, **aucun test de GameVersion**) :
+pour chaque `AssetCategory` où `shouldDownload()` :
+- si l'URL d'index a changé (pref `<CAT>_INDEX`) → redownload complet forcé ;
+- `getMostRecentCompleteArchive` = ligne `Mode==COMPLETE` & `Category` match, **révision max** ;
+- si déjà téléchargée (pref bool sur l'`url`) → « up-to-date! » ;
+- `getLatestDownloadedRevision` == -1 (install neuve) → **« complete download: rev N »** ;
+- sinon si rev locale ≥ rev complète → applique `getNeededIncrementalArchives` (les
+  `Mode==INCREMENTAL` de rev locale → cible) : **« incremental download »** ou « no incrementals ».
+- Garde-fou anti-boucle : `ExternalAssetManager.handleBootLoop` (« Avoiding infinite
+  download loop, external content state is broken »).
+
+## ✅ RISQUE #1 — RÉSOLU (version APK vs GameVersion de l'index)
+L'APK est en **12.1.0**, l'`index.txt` en `GameVersion 7.8.1/7.9`. `retainRowsForVersion`
+ne retire que les lignes **plus récentes** que le client. Le client (12.1.0) étant **plus
+récent** que `7.8.1`/`7.9`, **toutes les lignes archivées sont conservées**. Et `checkArchives`
+décide **uniquement sur la révision** (jamais sur GameVersion). ⇒ **cet APK accepte les
+assets archivés** : install neuve → télécharge `COMPLETE rev 325`, puis `INCREMENTAL rev 326`.
+La colonne `GameVersion` de l'index n'est **pas** un critère de rejet ici (elle ne bloque que
+du contenu *futur*). **Aucune rustine nécessaire** : on sert réellement le bon contenu.
+
+> Risque résiduel (distinct, plus tard) : **complétude runtime**. Si le code 12.1.0 référence
+> des assets plus récents que la rév. 325/326 archivée, certains peuvent manquer au *chargement*
+> (autre chemin : « loadDynamicUI setting MISSING_ADDITIONAL true for … »). Cela se constate
+> **en exécutant** le jeu ; à traiter alors proprement (compléter le contenu / tolérer les
+> assets absents comme DragonSoul), pas par contournement du gate de téléchargement.
 
 ## Copie locale (option hébergeur)
 Un hébergeur peut pré-télécharger les archives dans `assets-cache/` (non committé) pour
