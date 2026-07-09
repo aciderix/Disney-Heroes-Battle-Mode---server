@@ -140,7 +140,11 @@ tools/
 game-data/
   stats/*.tab             <- 274 tables d'équilibrage (extraites de l'APK)
   strings/**/*.properties <- 325 fichiers de textes localisés (extraits de l'APK)
-server/                   <- (à venir) serveur Java réutilisant les classes du jeu
+server/
+  content_server.py       <- serveur de contenu v0 (index.txt + redirection assets) ✅
+  run-content-server.sh   <- lanceur
+  README.md               <- doc des composants serveur
+  (à venir) login + protocole de jeu TCP (Java, réutilise les classes du jeu)
 ```
 
 Dépôt de référence (`/workspace/dragonsoul-web`, branche `claude/game-transpile-debug-2p5irx`) :
@@ -160,19 +164,25 @@ Dépôt de référence (`/workspace/dragonsoul-web`, branche `claude/game-transp
 - [x] Décompilation ciblée (androguard) → **clé XOR** + config **`ServerType`** extraites,
   APK confirmé **non patché**. (Décompilation nécessaire car dex2jar/jadx bloqués par le proxy ;
   androguard installé via pip.)
+- [x] **RISQUE #1 résolu** : décompilation de l'`AssetUpdater` → décision par révision (pas
+  par GameVersion) → l'APK 12.1.0 accepte les assets archivés (rev 325/326).
+- [x] **Serveur de contenu v0** (`server/content_server.py`) : sert `index.txt` + redirige
+  les `.zip` vers archive.org (ou copie locale). Testé de bout en bout.
 
 ### À faire (ordre conseillé)
 1. [x] ~~Extraire clé XOR + `ServerType`~~ (fait via androguard — voir RECON/PROTOCOL).
    Reste : décompiler en `libs/game-remapped.jar` régénérable (pour réutiliser les classes).
 2. [x] ~~**RISQUE #1**~~ ✅ résolu : l'APK accepte les assets archivés (décision par révision,
    pas par GameVersion). Algorithme AssetUpdater documenté dans `docs/ASSETS.md`.
-3. [ ] **Serveur de contenu v0** : servir `index.txt` (tel quel) + rediriger les archives
-   (HTTP 302) vers `archive.org/download/disney-heroes-battle-mode-live-assets/<NOM>.zip`
-   ou une copie locale (débloquer l'AssetUpdater sans toucher au jeu). ← PROCHAINE ÉTAPE.
-4. [ ] **Backend desktop** (LWJGL3) minimal pour lancer le jeu (miroir `dsbackend/`).
-5. [ ] **Serveur login v1** : `ClientInfo1` → `BootData1` via les classes du jeu.
-6. [ ] **Persistance** (SQLite) + **multi-serveur** (liste, mot de passe).
-7. [ ] **Outil d'extraction data → format serveur** (les `.tab` chargés tels quels).
+3. [x] ~~**Serveur de contenu v0**~~ ✅ `server/content_server.py` : sert `index.txt`
+   (URLs réécrites) + copie locale/302 vers archive.org. Testé de bout en bout.
+4. [ ] **Décompiler l'APK en jar** régénérable (`libs/game-remapped.jar`) pour réutiliser
+   les classes du jeu côté serveur (codec, MessageFactory, BootData). ← PROCHAINE ÉTAPE.
+5. [ ] **Backend desktop** (LWJGL3) minimal pour lancer le jeu (miroir `dsbackend/`) +
+   réécriture `ServerType.LIVE` (réflexion) vers notre serveur de contenu.
+6. [ ] **Serveur login v1** : `POST /login` puis `ClientInfo1` → `BootData1` (classes du jeu).
+7. [ ] **Persistance** (SQLite) + **passerelle/multi-serveur** (liste, mot de passe).
+8. [ ] **Outil d'extraction data → format serveur** (les `.tab` chargés tels quels).
 
 ---
 

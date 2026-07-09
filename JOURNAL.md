@@ -125,9 +125,21 @@ Package `com.perblue.heroes.assets_external` : `ExternalAssetManager` (orchestre
   Risque résiduel = complétude **runtime** (à constater en exécutant). Docs : `ASSETS.md`
   (algorithme complet), `MEMORY.md` §7.
 
+**8. Serveur de contenu v0 (`server/content_server.py`).**
+- Python stdlib (zéro dépendance → hébergeable partout). Endpoints :
+  - `GET /live/index.txt` : sert le manifeste avec les **URLs d'archives réécrites** vers
+    ce serveur (`/live/<nom>.zip`) — le jeu filtre lui-même par device/version.
+  - `GET|HEAD /live/<nom>.zip` : sert une **copie locale** (`--cache assets-cache/`) si
+    présente, sinon **302** vers l'archive publique (archive.org).
+  - `GET /health`.
+- Config via options/env : `--port/--host/--index/--cache/--archive-base/--rewrite-host`.
+- Ajouté `server/run-content-server.sh` + `server/README.md`.
+- **Vérifié de bout en bout** (port 8899) : index réécrit (URLs → 127.0.0.1:8899) ; requête
+  `.zip` → 302 → archive.org → 200, `Content-Length` 4422179 = colonne `Size` de l'index.
+  Confirmé aussi que l'archive.org du projet renvoie bien les fichiers (HEAD 200, tailles OK).
+
 ### Point de reprise
-Clé XOR + `ServerType` connus, RISQUE #1 résolu (assets archivés compatibles). **Prochaine
-étape : serveur de contenu v0** — sert `index.txt` tel quel + redirige `GET /live/<NOM>.zip`
-(302) vers `archive.org/download/disney-heroes-battle-mode-live-assets/<NOM>.zip` (ou copie
-locale). Puis rediriger `ServerType.LIVE` (réflexion) vers ce serveur, sans patch bytecode.
-Voir MEMORY.md §7.
+Serveur de contenu v0 opérationnel. **Prochaine étape** : décompiler l'APK en jar
+régénérable (`libs/game-remapped.jar`) pour réutiliser les classes du jeu côté serveur
+(codec `DHXORConnectionWrapper`, `MessageFactory`, `BootData`), puis backend desktop minimal
++ réécriture `ServerType.LIVE` (réflexion) vers notre serveur de contenu. Voir MEMORY.md §7.
