@@ -52,8 +52,22 @@ Staging beta : http://dhstaging.disneyheroesgame.com:10070/content/beta/index.tx
 Server status: http://serverstatus.perblue.com/dhServerDown_
 Regex hôtes  : ^https?://([a-z]+\.)?(perblue.com|disneyheroesgame.com)/?(.*)$
 ```
-- **À extraire par décompilation** : valeurs exactes du constructeur `ServerType` (gameHost,
-  gamePort, protocole) pour LIVE, et la **clé XOR** dans `DHXORConnectionWrapper`.
+### ✅ Décompilé (androguard, `classes4.dex`)
+- **Clé XOR** — `DHXORConnectionWrapper.KEY` (8 octets) :
+  `CE 85 D4 F9 29 A8 24 56` (signés : `{-50,-123,-44,-7,41,-88,36,86}`).
+  Codec = `StackedConnectionWrapper(DeflateConnectionWrapper, XORConnectionWrapper2(KEY))`.
+- **`ServerType`** (ctor `(name, ordinal, protocol, loginHost, port, contentLocation)`) :
+  - LIVE : `https://` `login.disneyheroesgame.com` `:443` — contenu
+    `http://content.disneyheroesgame.com/live/index.txt`.
+  - STAGING : `https://` `login.staging.disneyheroesgame.com` `:443` — contenu
+    `http://dhstaging.disneyheroesgame.com:10070/content/beta/index.txt`.
+  - LOCAL : `http://` `localhost` `:8080`. NONE/TRUNK/DEV : vides.
+  - **APK NON patché** (LIVE = vrais domaines PerBlue) ; pas d'IP loopback. Le serveur de
+    jeu TCP n'est pas dans `ServerType` → vient de la réponse de login (2 étapes).
+
+### Reste à extraire par décompilation
+- Révision de contenu exigée (RISK #1) : logique `AssetUpdater` (marqueurs de catégorie ?).
+- Séquence de login exacte (`RPGMain`/`GameMain`, `NetworkProvider`) + champs `BootData1`.
 
 ## Mise à jour de contenu (AssetUpdater)
 - Même gate que DragonSoul. Logs observés :

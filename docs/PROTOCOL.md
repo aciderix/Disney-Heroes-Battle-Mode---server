@@ -10,14 +10,23 @@ mais avec des **noms de classes non obfusqués** → voir [`RECON.md`](RECON.md)
 > confirmées par décompilation de cet APK avant toute implémentation (principe §3 : la
 > source de vérité est le jeu, pas notre mémoire).
 
-## 0. Cible réseau — `com.perblue.heroes.ServerType`
-Constructeur (protocol, gameHost, gamePort, contentLocation). Observé :
-- Contenu LIVE : `http://content.disneyheroesgame.com/live/index.txt`
-- Login : `login.disneyheroesgame.com` (staging : `login.staging…`, `dhstaging…:10070`)
-- **[À EXTRAIRE]** : gameHost/gamePort/protocole exacts de LIVE, et si l'APK est patché
-  (DragonSoul « Fixed2 » était patché vers `127.0.0.1:8080`). Pour un port propre, on
-  réécrira l'adresse cible vers notre serveur (par la passerelle ou réécriture `ServerType`
-  au démarrage — **sans patcher le bytecode**).
+## 0. Cible réseau — `com.perblue.heroes.ServerType`  ✅ EXTRAIT
+Enum, ctor `(String name, int ordinal, String protocol, String loginHost, int port,
+String contentLocation)`. Valeurs décompilées (`classes4.dex`) :
+
+| Type | protocol | loginHost | port | contentLocation |
+|---|---|---|---|---|
+| **LIVE** (défaut) | `https://` | `login.disneyheroesgame.com` | `443` | `http://content.disneyheroesgame.com/live/index.txt` |
+| STAGING | `https://` | `login.staging.disneyheroesgame.com` | `443` | `http://dhstaging.disneyheroesgame.com:10070/content/beta/index.txt` |
+| LOCAL | `http://` | `localhost` | `8080` | — |
+| NONE/TRUNK/DEV | — | — | — | — |
+
+- ⚠️ **Cet APK n'est PAS patché** (contrairement à DragonSoul « Fixed2 » → `127.0.0.1`).
+  LIVE pointe vers les vrais domaines PerBlue (hors ligne).
+- **Pas de gameHost/gamePort TCP dans `ServerType`** : le login se fait en **HTTPS** vers
+  `login.disneyheroesgame.com:443`, qui **renvoie l'adresse du serveur de jeu** (séquence
+  en 2 étapes, cf. §1.3). ⇒ pour rediriger vers notre serveur **sans patcher le bytecode**,
+  on réécrit `ServerType.LIVE` par réflexion au démarrage (ou passerelle) vers notre host.
 
 ## 1. Transport de jeu (TCP)
 Conception DragonSoul (à confirmer identique ici) :
@@ -32,8 +41,17 @@ Conception DragonSoul (à confirmer identique ici) :
   au-dessus de `com.perblue.common.network.XORConnectionWrapper` (+ `XORCipher`,
   `DeflateConnectionWrapper`, `StackedConnectionWrapper`).
 - Algo : **Deflate puis XOR roulant** par clé (comme DragonSoul).
-- **Clé XOR** : **[À EXTRAIRE]** de `DHXORConnectionWrapper` (secret partagé constant, pas
-  de handshake). Le serveur utilisera la **même** classe/clé (XOR symétrique).
+- Structure décompilée (`classes4.dex`) :
+  `DHXORConnectionWrapper extends StackedConnectionWrapper` avec, dans son ctor :
+  `new StackedConnectionWrapper( new DeflateConnectionWrapper(), new XORConnectionWrapper2(KEY) )`.
+  ⇒ **wrapOut = Deflate puis XOR(KEY)** (et inverse en wrapIn).
+- **Clé XOR** ✅ EXTRAITE — champ statique `DHXORConnectionWrapper.KEY` (8 octets) :
+  ```
+  hex     : CE 85 D4 F9 29 A8 24 56
+  signés  : { -50, -123, -44, -7, 41, -88, 36, 86 }
+  ```
+  Secret partagé constant (pas de handshake). Le serveur réutilise la **même** classe/clé
+  (XOR symétrique) — idéalement en réutilisant directement `DHXORConnectionWrapper` du jar.
 
 ### 1.2 Modèle de message
 - Registre : `com.perblue.heroes.network.messages.MessageFactory`

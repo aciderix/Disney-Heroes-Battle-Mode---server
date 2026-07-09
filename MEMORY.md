@@ -65,9 +65,13 @@ qui, en réutilisant au maximum le code et les données du jeu.
   - `com.perblue.heroes.network.{NetworkProvider,GameServerAddress}` — connexion.
 - **AssetUpdater** identique : gate `MISSING_ADDITIONAL`, catégories `WORLD_ADDITIONAL`,
   `UI_DYNAMIC`, `SOUND`, `TEXT`. Télécharge `index.txt` puis les archives manquantes.
-- **ServerType** : `com.perblue.heroes.ServerType` (gameHost/gamePort/contentLocation).
-  LIVE contenu = `http://content.disneyheroesgame.com/live/index.txt`. Login =
-  `login.disneyheroesgame.com` (+ staging). Adresses de jeu **à extraire** (décompilation).
+- **ServerType** `com.perblue.heroes.ServerType` ✅ décompilé. LIVE = login **https**
+  `login.disneyheroesgame.com:443`, contenu `http://content.disneyheroesgame.com/live/index.txt`.
+  **APK NON patché** (vrais domaines) ; l'adresse du serveur de jeu TCP vient de la réponse
+  de login (séquence 2 étapes). Redirection prévue par réécriture `ServerType` (réflexion) /
+  passerelle, **sans patcher le bytecode**.
+- **Clé XOR** ✅ décompilée — `DHXORConnectionWrapper.KEY` = `CE 85 D4 F9 29 A8 24 56`
+  (8 octets). Codec = `Stacked(Deflate, XOR(KEY))`.
 - **Données de jeu embarquées** (source de vérité, extraites → `game-data/`) :
   - `game-data/stats/` : **274 fichiers `.tab`** (TSV) = tout l'équilibrage (héros, arène,
     coffres, battle pass, items, skills…).
@@ -151,12 +155,15 @@ Dépôt de référence (`/workspace/dragonsoul-web`, branche `claude/game-transp
 - [x] Confirmation : même stack réseau que DragonSoul, **non obfusquée**.
 - [x] Extraction des données du jeu (`game-data/stats` + `strings`) via `tools/extract_game_data.sh`.
 - [x] Mise en place de la mémoire projet (MEMORY.md + JOURNAL.md) et des docs.
+- [x] Décompilation ciblée (androguard) → **clé XOR** + config **`ServerType`** extraites,
+  APK confirmé **non patché**. (Décompilation nécessaire car dex2jar/jadx bloqués par le proxy ;
+  androguard installé via pip.)
 
 ### À faire (ordre conseillé)
-1. [ ] **Décompiler l'APK** (dex2jar/jadx) → `libs/game-remapped.jar` régénérable par
-   script ; extraire la **clé XOR** (`DHXORConnectionWrapper`) et les valeurs `ServerType`
-   (gameHost/gamePort). Documenter dans PROTOCOL.md.
-2. [ ] **Résoudre le RISQUE #1** : révision de contenu exigée par l'APK vs assets archivés.
+1. [x] ~~Extraire clé XOR + `ServerType`~~ (fait via androguard — voir RECON/PROTOCOL).
+   Reste : décompiler en `libs/game-remapped.jar` régénérable (pour réutiliser les classes).
+2. [ ] **Résoudre le RISQUE #1** : révision de contenu exigée par l'APK vs assets archivés
+   (décompiler la logique `AssetUpdater` : marqueurs de catégorie / comparaison de révision).
 3. [ ] **Serveur de contenu v0** : servir `index.txt` + rediriger les archives vers
    archive.org / copie locale (débloquer l'AssetUpdater sans toucher au jeu).
 4. [ ] **Backend desktop** (LWJGL3) minimal pour lancer le jeu (miroir `dsbackend/`).

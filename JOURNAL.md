@@ -86,7 +86,26 @@ et création du système de mémoire (MEMORY.md + JOURNAL.md) et de la documenta
 - `+ tools/extract_game_data.sh`
 - `+ game-data/stats/*.tab` (274), `+ game-data/strings/**/*.properties` (325)
 
+**6. Décompilation ciblée (androguard).**
+- dex2jar/jadx **indisponibles** : téléchargements GitHub Releases bloqués par le proxy
+  (403 « GitHub access to this repository is not enabled »). Contournement : `pip install
+  'androguard<4'` (pypi autorisé ; `mutf8` compile via gcc présent).
+- Localisé les classes cibles dans `classes4.dex` puis désassemblé (`DalvikVMFormat`) :
+  - **`DHXORConnectionWrapper`** : champ statique `KEY` = 8 octets
+    `CE 85 D4 F9 29 A8 24 56` ; ctor = `StackedConnectionWrapper(DeflateConnectionWrapper,
+    XORConnectionWrapper2(KEY))` ⇒ codec **Deflate + XOR(KEY)** (identique à DragonSoul en
+    conception, clé propre à Disney Heroes).
+  - **`ServerType`** (ctor `(name, ordinal, protocol, loginHost, port, contentLocation)`) :
+    LIVE = `https://` / `login.disneyheroesgame.com` / `443` / contenu
+    `http://content.disneyheroesgame.com/live/index.txt`. STAGING, LOCAL (`localhost:8080`),
+    NONE/TRUNK/DEV relevés aussi. **APK NON patché** (vrais domaines PerBlue) → redirection
+    prévue par réécriture `ServerType` (réflexion) ou passerelle, sans patch bytecode.
+- Cherché une **révision de contenu embarquée** (RISK #1) : aucun constant évident ; le gate
+  repose vraisemblablement sur des **marqueurs de catégorie** (fichiers repères) comme
+  DragonSoul → à confirmer en décompilant `AssetUpdater`. RISK #1 reste ouvert.
+- Docs mises à jour : `PROTOCOL.md` (§0, §1.1), `RECON.md`, `MEMORY.md` §3/§7.
+
 ### Point de reprise
-Prochaine étape : décompiler l'APK (dex2jar/jadx) pour extraire la clé XOR et les
-adresses `ServerType`, puis résoudre le RISQUE #1, puis serveur de contenu v0.
-Voir MEMORY.md §7.
+Clé XOR + `ServerType` connus. Prochaine étape : décompiler la logique `AssetUpdater`
+(résoudre RISQUE #1 : quelle révision/marqueurs ce build exige), puis serveur de contenu v0
+(sert `index.txt` + redirige assets → archive.org). Voir MEMORY.md §7.
