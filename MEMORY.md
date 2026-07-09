@@ -135,8 +135,13 @@ docs/
   PROTOCOL.md             <- protocole réseau & contenu (recon bytecode)
   ASSETS.md               <- pipeline assets (index.txt + archive.org) + comment obtenir l'APK
   RECON.md                <- findings bruts de reconnaissance de l'APK
+  SHIMS.md                <- registre substitutions + contraintes de chargement (-Xverify:none…)
 tools/
   extract_game_data.sh    <- extrait stats/strings de l'APK vers game-data/ (source de vérité)
+  decompile.sh            <- APK → libs/game.jar (dex2jar via Maven) ; non committé, régénérable
+libs/                     <- (gitignored) game.jar + commons-logging.jar (via decompile.sh)
+server/smoke/
+  CodecRoundTrip.java     <- prouve la réutilisation du codec du jeu ; run.sh pour l'exécuter
 game-data/
   stats/*.tab             <- 274 tables d'équilibrage (extraites de l'APK)
   strings/**/*.properties <- 325 fichiers de textes localisés (extraits de l'APK)
@@ -168,6 +173,10 @@ Dépôt de référence (`/workspace/dragonsoul-web`, branche `claude/game-transp
   par GameVersion) → l'APK 12.1.0 accepte les assets archivés (rev 325/326).
 - [x] **Serveur de contenu v0** (`server/content_server.py`) : sert `index.txt` + redirige
   les `.zip` vers archive.org (ou copie locale). Testé de bout en bout.
+- [x] **Décompilation en jar régénérable** (`tools/decompile.sh` → `libs/game.jar` via
+  dex2jar/Maven) + **preuve de réutilisation des classes du jeu** : `server/smoke/CodecRoundTrip`
+  charge le codec `DHXORConnectionWrapper` du jeu et round-trip OK sur JVM desktop
+  (`-Xverify:none` + `commons-logging` ; cf. `docs/SHIMS.md`).
 
 ### À faire (ordre conseillé)
 1. [x] ~~Extraire clé XOR + `ServerType`~~ (fait via androguard — voir RECON/PROTOCOL).
@@ -176,11 +185,13 @@ Dépôt de référence (`/workspace/dragonsoul-web`, branche `claude/game-transp
    pas par GameVersion). Algorithme AssetUpdater documenté dans `docs/ASSETS.md`.
 3. [x] ~~**Serveur de contenu v0**~~ ✅ `server/content_server.py` : sert `index.txt`
    (URLs réécrites) + copie locale/302 vers archive.org. Testé de bout en bout.
-4. [ ] **Décompiler l'APK en jar** régénérable (`libs/game-remapped.jar`) pour réutiliser
-   les classes du jeu côté serveur (codec, MessageFactory, BootData). ← PROCHAINE ÉTAPE.
-5. [ ] **Backend desktop** (LWJGL3) minimal pour lancer le jeu (miroir `dsbackend/`) +
-   réécriture `ServerType.LIVE` (réflexion) vers notre serveur de contenu.
-6. [ ] **Serveur login v1** : `POST /login` puis `ClientInfo1` → `BootData1` (classes du jeu).
+4. [x] ~~**Décompiler l'APK en jar**~~ ✅ `tools/decompile.sh` → `libs/game.jar` (dex2jar/Maven).
+   Codec du jeu réutilisable prouvé (`server/smoke/CodecRoundTrip`). Voir `docs/SHIMS.md`.
+5. [ ] **Serveur login v1** : construire un `BootData1` via `MessageFactory`/`BootData` du jeu
+   et le framing `[int32 LE len][wrapOut(writeAll)]` → répondre à un `ClientInfo1`. ← PROCHAINE.
+   (Vérifier d'abord si `MessageFactory`/`BootData` chargent sans libGDX, sinon shimmer.)
+6. [ ] **Backend desktop** (LWJGL3) minimal pour lancer le jeu (miroir `dsbackend/`) +
+   réécriture `ServerType.LIVE` (réflexion) vers notre serveur.
 7. [ ] **Persistance** (SQLite) + **passerelle/multi-serveur** (liste, mot de passe).
 8. [ ] **Outil d'extraction data → format serveur** (les `.tab` chargés tels quels).
 

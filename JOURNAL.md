@@ -138,8 +138,28 @@ Package `com.perblue.heroes.assets_external` : `ExternalAssetManager` (orchestre
   `.zip` → 302 → archive.org → 200, `Content-Length` 4422179 = colonne `Size` de l'index.
   Confirmé aussi que l'archive.org du projet renvoie bien les fichiers (HEAD 200, tailles OK).
 
+**9. Décompilation en jar régénérable + preuve de réutilisation du codec du jeu.**
+- Outillage : dex2jar/jadx GitHub bloqués par le proxy, mais le **fork maintenu
+  `de.femtopedia.dex2jar:dex-tools:2.4.28` est sur Maven Central** (accessible). Maven,
+  Gradle, javac, jar présents.
+- `tools/decompile.sh <apk>` (committé, reproductible) : `mvn dependency:copy-dependencies`
+  → lance `com.googlecode.dex2jar.tools.Dex2jarCmd -f -o libs/game.jar <apk>` + copie
+  `commons-logging` en `libs/`. Sortie : `libs/game.jar` (~70 Mo, 66 134 classes ; gitignored).
+- Vérifs de chargement (JVM desktop) :
+  - `javap` OK ; **clé XOR recoupée** (`DHXORConnectionWrapper.KEY` = `{-50,-123,-44,-7,41,
+    -88,36,86}` = `CE 85 D4 F9 29 A8 24 56`, identique à la recon androguard).
+  - **`VerifyError: Expecting a stackmap frame`** au chargement → résolu par **`-Xverify:none`**
+    (bytecode dex2jar sans stackmap frames ; contrôle de *chargement*, pas d'exécution).
+  - **`NoClassDefFoundError commons-logging`** → ajouté `commons-logging:1.2` (Maven).
+- **Smoke test `server/smoke/CodecRoundTrip.java`** (committé) : instancie deux
+  `DHXORConnectionWrapper` du jeu (client/serveur), `server.wrapIn(client.wrapOut(msg)) == msg`
+  → **ROUND-TRIP OK**. Wire commence par `78 9C` (en-tête zlib/Deflate). ⇒ **le codec réseau
+  du jeu se réutilise tel quel côté serveur** (stratégie validée, comme DragonSoul).
+- Docs : `docs/SHIMS.md` créé (contraintes `-Xverify:none` + `commons-logging` + jar
+  régénérable). `.gitignore` : ajout `*.class`, `*-error.zip`. `MEMORY.md` §6/§7 à jour.
+
 ### Point de reprise
-Serveur de contenu v0 opérationnel. **Prochaine étape** : décompiler l'APK en jar
-régénérable (`libs/game-remapped.jar`) pour réutiliser les classes du jeu côté serveur
-(codec `DHXORConnectionWrapper`, `MessageFactory`, `BootData`), puis backend desktop minimal
-+ réécriture `ServerType.LIVE` (réflexion) vers notre serveur de contenu. Voir MEMORY.md §7.
+`libs/game.jar` régénérable + codec du jeu prouvé réutilisable. **Prochaine étape** : serveur
+de **login v1** — vérifier si `MessageFactory`/`BootData` chargent hors libGDX, puis construire
+un `BootData1` et répondre à un `ClientInfo1` avec le framing `[int32 LE len][wrapOut(writeAll)]`.
+En parallèle : backend desktop minimal + réécriture `ServerType.LIVE` (réflexion). Voir MEMORY.md §7.

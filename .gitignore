@@ -17,3 +17,7 @@ classes*.jar
 __pycache__/
 *.pyc
 /tmp/
+
+# Compiled Java / dex2jar error dumps
+*.class
+*-error.zip

@@ -1,0 +1,27 @@
+# SHIMS — registre des substitutions & contraintes de chargement
+
+Principe (voir [`PRINCIPLES.md`](PRINCIPLES.md) §2) : **un shim doit être fonctionnel**. On
+ne répond jamais « oui oui » au jeu. Ce fichier liste tout ce qui n'est pas le comportement
+natif d'origine, avec fidélité et risque. Légende : **RÉEL** (équivalent), **PARTIEL**,
+**NO-OP**, **FACTICE**.
+
+## Contraintes de chargement du bytecode (décisions de build, pas des shims)
+
+| Élément | Détail / justification |
+|---|---|
+| **`-Xverify:none` au chargement** | Le bytecode issu de **dex2jar** n'a pas les *stackmap frames* exigées par le vérificateur Java 7+ (`VerifyError: Expecting a stackmap frame`). La vérification est un contrôle de **chargement**, pas d'exécution → la désactiver ne change **rien** au comportement. Alternative durable : recalculer les frames via ASM `COMPUTE_FRAMES` lors d'un remap (comme DragonSoul `build-remap.sh`). Vérifié : codec du jeu OK sous `-Xverify:none`. |
+| **`commons-logging` au classpath** | `com.perblue.common.logging.LogSource` référence `org.apache.commons.logging.LogFactory`. Fourni par `commons-logging:commons-logging:1.2` (Maven Central), copié en `libs/commons-logging.jar` par `tools/decompile.sh`. |
+| **`libs/game.jar` régénérable** | Produit par `tools/decompile.sh <apk>` (dex2jar `de.femtopedia.dex2jar` via Maven). **Non committé** (copyright + taille) ; régénérable → cf. PRINCIPLES §7. |
+| **Remap de noms (si nécessaire)** | Disney Heroes n'est **pas obfusqué** (`com.perblue.heroes.*` en clair) → a priori **pas** de collisions de noms à remapper (contrairement à DragonSoul `b_`/`c_`). À revérifier si un chargement échoue. |
+
+## Vérifié (smoke tests)
+
+| Test | Statut | Détail |
+|---|---|---|
+| `server/smoke/CodecRoundTrip` | ✅ **RÉEL** | Charge `DHXORConnectionWrapper` (= `Stacked(Deflate, XOR(KEY))`) du jeu et round-trip `wrapOut`/`wrapIn` OK sur JVM desktop. Prouve que le **codec réseau du jeu est réutilisable côté serveur** sans réimplémentation. Wire observé : commence par `78 9C` (en-tête zlib/Deflate). |
+
+## Couche plateforme desktop (`dhbackend/`, à venir — miroir DragonSoul `dsbackend/`)
+
+À remplir au fur et à mesure (Application/Graphics/Input/Files/Audio/GL/Net/Preferences/
+DeviceInfo/bridges). Voir le registre SHIMS de DragonSoul comme modèle. Chaque entrée devra
+préciser fidélité + risque. **Rien pour l'instant** (le port desktop n'est pas commencé).
