@@ -196,10 +196,32 @@ Package `com.perblue.heroes.assets_external` : `ExternalAssetManager` (orchestre
 - Docs : `PROTOCOL.md` §2ter, `SHIMS.md` (GruntServerFactory + 3 smoke tests), `server/README.md`,
   `MEMORY.md` §6/§7. `.gitignore` : `/server/smoke/out/`.
 
+**12. Artefacts committés + démarrage du port desktop.**
+- **APK + jar décompilé committés** (demande utilisateur : éviter re-téléchargement/décompilation
+  après reset) : `game/disney-heroes-12.1.0.apk` (~92 Mo), `libs/game.jar` (~68 Mo),
+  `libs/commons-logging.jar`. `.gitignore` : exceptions. `tools/{extract_game_data,decompile}.sh`
+  par défaut sur `game/disney-heroes-12.1.0.apk`. Push OK (warnings GitHub >50 Mo, sous la
+  limite dure 100 Mo).
+- **Rendu headless FAISABLE et prouvé** (corrige mon caveat précédent) : conteneur = Mesa
+  (`libgl1-mesa-dri`, `mesa-libgallium`, llvmpipe) + `Xvfb`. `desktop-port/GLSmokeTest` +
+  `run-gl-smoke.sh` : `GL 4.5 llvmpipe` sous Xvfb, frame rendue (`glError=0`), capture PPM.
+  ⇒ on peut lancer ET vérifier le jeu en headless + captures (comme l'agent DragonSoul).
+- **Scaffold `desktop-port/`** : Gradle (LWJGL 3.3.4 + natifs libGDX **1.9.7** [version du jeu,
+  ≠ 1.9.3 DragonSoul] + stubs Android + game.jar). `settings.gradle`, `run-gl-smoke.sh`.
+- **Découvertes majeures (recon jar) → stratégie révisée** (`desktop-port/PROGRESS.md`) : le jar
+  embarque **`com.badlogic.gdx.backends.lwjgl.LwjglApplication`** (backend desktop LWJGL2 →
+  **757 classes `org/lwjgl`**, d'où la collision de compilation du smoke test),
+  **`HeadlessApplication`**, le root **`com.perblue.heroes.GameMain extends ApplicationAdapter`**,
+  et un **framework d'automatisation** `com.perblue.heroes.automation.*` (`TouchRecorder`,
+  `TouchPlayback`) + `automation.crawler.*` (`CrawlerNavigation`, `CrawlerScript`, scripts
+  `ChestBuyScript`/`GoldScript`/`MarketBuyScript`…). ⇒ **le pilotage "sait ce qui est cliquable
+  et exécute des actions" existe déjà** dans le jeu ; et on peut **réutiliser le backend bundlé**
+  (`LwjglApplication`) au lieu d'écrire un backend complet → bien moins de shims que DragonSoul.
+
 ### Point de reprise
-Pile réseau serveur **entièrement prouvée** avec les classes du jeu (contenu v0 + codec +
-sérialisation + handshake `ClientInfo1→BootData1` sur socket). **Prochaine étape : backend
-desktop minimal** (LWJGL3, miroir `dsbackend/`) pour **lancer le vrai client** et rediriger
-`ServerType.LIVE` (réflexion) vers nos serveurs → observer les **champs `BootData1` réellement
-requis** et le **format `POST /login`**. Le conteneur étant headless, le lancement graphique
-se fera sur une machine avec affichage. Voir MEMORY.md §7.
+Rendu headless prouvé + stratégie desktop clarifiée (réutiliser `LwjglApplication` + `GameMain`
++ crawler d'automatisation bundlés). **Prochaine étape : launcher desktop** —
+`new LwjglApplication(new GameMain(…), config)` sous Xvfb avec natifs LWJGL2 + libgdx 1.9.7,
+extraction assets/ressources de l'APK, shims des **services plateforme** attendus par
+`GameMain`/`AndroidLauncher`, et redirection `ServerType.LIVE` (réflexion) vers nos serveurs.
+Voir `desktop-port/PROGRESS.md` et MEMORY.md §7.

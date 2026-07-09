@@ -27,3 +27,5 @@ __pycache__/
 *.class
 *-error.zip
 /server/smoke/out/
+/desktop-port/build/
+*.ppm

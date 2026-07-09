@@ -142,6 +142,10 @@ tools/
   extract_game_data.sh    <- extrait stats/strings de l'APK vers game-data/ (source de vérité)
   decompile.sh            <- APK → libs/game.jar (dex2jar via Maven) ; régénérable
 libs/                     <- game.jar + commons-logging.jar (committés — évitent la re-décompilation)
+desktop-port/            <- port desktop (scaffold Gradle ; rendu headless prouvé)
+  build.gradle, settings.gradle, run-gl-smoke.sh
+  src/main/java/desktop/GLSmokeTest.java  <- preuve rendu GL headless (Xvfb+llvmpipe)
+  PROGRESS.md            <- état + STRATÉGIE (réutiliser LwjglApplication bundlé + crawler)
 server/java/
   com/perblue/grunt/translate/GruntServerFactory.java  <- fabrique du serveur NIO du jeu (same-package)
   dhserver/LoginServer.java                            <- serveur de jeu TCP : ClientInfo1 -> BootData1
@@ -206,9 +210,13 @@ Dépôt de référence (`/workspace/dragonsoul-web`, branche `claude/game-transp
    socket TCP (`server/java/dhserver/LoginServer.java`). Framing/codec gérés par les classes
    du jeu (pas de `packInt` à reverser). Reste : (a) champs **minimaux** de `BootData1` exigés
    par le **vrai** client ; (b) `POST /login` HTTP (format à reverser dans `RPGMain`/`GameMain`).
-6. [ ] **Backend desktop** (LWJGL3) minimal pour lancer le jeu (miroir `dsbackend/`) +
-   réécriture `ServerType.LIVE` (réflexion) vers notre serveur. ← PROCHAINE ÉTAPE (permet
-   d'observer le vrai client → champs BootData requis + format POST /login).
+6. [~] **Backend/port desktop** — scaffold + **rendu headless prouvé** (Xvfb + Mesa llvmpipe,
+   `desktop-port/`). **Stratégie révisée** (cf. `desktop-port/PROGRESS.md`) : le jar embarque
+   déjà le backend `LwjglApplication` (LWJGL2) + `HeadlessApplication` + le root
+   `GameMain extends ApplicationAdapter` + un **framework d'automatisation/crawler** → on
+   **réutilise le backend bundlé** (bien moins de shims que `dsbackend`). Reste : launcher
+   `LwjglApplication(new GameMain(…))` + shims services plateforme + redirection `ServerType.LIVE`.
+   ← PROCHAINE ÉTAPE (permet d'observer le vrai client → champs BootData + POST /login).
 7. [ ] **Persistance** (SQLite) + **passerelle/multi-serveur** (liste, mot de passe).
 8. [ ] **Outil d'extraction data → format serveur** (les `.tab` chargés tels quels).
 

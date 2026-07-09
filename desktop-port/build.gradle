@@ -1,0 +1,65 @@
+plugins {
+    id 'application'
+}
+
+repositories {
+    mavenCentral()
+}
+
+ext {
+    lwjglVersion = '3.3.4'
+    lwjglNatives = 'natives-linux'
+    // libGDX native (Matrix4/BufferUtils/Gdx2DPixmap JNI). Disney Heroes 12.1.0 embarque
+    // libGDX **1.9.7** (com.badlogic.gdx.Version) → on épingle le natif desktop 1.9.7 pour
+    // matcher l'ABI JNI (Gdx2DPixmap setBlend(long,int) depuis 1.9.6). Un autre natif =
+    // SIGSEGV. (DragonSoul était en 1.9.3 : ne pas recopier cette valeur.)
+    gdxVersion = '1.9.7'
+}
+
+dependencies {
+    implementation platform("org.lwjgl:lwjgl-bom:$lwjglVersion")
+
+    implementation "org.lwjgl:lwjgl"
+    implementation "org.lwjgl:lwjgl-glfw"
+    implementation "org.lwjgl:lwjgl-opengl"
+    implementation "org.lwjgl:lwjgl-openal"
+    implementation "org.lwjgl:lwjgl-stb"
+
+    runtimeOnly "org.lwjgl:lwjgl::$lwjglNatives"
+    runtimeOnly "org.lwjgl:lwjgl-glfw::$lwjglNatives"
+    runtimeOnly "org.lwjgl:lwjgl-opengl::$lwjglNatives"
+    runtimeOnly "org.lwjgl:lwjgl-openal::$lwjglNatives"
+    runtimeOnly "org.lwjgl:lwjgl-stb::$lwjglNatives"
+
+    // natifs desktop libGDX (libgdx64.so) — extraits au runtime par le script de lancement
+    runtimeOnly "com.badlogicgames.gdx:gdx-platform:$gdxVersion:natives-desktop"
+
+    // Libs que le jeu suppose fournies par Android au runtime (absentes de l'APK).
+    implementation 'org.json:json:20240303'
+    // Stubs du framework Android (tous les types android.*) pour que les références se
+    // résolvent au boot. Les méthodes lèvent "Stub!" si réellement appelées → les quelques
+    // méthodes critiques au boot sont réimplémentées dans src/ (plus tôt sur le classpath).
+    implementation 'com.google.android:android:4.1.1.4'
+
+    // le jeu lui-même : Disney Heroes n'est PAS obfusqué → pas de remap ASM nécessaire,
+    // on utilise directement le jar décompilé committé.
+    implementation files('../libs/game.jar')
+    implementation files('../libs/commons-logging.jar')
+}
+
+application {
+    // Cible par défaut : le smoke test GL (ne dépend que de LWJGL). Le launcher du jeu
+    // (desktop.DesktopLauncher) viendra ensuite, avec les shims dhbackend/.
+    mainClass = 'desktop.GLSmokeTest'
+}
+
+// Le bytecode dex2jar cible Java 6/7 ; on tait les warnings de cible obsolète.
+tasks.withType(JavaCompile).configureEach {
+    options.compilerArgs << '-Xlint:none'
+    options.encoding = 'UTF-8'
+}
+
+// Expose le classpath runtime résolu pour les scripts de lancement manuels (Xvfb + -Xverify:none).
+tasks.register('printRuntimeClasspath') {
+    doLast { println configurations.runtimeClasspath.asPath }
+}
