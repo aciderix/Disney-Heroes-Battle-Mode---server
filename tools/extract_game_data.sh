@@ -12,14 +12,14 @@
 #   game-data/strings/**/*.properties   localized strings (source of truth for text)
 set -euo pipefail
 
-APK="${1:-}"
+ROOT="$(cd "$(dirname "$0")/.." && pwd)"
+# APK committé par défaut (game/), sinon passer un chemin en argument.
+APK="${1:-$ROOT/game/disney-heroes-12.1.0.apk}"
 if [[ -z "$APK" || ! -f "$APK" ]]; then
-  echo "usage: $0 path/to/disney-heroes.apk" >&2
-  echo "  (the APK is not committed — see docs/ASSETS.md for how to obtain it)" >&2
+  echo "usage: $0 [path/to/disney-heroes.apk]  (default: game/disney-heroes-12.1.0.apk)" >&2
   exit 1
 fi
 
-ROOT="$(cd "$(dirname "$0")/.." && pwd)"
 DEST="$ROOT/game-data"
 TMP="$(mktemp -d)"
 trap 'rm -rf "$TMP"' EXIT

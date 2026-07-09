@@ -16,14 +16,15 @@
 #   - ajouter commons-logging au classpath (dépendance de com.perblue.common.logging).
 set -euo pipefail
 
-APK="${1:-}"
+ROOT="$(cd "$(dirname "$0")/.." && pwd)"
+# APK committé par défaut (game/), sinon passer un chemin en argument.
+APK="${1:-$ROOT/game/disney-heroes-12.1.0.apk}"
 if [[ -z "$APK" || ! -f "$APK" ]]; then
-  echo "usage: $0 path/to/disney-heroes.apk  (APK non committé, voir docs/ASSETS.md)" >&2
+  echo "usage: $0 [path/to/disney-heroes.apk]  (défaut: game/disney-heroes-12.1.0.apk)" >&2
   exit 1
 fi
 command -v mvn >/dev/null || { echo "maven requis (mvn introuvable)" >&2; exit 1; }
 
-ROOT="$(cd "$(dirname "$0")/.." && pwd)"
 OUT="$ROOT/libs"; mkdir -p "$OUT"
 WORK="$(mktemp -d)"; trap 'rm -rf "$WORK"' EXIT
 

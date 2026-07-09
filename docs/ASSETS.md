@@ -3,16 +3,21 @@
 Voir [`PRINCIPLES.md`](PRINCIPLES.md) (§1 modifications minimales), [`RECON.md`](RECON.md),
 [`ARCHITECTURE.md`](ARCHITECTURE.md).
 
-## Obtenir l'APK (non committé)
-L'APK est **copyright PerBlue** et pèse ~96 Mo → **non committé** (voir `.gitignore`).
-Source : Google Drive `https://drive.google.com/file/d/1u-3G-aKMfOMuLSEMY7XuvMbk8hWHZmSF/view`.
-Version : **12.1.0** (2023-02-22). C'est le **base APK** d'un App Bundle : il ne contient
-**pas** les `.so` natifs (splits par ABI) — à récupérer séparément pour le port desktop/Android.
+## L'APK (committé dans le dépôt)
+L'APK est **committé** : `game/disney-heroes-12.1.0.apk` (~92 Mo), pour éviter un
+re-téléchargement après chaque reset de conteneur. Version **12.1.0** (2023-02-22).
+Source d'origine : Google Drive `https://drive.google.com/file/d/1u-3G-aKMfOMuLSEMY7XuvMbk8hWHZmSF/view`.
+C'est le **base APK** d'un App Bundle : il ne contient **pas** les `.so` natifs (splits par
+ABI) — à récupérer séparément pour le port desktop/Android.
 
-Après téléchargement, extraire les données de jeu (source de vérité) :
+> Copyright PerBlue. Projet communautaire de préservation (serveurs officiels fermés).
+
+Le jar décompilé est aussi committé (`libs/game.jar` + `libs/commons-logging.jar`) pour
+éviter une re-décompilation (lente). Régénération si besoin :
 ```bash
-tools/extract_game_data.sh path/to/disney-heroes.apk
-# → game-data/stats/*.tab (274) + game-data/strings/**/*.properties (325)
+tools/extract_game_data.sh    # -> game-data/stats/*.tab (274) + strings/**/*.properties (325)
+tools/decompile.sh            # -> libs/game.jar + libs/commons-logging.jar
+# (APK par défaut = game/disney-heroes-12.1.0.apk ; un chemin peut être passé en argument)
 ```
 
 ## Le manifeste `index.txt`

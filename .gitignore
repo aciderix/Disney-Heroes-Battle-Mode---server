@@ -2,9 +2,14 @@
 *.apk
 *.aab
 *.dex
+# EXCEPTION : APK committé volontairement (évite re-téléchargement après reset conteneur)
+!/game/disney-heroes-12.1.0.apk
 # Decompiled bytecode (regenerable via tools/decompile.sh)
 libs/*.jar
 classes*.jar
+# EXCEPTION : jar décompilé + dépendance committés (évite re-décompilation, lente, après reset)
+!/libs/game.jar
+!/libs/commons-logging.jar
 /decompiled/
 /build/
 /run/

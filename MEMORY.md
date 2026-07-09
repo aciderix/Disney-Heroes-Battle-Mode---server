@@ -44,7 +44,7 @@ qui, en réutilisant au maximum le code et les données du jeu.
 |---|---|
 | **Ce dépôt** (serveur/port Disney Heroes) | `aciderix/Disney-Heroes-Battle-Mode---server`, branche de travail `claude/disney-heroes-port-rhhtuj` |
 | **Dépôt de référence** (portage DragonSoul + serveur) | `aciderix/dragonsoul-web`, branche `claude/game-transpile-debug-2p5irx`, dossier `desktop-port/` (cloné en session sous `/workspace/dragonsoul-web`) |
-| **APK Disney Heroes** (base, ~96 Mo, v12.1.0) | Google Drive : `https://drive.google.com/file/d/1u-3G-aKMfOMuLSEMY7XuvMbk8hWHZmSF/view` — **non committé** (voir [`docs/ASSETS.md`](docs/ASSETS.md)) |
+| **APK Disney Heroes** (base, ~92 Mo, v12.1.0) | **committé** : `game/disney-heroes-12.1.0.apk` (source : Google Drive `https://drive.google.com/file/d/1u-3G-aKMfOMuLSEMY7XuvMbk8hWHZmSF/view`). Jar décompilé aussi committé : `libs/game.jar` (+ `libs/commons-logging.jar`). Voir [`docs/ASSETS.md`](docs/ASSETS.md). |
 | **Assets live archivés** | archive.org : `https://archive.org/download/disney-heroes-battle-mode-live-assets` |
 | **Manifeste d'assets** (`index.txt`) | À la racine du dépôt (`index.txt` == `disney_heroes_live_index.txt`) |
 | **Serveur de contenu d'origine** | `http://content.disneyheroesgame.com/live/index.txt` (hors ligne) |
@@ -136,10 +136,12 @@ docs/
   ASSETS.md               <- pipeline assets (index.txt + archive.org) + comment obtenir l'APK
   RECON.md                <- findings bruts de reconnaissance de l'APK
   SHIMS.md                <- registre substitutions + contraintes de chargement (-Xverify:none…)
+game/
+  disney-heroes-12.1.0.apk <- APK du jeu (committé, ~92 Mo) — évite le re-téléchargement
 tools/
   extract_game_data.sh    <- extrait stats/strings de l'APK vers game-data/ (source de vérité)
-  decompile.sh            <- APK → libs/game.jar (dex2jar via Maven) ; non committé, régénérable
-libs/                     <- (gitignored) game.jar + commons-logging.jar (via decompile.sh)
+  decompile.sh            <- APK → libs/game.jar (dex2jar via Maven) ; régénérable
+libs/                     <- game.jar + commons-logging.jar (committés — évitent la re-décompilation)
 server/java/
   com/perblue/grunt/translate/GruntServerFactory.java  <- fabrique du serveur NIO du jeu (same-package)
   dhserver/LoginServer.java                            <- serveur de jeu TCP : ClientInfo1 -> BootData1
