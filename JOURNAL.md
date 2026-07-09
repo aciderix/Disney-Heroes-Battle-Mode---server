@@ -218,10 +218,30 @@ Package `com.perblue.heroes.assets_external` : `ExternalAssetManager` (orchestre
   et exécute des actions" existe déjà** dans le jeu ; et on peut **réutiliser le backend bundlé**
   (`LwjglApplication`) au lieu d'écrire un backend complet → bien moins de shims que DragonSoul.
 
+**13. Launcher desktop écrit + débogage de boot → VERDICT backend.**
+- Écrit `dhdesktop/DesktopLauncher.java` (construit `GameMain(new DhDeviceInfo())` ; redirection
+  `ServerType.LIVE` par réflexion via `-Ddh.server`), shim `dhbackend/DhDeviceInfo.java`
+  (implémente l'interface `DeviceInfo`, valeurs FACTICE cohérentes, `Platform.ANDROID`),
+  `run-desktop.sh` (Xvfb + llvmpipe + extraction assets/ressources APK + classpath). GL smoke
+  test déplacé en `diag/`.
+- Itérations de boot (chaîne réellement atteinte) :
+  1. Backend **LWJGL2 bundlé** : natifs stock incompatibles avec les classes `org/lwjgl`
+     **réduites par ProGuard** dans game.jar (`PointerWrapper.getPointer()` absente) → shadow
+     par LWJGL 2.9.3 stock ; puis **`LinuxDisplay.getAvailableDisplayModes` AIOOBE sous Xvfb**
+     (Display X11 LWJGL2 = hostile headless) + audio absent.
+  2. Backend **LWJGL3 Maven** (GLFW, headless-friendly) : GLFW init OK → atteint
+     `GameMain.<clinit>` → `NoSuchFieldError Group.DEFAULT_TRANSFORM` (**PerBlue a AJOUTÉ des
+     champs au core libGDX**). En gardant le core PerBlue : le backend stock appelle
+     `InputEventQueue.setProcessor(...)` **absente** du core PerBlue (RÉDUIT par ProGuard).
+- **VERDICT** : core libGDX PerBlue **modifié ET réduit** → aucun backend/core stock ne matche.
+  Comme DragonSoul, il faut un **backend maison LWJGL3** implémentant les interfaces du core du
+  jeu. **Décision : adapter le `dsbackend/` de DragonSoul** (même core PerBlue) plutôt que
+  repartir de zéro. Launcher + `DhDeviceInfo` + extraction assets + redirection `ServerType`
+  déjà écrits = réutilisables. Détail complet : `desktop-port/PROGRESS.md`.
+
 ### Point de reprise
-Rendu headless prouvé + stratégie desktop clarifiée (réutiliser `LwjglApplication` + `GameMain`
-+ crawler d'automatisation bundlés). **Prochaine étape : launcher desktop** —
-`new LwjglApplication(new GameMain(…), config)` sous Xvfb avec natifs LWJGL2 + libgdx 1.9.7,
-extraction assets/ressources de l'APK, shims des **services plateforme** attendus par
-`GameMain`/`AndroidLauncher`, et redirection `ServerType.LIVE` (réflexion) vers nos serveurs.
-Voir `desktop-port/PROGRESS.md` et MEMORY.md §7.
+Port desktop : infra launcher prête, rendu headless prouvé, **backend à faire = adapter
+`dsbackend/` de DragonSoul** (backend LWJGL3 maison contre le core libGDX PerBlue, seul chemin
+compatible + headless). Ensuite : rediriger `ServerType.LIVE` → serveurs locaux, franchir le
+boot (captures glReadPixels), brancher l'automation crawler. Voir `desktop-port/PROGRESS.md`,
+MEMORY.md §7.

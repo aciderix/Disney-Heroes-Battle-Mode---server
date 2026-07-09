@@ -210,13 +210,15 @@ Dépôt de référence (`/workspace/dragonsoul-web`, branche `claude/game-transp
    socket TCP (`server/java/dhserver/LoginServer.java`). Framing/codec gérés par les classes
    du jeu (pas de `packInt` à reverser). Reste : (a) champs **minimaux** de `BootData1` exigés
    par le **vrai** client ; (b) `POST /login` HTTP (format à reverser dans `RPGMain`/`GameMain`).
-6. [~] **Backend/port desktop** — scaffold + **rendu headless prouvé** (Xvfb + Mesa llvmpipe,
-   `desktop-port/`). **Stratégie révisée** (cf. `desktop-port/PROGRESS.md`) : le jar embarque
-   déjà le backend `LwjglApplication` (LWJGL2) + `HeadlessApplication` + le root
-   `GameMain extends ApplicationAdapter` + un **framework d'automatisation/crawler** → on
-   **réutilise le backend bundlé** (bien moins de shims que `dsbackend`). Reste : launcher
-   `LwjglApplication(new GameMain(…))` + shims services plateforme + redirection `ServerType.LIVE`.
-   ← PROCHAINE ÉTAPE (permet d'observer le vrai client → champs BootData + POST /login).
+6. [~] **Backend/port desktop** — launcher écrit + **rendu headless prouvé** (Xvfb + Mesa
+   llvmpipe). **VERDICT (cf. `desktop-port/PROGRESS.md`)** : le core libGDX de PerBlue est
+   **modifié ET réduit (ProGuard)** → ni le core stock ni le backend stock de Maven ne matchent
+   (`Group.DEFAULT_TRANSFORM` ajouté ; `InputEventQueue.setProcessor` supprimé). Le backend
+   LWJGL2 bundlé matche le core mais est **hostile au headless** (`LinuxDisplay` AIOOBE sous
+   Xvfb). ⇒ comme DragonSoul, il faut un **backend maison LWJGL3** contre le core du jeu →
+   **décision : adapter `dsbackend/` de DragonSoul** (même core PerBlue). Le launcher +
+   `DhDeviceInfo` + extraction assets + redirection `ServerType` déjà écrits restent valables.
+   ← PROCHAINE ÉTAPE.
 7. [ ] **Persistance** (SQLite) + **passerelle/multi-serveur** (liste, mot de passe).
 8. [ ] **Outil d'extraction data → format serveur** (les `.tab` chargés tels quels).
 

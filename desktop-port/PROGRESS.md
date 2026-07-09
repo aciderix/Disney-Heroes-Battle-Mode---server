@@ -43,9 +43,50 @@ maison `dsbackend/` intégral), **le jar de Disney Heroes embarque déjà** :
 - **Rediriger `ServerType.LIVE`** (réflexion, sans patch bytecode) vers nos serveurs
   (contenu + login) au démarrage du launcher.
 
+## Tentative de lancement — chaîne de boot atteinte & VERDICT
+
+Launcher écrit (`dhdesktop/DesktopLauncher` + shim `dhbackend/DhDeviceInfo`), compile et
+s'exécute sous Xvfb. Itérations de débogage du boot :
+
+1. **Backend LWJGL2 bundlé** (`LwjglApplication`) → 2 murs *headless* :
+   - natifs LWJGL2 stock incompatibles avec les classes `org/lwjgl` de game.jar (RÉDUITES
+     par ProGuard : `PointerWrapper.getPointer()` supprimée) — contourné en shadowant avec
+     LWJGL 2.9.3 stock ;
+   - puis **`LinuxDisplay.getAvailableDisplayModes` → AIOOBE** sous Xvfb (le `Display` X11 de
+     LWJGL2 n'énumère pas de modes) + audio absent. LWJGL2 est **hostile au headless**.
+2. **Backend LWJGL3 de Maven** (`Lwjgl3Application`, GLFW — *headless-friendly*, cf. GL smoke) :
+   GLFW s'initialise, on atteint `GameMain.<clinit>` **puis** la création de la fenêtre/entrée.
+   Deux incompatibilités **révélatrices** :
+   - `com.badlogic.gdx.scenes.scene2d.Group` **n'a pas** `DEFAULT_TRANSFORM` en libGDX stock
+     → **PerBlue a AJOUTÉ des champs au core libGDX** (core modifié) ;
+   - avec le core PerBlue conservé, le backend stock appelle
+     `com.badlogic.gdx.InputEventQueue.setProcessor(...)` **absente** du core PerBlue (RÉDUIT
+     par ProGuard) → le backend stock ne matche pas non plus.
+
+**VERDICT** : le core libGDX de Disney Heroes est **modifié ET réduit** → ni le core stock,
+ni le backend stock ne sont compatibles. On ne peut donc **pas** réutiliser un backend Maven
+tel quel. C'est exactement la situation DragonSoul → il faut un **backend maison LWJGL3**
+implémentant les interfaces du core libGDX **du jeu** (Application/Graphics/Input/Files/Audio/
+GL20), comme `dsbackend/`. Le backend LWJGL2 bundlé, lui, matcherait le core mais est
+inutilisable en headless.
+
+### Décision : backend maison LWJGL3 (adapter `dsbackend/` de DragonSoul)
+DragonSoul et Disney Heroes partagent le **même core libGDX PerBlue** → on **adapte le
+`dsbackend/` de DragonSoul** (déjà un backend LWJGL3 headless contre un core PerBlue) plutôt
+que repartir de zéro. Le launcher, le shim `DhDeviceInfo`, l'extraction assets/ressources et la
+redirection `ServerType` déjà écrits **restent valables**.
+
 ## Prochaines étapes
-1. [ ] Launcher desktop : `LwjglApplication(new GameMain(…), config)` sous Xvfb ; récupérer
-   les natifs LWJGL2 + libgdx 1.9.7 ; extraire assets/ressources de l'APK (comme DragonSoul).
-2. [ ] Fournir les **services plateforme** attendus par `GameMain`/`AndroidLauncher` (shims).
-3. [ ] Rediriger `ServerType.LIVE` → serveur de contenu + login locaux ; franchir le boot.
-4. [ ] Brancher l'**automation crawler** pour le pilotage/tests headless + captures.
+1. [ ] Adapter le backend LWJGL3 maison depuis `dsbackend/` (Application/Graphics/Input/Files/
+   Audio/GL20/Net/Preferences) contre le core libGDX du jeu (interfaces standard).
+2. [ ] Fournir les **services plateforme** restants attendus par `GameMain`/`AndroidLauncher`.
+3. [ ] Rediriger `ServerType.LIVE` → serveur de contenu + login locaux ; franchir le boot ;
+   captures via glReadPixels (pipeline headless déjà prouvé).
+4. [ ] Brancher l'**automation crawler** du jeu pour le pilotage/tests headless.
+
+## Acquis réutilisables (déjà écrits)
+- `dhdesktop/DesktopLauncher.java` : construit `GameMain(DhDeviceInfo)`, redirection
+  `ServerType.LIVE` par réflexion (`-Ddh.server=host:port`), config fenêtre.
+- `dhbackend/DhDeviceInfo.java` : shim `DeviceInfo` (FACTICE cohérent, `Platform.ANDROID`).
+- `run-desktop.sh` : Xvfb + Mesa llvmpipe + extraction assets/ressources APK + fabrication
+  d'un `game-logic.jar` (sans `org/lwjgl` ni backends bundlés) + classpath.

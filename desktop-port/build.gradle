@@ -7,59 +7,42 @@ repositories {
 }
 
 ext {
-    lwjglVersion = '3.3.4'
-    lwjglNatives = 'natives-linux'
-    // libGDX native (Matrix4/BufferUtils/Gdx2DPixmap JNI). Disney Heroes 12.1.0 embarque
-    // libGDX **1.9.7** (com.badlogic.gdx.Version) → on épingle le natif desktop 1.9.7 pour
-    // matcher l'ABI JNI (Gdx2DPixmap setBlend(long,int) depuis 1.9.6). Un autre natif =
-    // SIGSEGV. (DragonSoul était en 1.9.3 : ne pas recopier cette valeur.)
+    // libGDX embarqué par le jeu = 1.9.7. On utilise le backend **LWJGL3** de libGDX (GLFW),
+    // bien plus adapté au headless (Xvfb) que le backend LWJGL2 bundlé (dont le Display X11
+    // n'énumère pas de modes sous Xvfb). libGDX complet vient de Maven et SHADOW les copies
+    // réduites par ProGuard dans game.jar (game.jar déclaré en DERNIER).
     gdxVersion = '1.9.7'
 }
 
 dependencies {
-    implementation platform("org.lwjgl:lwjgl-bom:$lwjglVersion")
-
-    implementation "org.lwjgl:lwjgl"
-    implementation "org.lwjgl:lwjgl-glfw"
-    implementation "org.lwjgl:lwjgl-opengl"
-    implementation "org.lwjgl:lwjgl-openal"
-    implementation "org.lwjgl:lwjgl-stb"
-
-    runtimeOnly "org.lwjgl:lwjgl::$lwjglNatives"
-    runtimeOnly "org.lwjgl:lwjgl-glfw::$lwjglNatives"
-    runtimeOnly "org.lwjgl:lwjgl-opengl::$lwjglNatives"
-    runtimeOnly "org.lwjgl:lwjgl-openal::$lwjglNatives"
-    runtimeOnly "org.lwjgl:lwjgl-stb::$lwjglNatives"
-
-    // natifs desktop libGDX (libgdx64.so) — extraits au runtime par le script de lancement
+    // IMPORTANT : PerBlue a **modifié le core libGDX** (ex. Group.DEFAULT_TRANSFORM) → on
+    // GARDE le core de game.jar et on ne prend de Maven QUE le backend LWJGL3 + les natifs
+    // (le core stock de Maven est EXCLU pour ne pas shadow le core PerBlue).
+    implementation("com.badlogicgames.gdx:gdx-backend-lwjgl3:$gdxVersion") {
+        exclude group: 'com.badlogicgames.gdx', module: 'gdx'
+    }
     runtimeOnly "com.badlogicgames.gdx:gdx-platform:$gdxVersion:natives-desktop"
 
-    // Libs que le jeu suppose fournies par Android au runtime (absentes de l'APK).
+    // Libs supposées fournies par Android au runtime (absentes de l'APK).
     implementation 'org.json:json:20240303'
-    // Stubs du framework Android (tous les types android.*) pour que les références se
-    // résolvent au boot. Les méthodes lèvent "Stub!" si réellement appelées → les quelques
-    // méthodes critiques au boot sont réimplémentées dans src/ (plus tôt sur le classpath).
     implementation 'com.google.android:android:4.1.1.4'
-
-    // le jeu lui-même : Disney Heroes n'est PAS obfusqué → pas de remap ASM nécessaire,
-    // on utilise directement le jar décompilé committé.
-    implementation files('../libs/game.jar')
     implementation files('../libs/commons-logging.jar')
+
+    // Le jeu : GameMain + com.perblue.* + le core libGDX MODIFIÉ par PerBlue. Le script de
+    // lancement retire de ce jar org/lwjgl/** et com/badlogic/gdx/backends/** (conflits) →
+    // core PerBlue conservé, backend/LWJGL3 fournis par Maven.
+    implementation files('../libs/game.jar')
 }
 
 application {
-    // Cible par défaut : le smoke test GL (ne dépend que de LWJGL). Le launcher du jeu
-    // (desktop.DesktopLauncher) viendra ensuite, avec les shims dhbackend/.
-    mainClass = 'desktop.GLSmokeTest'
+    mainClass = 'dhdesktop.DesktopLauncher'
 }
 
-// Le bytecode dex2jar cible Java 6/7 ; on tait les warnings de cible obsolète.
 tasks.withType(JavaCompile).configureEach {
     options.compilerArgs << '-Xlint:none'
     options.encoding = 'UTF-8'
 }
 
-// Expose le classpath runtime résolu pour les scripts de lancement manuels (Xvfb + -Xverify:none).
 tasks.register('printRuntimeClasspath') {
     doLast { println configurations.runtimeClasspath.asPath }
 }
