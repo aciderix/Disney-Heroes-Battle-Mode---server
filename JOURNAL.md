@@ -158,8 +158,24 @@ Package `com.perblue.heroes.assets_external` : `ExternalAssetManager` (orchestre
 - Docs : `docs/SHIMS.md` créé (contraintes `-Xverify:none` + `commons-logging` + jar
   régénérable). `.gitignore` : ajout `*.class`, `*-error.zip`. `MEMORY.md` §6/§7 à jour.
 
+**10. Sérialisation des messages du jeu prouvée (sans libGDX).**
+- Probes JVM desktop (`libs/game.jar`, `-Xverify:none`, `commons-logging`) :
+  - `MessageFactory.getInstance()` **OK** et `new BootData()` **OK** → se chargent **sans
+    libGDX** (le clinit de MessageFactory enregistre les messages sans dépendance graphique).
+  - API sérialisation : `GruntMessage.writeAll(GruntOutputStream)`, `GruntOutputStream.getBytes()`,
+    `MessageFactory.readMessage(GruntInputStream)`. `BootData.getFullName()=="BootData1"`.
+  - **Round-trip message** (`server/smoke/MessageRoundTrip`) : `BootData`(serverTime=1234567890,
+    serverHasArenaSeasons=true, loginEvent="hello") → `writeAll` (4096 o) → `readMessage` →
+    champs identiques. **OK**.
+- Ajout `server/smoke/MessageRoundTrip.java` ; `run.sh` compile+exécute les 2 smoke tests.
+- Docs : `PROTOCOL.md` §2bis (API sérialisation vérifiée) ; `MEMORY.md` §6/§7.
+- ⇒ Toute la pile serveur (codec + sérialisation) est **validée avec les vraies classes du
+  jeu** : le serveur pourra décoder un `ClientInfo1` et répondre un `BootData1` au format wire
+  exact, sans réimplémentation ni libGDX.
+
 ### Point de reprise
-`libs/game.jar` régénérable + codec du jeu prouvé réutilisable. **Prochaine étape** : serveur
-de **login v1** — vérifier si `MessageFactory`/`BootData` chargent hors libGDX, puis construire
-un `BootData1` et répondre à un `ClientInfo1` avec le framing `[int32 LE len][wrapOut(writeAll)]`.
-En parallèle : backend desktop minimal + réécriture `ServerType.LIVE` (réflexion). Voir MEMORY.md §7.
+Briques serveur validées (contenu v0 + codec + sérialisation messages, tout via les classes
+du jeu). **Prochaine étape : serveur de login v1** — (a) framing `[int32 LE len]` (`packInt`
+du jeu), (b) reverse du `POST /login` HTTPS (`RPGMain`/`GameMain`) et de son format de réponse,
+(c) champs **minimaux** de `BootData1` à renvoyer. En parallèle : backend desktop minimal +
+réécriture `ServerType.LIVE` (réflexion) vers notre serveur. Voir MEMORY.md §7.

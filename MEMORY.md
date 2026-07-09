@@ -141,7 +141,9 @@ tools/
   decompile.sh            <- APK → libs/game.jar (dex2jar via Maven) ; non committé, régénérable
 libs/                     <- (gitignored) game.jar + commons-logging.jar (via decompile.sh)
 server/smoke/
-  CodecRoundTrip.java     <- prouve la réutilisation du codec du jeu ; run.sh pour l'exécuter
+  CodecRoundTrip.java     <- prouve la réutilisation du codec du jeu (Deflate+XOR)
+  MessageRoundTrip.java   <- prouve la sérialisation BootData/MessageFactory (sans libGDX)
+  run.sh                  <- compile+exécute les deux smoke tests
 game-data/
   stats/*.tab             <- 274 tables d'équilibrage (extraites de l'APK)
   strings/**/*.properties <- 325 fichiers de textes localisés (extraits de l'APK)
@@ -174,9 +176,12 @@ Dépôt de référence (`/workspace/dragonsoul-web`, branche `claude/game-transp
 - [x] **Serveur de contenu v0** (`server/content_server.py`) : sert `index.txt` + redirige
   les `.zip` vers archive.org (ou copie locale). Testé de bout en bout.
 - [x] **Décompilation en jar régénérable** (`tools/decompile.sh` → `libs/game.jar` via
-  dex2jar/Maven) + **preuve de réutilisation des classes du jeu** : `server/smoke/CodecRoundTrip`
-  charge le codec `DHXORConnectionWrapper` du jeu et round-trip OK sur JVM desktop
-  (`-Xverify:none` + `commons-logging` ; cf. `docs/SHIMS.md`).
+  dex2jar/Maven) + **preuve de réutilisation des classes du jeu** (JVM desktop,
+  `-Xverify:none` + `commons-logging` ; cf. `docs/SHIMS.md`) :
+  - `server/smoke/CodecRoundTrip` : codec `DHXORConnectionWrapper` (Deflate+XOR) round-trip OK.
+  - `server/smoke/MessageRoundTrip` : `BootData.writeAll` ↔ `MessageFactory.readMessage` OK ;
+    `MessageFactory`/`BootData` se chargent **sans libGDX**. ⇒ le serveur peut construire/décoder
+    les messages au format wire exact du jeu.
 
 ### À faire (ordre conseillé)
 1. [x] ~~Extraire clé XOR + `ServerType`~~ (fait via androguard — voir RECON/PROTOCOL).
@@ -187,9 +192,10 @@ Dépôt de référence (`/workspace/dragonsoul-web`, branche `claude/game-transp
    (URLs réécrites) + copie locale/302 vers archive.org. Testé de bout en bout.
 4. [x] ~~**Décompiler l'APK en jar**~~ ✅ `tools/decompile.sh` → `libs/game.jar` (dex2jar/Maven).
    Codec du jeu réutilisable prouvé (`server/smoke/CodecRoundTrip`). Voir `docs/SHIMS.md`.
-5. [ ] **Serveur login v1** : construire un `BootData1` via `MessageFactory`/`BootData` du jeu
-   et le framing `[int32 LE len][wrapOut(writeAll)]` → répondre à un `ClientInfo1`. ← PROCHAINE.
-   (Vérifier d'abord si `MessageFactory`/`BootData` chargent sans libGDX, sinon shimmer.)
+5. [ ] **Serveur login v1** : briques validées (codec + sérialisation `BootData`/`MessageFactory`
+   chargent sans libGDX). Reste : (a) framing `[int32 LE len]` via le `packInt` du jeu ;
+   (b) `POST /login` HTTPS (format de réponse à reverser dans `RPGMain`/`GameMain`) ; (c) champs
+   **minimaux** de `BootData1` que le client déréférence sans planter. ← PROCHAINE ÉTAPE.
 6. [ ] **Backend desktop** (LWJGL3) minimal pour lancer le jeu (miroir `dsbackend/`) +
    réécriture `ServerType.LIVE` (réflexion) vers notre serveur.
 7. [ ] **Persistance** (SQLite) + **passerelle/multi-serveur** (liste, mot de passe).
