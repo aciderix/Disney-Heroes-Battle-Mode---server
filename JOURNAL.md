@@ -173,9 +173,33 @@ Package `com.perblue.heroes.assets_external` : `ExternalAssetManager` (orchestre
   jeu** : le serveur pourra décoder un `ClientInfo1` et répondre un `BootData1` au format wire
   exact, sans réimplémentation ni libGDX.
 
+**11. Serveur de login v1 (squelette) + handshake TCP prouvé bout-en-bout.**
+- Découverte : le jar du jeu contient aussi la **pile SERVEUR** du framework grunt
+  (`GruntNIOTCPServer`, `GruntTCPServer`, `GruntUDPServer`, `GruntBuilder`) → on **réutilise
+  le serveur du jeu** au lieu de refaire le framing (`packInt`) à la main.
+- Obstacles levés (reversés) :
+  - `GruntNIOTCPServer` est **package-private** sans fabrique publique → ajout de
+    `com.perblue.grunt.translate.GruntServerFactory` (classe dans le même package, pas une
+    modif du jeu) pour l'instancier. Ctor : `(port, factory, executor, connectionListener,
+    wrapperClass, sendTimeout, keepAlive, noDelay, useProxyProtocol, bufferSize)` (mappé par
+    décompilation).
+  - Le ctor **crée le thread NIO mais ne l'active pas** : `running=false` (AtomicBoolean) et
+    `thread` non démarré. Diagnostic clé : premier essai en TIMEOUT (client TCP-connecté via
+    backlog kernel mais aucun accept applicatif). Fix : lever `running` (réflexion) + démarrer
+    le thread daemon. → handshake OK.
+- `server/java/dhserver/LoginServer.java` : sur `ClientInfo` reçu, répond un `BootData`
+  (`setAsReplyTo` + `send`) via `MessageFactory` + codec `DHXORConnectionWrapper` du jeu.
+- **Smoke test `server/smoke/HandshakeRoundTrip`** : client `GruntBuilder` envoie
+  `ClientInfo1`, `LoginServer` répond `BootData1`, le client décode (serverTime/loginEvent
+  corrects) — **sur socket TCP réelle, sans libGDX**. `run.sh` compile `server/java` + lance
+  les 3 smoke tests (codec, message, handshake) : **tous OK**.
+- Docs : `PROTOCOL.md` §2ter, `SHIMS.md` (GruntServerFactory + 3 smoke tests), `server/README.md`,
+  `MEMORY.md` §6/§7. `.gitignore` : `/server/smoke/out/`.
+
 ### Point de reprise
-Briques serveur validées (contenu v0 + codec + sérialisation messages, tout via les classes
-du jeu). **Prochaine étape : serveur de login v1** — (a) framing `[int32 LE len]` (`packInt`
-du jeu), (b) reverse du `POST /login` HTTPS (`RPGMain`/`GameMain`) et de son format de réponse,
-(c) champs **minimaux** de `BootData1` à renvoyer. En parallèle : backend desktop minimal +
-réécriture `ServerType.LIVE` (réflexion) vers notre serveur. Voir MEMORY.md §7.
+Pile réseau serveur **entièrement prouvée** avec les classes du jeu (contenu v0 + codec +
+sérialisation + handshake `ClientInfo1→BootData1` sur socket). **Prochaine étape : backend
+desktop minimal** (LWJGL3, miroir `dsbackend/`) pour **lancer le vrai client** et rediriger
+`ServerType.LIVE` (réflexion) vers nos serveurs → observer les **champs `BootData1` réellement
+requis** et le **format `POST /login`**. Le conteneur étant headless, le lancement graphique
+se fera sur une machine avec affichage. Voir MEMORY.md §7.

@@ -89,15 +89,26 @@ API confirmée sur `libs/game.jar` (JVM desktop, `-Xverify:none` + `commons-logg
   `new BootData()` se chargent **sans libGDX**. ⇒ le serveur construit/décode les messages
   avec le format wire **exact** du jeu, zéro réimplémentation.
 
+## 2ter. Handshake de jeu ✅ PROUVÉ bout-en-bout (socket TCP, classes du jeu)
+On **réutilise la pile serveur DU JEU** au lieu de refaire le framing à la main : le jeu
+embarque `com.perblue.grunt.translate.GruntNIOTCPServer` (serveur NIO, même framing/codec
+que le client) — *package-private*, instancié via `GruntServerFactory` (classe ajoutée dans
+le même package, cf. SHIMS.md ; le ctor n'active pas le thread → on lève `running` + start).
+- `server/java/dhserver/LoginServer.java` : `GruntNIOTCPServer(port, MessageFactory, exec,
+  listener, DHXORConnectionWrapper.class, …)` ; sur `ClientInfo` reçu → `send(BootData)`.
+- Vérifié (`server/smoke/HandshakeRoundTrip`) : un client `GruntBuilder` envoie `ClientInfo1`,
+  le serveur répond `BootData1`, le client le décode (champs corrects). **Sans libGDX.**
+- ⇒ Le framing/longueur/codec sont gérés par les classes du jeu → pas besoin de reverser
+  `packInt` à la main. Reste à déterminer les **champs minimaux de `BootData1`** que le
+  **vrai** client déréférence (source de vérité = le client réel, pas d'invention).
+
 ## 3. Architecture serveur retenue
 Serveur **Java réutilisant les classes du jeu** (jar décompilé), pas de réimplémentation
 binaire :
-1. `ServerSocket`. Peek des 1ers octets → HTTP (contenu/login) vs TCP jeu.
-2. Contenu : mini-HTTP `index.txt` + redirection assets.
-3. Login : répondre à `POST /login`.
-4. Jeu : `DHXORConnectionWrapper` (codec+clé exacts) → lire frames
-   `[int32 LE len][wrapIn → MessageFactory.readMessage]` → `ClientInfo` → construire et
-   renvoyer `BootData` (`writeAll` + `wrapOut` + préfixe longueur).
+1. **Contenu** (fait) : `server/content_server.py` — `index.txt` + redirection assets.
+2. **Login HTTP** : répondre à `POST /login` (format à reverser dans `RPGMain`/`GameMain`).
+3. **Jeu TCP** (squelette fait) : `LoginServer` réutilise `GruntNIOTCPServer` + codec +
+   `MessageFactory` du jeu → `ClientInfo1` → `BootData1`. Framing/codec par les classes du jeu.
 
 ## 4. Fichiers clés (client, pour reprise)
 ```

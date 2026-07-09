@@ -42,8 +42,24 @@ domaines PerBlue hors ligne.
 Pré-télécharger les `.zip` dans `assets-cache/` (non committé) pour servir sans dépendre
 d'archive.org. Un outil de pré-fetch depuis `index.txt` sera ajouté (`tools/`).
 
+## `java/` — serveur de jeu (protocole TCP) — squelette v1 ✅
+Réutilise **la pile réseau du jeu** (aucune réimplémentation binaire) :
+- `java/com/perblue/grunt/translate/GruntServerFactory.java` : fabrique du serveur NIO du
+  jeu (`GruntNIOTCPServer`, *package-private*) — classe ajoutée dans le même package, pas une
+  modif du jeu ; active la boucle réseau (cf. `../docs/SHIMS.md`).
+- `java/dhserver/LoginServer.java` : écoute en TCP, décode `ClientInfo1` et répond `BootData1`
+  via `MessageFactory` + codec `DHXORConnectionWrapper` du jeu.
+
+Compilation/exécution (nécessite `libs/game.jar` + `libs/commons-logging.jar` via
+`tools/decompile.sh`, et `-Xverify:none`) :
+```bash
+# via le harnais des smoke tests (compile java/ + lance les 3 tests dont le handshake TCP)
+server/smoke/run.sh
+```
+Handshake **prouvé bout-en-bout** (`server/smoke/HandshakeRoundTrip`) : `ClientInfo1 ->
+BootData1` sur socket réelle, sans libGDX. Reste : champs **minimaux** de `BootData1` exigés
+par le vrai client, et `POST /login` HTTP.
+
 ## À venir
-- Serveur de **login** (`POST /login`) + **protocole de jeu** TCP (Java, réutilise les
-  classes du jeu : `DHXORConnectionWrapper`, `MessageFactory`, `BootData`).
-- **Passerelle** unifiée (route contenu HTTP vs jeu TCP) + **mot de passe** + **liste de
-  serveurs**. Cf. ARCHITECTURE.md.
+- **Login HTTP** (`POST /login`) + intégration passerelle (route contenu vs jeu).
+- **Passerelle** unifiée + **mot de passe** + **liste de serveurs**. Cf. ARCHITECTURE.md.

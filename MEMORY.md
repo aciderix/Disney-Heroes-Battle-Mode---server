@@ -140,10 +140,14 @@ tools/
   extract_game_data.sh    <- extrait stats/strings de l'APK vers game-data/ (source de vérité)
   decompile.sh            <- APK → libs/game.jar (dex2jar via Maven) ; non committé, régénérable
 libs/                     <- (gitignored) game.jar + commons-logging.jar (via decompile.sh)
+server/java/
+  com/perblue/grunt/translate/GruntServerFactory.java  <- fabrique du serveur NIO du jeu (same-package)
+  dhserver/LoginServer.java                            <- serveur de jeu TCP : ClientInfo1 -> BootData1
 server/smoke/
   CodecRoundTrip.java     <- prouve la réutilisation du codec du jeu (Deflate+XOR)
   MessageRoundTrip.java   <- prouve la sérialisation BootData/MessageFactory (sans libGDX)
-  run.sh                  <- compile+exécute les deux smoke tests
+  HandshakeRoundTrip.java <- handshake login TCP bout-en-bout (ClientInfo1 -> BootData1)
+  run.sh                  <- compile server/java + exécute les 3 smoke tests
 game-data/
   stats/*.tab             <- 274 tables d'équilibrage (extraites de l'APK)
   strings/**/*.properties <- 325 fichiers de textes localisés (extraits de l'APK)
@@ -182,6 +186,10 @@ Dépôt de référence (`/workspace/dragonsoul-web`, branche `claude/game-transp
   - `server/smoke/MessageRoundTrip` : `BootData.writeAll` ↔ `MessageFactory.readMessage` OK ;
     `MessageFactory`/`BootData` se chargent **sans libGDX**. ⇒ le serveur peut construire/décoder
     les messages au format wire exact du jeu.
+- [x] **Serveur de login v1 (squelette) + handshake TCP prouvé bout-en-bout** :
+  `server/java/dhserver/LoginServer.java` réutilise le serveur NIO du jeu
+  (`GruntNIOTCPServer` via `GruntServerFactory`, même package) + codec + `MessageFactory`.
+  `server/smoke/HandshakeRoundTrip` : `ClientInfo1 → BootData1` sur socket réelle, sans libGDX.
 
 ### À faire (ordre conseillé)
 1. [x] ~~Extraire clé XOR + `ServerType`~~ (fait via androguard — voir RECON/PROTOCOL).
@@ -192,12 +200,13 @@ Dépôt de référence (`/workspace/dragonsoul-web`, branche `claude/game-transp
    (URLs réécrites) + copie locale/302 vers archive.org. Testé de bout en bout.
 4. [x] ~~**Décompiler l'APK en jar**~~ ✅ `tools/decompile.sh` → `libs/game.jar` (dex2jar/Maven).
    Codec du jeu réutilisable prouvé (`server/smoke/CodecRoundTrip`). Voir `docs/SHIMS.md`.
-5. [ ] **Serveur login v1** : briques validées (codec + sérialisation `BootData`/`MessageFactory`
-   chargent sans libGDX). Reste : (a) framing `[int32 LE len]` via le `packInt` du jeu ;
-   (b) `POST /login` HTTPS (format de réponse à reverser dans `RPGMain`/`GameMain`) ; (c) champs
-   **minimaux** de `BootData1` que le client déréférence sans planter. ← PROCHAINE ÉTAPE.
+5. [x] ~~**Serveur login v1**~~ (squelette) ✅ handshake `ClientInfo1 → BootData1` prouvé sur
+   socket TCP (`server/java/dhserver/LoginServer.java`). Framing/codec gérés par les classes
+   du jeu (pas de `packInt` à reverser). Reste : (a) champs **minimaux** de `BootData1` exigés
+   par le **vrai** client ; (b) `POST /login` HTTP (format à reverser dans `RPGMain`/`GameMain`).
 6. [ ] **Backend desktop** (LWJGL3) minimal pour lancer le jeu (miroir `dsbackend/`) +
-   réécriture `ServerType.LIVE` (réflexion) vers notre serveur.
+   réécriture `ServerType.LIVE` (réflexion) vers notre serveur. ← PROCHAINE ÉTAPE (permet
+   d'observer le vrai client → champs BootData requis + format POST /login).
 7. [ ] **Persistance** (SQLite) + **passerelle/multi-serveur** (liste, mot de passe).
 8. [ ] **Outil d'extraction data → format serveur** (les `.tab` chargés tels quels).
 

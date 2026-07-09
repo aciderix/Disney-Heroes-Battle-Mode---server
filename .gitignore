@@ -21,3 +21,4 @@ __pycache__/
 # Compiled Java / dex2jar error dumps
 *.class
 *-error.zip
+/server/smoke/out/
