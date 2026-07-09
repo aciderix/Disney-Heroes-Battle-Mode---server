@@ -29,3 +29,5 @@ __pycache__/
 /server/smoke/out/
 /desktop-port/build/
 *.ppm
+/desktop-port/.gradle/
+.gradle/
