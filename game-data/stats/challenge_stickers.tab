@@ -1,0 +1,253 @@
+	BOOK_ID	CONTENT_RELEASE	CATEGORY	DIFFICULTY	COST	DURATION	MAX_PROGRESS	IMPLEMENTATION_CLASS	IMPLEMENTATION_EXTRA	STARTER	TOKEN_REWARD
+BEST_FRIENDS_FOREVER	ON_A_MISSION	R1	missions	Hard	300	7 d	100	CompleteMissionsChallenge			1500
+BULLET_TRAIN	PICK_EM_CHALLENGES	R1	campaign	Hard	300	3 d	750	CampaignRaidChallenge			1500
+LIEUTENANTS_BADGE	CITY_PATROL	R1	city watch	Hard	300	7 d	220	ExpeditionStarsChallenge	minDifficulty=2		1500
+TO_CATCH_A_STAR	STARTER_CHALLENGES	R1	campaign	Medium	100	7 d	7	CampaignStarsChallenge	minStars=3, chapter=4, campaignType=NORMAL, majorOnly=true	1	500
+POWERLINE	SURGE_OF_POWER	R1	creep surge 	Hard	300	1 d	250000	DefeatPowerInSurgeChallenge	includeLostBattles=true		1500
+DAMAGE_SCHMAMAGE	THE_ULTIMATE_CHALLENGE	R1	trials	Hard	300	3 d	3	TeamTrialsCompletionChallenge	minDifficulty=3, minStars=3, withoutHeroRole=DPS		1500
+DANCES_WITH_MERCS	SURGE_OF_POWER	R1	creep surge 	Hard	200	1 d	10	WinSurgeFightsWithRealGearMercChallenge			1000
+DEFEATED	PICK_EM_CHALLENGES	R1	campaign	Easy	100	7 d	5000	DefeatEnemiesChallenge	includeLostBattles=true, excludeInvasion=true		500
+DISTRICT_DEFENDER	SURGE_OF_POWER	R1	creep surge 	Easy	100	2 d	4	CompleteSurgeRegionsChallenge			500
+EVOLUTIONARY_SCIENCE	THE_ULTIMATE_CHALLENGE	R1	heroes	Easy	100	1 d	5	EvolveHeroesChallenge			500
+FIST_BUMP	PICK_EM_CHALLENGES	R1	campaign	Hard	300	3 d	30	WinFightsChallenge	gameMode=FRIEND_CAMPAIGN		1500
+GETTING_THE_JOB_DONE	PICK_EM_CHALLENGES	R1	daily quests	Medium	200	7 d	100	CompleteQuestsChallenge	requiredType=DAILY_QUEST		1000
+GOOD_TIMES	ON_A_MISSION	R1	friends	Hard	200	7 d	20	MissionMemoriesChallenge			1000
+GROUP_EFFORT	ON_A_MISSION	R1	friends	Medium	200	1 d	25	CompleteMissionsChallenge			1000
+KNOCK_OUT	SURGE_OF_POWER	R1	creep surge 	Medium	200	7 d	50	WinFightsChallenge	gameMode=SURGE		1000
+CAPTAINS_BADGE	CITY_PATROL	R1	city watch	Easy	100	7 d	220	ExpeditionStarsChallenge			500
+WITH_NO_BACKUP	CITY_PATROL	R1	city watch	Medium	200	1 d	15	SingleExpeditionChallenge	withoutHeroRole=TANK		1000
+OVERCAFFEINATED	PICK_EM_CHALLENGES	R1	heroes	Easy	100	7 d	1000	UseXPDrinkChallenge			500
+SO_MUCH_POWER	ON_A_MISSION	R1	campaign	Easy	200	7 d	20000	EarnResourceChallenge	resource=GEAR_JUICE		1000
+POWERED_BY_DONUTS	CITY_PATROL	R1	city watch	Hard	200	1 d	15	SingleExpeditionChallenge	requireSameMercPerExpedition=true, minDifficulty=2		1000
+PURE_SORCERY	PICK_EM_CHALLENGES	R1	enhancement	Hard	300	7 d	7	EnchantItemsDailyChallenge	minItemRarity=PURPLE, maxItemRarity=PURPLE		1500
+RIDE_THE_FERRIS_WHEEL	STARTER_CHALLENGES	R1	daily quests	Easy	100	4 d	3	DailySignInChallenge		3	500
+SHARE_THE_LOVE	ON_A_MISSION	R1	missions	Hard	100	1 d	1	EarnRealGearChallenge			500
+SHOPPING_SPREE	THE_ULTIMATE_CHALLENGE	R1	shops	Medium	200	7 d	25000	EarnMerchantTokensChallenge			1000
+SKELETON_KEY	PICK_EM_CHALLENGES	R1	crates	Easy	100	7 d	150	OpenChestsChallenge			500
+SKILLMASTER_5000	PICK_EM_CHALLENGES	R1	heroes	Medium	200	1 d	50	UpgradeSkillsChallenge	requireUniqueSkills=true		1000
+SOCIAL_BUTTERFLY	STARTER_CHALLENGES	R1	chat	Easy	100	1 d	5	ChatChallenge	chatRoom=PERSONAL_MESSAGE, friend=true, unique=true, receive=true	4	500
+STAR_CATCHER	PICK_EM_CHALLENGES	R1	campaign	Medium	200	7 d	7	CampaignStarsChallenge	minStars=3, campaignType=ELITE, chapter=6, maxRarity=BLUE_2		1000
+CONSTELLATION_OF_STARS	THE_ULTIMATE_CHALLENGE	R1	city watch	Hard	200	2 d	90	ExpeditionStarsChallenge	minStarsPerExpedition=45		1000
+TANKS_FOR_NUTHIN	PICK_EM_CHALLENGES	R1	trials	Medium	200	3 d	3	TeamTrialsCompletionChallenge	minDifficulty=3, withoutHeroRole=TANK		1000
+THE_COLOR_OF_PURPLE	THE_ULTIMATE_CHALLENGE	R1	campaign	Hard	200	1 d	100	EarnItemsChallenge	category=SHARD, rarity=PURPLE		1000
+THE_NAMES_NICK	STARTER_CHALLENGES	R1	campaign	Medium	100	7 d	20	EarnItemsChallenge	"gameMode=""ELITE_CAMPAIGN"", item=STONE_NICK_WILDE"	2	500
+TOYS_TO_THE_RESCUE	CITY_PATROL	R1	city watch	Medium	200	1 d	15	SingleExpeditionChallenge	withHeroCategory=TOY_STORY		1000
+WHO_NEEDS_TANKS	SURGE_OF_POWER	R1	creep surge 	Hard	200	3 d	20	WinFightsChallenge	gameMode=SURGE, withoutHeroRole=TANK		1000
+YOURE_NUMBER_ONE	STARTER_CHALLENGES	R1	arena	Medium	100	1 d	5	WinFightsChallenge	"gameMode=""FIGHT_PIT"""	5	500
+ONE_HUNDRED_PERCENT_FREE	WEEKLY_CHALLENGES_SUMMER_2018	R2	crates	Easy	200	7 d	3	OpenChestsChallenge	chestType=GOLD, onlyFree=true		500
+A_SHORT_INTERMISSION	WEEKLY_CHALLENGES_SUMMER_2018	R2	daily quests	Medium	200	7 d	7	VideoAdChallenge	requiredType=DAILY, oncePerDay=true		500
+BADGE_OF_HONOR	WEEKLY_CHALLENGES_SUMMER_2018	R2	heroes	Easy	200	7 d	7	EquipItemChallenge	oncePerDay=true		500
+CALLING_FOR_BACKUP	WEEKLY_CHALLENGES_SUMMER_2018	R2	city watch	Easy	200	7 d	5	HireMercenariesChallenge	gameMode=EXPEDITION		500
+CELEBRITY_OF_THE_WEEK	WEEKLY_CHALLENGES_SUMMER_2018	R2	campaign	Medium	200	7 d	25	EarnItemsChallenge	"gameMode=""ELITE_CAMPAIGN"", category=STONE, trackOneItem=true"		500
+CHACHING	WEEKLY_CHALLENGES_SUMMER_2018	R2	shops	Medium	200	7 d	7	MerchantPurchaseChallenge	merchant=CRYPT, spendResource=CRYPT_TOKENS, threshold=500, triggersPerDay=1, progressOnSpend=true		500
+GIANT_SLAYER	WEEKLY_CHALLENGES_SUMMER_2018	R2	arena	Medium	200	7 d	7	FightPitPowerChallenge	minPowerDifference=1000		500
+LOYAL_GUILDIE	WEEKLY_CHALLENGES_SUMMER_2018	R2	guild	Easy	200	7 d	7	GuildCheckInChallenge			500
+MAXIMUM_PRODUCTIVITY	WEEKLY_CHALLENGES_SUMMER_2018	R2	daily quests	Medium	200	7 d	5	CompleteQuestsChallenge	progressOnDailyCompletion=true, requiredType=DAILY_QUEST		500
+MEDIC_MEDIC	WEEKLY_CHALLENGES_SUMMER_2018	R2	city watch	Hard	200	7 d	15	SingleExpeditionChallenge	withoutUnitType=YAX, minDifficulty=2		500
+ON_THE_CASE	WEEKLY_CHALLENGES_SUMMER_2018	R2	city watch	Easy	200	7 d	5	MultiExpeditionChallenge			500
+OVERTIME_PAY	WEEKLY_CHALLENGES_SUMMER_2018	R2	shops	Medium	200	7 d	7	MerchantPurchaseChallenge	merchant=EXPEDITIONS, spendResource=EXPEDITION_TOKENS, threshold=500, triggersPerDay=1, progressOnSpend=true		500
+PICK_A_WINNER	WEEKLY_CHALLENGES_SUMMER_2018	R2	challenges	Hard	200	7 d	1	CompleteChallengesChallenge	requiredType=PICK_EM		500
+PROMOTIONAL_MATERIALS	WEEKLY_CHALLENGES_SUMMER_2018	R2	heroes	Easy	200	7 d	7	PromoteHeroesChallenge	oncePerDay=true		500
+SHAPE_SHIFTER	WEEKLY_CHALLENGES_SUMMER_2018	R2	chat	Easy	200	7 d	7	AvatarChangeChallenge	oncePerDay=true		500
+SPARRING_PARTNER	WEEKLY_CHALLENGES_SUMMER_2018	R2	chat	Easy	200	7 d	7	WinFightsChallenge	oncePerDay=true, gameMode=CHAT_SPAR		500
+TAKING_THE_CAKE	WEEKLY_CHALLENGES_SUMMER_2018	R2	heroes	Hard	200	7 d	10	RankChangeChallenge	changeNeeded=10, type=TOTAL_POWER		500
+TANKS_FOR_THE_RIDE	WEEKLY_CHALLENGES_SUMMER_2018	R2	campaign	Hard	200	7 d	7	CampaignStarsChallenge	minStars=3, chapter=MAX, withoutHeroRole=TANK, campaignType=NORMAL, majorOnly=true		500
+TRUE_FRIEND	WEEKLY_CHALLENGES_SUMMER_2018	R2	missions	Easy	200	7 d	25	EarnItemsChallenge	category=GEAR_BIT		500
+A_LITTLE_BIT_OF_MAGIC	WEEKLY_CHALLENGES_SUMMER_2018	R3	enhancement	Easy	200	7 d	6	EnchantItemsDailyChallenge	minItemRarity=PURPLE, maxItemRarity=PURPLE, oncePerDay=false		500
+AWESOME_POWER	WEEKLY_CHALLENGES_SUMMER_2018	R3	missions	Medium	200	7 d	2000	MissionDiskPowerChallenge			500
+COLOSSUS_SLAYER	WEEKLY_CHALLENGES_SUMMER_2018	R3	arena	Medium	200	7 d	5	WinFightsChallenge	gameMode=COLISEUM, underPowered=3000, uniqueDefenders=true		500
+CRAFTY	WEEKLY_CHALLENGES_SUMMER_2018	R3	campaign	Hard	200	7 d	100	EarnItemsChallenge	"gameMode=""CAMPAIGN"", rarity=PURPLE, trackOneItem=true, category=SHARD"		500
+DISK_BUILDER	WEEKLY_CHALLENGES_SUMMER_2018	R3	memory disks	Hard	200	7 d	2	EvolveRealGearChallenge			500
+FRUITS_OF_THE_GUILD	WEEKLY_CHALLENGES_SUMMER_2018	R3	crates	Medium	200	7 d	7	OpenChestsChallenge	chestType=SOCIAL, oncePerDay=true		500
+GIFT_FROM_A_FRIEND	WEEKLY_CHALLENGES_SUMMER_2018	R3	memory disks	Medium	200	7 d	1	EarnRealGearChallenge			500
+GLADIATORS_SHARE	WEEKLY_CHALLENGES_SUMMER_2018	R3	shops	Easy	200	7 d	7	MerchantPurchaseChallenge	merchant=COLISEUM, spendResource=COLISEUM_TOKENS, threshold=500, triggersPerDay=1, progressOnSpend=true		500
+GUILD_MAGNET	WEEKLY_CHALLENGES_SUMMER_2018	R3	guild	Medium	200	7 d	20000	GuildInfluenceChallenge			500
+HIRED_GUNS	WEEKLY_CHALLENGES_SUMMER_2018	R3	creep surge 	Easy	200	7 d	5	HireMercenariesChallenge	gameMode=SURGE		500
+IMPERIAL_SMACKDOWN	WEEKLY_CHALLENGES_SUMMER_2018	R3	city watch	Medium	200	7 d	75	DefeatEnemiesInExpeditionChallenge	includeLostBattles=true, requiredAttacker=EMPEROR_ZURG		500
+LACK_OF_SUPPORT	WEEKLY_CHALLENGES_SUMMER_2018	R3	creep surge 	Medium	200	7 d	20	WinFightsChallenge	gameMode=SURGE, withoutHeroRole=SUPPORT		500
+MAXIMUM_MERCS	WEEKLY_CHALLENGES_SUMMER_2018	R3	daily quests	Easy	200	7 d	7	CompleteQuestsChallenge	specificType=DAILY_MERCENARY		500
+MISSION_ACCOMPLISHED	WEEKLY_CHALLENGES_SUMMER_2018	R3	missions	Easy	200	7 d	50	CompleteMissionsChallenge			500
+OUT_OF_CONTROL	WEEKLY_CHALLENGES_SUMMER_2018	R3	city watch	Medium	200	7 d	15	SingleExpeditionChallenge	withoutHeroRole=CONTROL		500
+PURPLE_PUZZLE	WEEKLY_CHALLENGES_SUMMER_2018	R3	campaign	Easy	200	7 d	50	EarnItemsChallenge	"gameMode=""CAMPAIGN"", rarity=PURPLE, trackOneItem=true, category=""SHARD"""		500
+STOCKING_UP	WEEKLY_CHALLENGES_SUMMER_2018	R3	shops	Hard	200	7 d	7	MerchantPurchaseChallenge	triggersPerDay=1, gainCategory_0=GEAR, mustSpendToken=true, minRarity=BLUE		500
+TAKE_MY_MONEY	WEEKLY_CHALLENGES_SUMMER_2018	R3	shops	Medium	200	7 d	20000	SpendResourceChallenge	mustSpendToken=true		500
+TANKLESS	WEEKLY_CHALLENGES_SUMMER_2018	R3	city watch	Hard	200	7 d	15	SingleExpeditionChallenge	withoutHeroRole=TANK		500
+THANKS_FOR_THE_MEMORIES	WEEKLY_CHALLENGES_SUMMER_2018	R3	friends	Easy	200	7 d	10	MissionMemoriesChallenge			500
+THE_POWER_OF_FRIENDSHIP	WEEKLY_CHALLENGES_SUMMER_2018	R3	campaign	Medium	200	7 d	50	WinFightsChallenge	gameMode=FRIEND_CAMPAIGN		500
+TOTAL_CHAOS	WEEKLY_CHALLENGES_SUMMER_2018	R3	creep surge 	Medium	200	7 d	20	WinFightsChallenge	gameMode=SURGE, withoutHeroRole=CONTROL		500
+TRIALS_AND_TRIBULATIONS	WEEKLY_CHALLENGES_SUMMER_2018	R3	daily quests	Easy	200	7 d	7	CompleteQuestsChallenge	specificType=DAILY_TEAM_TRIALS		500
+WARRIORS_WINNINGS	WEEKLY_CHALLENGES_SUMMER_2018	R3	shops	Easy	200	7 d	7	MerchantPurchaseChallenge	merchant=FIGHT_PIT, spendResource=FIGHT_TOKENS, threshold=500, triggersPerDay=1, progressOnSpend=true		500
+ADVANCED_TRAINING	WEEKLY_CHALLENGES_SUMMER_2018	R4	heroes	Medium	200	7 d	2000000	UpgradeSkillsChallenge	countCost=true		500
+AMBUSH	WEEKLY_CHALLENGES_SUMMER_2018	R9000	heist	Medium	200	7 d	15	HeistCombatChallenge	battleType=AMBUSH_FIGHT, requiredSubtype=NORMAL		500
+BRING_OUT_THE_BROOMS	WEEKLY_CHALLENGES_SUMMER_2018	R7	guild war	Medium	200	7 d	1	WinFightsChallenge	gameMode=WAR, cleanSweep=true		500
+DOCKSIDE_DUEL	WEEKLY_CHALLENGES_SUMMER_2018	R4	port	Medium	200	7 d	2	DifficultyModeChallenge	minDifficulty=7, minStars=3, oncePerMode=true, requirePort=true, withoutHeroRole=TANK		500
+HIGHER_LEVEL	WEEKLY_CHALLENGES_SUMMER_2018	R4	heroes	Medium	200	7 d	500000	UseXPDrinkChallenge	countXP=true		500
+LONG_TERM_RELATIONSHIPS	WEEKLY_CHALLENGES_SUMMER_2018	R4	missions	Medium	200	7 d	1	EvolveRealGearChallenge			500
+MASTER_DETECTIVE	WEEKLY_CHALLENGES_SUMMER_2018	R9000	heist	Medium	200	7 d	7	WinHeistChallenge			500
+NO_CONTROL_NO_PROBLEM	WEEKLY_CHALLENGES_SUMMER_2018	R4	trials	Medium	200	7 d	3	DifficultyModeChallenge	minDifficulty=7, minStars=3, oncePerMode=true, requireTeamTrials=true, withoutHeroRole=CONTROL		500
+NOT_TODAY_THIEF	WEEKLY_CHALLENGES_SUMMER_2018	R9000	heist	Hard	200	7 d	1	WinHeistChallenge	minDifficultyLevel=70, minValuables=7		500
+SABOTAGE	WEEKLY_CHALLENGES_SUMMER_2018	R7	guild war	Medium	200	7 d	20	WarSabotageChallenge			500
+SEASIDE_SHOWDOWN	WEEKLY_CHALLENGES_SUMMER_2018	R4	port	Medium	200	7 d	2	DifficultyModeChallenge	minDifficulty=7, minStars=3, oncePerMode=true, requirePort=true, withoutHeroRole=DPS		500
+SEND_IN_THE_TROOPS	WEEKLY_CHALLENGES_SUMMER_2018	R4	guild	Medium	200	7 d	30	PostMercenariesChallenge			500
+SO_NOT_CLUELESS	WEEKLY_CHALLENGES_SUMMER_2018	R9000	heist	Hard	200	7 d	200	HeistClueChallenge	source=INVESTIGATE		500
+SUPPORT_IS_FOR_THE_WEAK	WEEKLY_CHALLENGES_SUMMER_2018	R4	trials	Medium	200	7 d	3	DifficultyModeChallenge	minDifficulty=7, minStars=3, oncePerMode=true, requireTeamTrials=true, withoutHeroRole=SUPPORT		500
+ULTIMATE_WARRIOR	WEEKLY_CHALLENGES_SUMMER_2018	R7	guild war	Medium	200	7 d	5	WinFightsChallenge	gameMode=WAR, countEachWave=true, checkLosses=true		500
+POWER_RUN	WEEKLY_CHALLENGES_SUMMER_2018	R3	city watch	Medium	200	7 d	15	SingleExpeditionChallenge	withoutHeroRole=SUPPORT		500
+SLOW_AND_STEADY	WEEKLY_CHALLENGES_SUMMER_2018	R3	city watch	Hard	200	7 d	15	SingleExpeditionChallenge	withoutHeroRole=DPS		500
+GET_YOUR_HANDS_DIRTY	WEEKLY_CHALLENGES_SUMMER_2018	R3	creep surge 	Hard	200	7 d	10	WinFightsChallenge	gameMode=SURGE, withoutHeroRole=DPS		500
+POWERFUL_MEMORIES	WEEKLY_CHALLENGES_SUMMER_2018	R3	daily quests	Easy	200	7 d	7	CompleteQuestsChallenge	specificType=DAILY_REAL_GEAR		500
+LOYAL_COMPANION	WEEKLY_CHALLENGES_SUMMER_2018	R3	daily quests	Easy	200	7 d	7	CompleteQuestsChallenge	specificType=DAILY_FRIEND_CAMPAIGN		500
+QUALITY_TIME	WEEKLY_CHALLENGES_SUMMER_2018	R3	missions	Hard	200	7 d	2	EarnRealGearChallenge			500
+JUST_THE_TWO_OF_US	WEEKLY_CHALLENGES_SUMMER_2018	R3	friends	Hard	200	7 d	10000	MissionDiskPowerChallenge			500
+SLEEPOVER	WEEKLY_CHALLENGES_SUMMER_2018	R3	missions	Hard	200	7 d	40	MissionMemoriesChallenge			500
+BAZAAR_BINGE	WEEKLY_CHALLENGES_SUMMER_2018	R4	shops	Medium	200	7 d	7	MerchantPurchaseChallenge	merchant=GEAR, spendResource=GEAR_TOKENS, threshold=500, triggersPerDay=1, progressOnSpend=true		500
+MEGA_MEMORIES	WEEKLY_CHALLENGES_SUMMER_2018	R4	shops	Medium	200	7 d	7	MerchantPurchaseChallenge	merchant=MEMORY, spendResource=MEMORY_TOKENS, threshold=500, triggersPerDay=1, progressOnSpend=true		500
+BREAKER_BREAKER	WEEKLY_CHALLENGES_SUMMER_2018	R3	invasion	Medium	200	7 d	20	WinFightsChallenge	gameMode=INVASION_BREAKER		500
+ACTIVE_PARTICIPANT	WEEKLY_CHALLENGES_SUMMER_2018	R3	invasion	Medium	200	7 d	20	InvasionBossRewardChallenge	rewardType=PARTICIPANT		500
+ROBOT_DETECTIVE	WEEKLY_CHALLENGES_SUMMER_2018	R3	invasion	Medium	200	7 d	10	InvasionBossRewardChallenge	rewardType=FINDER		500
+POWER_SURGE	WEEKLY_CHALLENGES_SUMMER_2018	R3	invasion	Medium	200	7 d	50	EmpowerHeroChallenge	singleHero=true		500
+EXOTIC_TECHNOLOGY	WEEKLY_CHALLENGES_SUMMER_2018	R3	invasion	Medium	200	7 d	2500	MerchantPurchaseChallenge	merchant=INVASION, spendResource=BOSS_TECH, progressOnSpend=true		500
+STAYIN_ALIVE	WEEKLY_CHALLENGES_SUMMER_2018	R3	invasion	Medium	200	7 d	25	ReviveHeroChallenge	countAuto=false		500
+MODDED_OUT	WEEKLY_CHALLENGES_SUMMER_2018	R3	mods	Medium	200	7 d	10	ModChallenge	countLevels=true		500
+BE_THE_BREAKER	WEEKLY_CHALLENGES_SUMMER_2018	R5	invasion	Hard	200	7 d	40	WinFightsChallenge	gameMode=INVASION_BREAKER		500
+DEFENDER_OF_THE_GUILD	WEEKLY_CHALLENGES_SUMMER_2018	R5	invasion	Hard	200	7 d	40	InvasionBossRewardChallenge	rewardType=PARTICIPANT		500
+ROBOT_HUNTER	WEEKLY_CHALLENGES_SUMMER_2018	R5	invasion	Hard	200	7 d	20	InvasionBossRewardChallenge	rewardType=FINDER		500
+ULTIMATE_POWER	WEEKLY_CHALLENGES_SUMMER_2018	R5	invasion	Hard	200	7 d	100	EmpowerHeroChallenge	singleHero=true		500
+ALIEN_TECHNOLOGY	WEEKLY_CHALLENGES_SUMMER_2018	R5	invasion	Hard	200	7 d	2500	MerchantPurchaseChallenge	merchant=INVASION, spendResource=BOSS_TECH, progressOnSpend=true		500
+REVIVAL_OF_THE_FITTEST	WEEKLY_CHALLENGES_SUMMER_2018	R5	invasion	Hard	200	7 d	50	ReviveHeroChallenge	countAuto=false		500
+FULLY_MODDED	WEEKLY_CHALLENGES_SUMMER_2018	R5	mods	Hard	200	7 d	20000	SpendResourceChallenge	resourceType=MOD_POWER		500
+ZOOTOPIANS_ON_PATROL	WEEKLY_CHALLENGES_SUMMER_2018	R3	city watch	Medium	200	7 d	15	WinFightsChallenge	gameMode=EXPEDITION, neededCollection=ZOOTOPIA		500
+AVID_COLLECTOR	WEEKLY_CHALLENGES_SUMMER_2018	R9000	collections	Easy	200	7 d	50	EarnMasteryChallenge			500
+TAKE_IT_EASY	WEEKLY_CHALLENGES_SUMMER_2018	R1	combat	Hard	200	7 d	25	WinFightsChallenge	maxWhiteSkills=0		500
+BACK_IN_ACTION	WEEKLY_CHALLENGES_SUMMER_2018	R1	combat	Medium	200	7 d	50	UseSkillsChallenge	countAuto=false		500
+MERCENARY_ARMY	WEEKLY_CHALLENGES_SUMMER_2018	R2	creep surge	Medium	200	7 d	20	MercenaryMultiFightChallenge	gameMode=SURGE, resetOnMiss=true		500
+CRIME_STOPPER	WEEKLY_CHALLENGES_SUMMER_2018	R9000	heist	Medium	200	7 d	10	HeistCombatChallenge	battleType=THIEF_FIGHT, requiredSubtype=NORMAL		500
+WARD_WIPER	WEEKLY_CHALLENGES_SUMMER_2018	R5	invasion	Hard	200	7 d	20	WinFightsChallenge	gameMode=INVASION_WARD		500
+QUITE_A_SHOCK	WEEKLY_CHALLENGES_SUMMER_2018	R3	invasion	Medium	200	7 d	10	WinFightsChallenge	gameMode=INVASION_BOSS, neededMultiplier=5		500
+BE_THE_BACKUP	WEEKLY_CHALLENGES_SUMMER_2018	R3	invasion	Medium	200	7 d	5	InvasionBossAttackChallenge	requireOtherFinder=true		500
+MODDED_UP	WEEKLY_CHALLENGES_SUMMER_2018	R5	mods	Medium	200	7 d	3	ModChallenge	countAdvance=true		500
+PORT_PATROL	WEEKLY_CHALLENGES_SUMMER_2018	R1	port	Easy	200	7 d	14	DifficultyModeChallenge	requirePort=true		500
+TRIAL_MASTER	WEEKLY_CHALLENGES_SUMMER_2018	R1	trials	Hard	200	7 d	45	DifficultyModeChallenge	requireTeamTrials=true		500
+BEDAZZLED	WEEKLY_CHALLENGES_SUMMER_2018	R1	enhancement	Hard	200	7 d	10	EnchantItemsDailyChallenge	oncePerDay=false, minItemRarity=ORANGE, maxItemRarity=ORANGE		500
+UNSTOPPABLE_JUSTICE	WEEKLY_CHALLENGES_SUMMER_2018	R3	city watch	Easy	200	7 d	15	SingleExpeditionChallenge	deathless=true		500
+GIVE_ME_A_BOOST	WEEKLY_CHALLENGES_SUMMER_2018	R1	quests	Medium	200	7 d	15	CompleteQuestsChallenge	requiredType=FREE_STAMINA		500
+CAREER_QUESTER	WEEKLY_CHALLENGES_SUMMER_2018	R1	quests	Medium	200	7 d	5	WeeklyQuestChallenge			500
+DISINFECTANT	WEEKLY_CHALLENGES_SUMMER_2018	R1	campaign	Easy	200	7 d	30	WinFightsChallenge	gameMode=CAMPAIGN, chapter=-1		500
+BIT_BLITZ	WEEKLY_CHALLENGES_SUMMER_2018	R1	campaign	Easy	200	7 d	100	EarnItemsChallenge	category=SHARD, rarity=ORANGE, gameMode=CAMPAIGN		500
+YOURE_REHIRED	WEEKLY_CHALLENGES_SUMMER_2018	R2	mercenaries	Medium	200	7 d	5	HireMercenariesChallenge	sameHero=true		500
+TANK_IT_AWAY	WEEKLY_CHALLENGES_SUMMER_2018	R1	campaign	Medium	200	7 d	10	WinFightsChallenge	gameMode=CAMPAIGN, chapter=-1, exclusiveRole=TANK		500
+CALL_A_MEDIC	WEEKLY_CHALLENGES_SUMMER_2018	R1	campaign	Hard	200	7 d	10	WinFightsChallenge	gameMode=CAMPAIGN, chapter=-1, exclusiveRole=SUPPORT		500
+INCREDIBLE_POWER	WEEKLY_CHALLENGES_SUMMER_2018	R3	city watch	Hard	200	7 d	15	SingleExpeditionChallenge	withHeroCategory=INCREDIBLES		500
+TEAM_PLAYER	WEEKLY_CHALLENGES_SUMMER_2018	R5	invasion	Easy	200	7 d	5	CompleteQuestsChallenge	specificType=DAILY_INVASION_BREAKER		500
+FEELING_ENERGIZED	WEEKLY_CHALLENGES_SUMMER_2018	R3	campaign	Medium	200	7 d	5000	SpendResourceChallenge	resourceType_1=STAMINA, resourceType_2=FRIEND_STAMINA, resourceType_3=INVASION_STAMINA		500
+ONE_HAND_TIED	WEEKLY_CHALLENGES_SUMMER_2018	R1	combat	Medium	200	7 d	15	WinFightsChallenge	maxAttackers=4, withoutGameMode=HEIST		500
+FILL_THE_VAULT	WEEKLY_CHALLENGES_SUMMER_2018	R1	shops	Medium	200	7 d	15000000	EarnResourceChallenge	resource=GOLD		500
+IN_A_JIFFY	WEEKLY_CHALLENGES_SUMMER_2018	R5	friends	Easy	200	7 d	10	WinFightsChallenge	requireFast=true		500
+SOMEBODY_CALL_A_DOCTOR	WEEKLY_CHALLENGES_SUMMER_2018	R1	combat	Easy	200	7 d	1000000	CombatStatsChallenge	stat=HEALING_DONE, countAttackers=true, allowQuickFights=false		500
+CRIT_CRAZY	WEEKLY_CHALLENGES_SUMMER_2018	R1	combat	Easy	200	7 d	5000	CombatStatsChallenge	stat=CRITS_DONE, countAttackers=true, allowQuickFights=false		500
+QUITE_THE_CHARMER	WEEKLY_CHALLENGES_SUMMER_2018	R1	combat	Medium	200	7 d	100	CombatStatsChallenge	stat=TIMES_CHARMED, countDefenders=true, allowQuickFights=false		500
+GOLDEN_GLOW	WEEKLY_CHALLENGES_SUMMER_2018	R1	crates	Hard	200	7 d	100	OpenChestsChallenge	chestType=SILVER		500
+DIAMOND_DELVE	WEEKLY_CHALLENGES_SUMMER_2018	R1	crates	Medium	200	7 d	30	OpenChestsChallenge	chestType=GOLD		500
+GUILD_GLAMOUR	WEEKLY_CHALLENGES_SUMMER_2018	R1	crates	Hard	200	7 d	20	OpenChestsChallenge	chestType=SOCIAL		500
+TOP_SCARER	WEEKLY_CHALLENGES_SUMMER_2018	R1	combat	Medium	200	7 d	100	CombatStatsChallenge	stat=TIMES_SCARED, countDefenders=true, allowQuickFights=false		500
+A_QUICK_STUDY	WEEKLY_CHALLENGES_SUMMER_2018	R1	combat	Medium	200	7 d	100	CombatStatsChallenge	stat=TIMES_STUDIED, countDefenders=true, allowQuickFights=false		500
+CREEP_CRUSHER	WEEKLY_CHALLENGES_SUMMER_2018	R1	combat	Easy	200	7 d	1000	DefeatEnemiesChallenge	requiredCategory=NPC, withoutGameMode=INVASION_BOSS		500
+GET_WRECKED	WEEKLY_CHALLENGES_SUMMER_2018	R3	creep surge	Medium	200	7 d	5	WinFightsChallenge	gameMode=SURGE, neededCollection=WRECK_IT_RALPH		500
+IS_THIS_A_GAME_TO_YOU	WEEKLY_CHALLENGES_SUMMER_2018	R1	campaign	Medium	200	7 d	10	WinFightsChallenge	gameMode=CAMPAIGN, chapter=22, neededCollection=WRECK_IT_RALPH		500
+SUPER_CLEAN	WEEKLY_CHALLENGES_SUMMER_2018	R1	campaign	Medium	200	7 d	10	WinFightsChallenge	gameMode=CAMPAIGN, chapter=22, neededCollection=INCREDIBLES		500
+HERD_IMMUNITY	WEEKLY_CHALLENGES_SUMMER_2018	R1	campaign	Medium	200	7 d	10	WinFightsChallenge	gameMode=CAMPAIGN, chapter=22, neededCollection=ZOOTOPIA		500
+DONT_TOY_WITH_US	WEEKLY_CHALLENGES_SUMMER_2018	R1	campaign	Medium	200	7 d	10	WinFightsChallenge	gameMode=CAMPAIGN, chapter=22, neededCollection=TOY_STORY		500
+DOWNLOAD_COMPLETE	WEEKLY_CHALLENGES_SUMMER_2018	R3	city watch	Easy	200	7 d	5	HireMercenariesChallenge	neededCollection=WRECK_IT_RALPH		500
+HERO_FOR_HIRE	WEEKLY_CHALLENGES_SUMMER_2018	R3	city watch	Easy	200	7 d	5	HireMercenariesChallenge	neededCollection=INCREDIBLES		500
+MAYOR_FOR_A_DAY	WEEKLY_CHALLENGES_SUMMER_2018	R15	city watch	Hard	200	7 d	4	MultiExpeditionChallenge	uniqueDifficulties=true		500
+HEXEPTIONAL	WEEKLY_CHALLENGES_SUMMER_2018	R5	invasion	Medium	200	7 d	10	WinFightsChallenge	gameMode=INVASION_BREAKER, gameMode2=INVASION_WARD, neededModifier=ITEM_HEX		500
+NOT_SO_FAST	WEEKLY_CHALLENGES_SUMMER_2018	R5	invasion	Medium	200	7 d	50	WinFightsChallenge	checkLosses=true, gameMode=INVASION_BREAKER, gameMode2=INVASION_WARD, gameMode3=INVASION_BOSS, neededModifier=ITEM_SLOW		500
+TIME_TO_SHRED	WEEKLY_CHALLENGES_SUMMER_2018	R5	invasion	Medium	200	7 d	60	WinFightsChallenge	checkLosses=true, gameMode=INVASION_BREAKER, gameMode2=INVASION_WARD, gameMode3=INVASION_BOSS, neededModifier=ITEM_ARMOR_SHRED, neededModifier2=ITEM_REALITY_SHRED, countModifiers=true		500
+EVERYTHING_MUST_GO	WEEKLY_CHALLENGES_SUMMER_2018	R1	merchants	Easy	200	7 d	3	MerchantPurchaseChallenge	merchant=NORMAL, neededSlots=6		500
+TIDYING_UP	WEEKLY_CHALLENGES_SUMMER_2018	R1	inventory	Easy	200	7 d	300	SellItemChallenge	category_1=SHARD, category_2=REEL		500
+DONATION_STATION	WEEKLY_CHALLENGES_SUMMER_2018	R1	guild	Easy	200	7 d	35	GuildDonationChallenge	requiredType=HERO_XP		500
+GOLDEN_GIVER	WEEKLY_CHALLENGES_SUMMER_2018	R1	guild	Easy	200	7 d	35	GuildDonationChallenge	requiredType=SKILL_LEVEL		500
+UNBEATABLE	WEEKLY_CHALLENGES_SUMMER_2018	R1	friends	Easy	200	7 d	30	WinFightsChallenge	requireFast=true, resetOnLoss=true, withoutGameMode=INVASION_BOSS		500
+MASTER_PIECES	WEEKLY_CHALLENGES_SUMMER_2018	R9000	collections	Hard	200	7 d	150	EarnMasteryChallenge			500
+CROSSING_BORDERS	WEEKLY_CHALLENGES_SUMMER_2018	R3	collections	Easy	200	7 d	7	AvatarChangeChallenge	oncePerDay=true, requireNewBorder=true		500
+HELP_ME_UP	WEEKLY_CHALLENGES_SUMMER_2018	R1	guild	Easy	200	7 d	5	GuildDonationChallenge	sameRecipiant=true		500
+RAIDING_PARTY	WEEKLY_CHALLENGES_SUMMER_2018	R1	campaign	Medium	200	7 d	1500	RaidChallenge			500
+FRIENDS_FOREVER	WEEKLY_CHALLENGES_SUMMER_2018	R1	campaign	Medium	200	7 d	30	WinFightsChallenge	requireFriends=true, withoutGameMode=FRIEND_CAMPAIGN		500
+TURTLE_UP	WEEKLY_CHALLENGES_SUMMER_2018	R1	combat	Medium	200	7 d	500	CombatStatsChallenge	countAttackers=true, stat=SHIELDS_CREATED		500
+BAD_LUCK	WEEKLY_CHALLENGES_SUMMER_2018	R1	combat	Medium	200	7 d	50	CombatStatsChallenge	countDefenders=true, stat=TIMES_CURSED, allowQuickFights=false		500
+NOT_A_PEEP	WEEKLY_CHALLENGES_SUMMER_2018	R1	combat	Medium	200	7 d	50	CombatStatsChallenge	countDefenders=true, stat=TIMES_SILENCED, allowQuickFights=false		500
+SIGHT_UNSEEN	WEEKLY_CHALLENGES_SUMMER_2018	R1	combat	Medium	200	7 d	50	CombatStatsChallenge	countDefenders=true, stat=TIMES_BLINDED, allowQuickFights=false		500
+DAUNTLESS	WEEKLY_CHALLENGES_SUMMER_2018	R1	combat	Medium	200	7 d	50	CombatStatsChallenge	countAttackers=true, stat=TIMES_INVINCIBLE, allowQuickFights=false		500
+TEA_PARTY	WEEKLY_CHALLENGES_SUMMER_2018	R1	combat	Easy	200	7 d	30	WinFightsChallenge	checkLosses=true, requriredAttacker=MAD_HATTER		500
+LINKED_UP	WEEKLY_CHALLENGES_SUMMER_2018	R1	combat	Easy	200	7 d	30	WinFightsChallenge	checkLosses=true, requriredAttacker=MEGARA		500
+STAR_STUDDED	WEEKLY_CHALLENGES_SUMMER_2018	R1	heroes	Easy	200	7 d	3	EvolveHeroesChallenge	sumEvolutions=true		500
+FAST_TRACKED	WEEKLY_CHALLENGES_SUMMER_2018	R1	heroes	Easy	200	7 d	10	PromoteHeroesChallenge			500
+DESSERT_FIRST	WEEKLY_CHALLENGES_SUMMER_2018	R17	combat	Medium	200	7 d	20	WinFightsChallenge	requriredAttacker=VANELLOPE, requiredDefender=SOULLESS_ONION, countRequriedDefenders=true		500
+DEAD_CHEST_MAN	WEEKLY_CHALLENGES_SUMMER_2018	R11	combat	Medium	200	7 d	20	WinFightsChallenge	requriredAttacker=JACK_SPARROW, requiredDefender=SOULLESS_TREASURE, countRequriedDefenders=true		500
+FUSSY_FLORA	WEEKLY_CHALLENGES_SUMMER_2018	R16	combat	Medium	200	7 d	20	WinFightsChallenge	requriredAttacker=FINNICK, requiredDefender=SOULLESS_CACTUS_N, requiredDefender2=SOULLESS_CACTUS_F, countRequriedDefenders=true		500
+HERO_S_DUTY	WEEKLY_CHALLENGES_SUMMER_2018	R1	combat	Medium	200	7 d	20	WinFightsChallenge	requriredAttacker=CALHOUN, requiredDefender=SOULLESS_BUG_N, requiredDefender2=SOULLESS_BUG_F, countRequriedDefenders=true		500
+LONG_HORNS_OF_THE_LAW	WEEKLY_CHALLENGES_SUMMER_2018	R2	combat	Medium	200	7 d	20	WinFightsChallenge	requriredAttacker=CHIEF_BOGO, requiredDefender=CAT_BURGLAR, countRequriedDefenders=true		500
+BUCKET_OF_BOLTS	WEEKLY_CHALLENGES_SUMMER_2018	R14	combat	Medium	200	7 d	20	WinFightsChallenge	requriredAttacker=REX, requiredDefender=SOULLESS_DINOSAUR, requiredDefender2=SOULLESS_DINOSAUR_F, countRequriedDefenders=true		500
+VANISHING_ACT	WEEKLY_CHALLENGES_SUMMER_2018	R1	combat	Medium	200	7 d	20	WinFightsChallenge	requriredAttacker=VIOLET, requiredDefender=SOULLESS_MAGE_N, requiredDefender2=SOULLESS_MAGE_F, countRequriedDefenders=true		500
+SPARE_PARTS	WEEKLY_CHALLENGES_SUMMER_2018	R1	combat	Medium	200	7 d	20	WinFightsChallenge	requriredAttacker=HIRO, requiredDefender=SOULLESS_GLASS_CANNON_N, requiredDefender2=SOULLESS_GLASS_CANNON_F, countRequriedDefenders=true		500
+KILLING_WITH_KINDNESS	WEEKLY_CHALLENGES_SUMMER_2018	R1	combat	Medium	200	7 d	20	WinFightsChallenge	requriredAttacker=FELIX, requiredDefender=SOULLESS_BRUTE, countRequriedDefenders=true		500
+CROSS_BONES	WEEKLY_CHALLENGES_SUMMER_2018	R1	combat	Medium	200	7 d	20	WinFightsChallenge	requriredAttacker=JACK_SPARROW, requiredDefender=SOULLESS_SKELETON, countRequriedDefenders=true		500
+SPIRIT_CLEANSE	WEEKLY_CHALLENGES_SUMMER_2018	R1	combat	Medium	200	7 d	20	WinFightsChallenge	requriredAttacker=YAX, requiredDefender=SOULLESS_GHOUL_N, requiredDefender2=SOULLESS_GHOUL_F, countRequriedDefenders=true		500
+GLASS_CANNON	WEEKLY_CHALLENGES_SUMMER_2018	R2	combat	Medium	200	7 d	20	WinFightsChallenge	requriredAttacker=HECTOR_BARBOSSA, requiredDefender=SOULLESS_CANNON, countRequriedDefenders=true		500
+FAILED_EXPERIMENTS	WEEKLY_CHALLENGES_SUMMER_2018	R1	combat	Medium	200	7 d	20	WinFightsChallenge	requriredAttacker=STITCH, requiredDefender=SOULLESS_SPLASH_N, requiredDefender2=SOULLESS_SPLASH_F, countRequriedDefenders=true		500
+PACIFIER	WEEKLY_CHALLENGES_SUMMER_2018	R18	combat	Medium	200	7 d	20	WinFightsChallenge	requriredAttacker=JACK_JACK, requiredDefender=SOULLESS_FROST_MONSTER, countRequriedDefenders=true		500
+FREEZE_FRAME	WEEKLY_CHALLENGES_SUMMER_2018	R2	combat	Medium	200	7 d	50	CombatStatsChallenge	stat=ENEMY_FREEZE, countDefenders=true		500
+SLOW_YOUR_ROLL	WEEKLY_CHALLENGES_SUMMER_2018	R2	combat	Medium	200	7 d	50	CombatStatsChallenge	stat=ENEMY_DEBUFF_MOVEMENT, countDefenders=true		500
+SLUGGISH_SLUGGERS	WEEKLY_CHALLENGES_SUMMER_2018	R2	combat	Medium	200	7 d	50	CombatStatsChallenge	stat=ENEMY_DEBUFF_ATTACK_SPEED, countDefenders=true		500
+SPRING_TRAINING	WEEKLY_CHALLENGES_SUMMER_2018	R2	combat	Medium	200	7 d	50	CombatStatsChallenge	stat=ALLY_BUFF_MOVEMENT, countAttackers=true		500
+PUMPED_UP	WEEKLY_CHALLENGES_SUMMER_2018	R2	combat	Medium	200	7 d	50	CombatStatsChallenge	stat=ALLY_BUFF_ATTACK_SPEED, countAttackers=true		500
+COUCH_POTATO	WEEKLY_CHALLENGES_SUMMER_2018	R2	combat	Medium	200	7 d	50	CombatStatsChallenge	stat=ENEMY_DEBUFF_BASIC_DAMAGE, countDefenders=true		500
+FORCE_MULTIPLIER	WEEKLY_CHALLENGES_SUMMER_2018	R2	combat	Medium	200	7 d	50	CombatStatsChallenge	stat=ALLY_BUFF_BASIC_DAMAGE, countAttackers=true		500
+GET_REAL	WEEKLY_CHALLENGES_SUMMER_2018	R2	combat	Medium	200	7 d	50	CombatStatsChallenge	stat=ALLY_BUFF_REALITY, countAttackers=true		500
+PURE_FANTASY	WEEKLY_CHALLENGES_SUMMER_2018	R9000	combat	Medium	200	7 d	50	CombatStatsChallenge	stat=ENEMY_DEBUFF_REALITY, countDefenders=true		500
+HARD_SHELL	WEEKLY_CHALLENGES_SUMMER_2018	R2	combat	Medium	200	7 d	50	CombatStatsChallenge	stat=ALLY_BUFF_ARMOR, countAttackers=true		500
+TAKE_A_LOAD_OFF	WEEKLY_CHALLENGES_SUMMER_2018	R2	combat	Medium	200	7 d	50	CombatStatsChallenge	stat=ENEMY_DEBUFF_ARMOR, countDefenders=true		500
+LOW_BATTERY	WEEKLY_CHALLENGES_SUMMER_2018	R9000	combat	Medium	200	7 d	50	CombatStatsChallenge	stat=ENEMY_DEBUFF_SKILL_POWER, countDefenders=true		500
+MAGIC_WAND	WEEKLY_CHALLENGES_SUMMER_2018	R2	combat	Medium	200	7 d	50	CombatStatsChallenge	stat=ALLY_BUFF_SKILL_POWER, countAttackers=true		500
+ON_THE_LOOSE	WEEKLY_CHALLENGES_SUMMER_2018	R1	combat	Easy	200	7 d	30	WinFightsChallenge	checkLosses=true, requriredAttacker=STITCH		500
+DOUBLE_TROUBLE	WEEKLY_CHALLENGES_SUMMER_2018	R1	combat	Easy	200	7 d	30	WinFightsChallenge	checkLosses=true, requriredAttacker=RALPH, requriredAttacker2=VANELLOPE, minRequriredAttackers=2		500
+CHILL_OUT	WEEKLY_CHALLENGES_SUMMER_2018	R1	combat	Easy	200	7 d	30	WinFightsChallenge	checkLosses=true, requriredAttacker=FROZONE		500
+TRUE_BLUE	WEEKLY_CHALLENGES_SUMMER_2018	R3	mercenaries	Easy	200	7 d	20	HireMercenariesChallenge	neededTeam=BLUE		500
+YOUVE_GOT_MAIL	WEEKLY_CHALLENGES_SUMMER_2018	R1	chat	Medium	200	7 d	10	ChatChallenge	chatRoom=PERSONAL_MESSAGE, friend=true, unique=true, receive=true		500
+CRATE_CRACKER	WEEKLY_CHALLENGES_SUMMER_2018	R1	chests	Medium	200	7 d	200	OpenChestsChallenge			500
+MAXIMUM_MOXIE	WEEKLY_CHALLENGES_SUMMER_2018	R9000	guild	Easy	200	7 d	25	GuildDonationChallenge	requiredType=STAMINA		500
+YELLOW_FELLOWS	WEEKLY_CHALLENGES_SUMMER_2018	R3	mercenaries	Medium	200	7 d	30	HireMercenariesChallenge	neededTeam=YELLOW		500
+UNVALID_INVADERS	WEEKLY_CHALLENGES_SUMMER_2018	R7	invasion	Medium	200	7 d	30	WinFightsChallenge	gameMode=INVASION_BOSS, neededMultiplier=1		500
+NO_NO_INDIGO	WEEKLY_CHALLENGES_SUMMER_2018	R3	surge	Easy	200	7 d	15	WinFightsChallenge	gameMode=SURGE, withoutTeamColor=BLUE		500
+THE_BIGGER_THEY_ARE	WEEKLY_CHALLENGES_SUMMER_2018	R1	arena	Hard	200	7 d	7	WinFightsChallenge	gameMode=FIGHT_PIT, underPowered=10000		500
+BIG_AND_BEEFY	WEEKLY_CHALLENGES_SUMMER_2018	R7	combat	Medium	200	7 d	100	CombatStatsChallenge	stat=TIMES_HARDIED, countAttackers=true		500
+MAROONED	WEEKLY_CHALLENGES_SUMMER_2018	R3	city watch	Easy	200	7 d	15	SingleExpeditionChallenge	withoutHeroTeam=RED		500
+CRIMSON_CRUSADERS	WEEKLY_CHALLENGES_SUMMER_2018	R3	mercenaries	Medium	200	7 d	40	HireMercenariesChallenge	neededTeam=RED		500
+JOIN_THE_FIGHT	WEEKLY_CHALLENGES_SUMMER_2018	R7	invasion	Easy	200	7 d	30	InvasionBossRewardChallenge	rewardType=PARTICIPANT, foundByGuildOnly=true		500
+BADGENSTEIN	WEEKLY_CHALLENGES_SUMMER_2018	R3	enhancement	Medium	200	7 d	500	EnchantItemsDailyChallenge	oncePerDay=false, trackPartialEnchantment=true, progressOnItemsUsed=true		500
+ALCHEMY_MACHINE	WEEKLY_CHALLENGES_SUMMER_2018	R3	shops	Easy	200	7 d	1000000	SellItemChallenge	category_0=GEAR, category_1=SHARD, category_2=REEL, countGoldValue=true		500
+EMOJI_BONANZA	WEEKLY_CHALLENGES_SUMMER_2018	R3	chat	Easy	200	7 d	7	ChatChallenge	requireEmoji=DISNEY, oncePerDay=true		500
+SUPER_SERUM	WEEKLY_CHALLENGES_SUMMER_2018	R7	invasion	Hard	200	7 d	200	EmpowerHeroChallenge	singleHero=true		500
+FREQUENT_SHOPPER	WEEKLY_CHALLENGES_SUMMER_2018	R3	shops	Easy	200	7 d	5	MerchantPurchaseChallenge	merchant=FIGHT_PIT, triggersPerDay=1		500
+FREE_CLIMBING	WEEKLY_CHALLENGES_SUMMER_2018	R3	city watch	Medium	200	7 d	15	SingleExpeditionChallenge	withoutHeroRole=SUPPORT		500
+WARRIORS_ONLY	WEEKLY_CHALLENGES_SUMMER_2018	R7	invasion	Medium	200	7 d	10	WinFightsChallenge	gameMode=INVASION_BOSS, withoutHeroRole=SUPPORT		500
+LOSING_CONTROL	WEEKLY_CHALLENGES_SUMMER_2018	R7	invasion	Medium	200	7 d	20	WinFightsChallenge	gameMode=INVASION_BREAKER, withoutHeroRole=CONTROL		500
+DUCK_BLUR	WEEKLY_CHALLENGES_SUMMER_2018	R3	mercenaries	Easy	200	7 d	5	HireMercenariesChallenge	neededCollection=DUCKTALES		500
+REWRITE_HISTORY	WEEKLY_CHALLENGES_SUMMER_2018	R3	campaign	Medium	200	7 d	10	WinFightsChallenge	gameMode=CAMPAIGN, chapter=22, neededCollection=DUCKTALES		500
+SOLVE_A_MYSTERY	WEEKLY_CHALLENGES_SUMMER_2018	R3	city watch	Hard	200	7 d	15	WinFightsChallenge	gameMode=EXPEDITION, neededCollection=DUCKTALES		500
+WATCH_OUT	WEEKLY_CHALLENGES_SUMMER_2018	R3	city watch	Medium	200	7 d	15	SingleExpeditionChallenge	withoutHeroTeam=BLUE		500
+ON_NOTICE	WEEKLY_CHALLENGES_SUMMER_2018	R3	city watch	Medium	200	7 d	15	SingleExpeditionChallenge	withoutHeroTeam=YELLOW		500
+PRINCESS_POWER	WEEKLY_CHALLENGES_SUMMER_2018	R3	campaign	Medium	200	7 d	10	WinFightsChallenge	gameMode=CAMPAIGN, chapter=22, neededCollection=PRINCESS		500
+ROYAL_GUARD	WEEKLY_CHALLENGES_SUMMER_2018	R3	city watch	Medium	200	7 d	15	WinFightsChallenge	gameMode=EXPEDITION, neededCollection=PRINCESS		500
+BATTLE_ROYALE	WEEKLY_CHALLENGES_SUMMER_2018	R3	combat	Easy	200	7 d	50	WinFightsChallenge	neededCollection=PRINCESS, maxNeededInCollection=1		500
+WINDS_OF_CHANGE	WEEKLY_CHALLENGES_SUMMER_2018	R3	combat	Easy	200	7 d	50	WinFightsChallenge	withoutAttacker=RANDALL_BOGGS		500
+BEAT_DOWN	WEEKLY_CHALLENGES_SUMMER_2018	R3	combat	Easy	200	7 d	50	WinFightsChallenge	withoutAttacker=ANIMAL		500
+HELPING_HAND	WEEKLY_CHALLENGES_SUMMER_2018	R3	mercenaries	Easy	200	7 d	7	PostMercenariesChallenge	oncePerDay=true		500
+IN_SECURITY	WEEKLY_CHALLENGES_SUMMER_2018	R9000	heist	Medium	200	7 d	10	HeistCombatChallenge	requiredSubtype=BODYGUARD_AMBUSH		500
+GOON_B_GONE	WEEKLY_CHALLENGES_SUMMER_2018	R9000	heist	Medium	200	7 d	10	HeistCombatChallenge	requiredSubtype=ACCOMPLICE_AMBUSH		500
+FIRECRACKERS	WEEKLY_CHALLENGES_SUMMER_2018	R3	combat	Easy	200	7 d	30	WinFightsChallenge	requireFast=true		500
+FIREWORKS	WEEKLY_CHALLENGES_SUMMER_2018	R3	combat	Medium	200	7 d	50	WinFightsChallenge	requireFast=true		500
+PATCH_NOTE	WEEKLY_CHALLENGES_SUMMER_2018	R22	combat	Medium	200	7 d	20	WinFightsChallenge	requriredAttacker=KEVIN_FLYNN, requiredDefender=SOULLESS_RED_DOT, countRequriedDefenders=true		500
+INSERT_CREDIT	WEEKLY_CHALLENGES_SUMMER_2018	R3	mercenaries	Easy	200	7 d	7	PostMercenariesChallenge	oncePerDay=true, neededCollection=WRECK_IT_RALPH		500
+HEROIC_HELPERS	WEEKLY_CHALLENGES_SUMMER_2018	R3	mercenaries	Easy	200	7 d	7	PostMercenariesChallenge	oncePerDay=true, neededCollection=INCREDIBLES		500
+CROWNING_ACHIEVEMENT	WEEKLY_CHALLENGES_SUMMER_2018	R3	mercenaries	Easy	200	7 d	5	HireMercenariesChallenge	neededCollection=PRINCESS		500

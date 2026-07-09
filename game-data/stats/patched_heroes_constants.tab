@@ -1,0 +1,10 @@
+	VALUE
+HERO_RANK_REQUIREMENT	RED_10
+PATCH_COMBAT_CALCULATION_1	(v * l * (ceil(a / s))) + ceil(b / s) + ceil(c / s) + (l * (a + b + c))
+PATCH_COMBAT_CALCULATION_2	(v * h * (ceil(d / s))) + ceil(e / s) + (h * (d + e))
+TALENT_VALUE	5
+LOW_TIER_VALUE	1
+HIGH_TIER_VALUE	2
+MAX_STARS	5
+FRANCHISE_TRIALS_STAGE_NUMBER	5
+PATCH_COMBAT_POWER_MULTIPLIER	8000

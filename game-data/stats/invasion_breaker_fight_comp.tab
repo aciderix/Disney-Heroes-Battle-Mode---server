@@ -1,0 +1,49 @@
+	NODE	WEIGHT	QUANTITY	RESULT	BEHAVIOR
+1	ROOT	1	1	<BREAKER>, <WARD_1>, <WARD_2>, <WARD_3>, <WARD_4>	
+3	WARD_1	1	1	<WARD_COMP> {ward=WARD_INCREASE_HP}	
+4	WARD_1	dynamic	1	? RoomTest(16) ? <WARD_COMP> {ward=WARD_INCREASE_DAMAGE} ?	
+5	WARD_1	dynamic	1	? RoomTest(41) ? <WARD_COMP> {ward=WARD_INCREASE_SP} ? 	
+7	WARD_2	1	1	<WARD_COMP> {ward=WARD_INCREASE_ARMOR}	
+8	WARD_2	dynamic	1	? RoomTest(26) ? <WARD_COMP> {ward=WARD_INCREASE_REALITY} ? 	
+10	WARD_3	1	1	<WARD_COMP> {ward=WARD_SHIELDED}	
+11	WARD_3	dynamic	1	? RoomTest(6) ? <WARD_COMP> {ward=WARD_IMMUNE_TO_DISABLES} ? 	
+12	WARD_3	dynamic	1	? RoomTest(21) ? <WARD_COMP> {ward=WARD_DECREASE_SP} ?	
+13	WARD_3	dynamic	1	? RoomTest(36) ? <WARD_COMP> {ward=WARD_DECREASE_ATTACK_SPEED} ? 	
+14	WARD_3	dynamic	1	? RoomTest(46) ? <WARD_COMP> {ward=WARD_DECREASE_HEALING} ? 	
+16	WARD_4	1	1	<WARD_COMP> {ward=WARD_DPS_LESS_DAMAGE}	Try NoneAre(SpecificHeroes, SHANK) & NoneAre(SpecificHeroes, SHANK)
+17	WARD_4	dynamic	1	? RoomTest(11) ? <WARD_COMP> {ward=WARD_TANKS_EXTRA_DAMAGE} ? 	
+18	WARD_4	dynamic	1	? RoomTest(31) ? <WARD_COMP> {ward=WARD_SUPPORT_LESS_ENERGY} ? 	
+20	BREAKER	1	1	<COMP> {level=$BREAKER_LEVEL$} {stars=$BREAKER_STARS$} {rarity=$BREAKER_RARITY$}	EnableRedSkills(20, 10) & EnergyPerPage
+21	WARD_COMP	1	1	<COMP> {level=$WARD_LEVEL$} {stars=$WARD_STARS$} {rarity=$WARD_RARITY$}	
+23	COMP	1	1	<DPS>{boss=true}, <DPS>, <DPS>, <SUPPORT>, <SUPPORT>	Try NoDups & NoDups
+24	COMP	1	1	<DPS>{boss=true}, <DPS>, <DPS>, <DPS>, <SUPPORT>	Try NoDups & NoDups
+25	COMP	1	1	<DPS>{boss=true}, <DPS>, <DPS>, <DPS>, <DPS>	Try NoDups & NoDups
+26	COMP	1	1	<TANK>, <SUPPORT>{boss=true}, <SUPPORT>, <CONTROL>, <CONTROL>	Try NoDups & NoDups
+27	COMP	1	1	<TANK>, <DPS>, <SUPPORT>, <CONTROL>, <CONTROL>{boss=true}	Try NoDups & NoDups
+28	COMP	1	1	<TANK>, <DPS>, <SUPPORT>{boss=true}, <SUPPORT>, <CONTROL>	Try NoDups & NoDups
+29	COMP	1	1	<TANK>, <DPS>, <DPS>, <CONTROL>, <CONTROL>{boss=true}	Try NoDups & NoDups
+30	COMP	1	1	<TANK>, <DPS>{boss=true}, <DPS>, <CONTROL>, <SUPPORT>	Try NoDups & NoDups
+31	COMP	1	1	<TANK>, <DPS>, <DPS>, <SUPPORT>{boss=true}, <SUPPORT>	Try NoDups & NoDups
+32	COMP	1	1	<TANK>{boss=true}, <DPS>, <DPS>, <DPS>, <CONTROL>	Try NoDups & NoDups
+33	COMP	1	1	<TANK>, <DPS>, <DPS>, <DPS>, <DPS>{boss=true}	Try NoDups & NoDups
+34	COMP	1	1	<TANK>{boss=true}, <TANK>, <DPS>, <SUPPORT>, <CONTROL>	Try NoDups & NoDups
+35	COMP	1	1	<TANK>, <TANK>, <DPS>, <SUPPORT>, <SUPPORT>{boss=true}	Try NoDups & NoDups
+36	COMP	1	1	<TANK>{boss=true}, <TANK>, <DPS>, <DPS>, <SUPPORT>	Try NoDups & NoDups
+38	DPS	auto	1	<DPS_HEROES>	PickRandom
+39	DPS	auto	1	<DPS_NPCS>	PickRandom
+40	SUPPORT	auto	1	<SUPPORT_HEROES>	PickRandom
+41	SUPPORT	auto	1	<SUPPORT_NPCS>	PickRandom
+42	CONTROL	auto	1	<CONTROL_HEROES>	PickRandom
+43	CONTROL	auto	1	<CONTROL_NPCS>	PickRandom
+44	TANK	auto	1	<TANK_HEROES>	PickRandom
+45	TANK	auto	1	<TANK_NPCS>	PickRandom
+47	DPS_HEROES	1	1	<USABLE_HEROES>	RetainIf(HeroRole, DPS)
+48	SUPPORT_HEROES	1	1	<USABLE_HEROES>	RetainIf(HeroRole, SUPPORT)
+49	CONTROL_HEROES	1	1	<USABLE_HEROES>	RetainIf(HeroRole, CONTROL)
+50	TANK_HEROES	1	1	<USABLE_HEROES>	RetainIf(HeroRole, TANK)
+52	DPS_NPCS	1	1	<USABLE_NPCS>	RetainIf(HeroRole, DPS)
+53	SUPPORT_NPCS	1	1	<USABLE_NPCS>	RetainIf(HeroRole, SUPPORT)
+54	CONTROL_NPCS	1	1	<USABLE_NPCS>	RetainIf(HeroRole, CONTROL)
+55	TANK_NPCS	1	1	<USABLE_NPCS>	RetainIf(HeroRole, TANK)
+57	USABLE_NPCS	1	1	<@NPCS>	RemoveIf(SpecificHeroes, TEST_DUMMY, CAT_BURGLAR, MAMA_BOT, SOULLESS_AUTOTURRET, MEGAVOLT, SOULLESS_MEGA_BRUTE, SOULLESS_MEGA_MAGE, MEGA_VIRUS)
+58	USABLE_HEROES	1	1	<@AVAILABLE_HEROES>	RemoveIf(SpecificHeroes, MEGARA)

@@ -1,0 +1,21 @@
+	NODE	WEIGHT	QUANTITY	RESULT	BEHAVIOR
+1	POSSIBLE_HEROES	1	0		
+2	POSSIBLE_GEAR	1	0	<OLD_GEAR>	Try NoDups & AllAre (AvailableItem)
+3	ROOT	1	1	? HasBulkBonus ? <ROOT_10X> ? <ROOT_1X>	
+4	ROOT_1X	1	1	<X>,<X>,<X>,<X>,<X>,<X>,<X>,<X>,<X>,<X>	RetainCount(Count)
+5	ROOT_10X	1	1	<X>,<X>,<X>,<X>,<X>,<X>,<X>,<X>,<X>,<X>	RetainCount(Count)
+6	X	1	1	<X2>	PickRandom
+7	X2	1	1	<EQUIPABLE_BADGE>, <NEXT_BADGE>, <FALLBACK>	NumOfItems(0, 10, true)
+8	EQUIPABLE_BADGE	1	1	<OLD_GEAR>	EquipableNeededGear(-1, no-recurse) & Shuffle
+9	NEXT_BADGE	1	1	<OLD_GEAR>	NeededGear(-1, no-recurse) & Shuffle
+10	FALLBACK	1	1	<TOKENS>, <TOKENS>, <TOKENS>, <TOKENS>, <TOKENS>, <TOKENS>, <TOKENS>, <TOKENS>, <TOKENS>, <TOKENS>	
+11	TOKENS	1	150 to 5000	GEAR_TOKENS	ScaleByTeamLevel
+12	OLD_GEAR	1	1	[GEAR_CHECK]	RetainIf(OldItem, 1)
+13	GEAR_CHECK	1	1	? TeamLevelTest(1,10000) ? <@SAPPHIRE_FULL_LIST>,<@EMERALD_FULL_LIST>,<@YELLOW_FULL_LIST>,<@RED_FULL_LIST>,<@ORANGE_FULL_LIST>,<@PURPLE_FULL_LIST> ?	
+14	GEAR_CHECK	1	1	? TeamLevelTest(1,425) ? <@YELLOW_FULL_LIST> ?	
+15	GEAR_CHECK	1	1	? TeamLevelTest(1,245) ? <@RED_FULL_LIST> ?	
+16	GEAR_CHECK	1	1	? TeamLevelTest(1,135) ? <@ORANGE_FULL_LIST> ?	
+17	GEAR_CHECK	1	1	? TeamLevelTest(1,90) ? <@PURPLE_FULL_LIST> ?	
+18	GEAR_CHECK	1	1	? TeamLevelTest(1,65) ? <@BLUE_FULL_LIST> ?	
+19	GEAR_CHECK	1	1	? TeamLevelTest(1,35) ? <@GREEN_FULL_LIST> ?	
+20	GEAR_CHECK	1	1	? TeamLevelTest(1,20) ? <@WHITE_FULL_LIST> ?	

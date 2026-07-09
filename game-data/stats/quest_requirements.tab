@@ -1,0 +1,17 @@
+	SPEC
+Once	QuestCompletionCount(<currentQuest>, 0, 0)
+RepeatOnly	QuestCompletionCount(<currentQuest>, 1)
+FollowUp	QuestCompletionCount(<previousQuest>, 1)
+PrevNotStarted	!QuestStarted(<previousQuest>)
+DailyFollowUp	HasCompletedQuestToday(<previousQuest>)
+OncePerDay	!HasCompletedQuestToday(<currentQuest>)
+HasCompletedQuest	QuestCompletionCount {minCompletions=1}
+HasMonthlyCard	UserCount(MONTHLY_DIAMOND_DAYS, 1)
+MonthlyCardClaimed	HasCompletedQuestToday(1)
+WarCalimOptions	HasActiveGuildWar | DailyUses(war_activity, 1)
+InvasionBreakerVisible	HasActiveInvasion | DailyUses(invasion_stamina_spent, 60)
+InvasionBossVisible	HasActiveInvasion | DailyUses(invasion_boss_attack, 3)
+HasMegaMonthlyCard	UserCount(MONTHLY_MEGA_DIAMOND_DAYS, 1)
+MegaMonthlyCardClaimed	HasCompletedQuestToday(36)
+SpotlightTrialMedal	QuestCounter(spotlightTrialDailyUses, <days>), @SpotlightTrialEventID(<eventID>)
+ShowSpotlightTrialMedal	SpotlightTrialMedal | EventActive(<eventID>)

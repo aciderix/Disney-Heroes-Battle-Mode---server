@@ -1,0 +1,19 @@
+# Game binary (copyrighted, ~96 MB) — obtain separately, see docs/ASSETS.md
+*.apk
+*.aab
+*.dex
+# Decompiled bytecode (regenerable via tools/decompile.sh)
+libs/*.jar
+classes*.jar
+/decompiled/
+/build/
+/run/
+# Downloaded live assets (large; from archive.org — see docs/ASSETS.md)
+/assets-cache/
+*.zip
+# Scratch / OS
+*.log
+.DS_Store
+__pycache__/
+*.pyc
+/tmp/
