@@ -32,3 +32,5 @@ __pycache__/
 /desktop-port/.gradle/
 .gradle/
 /libs/game-logic.jar
+/desktop-port/hs_err_pid*.log
+/desktop-port/replay_pid*.log

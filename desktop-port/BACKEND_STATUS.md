@@ -7,12 +7,22 @@ ce qui est **différé / stubbé** (pour ne rien oublier). Légende fidélité (
 > Mis à jour à chaque avancée. Relié à `PROGRESS.md` (récit) et aux `// DEFERRED (#TAG)` du code.
 
 ## Progrès de boot atteint (2026-07-10)
-Le jeu **démarre jusqu'à l'écran de chargement** et **rend des frames** :
-`GameMain.create()` **OK** (texture compression → **ETC1**, RPGAssetManager, shaders, viewport,
-ScreenManager, UI stats XHDPI 1280×720) → `render()` → **LoadingScreen** exécute ses tâches
-(`LoadBootAtlasUI`, `LoadPerBlueUI`, `ShowDisneyLogo`, `StartServerLogin`…). Données de stats
-`.tab` chargées via notre ouvreur. **Bloqué ensuite sur** : (a) réseau `DhNet` (login) non
-implémenté ; (b) `android.os.SystemClock.elapsedRealtimeNanos()` absent des stubs Android.
+Le jeu **rend l'écran de chargement/splash complet** (logos Disney + PerBlue, **splash UI
+"Disney Heroes: Battle Mode" avec barre Loading** — capture `build/boot.png`). Séquence de
+tâches franchie : `LoadBootAtlasUI`, `LoadPerBlueUI`, `StartServerLogin` (**login POST envoyé
+via `DhNet`**), `ShowDisneyLogo`, `WaitForDisneyAnimation`, `ShowPerBlueUI`,
+`WaitForPerBlueAnimation`, `LoadNetworkEvents`, `FinishLoadSplashUI`, `ShowSplashUI`. 120 frames
+rendues + capture. `GameMain.create()` OK (ETC1, XHDPI 1280×720), stats `.tab` chargées.
+
+Corrigé depuis : **#ANDROIDSTUBS** (`SystemClock` + `Process` fonctionnels), **#NET** (`DhNet`
+HTTP réel → login envoyé), **JIT** (`-XX:TieredStopAtLevel=1` : le C2 plantait sur le bytecode
+dex2jar — `GraphKit::use_exception_state`).
+
+**Bloqué ensuite sur** : (a) **#LOGIN** — le login part vers le serveur mort
+`login.disneyheroesgame.com` (on n'a redirigé que `contentLocation`, pas l'hôte de login) →
+fallback OFFLINE ; il faut rediriger l'hôte de login vers notre serveur + servir `POST /login`.
+(b) **#SPINE** — `libspine-native64.so` (animation squelettique) absent → erreurs assets non
+fatales. (c) contenu téléchargé requis (déjà fourni localement / auto via serveur de contenu).
 
 ## Shims implémentés
 
@@ -40,6 +50,14 @@ implémenté ; (b) `android.os.SystemClock.elapsedRealtimeNanos()` absent des st
   (API 16). Fournir une classe `android.os.SystemClock` fonctionnelle (→ `System.nanoTime()`)
   **avant** les stubs sur le classpath, ou un jar de stubs d'API plus récente. Un crash JVM a
   suivi ce `NoSuchMethodError` (thread réseau) → à confirmer une fois corrigé.
+- **#LOGIN** (bloquant progression) — rediriger l'**hôte de login** de `ServerType.LIVE` (pas
+  seulement `contentLocation`) vers notre serveur, et servir **`POST /login`** (réponse : statut
+  + adresse du serveur de jeu) ; puis le handshake TCP `ClientInfo1`→`BootData1` (serveur déjà
+  prêt : `server/java/dhserver/LoginServer.java`). Sans ça → fallback OFFLINE.
+- **#SPINE** — `libspine-native64.so` (natif d'animation squelettique Spine de PerBlue,
+  `com.perblue.heroes.cspine.Native`) absent (les `.so` sont dans les splits APK par ABI, pas
+  dans le base APK). À extraire d'un split APK / de la version Google Play et fournir sur le
+  classpath (SharedLibraryLoader). Sans lui : animations cassées (erreurs non fatales au boot).
 - **#AUDIO** — backend audio réel (OpenAL LWJGL + décodage OGG STB Vorbis), depuis `DsAudio`.
   Actuellement muet (no-op) ; non requis pour le rendu.
 - **#CONSENT** — vérifier les **clés/valeurs exactes** des prefs d'accord (confidentialité/CGU)

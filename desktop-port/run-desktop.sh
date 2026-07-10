@@ -68,7 +68,9 @@ if [ -z "${DISPLAY:-}" ]; then
   echo "[desktop] Xvfb :99 (pid $XVFB_PID)"
 fi
 
-JOPTS="-Xverify:none -Dorg.lwjgl.util.Debug=false -Ddh.rundir=$BUILD/run"
+# -XX:TieredStopAtLevel=1 : n'utiliser que le JIT C1. Le C2 (compilation agressive) plante
+# sur le bytecode issu de dex2jar (GraphKit::use_exception_state) — bug JIT, pas notre logique.
+JOPTS="-Xverify:none -XX:TieredStopAtLevel=1 -Dorg.lwjgl.util.Debug=false -Ddh.rundir=$BUILD/run"
 [ -f "$NATDIR/libgdx64.so" ] && JOPTS="$JOPTS -Ddh.gdxnative=$NATDIR/libgdx64.so"
 [ -n "${DH_SERVER:-}" ] && JOPTS="$JOPTS -Ddh.server=$DH_SERVER"
 [ -n "${DH_FRAMES:-}" ] && JOPTS="$JOPTS -Ddh.frames=$DH_FRAMES"
