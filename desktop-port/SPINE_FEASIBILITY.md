@@ -53,6 +53,18 @@ Sur un vrai appareil/émulateur Android, le natif ARM (`armeabi-v7a`/`arm64-v8a`
   matcher, et il faut réimplémenter les bits custom PerBlue (glitch, vertex weight). Fragile.
 - **Seul gain vs A : la vitesse.** Pas rentable pour ce jeu.
 
+## ✅ VALIDÉ concrètement (test de dé-risque)
+`spine-libgdx 3.6.53.1` (Maven) charge **un vrai `.skel` du jeu** en entier
+(`world/units/soulless_brute/spine/soulless_brute.skel`) : version **3.6.41** reconnue,
+**70 os, 31 slots, 1 skin, 6 animations** (attack, death, hit, idle, victory, walk). Aucun
+« version mismatch ». ⇒ **le format des animations du jeu est 100 % lisible par le runtime
+Java standard.** L'option A est confirmée faisable. (Test : `desktop-port/diag/SpineParseTest.java`.)
+
+Le format de sommets du renderer du jeu (`NativeSkeletonRenderer`) = **teinte 2 couleurs**
+(`a_position`, `a_light`, `a_dark`, `a_texCoord0`), exactement ce que produit
+`com.esotericsoftware.spine.utils.TwoColorPolygonBatch` (déjà présent dans l'APK). ⇒ le rendu
+Java est aligné avec le pipeline du jeu.
+
 ## Recommandation
 **Option A.** C'est la seule qui livre **les 3 cibles (Windows/Linux/Android) avec un seul code
 portable, sans natif**, testable ici, et sa faisabilité est confirmée HAUTE (Spine 3.6 standard,
