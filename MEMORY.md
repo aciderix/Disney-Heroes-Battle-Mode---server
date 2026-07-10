@@ -222,13 +222,19 @@ Dépôt de référence (`/workspace/dragonsoul-web`, branche `claude/game-transp
    `{"status":"good","data":"host:port"}` → **se connecte à notre serveur de jeu TCP**
    (`run-online.sh` : contenu+login :8080 + jeu :8081 + client). Contenu = **auto** via le
    FileDownloader du jeu (java.net) pointé sur notre serveur ; `fetch_assets.sh` = cache offline.
-   **#SPINE ✅ RÉSOLU** sans le `.so` : module Java `com.perblue.heroes.cspine.*` (shadow
-   classpath) sur **spine-libgdx 3.6.53.1** (atlas/skel `@native` re-résolus ; `NativeSkeletonRenderer`
-   maillage 2-couleurs). **#CPARTICLE ⚠️ PARTIEL** : 2ᵉ moteur natif `cparticle.*` (`.np`) — shadow
-   de `cparticle.Native` seul (chargement réel, rendu différé). Le boot franchit les deux animations
-   logo (Disney + PerBlue) sans crash (capture `desktop-port/build/spine-test.png`).
-   ← PROCHAINE ÉTAPE : `run-online.sh` → login `ClientInfo1`→`BootData1` → menu / tutoriel
-   `IntroTutorialActV1` (nouveau joueur, BootData neuf). Détail : `desktop-port/BACKEND_STATUS.md`.
+   **✅ LE JEU ATTEINT LE MAINSCREEN INTERACTIF** de bout en bout avec NOTRE serveur (capture
+   `desktop-port/build/online.png` : ville hivernale animée + UI complète héros/objets/quêtes +
+   « CHOOSE NAME » = nouveau joueur). Chaîne : `/login` → BootData1 (notre LoginServer) →
+   `handleBootData` → MainScreen. Correctifs clés (aucun stub) : **reframe ASM** de game-logic.jar
+   (StackMapTable → plus de crash JVM sur les stats binaires, retrait `-Xverify:none`) ; shadow
+   **FirebasePerfUrlConnection** (analytics off, download réel) ; **DhBridges** no-op imbriqués
+   (purchasing) ; **#SPINE ✅ RÉEL** : module `cspine.*` sur spine-libgdx 3.6.53.1 **re-ciblé sur
+   l'ABI PerBlue** (shadow `DataInput` + patcheur ASM `PatchGdxCalls` : `Array.add …V→…Z`) → 0 échec
+   `.skel`, squelettes animés. **#CPARTICLE ⚠️ DETTE** : moteur natif `.np` non rendu (stub
+   `cparticle.Native` étiqueté ; blocage #NP-V3 = format v3 ≠ writer courant, cf. `NP_FORMAT.md`).
+   ← PROCHAINES ÉTAPES : (a) routage nouveau joueur → tutoriel `IntroTutorialActV1` + **BootData
+   complet/correct** (serveur autoritatif) ; (b) #NP-V3 (particules réelles) ; (c) persistance.
+   Détail : `desktop-port/BACKEND_STATUS.md`.
 7. [ ] **Persistance** (SQLite) + **passerelle/multi-serveur** (liste, mot de passe).
 8. [ ] **Outil d'extraction data → format serveur** (les `.tab` chargés tels quels).
 
