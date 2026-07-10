@@ -35,3 +35,4 @@ __pycache__/
 /desktop-port/hs_err_pid*.log
 /desktop-port/replay_pid*.log
 libs/game-logic-framed.jar
+libs/spine-libgdx-perblue.jar

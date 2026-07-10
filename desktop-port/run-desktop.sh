@@ -27,6 +27,27 @@ if [ ! -f "$GAMELOGIC" ] || [ "$SRC_GAME" -nt "$GAMELOGIC" ]; then
   zip -q -d "$GAMELOGIC" 'org/lwjgl/*' 'com/badlogic/gdx/backends/*' >/dev/null 2>&1 || true
 fi
 
+# --- Outils de bytecode (ASM) : réframe game-logic + re-cible spine sur l'ABI PerBlue ---
+MVN="https://repo1.maven.org/maven2"
+ASM="$HOME/.m2/repository/org/ow2/asm/asm/9.7/asm-9.7.jar"
+if [ ! -f "$ASM" ]; then
+  ASM="$BUILD/asm-9.7.jar"; [ -f "$ASM" ] || { echo "[desktop] téléchargement ASM ..."; mkdir -p "$BUILD"; curl -fsSL -o "$ASM" "$MVN/org/ow2/asm/asm/9.7/asm-9.7.jar"; }
+fi
+REFRAME_CLS="../tools/reframe/classes"
+[ -f "$REFRAME_CLS/ReframeJar.class" ] || { mkdir -p "$REFRAME_CLS"; javac -cp "$ASM" -d "$REFRAME_CLS" ../tools/reframe/src/ReframeJar.java; }
+[ -f "$REFRAME_CLS/PatchGdxCalls.class" ] || javac -cp "$ASM" -d "$REFRAME_CLS" ../tools/reframe/src/PatchGdxCalls.java
+
+# spine-libgdx compilé contre le gdx STOCK ; on ré-aligne ses appels gdx sur l'ABI MODIFIÉE de
+# PerBlue (ex. Array.add ...V -> ...Z). Sinon NoSuchMethodError au décodage des .skel (tous les
+# squelettes : logos, décor, héros de combat). Cf. tools/reframe/src/PatchGdxCalls.java.
+SPINE_PB="../libs/spine-libgdx-perblue.jar"
+if [ ! -f "$SPINE_PB" ] || [ "$SRC_GAME" -nt "$SPINE_PB" ]; then
+  SPINE_STOCK="$BUILD/spine-libgdx-3.6.53.1.jar"
+  [ -f "$SPINE_STOCK" ] || { echo "[desktop] téléchargement spine-libgdx ..."; curl -fsSL -o "$SPINE_STOCK" "$MVN/com/esotericsoftware/spine/spine-libgdx/3.6.53.1/spine-libgdx-3.6.53.1.jar"; }
+  echo "[desktop] re-ciblage de spine-libgdx sur l'ABI PerBlue ..."
+  java -cp "$REFRAME_CLS:$ASM" PatchGdxCalls "$SRC_GAME" "$SPINE_STOCK" "$SPINE_PB" | grep -v 'Picked up' || true
+fi
+
 echo "[desktop] compilation ..."
 gradle --no-daemon -q compileJava 2>/dev/null | grep -v 'Picked up' || true
 RUNTIME_CP=$(gradle --no-daemon -q printRuntimeClasspath 2>/dev/null | grep -v 'Picked up' | tail -1)
@@ -36,11 +57,8 @@ RUNTIME_CP=$(gradle --no-daemon -q printRuntimeClasspath 2>/dev/null | grep -v '
 # class file ... in method loadBinaryData »). On réécrit tout game-logic.jar avec COMPUTE_FRAMES
 # (frames valides) → vérificateur rapide par table, plus de crash, et on peut retirer -Xverify:none.
 FRAMED="../libs/game-logic-framed.jar"
-ASM="$HOME/.m2/repository/org/ow2/asm/asm/9.7/asm-9.7.jar"
-REFRAME_CLS="../tools/reframe/classes"
 if [ ! -f "$FRAMED" ] || [ "$GAMELOGIC" -nt "$FRAMED" ]; then
   echo "[desktop] reframe de game-logic.jar (COMPUTE_FRAMES, ~10s) ..."
-  [ -f "$REFRAME_CLS/ReframeJar.class" ] || { mkdir -p "$REFRAME_CLS"; javac -cp "$ASM" -d "$REFRAME_CLS" ../tools/reframe/src/ReframeJar.java; }
   java -cp "$REFRAME_CLS:$ASM:$RUNTIME_CP" ReframeJar "$GAMELOGIC" "$FRAMED" | grep -v 'Picked up' || true
 fi
 

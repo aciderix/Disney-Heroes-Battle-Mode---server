@@ -315,6 +315,31 @@ Package `com.perblue.heroes.assets_external` : `ExternalAssetManager` (orchestre
   (capture `desktop-port/build/spine-test.png`). Reste bloqué au login en mode OFFLINE (attendu :
   `run-desktop.sh` sans `DH_SERVER` vise `login.disneyheroesgame.com`).
 
+### Login → BootData → MainScreen bout-en-bout + Spine réparé (ABI PerBlue)
+- **Reframe ASM de game-logic.jar** (`tools/reframe/ReframeJar`) : recalcule les StackMapTable de
+  toutes les classes (dex2jar les omet) → plus de crash JVM `generateOopMap.cpp` (« Illegal class
+  file … loadBinaryData ») sur le parse des stats binaires ; on retire `-Xverify:none`. Sémantique
+  inchangée (métadonnées de vérif seulement) — c'est la solution durable prévue dans SHIMS.md.
+- **Shadow `FirebasePerfUrlConnection.instrument`** → renvoie la connexion réelle (désactive
+  l'analytics Firebase qui plantait le thread de téléchargement via le stub `StrictMode`). Le
+  téléchargement HTTP du contenu requis reste réel (#BRIDGES).
+- **DhBridges** : `INative.createPurchasingInterface()` (et toute méthode renvoyant une interface)
+  renvoie un NO-OP imbriqué au lieu de `null` → `setNativeAccess` ne lève plus, `handleBootData`
+  n'a plus de NPE `purchasing`. **Résultat : login → BootData → `handleBootData` → MainScreen** de
+  bout en bout avec NOTRE serveur (le client se connecte à :8081, reçoit notre BootData1).
+- **Spine réparé (ABI)** — les `.skel` échouaient sur `NoSuchMethodError` (tous : logos, décor,
+  **héros de combat**). Deux causes, deux vrais correctifs :
+  1. `com.badlogic.gdx.utils.DataInput` de PerBlue réduit par ProGuard (plus de `readString()`/
+     `readInt(boolean)` var-int, requis par spine) → **shadow** avec l'implémentation EXACTE de
+     libGDX 1.9.7 (self-contained).
+  2. spine-libgdx 3.6.53.1 (Maven) est compilé contre le gdx STOCK, mais PerBlue a modifié l'ABI
+     (ex. `Array implements Collection` → `add(Object)` renvoie `boolean`, pas `void`) → **patcheur
+     ASM** `tools/reframe/PatchGdxCalls` réécrit les 106 appels gdx divergents sur les descripteurs
+     réels de game.jar (+ `POP` si `void`→valeur) → `spine-libgdx-perblue.jar`.
+  ⇒ **0 échec de chargement `.skel`**, squelettes chargés ET animés, jeu au **MainScreen** interactif.
+- **#CPARTICLE** : toujours en dette (#NP-V3, format `.np` v3 ≠ writer courant, cf. NP_FORMAT.md).
+  Le stub cparticle.Native reste en place (étiqueté) pour que le jeu tourne ; particules non rendues.
+
 ### Point de reprise
 Modules natifs Spine/particules franchis. **Prochaine étape** : lancer **`run-online.sh`**
 (contenu `:8080` + login + serveur de jeu `:8081`, `DH_SERVER`) → franchir le login
