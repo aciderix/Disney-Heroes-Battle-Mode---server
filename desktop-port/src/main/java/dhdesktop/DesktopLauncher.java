@@ -165,19 +165,38 @@ public final class DesktopLauncher {
         System.out.println("[launcher] capture: " + f.getPath());
     }
 
-    /** Réécrit ServerType.LIVE.contentLocation vers notre serveur, par réflexion (sans patch). */
+    /**
+     * Réécrit ServerType.LIVE vers notre serveur, par réflexion (SANS patch bytecode) :
+     *  - gameHost/gamePort = hôte HTTP de login (le client POST {gameHost}:{gamePort}/login) ;
+     *  - contentLocation = notre index.txt.
+     * gameHost inclut le protocole (ex. "http://127.0.0.1") car l'URL de login est construite
+     * comme {gameHost} + ":" + {gamePort} + "/login". Le serveur de JEU (TCP) est renvoyé par
+     * la réponse JSON de /login ("data":"host:port"), pas fixé ici.
+     */
     private static void maybeRedirectServer(String hostPort) {
         if (hostPort == null || hostPort.isEmpty()) return;
         try {
+            String host = hostPort;
+            int port = 8080;
+            int c = hostPort.lastIndexOf(':');
+            if (c > 0) { host = hostPort.substring(0, c); port = Integer.parseInt(hostPort.substring(c + 1)); }
+
             Class<?> st = Class.forName("com.perblue.heroes.ServerType");
             @SuppressWarnings({"unchecked", "rawtypes"})
             Object live = Enum.valueOf((Class) st, "LIVE");
-            Field f = st.getDeclaredField("contentLocation");
-            f.setAccessible(true);
-            f.set(live, "http://" + hostPort + "/live/index.txt");
-            System.out.println("[launcher] ServerType.LIVE.contentLocation -> " + hostPort);
+            set(st, live, "gameHost", "http://" + host);
+            setInt(st, live, "gamePort", port);
+            set(st, live, "contentLocation", "http://" + hostPort + "/live/index.txt");
+            System.out.println("[launcher] ServerType.LIVE -> login http://" + hostPort + "/login, content http://" + hostPort + "/live/index.txt");
         } catch (Throwable t) {
             System.out.println("[launcher] redirection ServerType impossible (" + t + ")");
         }
+    }
+
+    private static void set(Class<?> cls, Object inst, String field, String v) throws Exception {
+        Field f = cls.getDeclaredField(field); f.setAccessible(true); f.set(inst, v);
+    }
+    private static void setInt(Class<?> cls, Object inst, String field, int v) throws Exception {
+        Field f = cls.getDeclaredField(field); f.setAccessible(true); f.setInt(inst, v);
     }
 }

@@ -18,11 +18,22 @@ Corrigé depuis : **#ANDROIDSTUBS** (`SystemClock` + `Process` fonctionnels), **
 HTTP réel → login envoyé), **JIT** (`-XX:TieredStopAtLevel=1` : le C2 plantait sur le bytecode
 dex2jar — `GraphKit::use_exception_state`).
 
-**Bloqué ensuite sur** : (a) **#LOGIN** — le login part vers le serveur mort
-`login.disneyheroesgame.com` (on n'a redirigé que `contentLocation`, pas l'hôte de login) →
-fallback OFFLINE ; il faut rediriger l'hôte de login vers notre serveur + servir `POST /login`.
-(b) **#SPINE** — `libspine-native64.so` (animation squelettique) absent → erreurs assets non
-fatales. (c) contenu téléchargé requis (déjà fourni localement / auto via serveur de contenu).
+### Mise à jour — LOGIN fonctionnel de bout en bout (2026-07-10)
+Flux de connexion RÉEL vérifié (`desktop-port/run-online.sh` : contenu+login Python :8080 +
+serveur de jeu TCP Java :8081 + client) :
+- `ServerType.LIVE` redirigé (réflexion, sans patch) : login `http://127.0.0.1:8080/login`,
+  contenu idem. Le client **POST/GET son login** → réponse **`{"status":"good","data":
+  "127.0.0.1:8081"}`** → **`[NetworkProvider] Connection to 127.0.0.1:8081 opened`** : le vrai
+  client **se connecte à NOTRE serveur de jeu**. #LOGIN (HTTP) = **fait**.
+- Stats `.tab`/`.tabb` : `forceText()=false` → le jeu tente le binaire (`.tabb`, ex.
+  `unit_abilities`) puis retombe sur le texte (`.tab`) ; les 274 se chargent.
+
+**Bloqué ensuite sur #SPINE** — `libspine-native64.so` (natif d'animation Spine de PerBlue,
+`com.perblue.heroes.cspine.Native`) est requis dès `WaitForDisneyAnimation` (logo Disney animé)
+→ crash du thread render. Ce `.so` **n'est pas dans le base APK** (les natifs sont dans les
+splits APK par ABI). **À fournir** (`libspine-native64.so` x86_64) → cf. #SPINE. Ensuite :
+handshake `ClientInfo1`→`BootData1` (serveur prêt) puis, pour un nouveau joueur, `isNewUser`
+→ **tutoriel `IntroTutorialActV1`** (le jeu accorde lui-même héros/ressources — NE PAS seeder).
 
 ## Shims implémentés
 

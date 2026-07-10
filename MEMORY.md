@@ -217,10 +217,15 @@ Dépôt de référence (`/workspace/dragonsoul-web`, branche `claude/game-transp
    `dhdesktop/DesktopLauncher` : GLFW+GL, câble `Gdx.*`, `new GameMain(DhDeviceInfo)`, pilote
    create()/render(). **`GameMain.create()` OK** (compression ETC1, assets, shaders, UI XHDPI
    1280×720) → **LoadingScreen rend** (LoadBootAtlasUI, ShowDisneyLogo, StartServerLogin…).
-   Stats `.tab` chargées via `DhStatFileExt`. Contenu fourni par `tools/fetch_assets.sh`
-   (archive.org). **Bloqué sur** : `DhNet` (login, #NET) + `SystemClock.elapsedRealtimeNanos`
-   absent des stubs Android (#ANDROIDSTUBS). Détail + deferrals : `desktop-port/BACKEND_STATUS.md`.
-   ← PROCHAINE ÉTAPE : #ANDROIDSTUBS puis #NET + serveurs → franchir le login.
+   Stats `.tab`/`.tabb` chargées via `DhStatFileExt` (274). **LOGIN FONCTIONNEL** : le vrai
+   client fait son `/login` sur notre serveur (`content_server.py` étendu) → réponse JSON
+   `{"status":"good","data":"host:port"}` → **se connecte à notre serveur de jeu TCP**
+   (`run-online.sh` : contenu+login :8080 + jeu :8081 + client). Contenu = **auto** via le
+   FileDownloader du jeu (java.net) pointé sur notre serveur ; `fetch_assets.sh` = cache offline.
+   **Bloqué sur #SPINE** (`libspine-native64.so`, natif absent du base APK — dans les splits par
+   ABI) requis dès l'animation du logo Disney. Ensuite : handshake `ClientInfo1`→`BootData1`
+   puis tutoriel `IntroTutorialActV1` (nouveau joueur). Détail : `desktop-port/BACKEND_STATUS.md`.
+   ← PROCHAINE ÉTAPE : obtenir `libspine-native64.so` (x86_64) puis BootData first-boot.
 7. [ ] **Persistance** (SQLite) + **passerelle/multi-serveur** (liste, mot de passe).
 8. [ ] **Outil d'extraction data → format serveur** (les `.tab` chargés tels quels).
 

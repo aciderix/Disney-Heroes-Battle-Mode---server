@@ -34,11 +34,12 @@ ARCHIVE_NAME_RE = re.compile(r"/live/([A-Za-z0-9_.\-]+\.zip)$")
 
 
 class Config:
-    def __init__(self, index_path, cache_dir, archive_base, rewrite_host):
+    def __init__(self, index_path, cache_dir, archive_base, rewrite_host, game_server):
         self.index_path = index_path
         self.cache_dir = cache_dir
         self.archive_base = archive_base.rstrip("/")
         self.rewrite_host = rewrite_host  # e.g. "1.2.3.4:8080" or None (use Host header)
+        self.game_server = game_server    # adresse TCP du serveur de jeu, ex. "127.0.0.1:8081"
 
 
 def build_index(raw: str, base_url: str) -> bytes:
@@ -71,8 +72,34 @@ class Handler(BaseHTTPRequestHandler):
     def do_GET(self):
         self._serve(head_only=False)
 
+    def do_POST(self):
+        path = self.path.split("?", 1)[0]
+        if path.rstrip("/") == "/login":
+            return self._serve_login()
+        self._send(404, "text/plain", b"not found\n", head_only=False)
+
+    def _serve_login(self):
+        # Le client POST des params device (form-encoded) puis attend un JSON :
+        #   {"status":"good","data":"<host>:<port>[:tls]","requestID":"..."}
+        # `data` = adresse du serveur de JEU (TCP) vers lequel le client ouvre le socket
+        # (GruntNIOTCPServer / server/java/dhserver/LoginServer.java). On lit le corps pour ne
+        # pas casser la connexion, mais la réponse suffit (le serveur de jeu est authoritative).
+        try:
+            length = int(self.headers.get("Content-Length", "0"))
+            if length:
+                self.rfile.read(length)
+        except Exception:
+            pass
+        import json as _json
+        body = _json.dumps({"status": "good", "data": self.cfg.game_server, "requestID": ""}).encode("utf-8")
+        self._send(200, "application/json", body, head_only=False)
+
     def _serve(self, head_only: bool):
         path = self.path.split("?", 1)[0]
+
+        # Le client peut faire le login en GET ou POST selon la version → gérer les deux.
+        if path.rstrip("/") == "/login":
+            return self._serve_login()
 
         if path.rstrip("/") in ("/live/index.txt", "/index.txt"):
             return self._serve_index(head_only)
@@ -149,13 +176,15 @@ def main(argv=None):
     ap.add_argument("--archive-base", default=os.environ.get("DH_ARCHIVE_BASE", DEFAULT_ARCHIVE_BASE))
     ap.add_argument("--rewrite-host", default=os.environ.get("DH_REWRITE_HOST"),
                     help="host:port à écrire dans les URLs de l'index (défaut: en-tête Host)")
+    ap.add_argument("--game-server", default=os.environ.get("DH_GAME_SERVER", "127.0.0.1:8081"),
+                    help="adresse TCP du serveur de jeu renvoyée par POST /login (défaut 127.0.0.1:8081)")
     args = ap.parse_args(argv)
 
     if not os.path.isfile(args.index):
         ap.error(f"index introuvable: {args.index}")
     cache = args.cache if args.cache and os.path.isdir(args.cache) else None
 
-    Handler.cfg = Config(args.index, cache, args.archive_base, args.rewrite_host)
+    Handler.cfg = Config(args.index, cache, args.archive_base, args.rewrite_host, args.game_server)
     httpd = ThreadingHTTPServer((args.host, args.port), Handler)
     sys.stderr.write(
         f"[content] serving index {args.index}\n"

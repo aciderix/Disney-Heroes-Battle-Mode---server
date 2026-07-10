@@ -29,22 +29,33 @@ public final class DhStatFileExt implements StatFileHelper.StatFileHelperExt {
         return i >= 0 ? name.substring(i + 1) : name;
     }
 
-    @Override
-    public InputStream openFileRaw(GeneralStats stats, String name) {
+    private static InputStream open(String name) {
         String res = "stats/" + base(name);
         InputStream in = Thread.currentThread().getContextClassLoader().getResourceAsStream(res);
         if (in == null) in = DhStatFileExt.class.getClassLoader().getResourceAsStream(res);
-        if (in == null) throw new RuntimeException("Stat file introuvable sur le classpath: " + res);
+        return in;
+    }
+
+    @Override
+    public InputStream openFileRaw(GeneralStats stats, String name) {
+        InputStream in = open(name);
+        // Introuvable (ex. le jeu tente le binaire .tabb qui n'existe pas pour ce fichier) →
+        // on signale l'absence pour que le jeu retombe sur le texte .tab (openFile). Cf.
+        // GeneralStats.parseStats (essaie binaire puis texte quand forceText()==false).
+        if (in == null) throw new RuntimeException(new java.io.FileNotFoundException("stats/" + base(name)));
         return in;
     }
 
     @Override
     public Reader openFile(GeneralStats stats, String name) {
-        return new InputStreamReader(openFileRaw(stats, name), StandardCharsets.UTF_8);
+        InputStream in = open(name);
+        if (in == null) throw new RuntimeException(new java.io.FileNotFoundException("stats/" + base(name)));
+        return new InputStreamReader(in, StandardCharsets.UTF_8);
     }
 
-    // Les .tab sont du texte (variante TXT) → on force le chemin texte (on possède les .tab).
-    @Override public boolean forceText() { return true; }
+    // false : le jeu essaie d'abord le binaire (.tabb) puis retombe sur le texte (.tab). Nos
+    // assets ont surtout des .tab (272) + qq .tabb (ex. unit_abilities) → ce mode lit les deux.
+    @Override public boolean forceText() { return false; }
 
     // Hashes = validation du contenu téléchargé ; non requis ici (#STATHASH).
     @Override public Map getStatFileHashes() { return Collections.emptyMap(); }
