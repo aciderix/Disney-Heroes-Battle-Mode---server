@@ -34,3 +34,4 @@ __pycache__/
 /libs/game-logic.jar
 /desktop-port/hs_err_pid*.log
 /desktop-port/replay_pid*.log
+libs/game-logic-framed.jar

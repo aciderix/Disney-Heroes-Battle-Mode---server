@@ -51,7 +51,7 @@ public class NativeAtlasLoader extends SynchronousAssetLoader {
             deps.add(new AssetDescriptor(page.textureFile, Texture.class, tp));
         }
         return deps;
-      } catch (RuntimeException e) {
+      } catch (Throwable e) {
         System.err.println("[NativeAtlasLoader] getDependencies FAILED for " + fileName + ": " + e);
         throw e;
       }
@@ -71,7 +71,7 @@ public class NativeAtlasLoader extends SynchronousAssetLoader {
         NativeAtlas na = new NativeAtlas();
         na.set(new TextureAtlas(d, false), files);
         return na;
-      } catch (RuntimeException e) {
+      } catch (Throwable e) {
         System.err.println("[NativeAtlasLoader] load FAILED for " + fileName + ": " + e);
         throw e;
       }

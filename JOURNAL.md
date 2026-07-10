@@ -261,6 +261,38 @@ Package `com.perblue.heroes.assets_external` : `ExternalAssetManager` (orchestre
   Bloqué sur `DhNet` (login, #NET) + `android.os.SystemClock.elapsedRealtimeNanos()` absent des
   stubs API 16 (#ANDROIDSTUBS). Tous les shims/deferrals tracés dans `desktop-port/BACKEND_STATUS.md`.
 
+### Login → BootData → MainScreen de bout en bout (reframe ASM + Firebase + bridges)
+- **Reframe ASM (RÉEL, sans changement de sémantique)** : game.jar (dex2jar) n'a pas de
+  `StackMapTable` → sous `-Xverify:none` la JVM plantait (`generateOopMap.cpp`, « Illegal class
+  file ... in method loadBinaryData ») en parsant `unit_abilities.tabb` pendant le handshake.
+  `tools/reframe/src/ReframeJar.java` (ASM 9.7, COMPUTE_FRAMES) réécrit les **63 249** classes
+  avec des frames valides (hiérarchie résolue depuis les octets, sans lier — repli sûr par classe).
+  `run-desktop.sh` produit `game-logic-framed.jar` (ombrage classpath) et **retire `-Xverify:none`**.
+  ⚠️ ce n'est PAS une rustine : aucune logique modifiée, on ajoute seulement les métadonnées de
+  vérif que dex2jar omet (équivalent recompilation) — et on RE-vérifie le bytecode.
+- **Shadow `com.google.firebase.perf.network.FirebasePerfUrlConnection` (RÉEL)** : le
+  téléchargeur du jeu enveloppe chaque connexion par `instrument()` (télémétrie Firebase) ; l'init
+  Firebase touchait `android.os.StrictMode.allowThreadDiskReads()` (« Stub! ») et TUAIT le thread
+  de download. `instrument()` renvoie la connexion RÉELLE inchangée → download HTTP réel, analytics
+  externe neutralisée (#BRIDGES). Le contenu requis se télécharge (index.txt 62 968 o).
+- **DhBridges (PARTIEL, services plateforme absents)** : `INative.createPurchasingInterface()`
+  renvoyait `null` → `setNativeAccess` faisait NPE (avalé) puis `handleBootData` NPE sur
+  `purchasing`. `defaultReturn` renvoie désormais un **no-op imbriqué** pour tout retour interface
+  (et collections vides pour Set/List/Map). ⚠️ à auditer : l'enum `PurchaseErrorState` renvoyée
+  par `startPurchase` (1ʳᵉ constante) ne doit pas être un état « succès ».
+- **RÉSULTAT — jalon majeur** : le vrai client fait `/login` sur notre serveur → se connecte en
+  TCP `:8081` → **notre LoginServer envoie BootData1** → le client appelle **`handleBootData`
+  sans crash** (langue serveur, offerwall, rewards initialisés) → atteint le **MainScreen** (hub,
+  chargement du monde `mainscreen_winter`). Capture `desktop-port/build/online.png`.
+- **Bug en cours (à corriger PROPREMENT, pas contourner)** : les `.skel` du décor échouent avec
+  `NoSuchMethodError: com.badlogic.gdx.utils.DataInput.readString()` — incompatibilité entre
+  `SkeletonBinary` (spine-libgdx) et le `DataInput` MODIFIÉ de PerBlue (ProGuard). Le jeu tolère
+  ces assets manquants (userErrorListener) mais le décor animé ne s'affiche pas → à réparer.
+- **⚠️ À valider (règle « pas de faux OK »)** : (1) cparticle reste un STUB (rendu différé,
+  `update→complete=true` pourrait avancer une logique gatée sur une particule) ; (2) le BootData
+  de notre serveur doit être **complet et correct** (serveur autoritatif), pas « minimal pour
+  atteindre le menu ».
+
 ### Modules natifs Spine + particules réimplémentés en Java (#SPINE ✅ / #CPARTICLE ⚠️)
 - **#SPINE résolu (Option A)** : les natifs Spine de PerBlue (`libspine-native64.so`, absents des
   splits x86_64) sont remplacés par un module Java **`com.perblue.heroes.cspine.*`** (shadow

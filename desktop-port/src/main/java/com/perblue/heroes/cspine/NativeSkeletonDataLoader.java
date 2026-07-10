@@ -36,10 +36,16 @@ public class NativeSkeletonDataLoader extends SynchronousAssetLoader {
 
     @Override
     public Object load(AssetManager am, String fileName, FileHandle file, AssetLoaderParameters p) {
+      try {
         NativeSkeletonDataParameter param = (NativeSkeletonDataParameter) p;
         NativeAtlas atlas = param != null && param.atlasFile != null
                 ? (NativeAtlas) am.get(param.atlasFile, NativeAtlas.class) : NativeAtlas.NULL;
         return NativeSkeletonData.fromFile(real(fileName, file), atlas, fileName);
+      } catch (Throwable t) {
+        System.err.println("[NativeSkeletonDataLoader] load FAILED for " + fileName);
+        t.printStackTrace();
+        throw t;
+      }
     }
 
     public static class NativeSkeletonDataParameter extends AssetLoaderParameters<NativeSkeletonData> {

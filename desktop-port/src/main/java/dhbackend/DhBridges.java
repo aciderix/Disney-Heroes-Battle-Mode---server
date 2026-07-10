@@ -2,6 +2,13 @@ package dhbackend;
 
 import java.lang.reflect.Method;
 import java.lang.reflect.Proxy;
+import java.util.ArrayList;
+import java.util.Collection;
+import java.util.HashMap;
+import java.util.HashSet;
+import java.util.List;
+import java.util.Map;
+import java.util.Set;
 
 /**
  * Ponts de services plateforme du jeu (normalement fournis par l'AndroidLauncher) :
@@ -42,6 +49,15 @@ public final class DhBridges {
         if (r == char.class) return (char) 0;
         if (r.isEnum()) { Object[] cs = r.getEnumConstants(); return cs.length > 0 ? cs[0] : null; }
         if (r == String.class) return "";
+        // Collections : instances vides (jamais null → pas de NPE côté appelant qui itère).
+        if (r == Set.class) return new HashSet<>();
+        if (r == List.class || r == Collection.class || r == Iterable.class) return new ArrayList<>();
+        if (r == Map.class) return new HashMap<>();
+        // Autre interface de service (ex. INative.createPurchasingInterface() -> IPurchasing) :
+        // renvoyer un NO-OP imbriqué plutôt que null (le jeu appelle directement dessus au boot).
+        if (r.isInterface()) {
+            return Proxy.newProxyInstance(r.getClassLoader(), new Class<?>[]{r}, DhBridges::defaultReturn);
+        }
         return null;
     }
 }

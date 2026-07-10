@@ -31,6 +31,19 @@ echo "[desktop] compilation ..."
 gradle --no-daemon -q compileJava 2>/dev/null | grep -v 'Picked up' || true
 RUNTIME_CP=$(gradle --no-daemon -q printRuntimeClasspath 2>/dev/null | grep -v 'Picked up' | tail -1)
 
+# game.jar vient de dex2jar : bytecode SANS StackMapTable. Sous -Xverify:none la JVM calcule
+# paresseusement les oop-maps (generateOopMap.cpp) et PLANTE sur certaines méthodes (« Illegal
+# class file ... in method loadBinaryData »). On réécrit tout game-logic.jar avec COMPUTE_FRAMES
+# (frames valides) → vérificateur rapide par table, plus de crash, et on peut retirer -Xverify:none.
+FRAMED="../libs/game-logic-framed.jar"
+ASM="$HOME/.m2/repository/org/ow2/asm/asm/9.7/asm-9.7.jar"
+REFRAME_CLS="../tools/reframe/classes"
+if [ ! -f "$FRAMED" ] || [ "$GAMELOGIC" -nt "$FRAMED" ]; then
+  echo "[desktop] reframe de game-logic.jar (COMPUTE_FRAMES, ~10s) ..."
+  [ -f "$REFRAME_CLS/ReframeJar.class" ] || { mkdir -p "$REFRAME_CLS"; javac -cp "$ASM" -d "$REFRAME_CLS" ../tools/reframe/src/ReframeJar.java; }
+  java -cp "$REFRAME_CLS:$ASM:$RUNTIME_CP" ReframeJar "$GAMELOGIC" "$FRAMED" | grep -v 'Picked up' || true
+fi
+
 # Assets de l'APK (accédés par le jeu en chemins relatifs "ui/...", "world/...").
 if [ ! -d "$ASSETS" ]; then
   echo "[desktop] extraction des assets de l'APK ..."
@@ -57,7 +70,8 @@ fi
 
 # $ASSETS/$RESD sur le classpath → FileHandles internes + getResourceAsStream résolvent les
 # assets/ressources du jeu. RUNTIME_CP contient déjà game-logic.jar (via build.gradle).
-CP="$BUILD/classes/java/main:$ASSETS:$RESD:$RUNTIME_CP"
+# game-logic-framed.jar AVANT RUNTIME_CP (qui contient l'original non-framé) → il l'ombrage.
+CP="$BUILD/classes/java/main:$FRAMED:$ASSETS:$RESD:$RUNTIME_CP"
 
 # Xvfb si pas d'affichage.
 if [ -z "${DISPLAY:-}" ]; then
@@ -70,7 +84,9 @@ fi
 
 # -XX:TieredStopAtLevel=1 : n'utiliser que le JIT C1. Le C2 (compilation agressive) plante
 # sur le bytecode issu de dex2jar (GraphKit::use_exception_state) — bug JIT, pas notre logique.
-JOPTS="-Xverify:none -XX:TieredStopAtLevel=1 -Dorg.lwjgl.util.Debug=false -Ddh.rundir=$BUILD/run"
+# game-logic-framed.jar a des StackMapTable valides → plus besoin de -Xverify:none. On garde
+# -XX:TieredStopAtLevel=1 (C1 seul) par prudence sur le bytecode dex2jar (le C2 avait planté).
+JOPTS="-XX:TieredStopAtLevel=1 -Dorg.lwjgl.util.Debug=false -Ddh.rundir=$BUILD/run"
 [ -f "$NATDIR/libgdx64.so" ] && JOPTS="$JOPTS -Ddh.gdxnative=$NATDIR/libgdx64.so"
 [ -n "${DH_SERVER:-}" ] && JOPTS="$JOPTS -Ddh.server=$DH_SERVER"
 [ -n "${DH_FRAMES:-}" ] && JOPTS="$JOPTS -Ddh.frames=$DH_FRAMES"
