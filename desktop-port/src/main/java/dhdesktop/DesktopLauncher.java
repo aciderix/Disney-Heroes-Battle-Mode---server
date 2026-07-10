@@ -1,66 +1,183 @@
 package dhdesktop;
 
-import com.badlogic.gdx.backends.lwjgl3.Lwjgl3Application;
-import com.badlogic.gdx.backends.lwjgl3.Lwjgl3ApplicationConfiguration;
+import com.badlogic.gdx.Gdx;
 import com.perblue.heroes.GameMain;
-import dhbackend.DhDeviceInfo;
+import dhbackend.*;
 
+import org.lwjgl.glfw.GLFWErrorCallback;
+import org.lwjgl.opengl.GL;
+
+import java.io.File;
 import java.lang.reflect.Field;
+import java.nio.ByteBuffer;
+
+import static org.lwjgl.glfw.GLFW.*;
+import static org.lwjgl.opengl.GL11.*;
+import static org.lwjgl.system.MemoryUtil.NULL;
 
 /**
- * Launcher desktop de Disney Heroes.
+ * Launcher desktop de Disney Heroes avec **backend LWJGL3 maison** (dhbackend/*), miroir de
+ * `dsbackend/` de DragonSoul mais contre le core libGDX (clair) du jeu. On crée une fenêtre
+ * GLFW + contexte GL, on câble les shims dans le singleton {@code com.badlogic.gdx.Gdx}, on
+ * instancie {@link GameMain} et on pilote son cycle create()/render() nous-mêmes.
  *
- * Réutilise le backend desktop **bundlé dans le jeu** ({@link LwjglApplication}, LWJGL2) +
- * le root {@link GameMain} — pas de backend maison (cf. desktop-port/PROGRESS.md). Seuls
- * quelques services plateforme sont shimmés ({@link DhDeviceInfo}).
- *
- * Redirection réseau (optionnelle, sans patch bytecode) : si {@code -Ddh.server=host:port}
- * est fourni, on réécrit par réflexion {@code ServerType.LIVE} pour pointer le contenu (et
- * plus tard le login) vers notre serveur local. Sinon, adresses d'origine (hors ligne).
+ * Props : dh.server=host:port (redirige ServerType.LIVE) ; dh.frames=N (rendre N frames puis
+ * quitter, pour capture headless) ; dh.shot=fichier.ppm ; dh.w/dh.h ; dh.gdxnative=libgdx64.so ;
+ * dh.rundir=dossier inscriptible (prefs/external/local).
  */
 public final class DesktopLauncher {
 
-  public static void main(String[] args) throws Exception {
-    maybeRedirectServer(System.getProperty("dh.server"));
+    public static void main(String[] args) throws Exception {
+        int W = Integer.getInteger("dh.w", 1280);
+        int H = Integer.getInteger("dh.h", 720);
+        int maxFrames = Integer.getInteger("dh.frames", 0);
+        File runDir = new File(System.getProperty("dh.rundir", "build/run"));
+        runDir.mkdirs();
 
-    Lwjgl3ApplicationConfiguration cfg = new Lwjgl3ApplicationConfiguration();
-    cfg.setTitle("Disney Heroes (desktop)");
-    cfg.setWindowedMode(Integer.getInteger("dh.width", 1280), Integer.getInteger("dh.height", 720));
-    cfg.setResizable(true);
-    cfg.disableAudio(true);                 // pas de périphérique audio en conteneur headless
-    cfg.setInitialVisible(!"1".equals(System.getProperty("dh.hidden"))); // masquable pour capture off-screen
+        // Natif libGDX (Matrix4/BufferUtils JNI) — extrait par run-desktop.sh.
+        String gdxNative = System.getProperty("dh.gdxnative");
+        if (gdxNative != null && new File(gdxNative).exists()) {
+            System.load(new File(gdxNative).getAbsolutePath());
+            System.out.println("[launcher] natif libGDX chargé: " + gdxNative);
+        }
 
-    GameMain game = new GameMain(new DhDeviceInfo());
-    new Lwjgl3Application(game, cfg);
-  }
+        maybeRedirectServer(System.getProperty("dh.server"));
 
-  /**
-   * Réécrit {@code ServerType.LIVE.contentLocation} (et le host de login) vers notre serveur
-   * local, par réflexion — le jeu n'est pas modifié. Best-effort : loggue et continue si les
-   * noms de champs diffèrent (à ajuster selon docs/PROTOCOL.md §0).
-   */
-  private static void maybeRedirectServer(String hostPort) {
-    if (hostPort == null || hostPort.isEmpty()) return;
-    try {
-      Class<?> st = Class.forName("com.perblue.heroes.ServerType");
-      Object live = Enum.valueOf(st.asSubclass(Enum.class), "LIVE");
-      String content = "http://" + hostPort + "/live/index.txt";
-      setIfPresent(st, live, "contentLocation", content);
-      System.out.println("[launcher] ServerType.LIVE redirigé -> " + content);
-    } catch (Throwable t) {
-      System.out.println("[launcher] redirection ServerType impossible (" + t + ") — adresses d'origine");
+        // --- fenêtre GLFW + contexte GL (Xvfb + Mesa llvmpipe en conteneur) ---
+        GLFWErrorCallback.createPrint(System.err).set();
+        if (!glfwInit()) throw new IllegalStateException("glfwInit failed");
+        glfwDefaultWindowHints();
+        glfwWindowHint(GLFW_VISIBLE, "1".equals(System.getProperty("dh.visible")) ? GLFW_TRUE : GLFW_FALSE);
+        glfwWindowHint(GLFW_CONTEXT_VERSION_MAJOR, 3);
+        glfwWindowHint(GLFW_CONTEXT_VERSION_MINOR, 2);
+        glfwWindowHint(GLFW_OPENGL_PROFILE, GLFW_OPENGL_COMPAT_PROFILE);
+        long win = glfwCreateWindow(W, H, "Disney Heroes (desktop)", NULL, NULL);
+        if (win == NULL) throw new IllegalStateException("glfwCreateWindow failed");
+        glfwMakeContextCurrent(win);
+        glfwSwapInterval(0);
+        GL.createCapabilities();
+        System.out.println("[launcher] GL " + glGetString(GL_VERSION) + " / " + glGetString(GL_RENDERER));
+
+        // --- backend maison ---
+        DhGL20 gl = new DhGL20();
+        DhGraphics graphics = new DhGraphics(gl, W, H);
+        DhInput input = new DhInput();
+        new GlfwInput(win, input); // callbacks GLFW réels -> DhInput
+        DhAudio audio = new DhAudio();
+        DhFiles files = new DhFiles(new File(runDir, "external").getPath(), new File(runDir, "local").getPath());
+        DhNet net = new DhNet();
+        DhDeviceInfo device = new DhDeviceInfo();
+
+        // --- câblage du singleton Gdx (noms clairs) ---
+        GameMain game = new GameMain(device);
+        DhApplication app = new DhApplication(game, graphics, input, audio, new File(runDir, "prefs"));
+        Gdx.app = app;
+        Gdx.graphics = graphics;
+        Gdx.audio = audio;
+        Gdx.input = input;
+        Gdx.files = files;
+        Gdx.net = net;
+        Gdx.gl = gl;
+        Gdx.gl20 = gl;
+        System.out.println("[launcher] singleton Gdx câblé");
+
+        // --- services plateforme (NO-OP, cf. DhBridges / BACKEND_STATUS.md #BRIDGES) ---
+        wireBridges(game);
+
+        // --- ouvreur des fichiers de stats .tab (normalement posé par l'AndroidLauncher) ---
+        try { DhStatFileExt.install(); System.out.println("[launcher] StatFileHelper.ext installé"); }
+        catch (Throwable t) { System.out.println("[launcher] StatFileExt échec: " + t); }
+
+        // --- consentement enregistré (évite le dialogue d'accord bloquant en headless) ---
+        // Écriture des prefs d'accord = ce que le handler « J'accepte » du jeu écrit (consentement
+        // réel, pas une fausse réponse). ⚠️ DEFERRED (BACKEND_STATUS.md #CONSENT) : clés/valeurs
+        // exactes à confirmer par décompilation de GameMain (noms empruntés à DragonSoul).
+        preseedConsent(new File(runDir, "prefs"));
+
+        System.out.println("[launcher] game.create() ...");
+        game.create();
+        System.out.println("[launcher] game.create() OK");
+        game.resize(W, H);
+
+        // --- boucle de rendu ---
+        long frames = 0;
+        double last = glfwGetTime();
+        String shot = System.getProperty("dh.shot");
+        while (!glfwWindowShouldClose(win) && (maxFrames == 0 || frames < maxFrames)) {
+            double now = glfwGetTime();
+            graphics.deltaTime = (float) (now - last);
+            graphics.frameId = frames;
+            last = now;
+
+            input.drain();          // input synthétique (pilotage) sur le thread render
+            app.drainRunnables();   // Gdx.app.postRunnable
+            game.render();
+            glfwSwapBuffers(win);
+            glfwPollEvents();
+            frames++;
+        }
+
+        if (shot != null) capture(W, H, shot);
+        System.out.println("[launcher] arrêt après " + frames + " frames");
+        glfwDestroyWindow(win);
+        glfwTerminate();
     }
-  }
 
-  private static void setIfPresent(Class<?> cls, Object inst, String field, String value) {
-    try {
-      Field f = cls.getDeclaredField(field);
-      f.setAccessible(true);
-      f.set(inst, value);
-    } catch (NoSuchFieldException e) {
-      System.out.println("[launcher] champ ServerType." + field + " absent (à ajuster)");
-    } catch (Throwable t) {
-      System.out.println("[launcher] échec écriture " + field + " : " + t);
+    private static void wireBridges(GameMain game) {
+        callSetter(game, "setNativeAccess", "com.perblue.heroes.INative");
+        callSetter(game, "setAnalytics", "com.perblue.heroes.IAnalytics");
+        callSetter(game, "setSocialNetworkManager", "com.perblue.heroes.social.SocialNetworkManager");
+        callSetter(game, "setSupportManager", "com.perblue.heroes.ISupport");
+        callSetter(game, "setTapjoyOfferwall", "com.perblue.heroes.ITapjoyOfferwall");
+        callSetter(game, "setPlaybackRewards", "com.perblue.heroes.IPlaybackRewards");
     }
-  }
+
+    private static void callSetter(GameMain game, String setter, String ifaceName) {
+        try {
+            Class<?> iface = Class.forName(ifaceName);
+            Object noop = DhBridges.noop(ifaceName);
+            game.getClass().getMethod(setter, iface).invoke(game, noop);
+        } catch (Throwable t) {
+            System.out.println("[launcher] bridge " + setter + " ignoré (" + t + ")");
+        }
+    }
+
+    private static void preseedConsent(File prefsDir) {
+        try {
+            DhPreferences p = new DhPreferences(prefsDir, "rpgPrefs");
+            p.putInteger("agreedPrivacyPolicyVersion", 999);
+            p.putInteger("agreedTermsOfServiceVersion", 999);
+            p.flush();
+            System.out.println("[launcher] consentement pré-enregistré (rpgPrefs) — clés à vérifier (#CONSENT)");
+        } catch (Throwable t) { System.out.println("[launcher] preseedConsent échec: " + t); }
+    }
+
+    private static void capture(int w, int h, String out) throws Exception {
+        ByteBuffer buf = ByteBuffer.allocateDirect(w * h * 3);
+        glReadPixels(0, 0, w, h, GL_RGB, GL_UNSIGNED_BYTE, buf);
+        File f = new File(out);
+        if (f.getParentFile() != null) f.getParentFile().mkdirs();
+        try (java.io.OutputStream os = new java.io.BufferedOutputStream(new java.io.FileOutputStream(f))) {
+            os.write(("P6\n" + w + " " + h + "\n255\n").getBytes("US-ASCII"));
+            byte[] row = new byte[w * 3];
+            for (int y = h - 1; y >= 0; y--) { buf.position(y * w * 3); buf.get(row); os.write(row); }
+        }
+        System.out.println("[launcher] capture: " + f.getPath());
+    }
+
+    /** Réécrit ServerType.LIVE.contentLocation vers notre serveur, par réflexion (sans patch). */
+    private static void maybeRedirectServer(String hostPort) {
+        if (hostPort == null || hostPort.isEmpty()) return;
+        try {
+            Class<?> st = Class.forName("com.perblue.heroes.ServerType");
+            @SuppressWarnings({"unchecked", "rawtypes"})
+            Object live = Enum.valueOf((Class) st, "LIVE");
+            Field f = st.getDeclaredField("contentLocation");
+            f.setAccessible(true);
+            f.set(live, "http://" + hostPort + "/live/index.txt");
+            System.out.println("[launcher] ServerType.LIVE.contentLocation -> " + hostPort);
+        } catch (Throwable t) {
+            System.out.println("[launcher] redirection ServerType impossible (" + t + ")");
+        }
+    }
 }

@@ -1,10 +1,10 @@
 #!/usr/bin/env bash
-# Compile + lance Disney Heroes desktop : réutilise le backend LwjglApplication (LWJGL2)
-# BUNDLÉ dans le jeu + GameMain, sous Xvfb avec OpenGL logiciel (Mesa llvmpipe).
-# Extrait les assets/ressources de l'APK committé au 1er lancement.
+# Compile + lance Disney Heroes desktop avec le backend LWJGL3 MAISON (dhbackend/*) contre le
+# core libGDX du jeu, sous Xvfb + OpenGL logiciel (Mesa llvmpipe). Extrait assets/ressources
+# de l'APK committé au 1er lancement.
 #
 # Options (env) : DH_SERVER=host:port (redirige ServerType.LIVE via -Ddh.server),
-#                 DH_TIMEOUT=sec (arrêt auto pour capture), DH_SHOT=chemin.ppm.
+#                 DH_TIMEOUT=sec, DH_FRAMES=N, DH_SHOT=chemin.ppm.
 set -e
 cd "$(dirname "$0")"
 export JAVA_TOOL_OPTIONS=
@@ -14,6 +14,18 @@ APK="../game/disney-heroes-12.1.0.apk"
 BUILD="build"
 ASSETS="$BUILD/apk/assets"
 RESD="$BUILD/apk-resources"
+
+# game.jar embarque LWJGL **2** (réduit par ProGuard) + les backends libGDX bundlés, qui
+# masquent nos classes LWJGL3 (même noms org.lwjgl.*). On produit game-logic.jar SANS
+# org/lwjgl/** ni com/badlogic/gdx/backends/** (core libGDX PerBlue CONSERVÉ) et build.gradle
+# compile contre lui. Fabriqué AVANT gradle. game.jar d'origine intact.
+GAMELOGIC="../libs/game-logic.jar"
+SRC_GAME="../libs/game.jar"
+if [ ! -f "$GAMELOGIC" ] || [ "$SRC_GAME" -nt "$GAMELOGIC" ]; then
+  echo "[desktop] fabrication de game-logic.jar (sans org/lwjgl, sans backends bundlés) ..."
+  cp "$SRC_GAME" "$GAMELOGIC"
+  zip -q -d "$GAMELOGIC" 'org/lwjgl/*' 'com/badlogic/gdx/backends/*' >/dev/null 2>&1 || true
+fi
 
 echo "[desktop] compilation ..."
 gradle --no-daemon -q compileJava 2>/dev/null | grep -v 'Picked up' || true
@@ -35,23 +47,17 @@ if [ ! -d "$RESD" ]; then
      'AndroidManifest.xml' 'resources.arsc' -d "$RESD" || true
 fi
 
-# game.jar embarque une distribution LWJGL **2** (réduite par ProGuard) qui entre en conflit
-# avec le LWJGL **3** de Maven (mêmes noms org.lwjgl.*, API différente). On produit un
-# game-logic.jar SANS org/lwjgl/** (et sans les backends libGDX bundlés) → seul le LWJGL3/
-# libGDX de Maven fournit ces classes. game.jar d'origine n'est pas modifié.
-GAMELOGIC="$BUILD/game-logic.jar"
-SRC_GAME="../libs/game.jar"
-if [ ! -f "$GAMELOGIC" ] || [ "$SRC_GAME" -nt "$GAMELOGIC" ]; then
-  echo "[desktop] fabrication de game-logic.jar (sans org/lwjgl, sans backends bundlés) ..."
-  cp "$SRC_GAME" "$GAMELOGIC"
-  zip -q -d "$GAMELOGIC" 'org/lwjgl/*' 'com/badlogic/gdx/backends/*' >/dev/null 2>&1 || true
+# Extrait le natif libGDX (libgdx64.so) du jar gdx-platform natives-desktop du classpath.
+NATDIR="$BUILD/native"
+if [ ! -f "$NATDIR/libgdx64.so" ]; then
+  mkdir -p "$NATDIR"
+  GDXJAR=$(echo "$RUNTIME_CP" | tr ':' '\n' | grep 'gdx-platform.*natives-desktop.jar' | head -1)
+  [ -n "$GDXJAR" ] && unzip -oq "$GDXJAR" 'libgdx64.so' -d "$NATDIR" || echo "[desktop] WARN: gdx-platform natives introuvable"
 fi
-# Remplace game.jar par game-logic.jar dans le classpath runtime résolu par gradle.
-RUNTIME_CP_NOGAME=$(echo "$RUNTIME_CP" | tr ':' '\n' | grep -v '/libs/game.jar$' | paste -sd:)
 
 # $ASSETS/$RESD sur le classpath → FileHandles internes + getResourceAsStream résolvent les
-# assets/ressources du jeu. Le libGDX complet de Maven prime (game-logic sans backends/lwjgl).
-CP="$BUILD/classes/java/main:$ASSETS:$RESD:$RUNTIME_CP_NOGAME:$GAMELOGIC"
+# assets/ressources du jeu. RUNTIME_CP contient déjà game-logic.jar (via build.gradle).
+CP="$BUILD/classes/java/main:$ASSETS:$RESD:$RUNTIME_CP"
 
 # Xvfb si pas d'affichage.
 if [ -z "${DISPLAY:-}" ]; then
@@ -62,10 +68,13 @@ if [ -z "${DISPLAY:-}" ]; then
   echo "[desktop] Xvfb :99 (pid $XVFB_PID)"
 fi
 
-JOPTS="-Xverify:none -Dorg.lwjgl.util.Debug=false"
+JOPTS="-Xverify:none -Dorg.lwjgl.util.Debug=false -Ddh.rundir=$BUILD/run"
+[ -f "$NATDIR/libgdx64.so" ] && JOPTS="$JOPTS -Ddh.gdxnative=$NATDIR/libgdx64.so"
 [ -n "${DH_SERVER:-}" ] && JOPTS="$JOPTS -Ddh.server=$DH_SERVER"
+[ -n "${DH_FRAMES:-}" ] && JOPTS="$JOPTS -Ddh.frames=$DH_FRAMES"
+[ -n "${DH_SHOT:-}" ] && JOPTS="$JOPTS -Ddh.shot=$DH_SHOT"
 
-echo "[desktop] lancement (GameMain via backend LWJGL3) ..."
+echo "[desktop] lancement (GameMain via backend LWJGL3 maison) ..."
 set +e
 if [ -n "${DH_TIMEOUT:-}" ]; then
   timeout "${DH_TIMEOUT}" java $JOPTS -cp "$CP" dhdesktop.DesktopLauncher

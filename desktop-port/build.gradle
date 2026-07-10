@@ -7,31 +7,39 @@ repositories {
 }
 
 ext {
-    // libGDX embarqué par le jeu = 1.9.7. On utilise le backend **LWJGL3** de libGDX (GLFW),
-    // bien plus adapté au headless (Xvfb) que le backend LWJGL2 bundlé (dont le Display X11
-    // n'énumère pas de modes sous Xvfb). libGDX complet vient de Maven et SHADOW les copies
-    // réduites par ProGuard dans game.jar (game.jar déclaré en DERNIER).
+    // Backend maison : LWJGL3 brut (GLFW/GL/OpenAL/STB) + le natif libGDX 1.9.7 (Matrix4/
+    // BufferUtils/Gdx2DPixmap JNI — version du jeu). PAS de backend libGDX Maven (le core
+    // PerBlue est modifié+réduit, cf. desktop-port/PROGRESS.md) : on fournit nos propres shims.
+    lwjglVersion = '3.3.4'
+    lwjglNatives = 'natives-linux'
     gdxVersion = '1.9.7'
 }
 
 dependencies {
-    // IMPORTANT : PerBlue a **modifié le core libGDX** (ex. Group.DEFAULT_TRANSFORM) → on
-    // GARDE le core de game.jar et on ne prend de Maven QUE le backend LWJGL3 + les natifs
-    // (le core stock de Maven est EXCLU pour ne pas shadow le core PerBlue).
-    implementation("com.badlogicgames.gdx:gdx-backend-lwjgl3:$gdxVersion") {
-        exclude group: 'com.badlogicgames.gdx', module: 'gdx'
-    }
+    implementation platform("org.lwjgl:lwjgl-bom:$lwjglVersion")
+    implementation "org.lwjgl:lwjgl"
+    implementation "org.lwjgl:lwjgl-glfw"
+    implementation "org.lwjgl:lwjgl-opengl"
+    implementation "org.lwjgl:lwjgl-openal"
+    implementation "org.lwjgl:lwjgl-stb"
+    runtimeOnly "org.lwjgl:lwjgl::$lwjglNatives"
+    runtimeOnly "org.lwjgl:lwjgl-glfw::$lwjglNatives"
+    runtimeOnly "org.lwjgl:lwjgl-opengl::$lwjglNatives"
+    runtimeOnly "org.lwjgl:lwjgl-openal::$lwjglNatives"
+    runtimeOnly "org.lwjgl:lwjgl-stb::$lwjglNatives"
+
+    // natif libGDX (libgdx64.so) — extrait au runtime par run-desktop.sh.
     runtimeOnly "com.badlogicgames.gdx:gdx-platform:$gdxVersion:natives-desktop"
 
-    // Libs supposées fournies par Android au runtime (absentes de l'APK).
+    // Libs supposées fournies par Android (absentes de l'APK).
     implementation 'org.json:json:20240303'
     implementation 'com.google.android:android:4.1.1.4'
     implementation files('../libs/commons-logging.jar')
 
-    // Le jeu : GameMain + com.perblue.* + le core libGDX MODIFIÉ par PerBlue. Le script de
-    // lancement retire de ce jar org/lwjgl/** et com/badlogic/gdx/backends/** (conflits) →
-    // core PerBlue conservé, backend/LWJGL3 fournis par Maven.
-    implementation files('../libs/game.jar')
+    // Le jeu SANS org/lwjgl ni backends bundlés (produit par run-desktop.sh depuis
+    // ../libs/game.jar) : GameMain + com.perblue.* + core libGDX PerBlue. Utilisé au COMPILE
+    // ET au runtime pour éviter le shadowing de nos classes LWJGL3 par le LWJGL2 du jeu.
+    implementation files('../libs/game-logic.jar')
 }
 
 application {

@@ -239,9 +239,30 @@ Package `com.perblue.heroes.assets_external` : `ExternalAssetManager` (orchestre
   repartir de zéro. Launcher + `DhDeviceInfo` + extraction assets + redirection `ServerType`
   déjà écrits = réutilisables. Détail complet : `desktop-port/PROGRESS.md`.
 
+**14. Backend LWJGL3 maison écrit → le jeu BOOTE jusqu'à l'écran de chargement.**
+- Étude de portabilité de `dsbackend/` d'abord (à la demande) : PAS réutilisable tel quel
+  (noms libGDX obfusqués 1.9.3, API RPGMain, `getType():int`) mais MÊME fork libGDX PerBlue →
+  jeux d'interfaces coïncident. Méthode : régénérer chaque shim contre l'interface RÉELLE de DH
+  (`javap`, noms clairs) + porter le corps depuis dsbackend.
+- Backend écrit (`desktop-port/src/main/java/dhbackend/`) : `DhGL20` (75 méth, délègue LWJGL3),
+  `DhGraphics` (19, +GLVersion réel), `DhInput` (17) + `GlfwInput`, `DhFiles`/`DhFileHandle`,
+  `DhPreferences` (19), `DhApplication` (18, getType=Android), `DhDeviceInfo`, `DhAudio` (STUB
+  no-op), `DhNet` (STUB), `DhBridges` (NO-OP proxies), `DhStatFileExt` (ouvre les `.tab`).
+  Launcher `dhdesktop/DesktopLauncher` : GLFW+GL, câble `Gdx.*`, `GameMain(DhDeviceInfo)`,
+  boucle create()/render() + capture PPM + redirection `ServerType` (`-Ddh.server`).
+- Build : LWJGL3 brut + natif libGDX 1.9.7 + stubs Android + `game-logic.jar` (game.jar SANS
+  `org/lwjgl` ni backends bundlés — sinon shadowing de nos classes LWJGL3). `tools/fetch_assets.sh`
+  télécharge le contenu ETC1 initial depuis archive.org (le boot exige des assets hors APK).
+- Débogage de boot itératif (murs franchis) : GLVersion null → réel ; `StatFileHelper.getOpener()`
+  null (=champ EXT) → `DhStatFileExt` via `setExt`, lecture des `.tab` depuis `stats/` (classpath).
+- **Résultat** : `GameMain.create()` **complète** (compression **ETC1**, RPGAssetManager, shaders,
+  viewport, UI stats **XHDPI 1280×720**) puis `render()` → **LoadingScreen** exécute ses tâches
+  (`LoadBootAtlasUI`, `LoadPerBlueUI`, `ShowDisneyLogo`, `StartServerLogin`) et **rend des frames**.
+  Bloqué sur `DhNet` (login, #NET) + `android.os.SystemClock.elapsedRealtimeNanos()` absent des
+  stubs API 16 (#ANDROIDSTUBS). Tous les shims/deferrals tracés dans `desktop-port/BACKEND_STATUS.md`.
+
 ### Point de reprise
-Port desktop : infra launcher prête, rendu headless prouvé, **backend à faire = adapter
-`dsbackend/` de DragonSoul** (backend LWJGL3 maison contre le core libGDX PerBlue, seul chemin
-compatible + headless). Ensuite : rediriger `ServerType.LIVE` → serveurs locaux, franchir le
-boot (captures glReadPixels), brancher l'automation crawler. Voir `desktop-port/PROGRESS.md`,
-MEMORY.md §7.
+**Le jeu atteint l'écran de chargement (logo Disney) en headless.** Prochaine étape :
+(1) #ANDROIDSTUBS — `android.os.SystemClock` fonctionnel ; (2) #NET — `DhNet` réel + lancer
+`server/content_server.py` + serveur de login, `DH_SERVER=host:port` → franchir le login
+(`ClientInfo1`→`BootData1`) → menu principal + capture. Voir `desktop-port/BACKEND_STATUS.md`.

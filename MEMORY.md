@@ -210,15 +210,17 @@ Dépôt de référence (`/workspace/dragonsoul-web`, branche `claude/game-transp
    socket TCP (`server/java/dhserver/LoginServer.java`). Framing/codec gérés par les classes
    du jeu (pas de `packInt` à reverser). Reste : (a) champs **minimaux** de `BootData1` exigés
    par le **vrai** client ; (b) `POST /login` HTTP (format à reverser dans `RPGMain`/`GameMain`).
-6. [~] **Backend/port desktop** — launcher écrit + **rendu headless prouvé** (Xvfb + Mesa
-   llvmpipe). **VERDICT (cf. `desktop-port/PROGRESS.md`)** : le core libGDX de PerBlue est
-   **modifié ET réduit (ProGuard)** → ni le core stock ni le backend stock de Maven ne matchent
-   (`Group.DEFAULT_TRANSFORM` ajouté ; `InputEventQueue.setProcessor` supprimé). Le backend
-   LWJGL2 bundlé matche le core mais est **hostile au headless** (`LinuxDisplay` AIOOBE sous
-   Xvfb). ⇒ comme DragonSoul, il faut un **backend maison LWJGL3** contre le core du jeu →
-   **décision : adapter `dsbackend/` de DragonSoul** (même core PerBlue). Le launcher +
-   `DhDeviceInfo` + extraction assets + redirection `ServerType` déjà écrits restent valables.
-   ← PROCHAINE ÉTAPE.
+6. [~] **Backend/port desktop LWJGL3 maison — le jeu BOOTE jusqu'à l'écran de chargement.**
+   Backend complet écrit (`desktop-port/src/main/java/dhbackend/` : Dh{GL20,Graphics,Input,
+   Files,Preferences,Application,DeviceInfo,Audio,Net,Bridges,StatFileExt} + `GlfwInput`),
+   porté du `dsbackend/` de DragonSoul contre le core libGDX **clair** du jeu. Launcher
+   `dhdesktop/DesktopLauncher` : GLFW+GL, câble `Gdx.*`, `new GameMain(DhDeviceInfo)`, pilote
+   create()/render(). **`GameMain.create()` OK** (compression ETC1, assets, shaders, UI XHDPI
+   1280×720) → **LoadingScreen rend** (LoadBootAtlasUI, ShowDisneyLogo, StartServerLogin…).
+   Stats `.tab` chargées via `DhStatFileExt`. Contenu fourni par `tools/fetch_assets.sh`
+   (archive.org). **Bloqué sur** : `DhNet` (login, #NET) + `SystemClock.elapsedRealtimeNanos`
+   absent des stubs Android (#ANDROIDSTUBS). Détail + deferrals : `desktop-port/BACKEND_STATUS.md`.
+   ← PROCHAINE ÉTAPE : #ANDROIDSTUBS puis #NET + serveurs → franchir le login.
 7. [ ] **Persistance** (SQLite) + **passerelle/multi-serveur** (liste, mot de passe).
 8. [ ] **Outil d'extraction data → format serveur** (les `.tab` chargés tels quels).
 
