@@ -222,10 +222,13 @@ Dépôt de référence (`/workspace/dragonsoul-web`, branche `claude/game-transp
    `{"status":"good","data":"host:port"}` → **se connecte à notre serveur de jeu TCP**
    (`run-online.sh` : contenu+login :8080 + jeu :8081 + client). Contenu = **auto** via le
    FileDownloader du jeu (java.net) pointé sur notre serveur ; `fetch_assets.sh` = cache offline.
-   **Bloqué sur #SPINE** (`libspine-native64.so`, natif absent du base APK — dans les splits par
-   ABI) requis dès l'animation du logo Disney. Ensuite : handshake `ClientInfo1`→`BootData1`
-   puis tutoriel `IntroTutorialActV1` (nouveau joueur). Détail : `desktop-port/BACKEND_STATUS.md`.
-   ← PROCHAINE ÉTAPE : obtenir `libspine-native64.so` (x86_64) puis BootData first-boot.
+   **#SPINE ✅ RÉSOLU** sans le `.so` : module Java `com.perblue.heroes.cspine.*` (shadow
+   classpath) sur **spine-libgdx 3.6.53.1** (atlas/skel `@native` re-résolus ; `NativeSkeletonRenderer`
+   maillage 2-couleurs). **#CPARTICLE ⚠️ PARTIEL** : 2ᵉ moteur natif `cparticle.*` (`.np`) — shadow
+   de `cparticle.Native` seul (chargement réel, rendu différé). Le boot franchit les deux animations
+   logo (Disney + PerBlue) sans crash (capture `desktop-port/build/spine-test.png`).
+   ← PROCHAINE ÉTAPE : `run-online.sh` → login `ClientInfo1`→`BootData1` → menu / tutoriel
+   `IntroTutorialActV1` (nouveau joueur, BootData neuf). Détail : `desktop-port/BACKEND_STATUS.md`.
 7. [ ] **Persistance** (SQLite) + **passerelle/multi-serveur** (liste, mot de passe).
 8. [ ] **Outil d'extraction data → format serveur** (les `.tab` chargés tels quels).
 

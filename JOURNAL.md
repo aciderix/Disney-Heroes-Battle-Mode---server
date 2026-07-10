@@ -261,8 +261,31 @@ Package `com.perblue.heroes.assets_external` : `ExternalAssetManager` (orchestre
   Bloqué sur `DhNet` (login, #NET) + `android.os.SystemClock.elapsedRealtimeNanos()` absent des
   stubs API 16 (#ANDROIDSTUBS). Tous les shims/deferrals tracés dans `desktop-port/BACKEND_STATUS.md`.
 
+### Modules natifs Spine + particules réimplémentés en Java (#SPINE ✅ / #CPARTICLE ⚠️)
+- **#SPINE résolu (Option A)** : les natifs Spine de PerBlue (`libspine-native64.so`, absents des
+  splits x86_64) sont remplacés par un module Java **`com.perblue.heroes.cspine.*`** (shadow
+  classpath) au-dessus de **spine-libgdx 3.6.53.1** — 12 classes : `Native` (coquille, plus aucun
+  `.so`), `NativeAtlas`/`NativeAtlasLoader`, `NativeSkeletonData`/`Loader`, `NativeSkeleton`,
+  `NativeAnimationState`/`Data`, `NativeSkeletonRenderer` (`Mesh` 2-couleurs `a_position/a_light/
+  a_dark/a_texCoord0` dessiné avec le shader de `ShaderChannels`). Détail clé : le jeu suffixe les
+  atlas/skel Spine par `@native` ; comme l'original, on retire ce suffixe (`lastIndexOf('@')` +
+  `substring` + re-resolve) avant d'ouvrir le vrai fichier. Constantes GL effacées par ProGuard
+  → littéraux (`GL_BLEND=0x0BE2`…). `mesh.render(shader, GL_TRIANGLES, 0, n, true)` (signature 5-args
+  de PerBlue).
+- **#CPARTICLE (partiel)** : découverte d'un **2ᵉ moteur natif** — `com.perblue.heroes.cparticle.*`
+  (format `.np` binaire propriétaire, dérivé au build de `ParticleConverter`, pas de runtime Java
+  prêt). Les wrappers `NativeParticleEffect`/`Pool`/`Loader`/`Renderer` sont de fins JNI → on shadow
+  la SEULE classe **`cparticle.Native`** (pur Java, sans `.so`) : `Effect_create`→handle non nul,
+  `getVertices`→0, `update`→complete. Les `.np` se **chargent** (octets réels lus) mais ne sont pas
+  encore **simulés** (aucun rendu). Débloque le boot ; simulation réelle = chantier suivant. PAS de
+  rustine (aucune donnée de jeu falsifiée, seul un effet cosmétique n'est pas encore affiché).
+- **Résultat** : le boot franchit `WaitForDisneyAnimation` + `WaitForPerBlueAnimation` sans crash
+  (capture `desktop-port/build/spine-test.png`). Reste bloqué au login en mode OFFLINE (attendu :
+  `run-desktop.sh` sans `DH_SERVER` vise `login.disneyheroesgame.com`).
+
 ### Point de reprise
-**Le jeu atteint l'écran de chargement (logo Disney) en headless.** Prochaine étape :
-(1) #ANDROIDSTUBS — `android.os.SystemClock` fonctionnel ; (2) #NET — `DhNet` réel + lancer
-`server/content_server.py` + serveur de login, `DH_SERVER=host:port` → franchir le login
-(`ClientInfo1`→`BootData1`) → menu principal + capture. Voir `desktop-port/BACKEND_STATUS.md`.
+Modules natifs Spine/particules franchis. **Prochaine étape** : lancer **`run-online.sh`**
+(contenu `:8080` + login + serveur de jeu `:8081`, `DH_SERVER`) → franchir le login
+(`ClientInfo1`→`BootData1`), atteindre le menu / le tutoriel `IntroTutorialActV1` (nouveau joueur,
+BootData neuf — NE PAS seeder) et capturer. Voir `desktop-port/BACKEND_STATUS.md` (#SPINE ✅,
+#CPARTICLE ⚠️, #AUDIO, #BRIDGES).

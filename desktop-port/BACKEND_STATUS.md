@@ -65,10 +65,22 @@ handshake `ClientInfo1`→`BootData1` (serveur prêt) puis, pour un nouveau joue
   seulement `contentLocation`) vers notre serveur, et servir **`POST /login`** (réponse : statut
   + adresse du serveur de jeu) ; puis le handshake TCP `ClientInfo1`→`BootData1` (serveur déjà
   prêt : `server/java/dhserver/LoginServer.java`). Sans ça → fallback OFFLINE.
-- **#SPINE** — `libspine-native64.so` (natif d'animation squelettique Spine de PerBlue,
-  `com.perblue.heroes.cspine.Native`) absent (les `.so` sont dans les splits APK par ABI, pas
-  dans le base APK). À extraire d'un split APK / de la version Google Play et fournir sur le
-  classpath (SharedLibraryLoader). Sans lui : animations cassées (erreurs non fatales au boot).
+- **#SPINE** — ✅ **RÉSOLU (Option A)** — le natif Spine de PerBlue (`libspine-native64.so`,
+  absent des splits x86_64) est **remplacé** par un module Java `com.perblue.heroes.cspine.*`
+  (shadow classpath) au-dessus de **spine-libgdx 3.6.53.1** : `Native` (coquille sans `.so`),
+  `NativeAtlas`/`NativeAtlasLoader` (atlas standard libGDX ; suffixe `@native` retiré via
+  `lastIndexOf('@')`+`substring`+re-resolve, comme l'original), `NativeSkeletonData(Loader)`
+  (`.skel` 3.6 lu par `SkeletonBinary`), `NativeSkeleton` (maillage posé au format 2-couleurs
+  du jeu), `NativeAnimationState(Data)` (mix + relais d'événements), `NativeSkeletonRenderer`
+  (`Mesh` `a_position/a_light/a_dark/a_texCoord0`, shader de `ShaderChannels`). Le jeu franchit
+  `WaitForDisneyAnimation`/`WaitForPerBlueAnimation` sans crash. Fidélité : RÉEL (rendu à affiner).
+- **#CPARTICLE** — ⚠️ **PARTIEL** — 2ᵉ module natif de PerBlue (`com.perblue.heroes.cparticle.*`,
+  format de particules `.np` binaire, sans runtime Java tout-prêt). Shadow de la SEULE classe
+  `cparticle.Native` (les wrappers `NativeParticleEffect`/`Pool`/`Loader`/`Renderer` sont de fins
+  JNI qui n'atteignent le natif que par elle → tournent inchangés). Les `.np` **se chargent**
+  réellement (octets lus par le loader) mais ne sont **pas encore simulés** (`getVertices`→0, aucun
+  rendu). Débloque boot/login/menu/tutoriel. À FAIRE : vrai moteur (parser `.np` dérivé de
+  `ParticleConverter`, simulation, sommets). PAS un « OK » factice : aucune donnée de jeu falsifiée.
 - **#AUDIO** — backend audio réel (OpenAL LWJGL + décodage OGG STB Vorbis), depuis `DsAudio`.
   Actuellement muet (no-op) ; non requis pour le rendu.
 - **#CONSENT** — vérifier les **clés/valeurs exactes** des prefs d'accord (confidentialité/CGU)
