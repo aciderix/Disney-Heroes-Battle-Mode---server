@@ -1,0 +1,4 @@
+/spine-c/
+/build/
+*.o
+*.so
