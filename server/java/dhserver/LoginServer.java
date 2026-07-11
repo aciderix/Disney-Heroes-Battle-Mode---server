@@ -7,6 +7,7 @@ import com.perblue.grunt.translate.GruntMessage;
 import com.perblue.grunt.translate.GruntServerFactory;
 import com.perblue.heroes.network.DHXORConnectionWrapper;
 import com.perblue.heroes.network.messages.BootData;
+import com.perblue.heroes.network.messages.ChangeTutorialStep;
 import com.perblue.heroes.network.messages.ClientInfo;
 import com.perblue.heroes.network.messages.MessageFactory;
 import com.perblue.heroes.network.messages.Ping;
@@ -29,12 +30,11 @@ import java.util.concurrent.Executors;
  */
 public final class LoginServer {
 
-  public interface BootDataProvider { BootData bootDataFor(ClientInfo clientInfo); }
-
   private final int port;
-  private final BootDataProvider provider;
+  /** État serveur autoritaire (un seul compte pour l'instant — persistance = étape 5). */
+  private final ServerUser user;
 
-  public LoginServer(int port, BootDataProvider provider) { this.port = port; this.provider = provider; }
+  public LoginServer(int port, ServerUser user) { this.port = port; this.user = user; }
 
   /** Toutes les classes de message du jeu (dérivées du registre MessageFactory.messageIndex). */
   @SuppressWarnings("unchecked")
@@ -70,10 +70,18 @@ public final class LoginServer {
             String name = m.getFullName();
             System.out.println("[login] <== " + name);
             if (m instanceof ClientInfo) {
-              BootData bd = provider.bootDataFor((ClientInfo) m);
+              BootData bd = user.bootData();
               bd.setAsReplyTo(m);
               c.send(bd);
-              System.out.println("[login] ==> BootData (reply)");
+              System.out.println("[login] ==> BootData (reply) : "
+                  + bd.individualUserExtra.tutorialActs.size() + " actes de tuto");
+            } else if (m instanceof ChangeTutorialStep) {
+              // Progression du tutoriel : le serveur est autoritaire → on met à jour l'état
+              // (persisté en étape 5). Fire-and-forget côté client (aucune réponse attendue).
+              ChangeTutorialStep cts = (ChangeTutorialStep) m;
+              boolean applied = user.applyTutorialStep(cts);
+              System.out.println("[login]     tuto " + cts.type + " -> step " + cts.step
+                  + (cts.forceSkip ? " (forceSkip)" : "") + (applied ? "" : " [type inconnu, ignoré]"));
             } else if (m instanceof Ping) {
               // Écho de latence/keepalive : le client mesure le RTT et surveille l'activité serveur.
               // Sans réponse, son chien de garde ferme la connexion (« Reconnecting… »).
@@ -104,17 +112,12 @@ public final class LoginServer {
 
   public static void main(String[] args) throws Exception {
     int port = args.length > 0 ? Integer.parseInt(args[0]) : 8081;
-    // Étape 3 : BootData NOUVEAU JOUEUR complet → tutoriel d'intro. Structure entièrement issue
-    // des classes du jeu (new BootData() complet par ses initialiseurs ; actes de tuto lus dans
-    // le registre TutorialHelper) — aucune donnée écrite à la main (docs/PRINCIPLES.md §4).
-    // userID fixe pour l'instant (la persistance = étape 5, docs/SERVER_PLAN.md).
-    new LoginServer(port, ci -> {
-      BootData bd = new BootData();
-      NewUserState.fillNewPlayer(bd, /*userID*/ 1L, /*shardID*/ 1);
-      System.out.println("[login] ==> BootData nouveau joueur : "
-          + bd.individualUserExtra.tutorialActs.size() + " actes de tuto (step 0)");
-      return bd;
-    }).start();
+    // Étapes 3-4 : compte NOUVEAU JOUEUR autoritaire → tutoriel d'intro, avec progression du tuto
+    // appliquée côté serveur (ChangeTutorialStep). Structure/valeurs entièrement issues des classes
+    // du jeu (docs/PRINCIPLES.md §4). userID fixe pour l'instant (persistance = étape 5).
+    ServerUser user = new ServerUser(/*userID*/ 1L, /*shardID*/ 1);
+    System.out.println("[login] compte nouveau joueur créé (id=1, tutoriels au step 0)");
+    new LoginServer(port, user).start();
     Thread.currentThread().join();
   }
 }
