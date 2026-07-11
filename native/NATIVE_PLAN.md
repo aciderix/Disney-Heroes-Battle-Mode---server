@@ -72,8 +72,28 @@ empaquetée, 1f) + `a_texCoord0`(2f) = **6 floats/sommet**. `drawCalls` (ShortBu
 par page de texture d'atlas. `getVertices` renvoie le nombre de groupes ; remplit verts + (indices) +
 drawCalls. Détail exact à confirmer sur le rendu du jeu (et/ou désassemblage de la lib ARM d'origine).
 
+## ⭐ Source de vérité obtenue : `libspine-native.so` ARM d'origine (NON strippée)
+
+Récupérée via `gdown` (dossier Drive ARM partagé) → split `config.armeabi_v7a.apk` →
+`lib/armeabi-v7a/libspine-native.so` (297 Ko, elf32 ARM). **Copiée en `native/reference/` (gitignored :
+binaire PerBlue copyrighté, NE PAS committer)**. Symboles **conservés** → RE ciblée facile. Confirme :
+- **cspine = spine-c** (`spRegionAttachment_computeWorldVertices`, `spSkeletonBinary_readSkin`, …) →
+  notre base spine-c officielle est la bonne. 75 fonctions `Java_com_perblue_heroes_c*` exportées.
+- **cparticle = C++ PerBlue** : classes `ParticleEffect` / `ParticleEmitter`, structures
+  **`TwoColorVertex`** (sommet 2-couleurs) et **`ParticleDrawCall`** (groupe de rendu). Fonctions clés
+  (petites → RE tractable) :
+  - `ParticleEffect::load(uchar*, uint)` = **396 o** → **le parser `.np` EXACT** (résout #NP-V3).
+  - `ParticleEffect::getTCVertices(TwoColorVertex*, uint&, ParticleDrawCall*, ...)` = **264 o** →
+    **format sommets + drawCalls EXACT** (résout le banding cspine ET le rendu cparticle).
+  - `ParticleEmitter::updateParticles(float,float)` = 3428 o → la simulation.
+
+⇒ Désassembler ces fonctions (capstone/objdump ARM) pour **transcrire fidèlement** (pas inventer) :
+le format `.np`, la struct `ParticleDrawCall` (→ `Skeleton_getVertices` ET `Effect_getVertices`), la
+simulation. C'est de l'**extraction** conforme à PRINCIPLES §4.
+
 ## Étapes
-1. [~] Récupérer spine-c 3.6 officiel (build script, non committé — licence Spine Runtimes).
+1. [x] Récupérer spine-c 3.6 officiel (build script, non committé — licence Spine Runtimes).
+1b.[x] Récupérer la lib ARM d'origine (source de vérité, `native/reference/`, gitignored).
 2. [ ] JNI glue `cspine_jni.c` : table de handles, Spine_init, erreurs, Atlas/SkeletonData/Skeleton/
    AnimationState(Data) sur spine-c ; `Skeleton_getVertices` au format 2-couleurs du jeu.
 3. [ ] `cparticle_jni.c` : moteur de particules (le `.np` = ParticleEmitter libGDX ; à porter en C —
