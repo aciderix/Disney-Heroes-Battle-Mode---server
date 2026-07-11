@@ -36,8 +36,12 @@ dependencies {
     implementation 'com.google.android:android:4.1.1.4'
     implementation files('../libs/commons-logging.jar')
 
-    // (Spine : on N'utilise PLUS de runtime Java. Le jeu tourne avec son code d'origine cspine.*
-    // au-dessus de la lib native spine-native64.so, bâtie par native/build.sh sur spine-c officiel.)
+    // Spine + particules : on exécute le VRAI binaire natif d'origine de PerBlue
+    // (native/reference/libspine-native.so, ARM) IN-PROCESS via unidbg (émulation ARM + bionic/JNI
+    // virtuel). Les shadows com.perblue.heroes.cspine/cparticle.Native (desktop-port/src) dispatchent
+    // vers dhbackend.unidbg.UnidbgVM → le code d'origine tourne, zéro réécriture (cf. native/unidbg/).
+    // unidbg embarque le binaire hôte unicorn dans ses jars → build autonome (rien à installer).
+    implementation 'com.github.zhkl0228:unidbg-android:0.9.8'
 
     // Le jeu SANS org/lwjgl ni backends bundlés (produit par run-desktop.sh depuis
     // ../libs/game.jar) : GameMain + com.perblue.* + core libGDX PerBlue. Utilisé au COMPILE

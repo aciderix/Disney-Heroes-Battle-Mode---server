@@ -35,14 +35,12 @@ if [ ! -f "$ASM" ]; then
 fi
 REFRAME_CLS="../tools/reframe/classes"
 [ -f "$REFRAME_CLS/ReframeJar.class" ] || { mkdir -p "$REFRAME_CLS"; javac -cp "$ASM" -d "$REFRAME_CLS" ../tools/reframe/src/ReframeJar.java; }
-# Lib native `spine-native` de PerBlue (squelettes Spine + particules), rebâtie pour desktop x86_64
-# sur le runtime spine-c OFFICIEL (native/). Le jeu la charge via SharedLibraryLoader ("spine-native")
-# → son code d'origine cspine.*/cparticle.* tourne INCHANGÉ. Voir native/NATIVE_PLAN.md.
-SPINE_NATIVE="../native/build/spine-native64.so"
-if [ ! -f "$SPINE_NATIVE" ] || [ ../native/src/cspine_jni.c -nt "$SPINE_NATIVE" ]; then
-  echo "[desktop] build de la lib native spine-native64.so ..."
-  (cd ../native && bash build.sh) 2>&1 | grep -viE 'Picked up|fread|warning|extension.c|\^~' | tail -3
-fi
+# Spine + particules : on exécute le VRAI binaire natif d'origine de PerBlue
+# (native/reference/libspine-native.so, ARM, committé) IN-PROCESS via unidbg. Les shadows
+# com.perblue.heroes.cspine/cparticle.Native (desktop-port/src) dispatchent vers dhbackend.unidbg.UnidbgVM.
+# ⇒ le CODE D'ORIGINE de spine ET des particules tourne, zéro réécriture. Voir native/unidbg/README.md.
+SPINE_LIB="../native/reference/libspine-native.so"
+[ -f "$SPINE_LIB" ] || echo "[desktop] WARN: $SPINE_LIB (binaire ARM d'origine) introuvable"
 
 echo "[desktop] compilation ..."
 gradle --no-daemon -q compileJava 2>/dev/null | grep -v 'Picked up' || true
@@ -81,10 +79,7 @@ if [ ! -f "$NATDIR/libgdx64.so" ]; then
   GDXJAR=$(echo "$RUNTIME_CP" | tr ':' '\n' | grep 'gdx-platform.*natives-desktop.jar' | head -1)
   [ -n "$GDXJAR" ] && unzip -oq "$GDXJAR" 'libgdx64.so' -d "$NATDIR" || echo "[desktop] WARN: gdx-platform natives introuvable"
 fi
-# spine-native64.so à la RACINE du classpath → SharedLibraryLoader.load("spine-native") l'extrait
-# (getResourceAsStream("/spine-native64.so")) et le charge. C'est le mécanisme d'origine du jeu.
-# Nom attendu par SharedLibraryLoader sous Linux : préfixe `lib` (mapLibraryName -> libspine-native64.so).
-mkdir -p "$NATDIR"; cp -f "$SPINE_NATIVE" "$NATDIR/libspine-native64.so" 2>/dev/null || echo "[desktop] WARN: spine-native64.so absent"
+# (Plus de spine-native64.so : spine/particules passent par unidbg + le binaire ARM d'origine.)
 
 # $ASSETS/$RESD sur le classpath → FileHandles internes + getResourceAsStream résolvent les
 # assets/ressources du jeu. RUNTIME_CP contient déjà game-logic.jar (via build.gradle).
@@ -106,6 +101,8 @@ fi
 # game-logic-framed.jar a des StackMapTable valides → plus besoin de -Xverify:none. On garde
 # -XX:TieredStopAtLevel=1 (C1 seul) par prudence sur le bytecode dex2jar (le C2 avait planté).
 JOPTS="-XX:TieredStopAtLevel=1 -Dorg.lwjgl.util.Debug=false -Ddh.rundir=$BUILD/run"
+# Binaire natif ARM d'origine chargé par UnidbgVM (spine + particules via unidbg).
+JOPTS="$JOPTS -Ddh.spinelib=$(cd .. && pwd)/native/reference/libspine-native.so"
 [ -f "$NATDIR/libgdx64.so" ] && JOPTS="$JOPTS -Ddh.gdxnative=$NATDIR/libgdx64.so"
 [ -n "${DH_SERVER:-}" ] && JOPTS="$JOPTS -Ddh.server=$DH_SERVER"
 [ -n "${DH_FRAMES:-}" ] && JOPTS="$JOPTS -Ddh.frames=$DH_FRAMES"
