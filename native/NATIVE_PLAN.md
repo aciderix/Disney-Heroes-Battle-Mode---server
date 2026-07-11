@@ -91,6 +91,29 @@ binaire PerBlue copyrighté, NE PAS committer)**. Symboles **conservés** → RE
 le format `.np`, la struct `ParticleDrawCall` (→ `Skeleton_getVertices` ET `Effect_getVertices`), la
 simulation. C'est de l'**extraction** conforme à PRINCIPLES §4.
 
+## Diff officiel ↔ modifié (extraction par commande — `native/tools/`)
+
+`readelf` sur `libspine-native.so` + headers spine-c officiels :
+- **spine-c** : 246 fonctions officielles ; leur `.so` en a 311. Les 65 « en plus » sont surtout des
+  **utilitaires PerBlue** (`spArrayFloatArray_*`, `spArrayShortArray_*`, `spFloatArray_*`,
+  `spAtlas_findRegionIgnoreCase/findRegions/disposeRegions`…). Le **cœur** (Skeleton/Bone/Animation/
+  déformation) reste **standard** → notre spine-c officiel est la bonne base ; le *banding* vient plus
+  probablement de NOTRE glue `getVertices` (regroupement drawCalls) que d'un écart spine-c.
+- **Moteur particules = C++ propriétaire PerBlue** (aucune source publiée) : classes `ParticleEffect`/
+  `ParticleEmitter`, structs `TwoColorVertex`, `OneColorVertex`, `ParticleDrawCall`, `ParticleCursor`,
+  `ScaledNumericValue`. C'est un portage de `com.badlogic.gdx…ParticleEmitter` (Java, EN CLAIR dans
+  game.jar) → source de reconstruction. Format `.np` = `ParticleEffect::load` (magie [0,3]=v3).
+
+## Oracle d'exécution (émulation ARM) — fidélité bit-à-bit par commande
+
+qemu-arm-static + cross-compilo ARM **installés**. Plan : faire tourner le `.so` d'origine sous qemu
+comme **oracle** → capturer ses sorties EXACTES sur de vrais `.np`/`.skel` (sommets, drawCalls, structs
+parsées) → (a) **extraire** les formats sans deviner, (b) **valider bit-à-bit** notre rebuild x86_64.
+**Obstacle** : la lib est **Android** (bionic) — `NEEDED libandroid/liblog/libm/libdl/libc.so`,
+symboles `__android_log_print`, `__aeabi_*`, `__errno`, `@LIBC`. → fournir une **poignée de shims
+bionic** (log no-op, `__aeabi_mem*` via libgcc, `__errno`→glibc) + un harnais ARM (dlopen + appels).
+Le livrable desktop reste un rebuild x86_64, mais **vérifié identique** à l'oracle.
+
 ## Étapes
 1. [x] Récupérer spine-c 3.6 officiel (build script, non committé — licence Spine Runtimes).
 1b.[x] Récupérer la lib ARM d'origine (source de vérité, `native/reference/`, gitignored).
