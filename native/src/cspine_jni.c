@@ -117,9 +117,10 @@ JNIEXPORT jfloatArray JNICALL Java_com_perblue_heroes_cspine_Native_SkeletonData
     return a;
 }
 JNIEXPORT jint JNICALL Java_com_perblue_heroes_cspine_Native_SkeletonData_1getAnimationID(JNIEnv* e, jclass c, jint h, jstring name) {
-    (void)c; spSkeletonData* d = (spSkeletonData*)ht_get(&t_skelData, h); if (!d) return -1;
-    const char* n = (*e)->GetStringUTFChars(e, name, 0); int id = -1;
-    for (int i = 0; i < d->animationsCount; i++) if (!strcmp(d->animations[i]->name, n)) { id = i; break; }
+    /* IDs d'animation 1-based (le jeu fait animNames[id-1], et 0 = « aucune », cf. getPrimaryAnimation). */
+    (void)c; spSkeletonData* d = (spSkeletonData*)ht_get(&t_skelData, h); if (!d) return 0;
+    const char* n = (*e)->GetStringUTFChars(e, name, 0); int id = 0;
+    for (int i = 0; i < d->animationsCount; i++) if (!strcmp(d->animations[i]->name, n)) { id = i+1; break; }
     (*e)->ReleaseStringUTFChars(e, name, n); return id;
 }
 JNIEXPORT jobjectArray JNICALL Java_com_perblue_heroes_cspine_Native_SkeletonData_1getAnimationNames(JNIEnv* e, jclass c, jint h) {
@@ -314,9 +315,9 @@ JNIEXPORT void JNICALL Java_com_perblue_heroes_cspine_Native_AnimationStateData_
 }
 JNIEXPORT void JNICALL Java_com_perblue_heroes_cspine_Native_AnimationStateData_1setMix(JNIEnv* e, jclass c, jint h, jint fromA, jint toA, jfloat dur) {
     (void)e; (void)c; spAnimationStateData* asd = (spAnimationStateData*)ht_get(&t_asd, h); if (!asd) return;
-    spSkeletonData* d = asd->skeletonData;
-    if (fromA>=0 && fromA<d->animationsCount && toA>=0 && toA<d->animationsCount)
-        spAnimationStateData_setMix(asd, d->animations[fromA], d->animations[toA], dur);
+    spSkeletonData* d = asd->skeletonData; /* IDs 1-based */
+    if (fromA>=1 && fromA<=d->animationsCount && toA>=1 && toA<=d->animationsCount)
+        spAnimationStateData_setMix(asd, d->animations[fromA-1], d->animations[toA-1], dur);
 }
 
 /* =================================================================== AnimationState */
@@ -334,8 +335,9 @@ JNIEXPORT void JNICALL Java_com_perblue_heroes_cspine_Native_AnimationState_1app
     (void)e; (void)c; spAnimationState* st = (spAnimationState*)ht_get(&t_animState, h); spSkeleton* s = (spSkeleton*)ht_get(&t_skel, skelHandle);
     if (st && s) spAnimationState_apply(st, s);
 }
+/* id 1-based (convention PerBlue : 0 = aucune) -> animation spine-c. */
 static spAnimation* animOf(spAnimationState* st, int id) {
-    spSkeletonData* d = st->data->skeletonData; return (id>=0 && id<d->animationsCount) ? d->animations[id] : 0;
+    spSkeletonData* d = st->data->skeletonData; return (id>=1 && id<=d->animationsCount) ? d->animations[id-1] : 0;
 }
 JNIEXPORT jint JNICALL Java_com_perblue_heroes_cspine_Native_AnimationState_1setAnimation(JNIEnv* e, jclass c, jint h, jint track, jint animId, jboolean loop) {
     (void)e; (void)c; spAnimationState* st = (spAnimationState*)ht_get(&t_animState, h); if (!st) return -1;
@@ -349,10 +351,11 @@ JNIEXPORT void JNICALL Java_com_perblue_heroes_cspine_Native_AnimationState_1cle
     (void)e; (void)c; spAnimationState* st = (spAnimationState*)ht_get(&t_animState, h); if (st) spAnimationState_clearTracks(st);
 }
 JNIEXPORT jint JNICALL Java_com_perblue_heroes_cspine_Native_AnimationState_1getCurrentAnimationID(JNIEnv* e, jclass c, jint h, jint track) {
-    (void)e; (void)c; spAnimationState* st = (spAnimationState*)ht_get(&t_animState, h); if (!st) return -1;
-    spTrackEntry* t = spAnimationState_getCurrent(st, track); if (!t || !t->animation) return -1;
+    /* 1-based ; 0 = aucune animation courante (le jeu teste `if (id != 0)`, cf. getPrimaryAnimation). */
+    (void)e; (void)c; spAnimationState* st = (spAnimationState*)ht_get(&t_animState, h); if (!st) return 0;
+    spTrackEntry* t = spAnimationState_getCurrent(st, track); if (!t || !t->animation) return 0;
     spSkeletonData* d = st->data->skeletonData;
-    for (int i=0;i<d->animationsCount;i++) if (d->animations[i]==t->animation) return i; return -1;
+    for (int i=0;i<d->animationsCount;i++) if (d->animations[i]==t->animation) return i+1; return 0;
 }
 JNIEXPORT jfloat JNICALL Java_com_perblue_heroes_cspine_Native_AnimationState_1getCurrentAnimationTime(JNIEnv* e, jclass c, jint h, jint track) {
     (void)e; (void)c; spAnimationState* st = (spAnimationState*)ht_get(&t_animState, h); if (!st) return 0;

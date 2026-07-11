@@ -36,12 +36,8 @@ dependencies {
     implementation 'com.google.android:android:4.1.1.4'
     implementation files('../libs/commons-logging.jar')
 
-    // Runtime Spine JAVA (option A) : lit les .skel/.atlas 3.6 du jeu → remplace le natif cspine
-    // (module dhcspine/ shadow com.perblue.heroes.cspine.*). On utilise spine-libgdx 3.6.53.1
-    // RE-CIBLÉ sur l'ABI du gdx MODIFIÉ de PerBlue (spine-libgdx-perblue.jar, produit par
-    // run-desktop.sh via tools/reframe PatchGdxCalls : réécrit les appels gdx dont le descripteur
-    // diffère, ex. Array.add ...V -> ...Z). Sinon NoSuchMethodError au décodage des .skel.
-    implementation files('../libs/spine-libgdx-perblue.jar')
+    // (Spine : on N'utilise PLUS de runtime Java. Le jeu tourne avec son code d'origine cspine.*
+    // au-dessus de la lib native spine-native64.so, bâtie par native/build.sh sur spine-c officiel.)
 
     // Le jeu SANS org/lwjgl ni backends bundlés (produit par run-desktop.sh depuis
     // ../libs/game.jar) : GameMain + com.perblue.* + core libGDX PerBlue. Utilisé au COMPILE

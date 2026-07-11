@@ -35,17 +35,13 @@ if [ ! -f "$ASM" ]; then
 fi
 REFRAME_CLS="../tools/reframe/classes"
 [ -f "$REFRAME_CLS/ReframeJar.class" ] || { mkdir -p "$REFRAME_CLS"; javac -cp "$ASM" -d "$REFRAME_CLS" ../tools/reframe/src/ReframeJar.java; }
-[ -f "$REFRAME_CLS/PatchGdxCalls.class" ] || javac -cp "$ASM" -d "$REFRAME_CLS" ../tools/reframe/src/PatchGdxCalls.java
-
-# spine-libgdx compilé contre le gdx STOCK ; on ré-aligne ses appels gdx sur l'ABI MODIFIÉE de
-# PerBlue (ex. Array.add ...V -> ...Z). Sinon NoSuchMethodError au décodage des .skel (tous les
-# squelettes : logos, décor, héros de combat). Cf. tools/reframe/src/PatchGdxCalls.java.
-SPINE_PB="../libs/spine-libgdx-perblue.jar"
-if [ ! -f "$SPINE_PB" ] || [ "$SRC_GAME" -nt "$SPINE_PB" ]; then
-  SPINE_STOCK="$BUILD/spine-libgdx-3.6.53.1.jar"
-  [ -f "$SPINE_STOCK" ] || { echo "[desktop] téléchargement spine-libgdx ..."; curl -fsSL -o "$SPINE_STOCK" "$MVN/com/esotericsoftware/spine/spine-libgdx/3.6.53.1/spine-libgdx-3.6.53.1.jar"; }
-  echo "[desktop] re-ciblage de spine-libgdx sur l'ABI PerBlue ..."
-  java -cp "$REFRAME_CLS:$ASM" PatchGdxCalls "$SRC_GAME" "$SPINE_STOCK" "$SPINE_PB" | grep -v 'Picked up' || true
+# Lib native `spine-native` de PerBlue (squelettes Spine + particules), rebâtie pour desktop x86_64
+# sur le runtime spine-c OFFICIEL (native/). Le jeu la charge via SharedLibraryLoader ("spine-native")
+# → son code d'origine cspine.*/cparticle.* tourne INCHANGÉ. Voir native/NATIVE_PLAN.md.
+SPINE_NATIVE="../native/build/spine-native64.so"
+if [ ! -f "$SPINE_NATIVE" ] || [ ../native/src/cspine_jni.c -nt "$SPINE_NATIVE" ]; then
+  echo "[desktop] build de la lib native spine-native64.so ..."
+  (cd ../native && bash build.sh) 2>&1 | grep -viE 'Picked up|fread|warning|extension.c|\^~' | tail -3
 fi
 
 echo "[desktop] compilation ..."
@@ -85,11 +81,16 @@ if [ ! -f "$NATDIR/libgdx64.so" ]; then
   GDXJAR=$(echo "$RUNTIME_CP" | tr ':' '\n' | grep 'gdx-platform.*natives-desktop.jar' | head -1)
   [ -n "$GDXJAR" ] && unzip -oq "$GDXJAR" 'libgdx64.so' -d "$NATDIR" || echo "[desktop] WARN: gdx-platform natives introuvable"
 fi
+# spine-native64.so à la RACINE du classpath → SharedLibraryLoader.load("spine-native") l'extrait
+# (getResourceAsStream("/spine-native64.so")) et le charge. C'est le mécanisme d'origine du jeu.
+# Nom attendu par SharedLibraryLoader sous Linux : préfixe `lib` (mapLibraryName -> libspine-native64.so).
+mkdir -p "$NATDIR"; cp -f "$SPINE_NATIVE" "$NATDIR/libspine-native64.so" 2>/dev/null || echo "[desktop] WARN: spine-native64.so absent"
 
 # $ASSETS/$RESD sur le classpath → FileHandles internes + getResourceAsStream résolvent les
 # assets/ressources du jeu. RUNTIME_CP contient déjà game-logic.jar (via build.gradle).
 # game-logic-framed.jar AVANT RUNTIME_CP (qui contient l'original non-framé) → il l'ombrage.
-CP="$BUILD/classes/java/main:$FRAMED:$ASSETS:$RESD:$RUNTIME_CP"
+# $NATDIR sur le classpath → SharedLibraryLoader y trouve spine-native64.so.
+CP="$BUILD/classes/java/main:$FRAMED:$NATDIR:$ASSETS:$RESD:$RUNTIME_CP"
 
 # Xvfb si pas d'affichage.
 if [ -z "${DISPLAY:-}" ]; then
