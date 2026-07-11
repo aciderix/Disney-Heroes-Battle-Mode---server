@@ -10,6 +10,7 @@
  */
 #include <jni.h>
 #include <stdlib.h>
+#include <stdint.h>
 #include <string.h>
 #include <stdio.h>
 #include <math.h>
@@ -72,6 +73,11 @@ JNIEXPORT jint JNICALL Java_com_perblue_heroes_cspine_Native_Atlas_1create(JNIEn
     spAtlas* atlas = spAtlas_create((const char*)buf, (int)len, "", 0);
     (*e)->ReleaseByteArrayElements(e, data, buf, JNI_ABORT);
     if (!atlas) { setError("spAtlas_create a échoué"); return 0; }
+    /* Marque chaque page par sa POSITION (0-based) dans rendererObject : ordre identique à
+       NativeAtlas.getTextures() côté jeu (textures.get(pageIndex)) → sert au regroupement drawCalls
+       dans getVertices (le renderer fait textures.get(texturePageIndex).bind()). */
+    int pi = 0;
+    for (spAtlasPage* p = atlas->pages; p; p = p->next) p->rendererObject = (void*)(intptr_t)(pi++);
     return ht_add(&t_atlas, atlas);
 }
 JNIEXPORT void JNICALL Java_com_perblue_heroes_cspine_Native_Atlas_1dispose(JNIEnv* e, jclass c, jint h) {
@@ -241,13 +247,48 @@ JNIEXPORT void JNICALL Java_com_perblue_heroes_cspine_Native_Skeleton_1getPosedB
 /* ------------------------------------------------- extraction du maillage 2-couleurs
  * Format sommet du jeu (cf. NativeSkeletonRenderer) : a_position(2f) + a_light(couleur empaquetée
  * ABGR, 1f) + a_dark(couleur empaquetée, 1f) + a_texCoord0(2f) = 6 floats/sommet. Triangles indexés.
- * drawCalls : à ce stade UN groupe (une page) ; le regroupement multi-pages sera affiné en validant
- * contre le rendu du jeu (et/ou la lib ARM d'origine). */
+ *
+ * drawCalls (contrat relevé du renderer Java EN CLAIR NativeSkeletonRenderer.renderInternal) :
+ *   n = getVertices(verts, indices, drawCalls);                 // n = nombre de draw calls
+ *   for (i in 0..n) { indexCount = drawCalls.get(); pageIdx = drawCalls.get();
+ *                     textures.get(pageIdx).bind();
+ *                     mesh.render(shader, GL_TRIANGLES, indexStart, indexCount, false);
+ *                     indexStart += indexCount; }
+ * ⇒ drawCalls = n paires de shorts (indexCount, texturePageIndex). Les triangles étant émis DANS
+ *   l'ordre de dessin (draw order), on ouvre un nouveau draw call à chaque changement de page ; les
+ *   attachments consécutifs sur la même page fusionnent (indexCount cumulé). getVertices renvoie n. */
 static float packColor(float r, float g, float b, float a) {
     unsigned int ir=(unsigned int)(r*255), ig=(unsigned int)(g*255), ib=(unsigned int)(b*255), ia=(unsigned int)(a*255);
     if(ir>255)ir=255; if(ig>255)ig=255; if(ib>255)ib=255; if(ia>255)ia=255;
     unsigned int c = (ia<<24)|(ib<<16)|(ig<<8)|ir; /* ABGR empaqueté (comme Color.toFloatBits) */
     float f; unsigned int m = c & 0xfeffffff; memcpy(&f,&m,4); return f;
+}
+
+/* Recale un java.nio.Buffer (position=0, limit=n) après remplissage par pointeur direct : le natif
+ * écrit en mémoire brute (GetDirectBufferAddress) sans toucher les champs Java position/limit ; or le
+ * renderer (chemin VertexArray) fait buffer.position(offset)/limit(offset+count) → il FAUT que limit
+ * couvre tout ce qu'on a écrit. On appelle java.nio.Buffer.position/limit (méthodes de base, retour
+ * Ljava/nio/Buffer; → descripteur stable toutes versions du JDK). */
+static void bufferSetLimit(JNIEnv* e, jobject buf, int n) {
+    if (!buf) return;
+    static jclass bufCls = 0; static jmethodID mPos = 0, mLim = 0;
+    if (!bufCls) {
+        jclass c = (*e)->FindClass(e, "java/nio/Buffer");
+        bufCls = (jclass)(*e)->NewGlobalRef(e, c);
+        mPos = (*e)->GetMethodID(e, bufCls, "position", "(I)Ljava/nio/Buffer;");
+        mLim = (*e)->GetMethodID(e, bufCls, "limit", "(I)Ljava/nio/Buffer;");
+    }
+    jobject r;
+    r = (*e)->CallObjectMethod(e, buf, mPos, 0); if (r) (*e)->DeleteLocalRef(e, r);
+    r = (*e)->CallObjectMethod(e, buf, mLim, n); if (r) (*e)->DeleteLocalRef(e, r);
+}
+
+/* Page d'atlas (0-based, cf. Atlas_create) d'un attachment région/mesh, via spAtlasRegion->page. */
+static int attachmentPage(spAttachment* att) {
+    spAtlasRegion* reg = 0;
+    if (att->type == SP_ATTACHMENT_REGION) reg = (spAtlasRegion*)((spRegionAttachment*)att)->rendererObject;
+    else if (att->type == SP_ATTACHMENT_MESH) reg = (spAtlasRegion*)((spMeshAttachment*)att)->rendererObject;
+    return (reg && reg->page) ? (int)(intptr_t)reg->page->rendererObject : 0;
 }
 
 static int buildVertices(JNIEnv* e, spSkeleton* s, jobject vertsBuf, jobject indicesBuf, jobject drawCallsBuf, float* boundsOut) {
@@ -256,12 +297,16 @@ static int buildVertices(JNIEnv* e, spSkeleton* s, jobject vertsBuf, jobject ind
     short* draws = drawCallsBuf ? (short*)(*e)->GetDirectBufferAddress(e, drawCallsBuf) : 0;
     if (!verts || !indices) return 0;
     int vi = 0, ii = 0, vertexCount = 0;
+    int drawCount = 0, curPage = -1, curDrawIdx = -1;   /* regroupement par page (draw order) */
     float minX=1e30f, minY=1e30f, maxX=-1e30f, maxY=-1e30f, wv[8];
     static const int QUAD[6] = {0,1,2,2,3,0};
     for (int d = 0; d < s->slotsCount; d++) {
         spSlot* slot = s->drawOrder[d]; spAttachment* att = slot->attachment; if (!att) continue;
+        if (att->type != SP_ATTACHMENT_REGION && att->type != SP_ATTACHMENT_MESH) continue;
         float lr = s->color.r*slot->color.r, lg = s->color.g*slot->color.g, lb = s->color.b*slot->color.b, la = s->color.a*slot->color.a;
         float dr = slot->darkColor?slot->darkColor->r:0, dg = slot->darkColor?slot->darkColor->g:0, db = slot->darkColor?slot->darkColor->b:0;
+        int page = attachmentPage(att);
+        int idxAdded = 0;
         if (att->type == SP_ATTACHMENT_REGION) {
             spRegionAttachment* r = (spRegionAttachment*)att;
             spRegionAttachment_computeWorldVertices(r, slot->bone, wv, 0, 2);
@@ -271,8 +316,8 @@ static int buildVertices(JNIEnv* e, spSkeleton* s, jobject vertsBuf, jobject ind
                 verts[vi++]=X; verts[vi++]=Y; verts[vi++]=pl; verts[vi++]=pd; verts[vi++]=r->uvs[k*2]; verts[vi++]=r->uvs[k*2+1];
                 if(X<minX)minX=X; if(X>maxX)maxX=X; if(Y<minY)minY=Y; if(Y>maxY)maxY=Y; }
             for (int k=0;k<6;k++) indices[ii++] = (short)(vertexCount + QUAD[k]);
-            vertexCount += 4;
-        } else if (att->type == SP_ATTACHMENT_MESH) {
+            vertexCount += 4; idxAdded = 6;
+        } else { /* SP_ATTACHMENT_MESH */
             spMeshAttachment* m = (spMeshAttachment*)att; int n = m->super.worldVerticesLength;
             float* mv = (float*)malloc(sizeof(float)*n);
             spVertexAttachment_computeWorldVertices(&m->super, slot, 0, n, mv, 0, 2);
@@ -282,12 +327,22 @@ static int buildVertices(JNIEnv* e, spSkeleton* s, jobject vertsBuf, jobject ind
                 verts[vi++]=X; verts[vi++]=Y; verts[vi++]=pl; verts[vi++]=pd; verts[vi++]=m->uvs[k*2]; verts[vi++]=m->uvs[k*2+1];
                 if(X<minX)minX=X; if(X>maxX)maxX=X; if(Y<minY)minY=Y; if(Y>maxY)maxY=Y; }
             for (int k=0;k<m->trianglesCount;k++) indices[ii++] = (short)(vertexCount + m->triangles[k]);
-            vertexCount += nv; free(mv);
+            vertexCount += nv; idxAdded = m->trianglesCount; free(mv);
         }
+        /* Ouvre un nouveau draw call au changement de page ; sinon cumule dans le courant. */
+        if (page != curPage) {
+            curPage = page; curDrawIdx = drawCount*2;
+            if (draws) { draws[curDrawIdx] = 0; draws[curDrawIdx+1] = (short)page; }
+            drawCount++;
+        }
+        if (draws) draws[curDrawIdx] += (short)idxAdded;
     }
     if (boundsOut) { if (minX>maxX){minX=minY=maxX=maxY=0;} boundsOut[0]=minX; boundsOut[1]=minY; boundsOut[2]=maxX; boundsOut[3]=maxY; }
-    if (draws) draws[0] = (short)vertexCount; /* un groupe ; format multi-pages à affiner */
-    return vertexCount > 0 ? 1 : 0;
+    /* Recale les buffers Java sur ce qu'on a écrit (le renderer s'appuie sur leurs limit/position). */
+    bufferSetLimit(e, vertsBuf, vi);
+    bufferSetLimit(e, indicesBuf, ii);
+    bufferSetLimit(e, drawCallsBuf, drawCount*2);
+    return drawCount;
 }
 
 JNIEXPORT jint JNICALL Java_com_perblue_heroes_cspine_Native_Skeleton_1getVertices(JNIEnv* e, jclass c, jint h, jobject verts, jobject indices, jobject drawCalls) {

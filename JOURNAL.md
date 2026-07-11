@@ -358,3 +358,35 @@ BootData neuf — NE PAS seeder) et capturer. Voir `desktop-port/BACKEND_STATUS.
 - **Dettes de fidélité identifiées** (à corriger par extraction, pas invention) : `getVertices` (banding =
   drawCalls multi-pages à rendre fidèles) ; `cparticle` (échafaudage neutre → vrai moteur). Source de
   vérité = **désassemblage de la lib `spine-native` ARM d'origine**.
+
+### cspine : banding CORRIGÉ — drawCalls multi-pages fidèles (2026-07-11)
+- **Cause du banding** : l'ancien `Skeleton_getVertices` renvoyait 1 seul draw call (`draws[0]=nb
+  sommets`, 2e short non initialisé) → le renderer liait UNE seule page de texture pour tout le
+  maillage. Toute géométrie d'une autre page d'atlas s'affichait avec la mauvaise texture (bandes).
+- **Contrat drawCalls EXTRAIT** (pas deviné) du bytecode EN CLAIR
+  `com.perblue.heroes.cspine.NativeSkeletonRenderer.renderPreparedVertices` (javap -c) :
+  `drawCount = getVertices(verts, indices, drawCalls)` ; `drawCalls.position(0)` ; boucle `drawCount`
+  fois : `indexCount = drawCalls.get()` ; `tex = textures.get(drawCalls.get())` ; `tex.bind()` ;
+  `mesh.render(shader, GL_TRIANGLES=4, indexStart, indexCount, false)` ; `indexStart += indexCount`.
+  ⇒ `drawCalls` = N paires de shorts `(indexCount, texturePageIndex)`, `getVertices` renvoie N.
+  `texturePageIndex` = index **0-based** dans `NativeAtlas.getTextures()` (`Array.get(int)`), dont
+  l'ordre = pages via `Atlas_getTexture(handle, 0..n)` dans `NativeAtlas.load` (boucle en clair).
+- **Implémentation** (`native/src/cspine_jni.c`) :
+  - `Atlas_create` tague chaque page par sa **position 0-based** dans `page->rendererObject`
+    (même parcours de liste chaînée que `Atlas_getTexture` → indices alignés avec `getTextures()`).
+  - `attachmentPage()` : `spRegionAttachment/spMeshAttachment->rendererObject` (= `spAtlasRegion`)
+    `->page->rendererObject` = pageIndex.
+  - `buildVertices` émet les tris **dans l'ordre de dessin** (draw order) et ouvre un nouveau draw
+    call à chaque changement de page ; les attachments consécutifs sur la même page fusionnent
+    (indexCount cumulé). Renvoie le nombre de draw calls.
+  - **`bufferSetLimit`** : le natif écrit en mémoire brute (`GetDirectBufferAddress`) sans toucher
+    `position/limit` des `java.nio.Buffer` ; or le chemin VertexArray de `Mesh.render` fait
+    `indices.getBuffer().position(offset)/limit(offset+count)` → il FAUT que `limit` couvre tout
+    l'écrit. On appelle `Buffer.position(0)/limit(n)` (descripteur `(I)Ljava/nio/Buffer;` stable) sur
+    verts (=nb floats), indices (=nb indices) et drawCalls (=N*2). Sans ça : `IllegalArgumentException:
+    newPosition > limit` dès le 2e draw call (offset>0). C'est le comportement du natif d'origine.
+- **Résultat** : `run-online.sh` (Xvfb+llvmpipe, 150 frames) → **splash MainScreen rendu sans banding**,
+  tous les héros Spine (multi-pages) corrects, logo/ballons/confettis nets. 0 crash de rendu.
+  Capture de référence : `native/reference/shots/mainscreen-nobanding.png`.
+- Reste : cparticle (échafaudage neutre → moteur fidèle via oracle ARM) ; extensions cspine
+  (`setSlotEyeState`, `setTintBlack`, `nextEvent`) à confirmer contre la lib ARM.

@@ -238,12 +238,19 @@ Dépôt de référence (`/workspace/dragonsoul-web`, branche `claude/game-transp
    `cspine.*`/`cparticle.*` du jeu tourne INCHANGÉ**. On a **SUPPRIMÉ** les réécritures Java
    (shadows cspine, spine-libgdx, shadow DataInput). Libs natives requises (cf. INVENTORY) :
    `gdx` ✅, `gdx-freetype` ⬜ (polices), `spine-native` 🔨, opensl/adcolony non requis.
-   État : **cspine natif fonctionne** (0 crash, décor Spine rendu) — reste un **banding**
-   (`getVertices`/drawCalls à rendre fidèle) ; **cparticle = échafaudage neutre** (à rebâtir
-   fidèlement). ⚠️ Ces deux points DOIVENT être rendus fidèles par **extraction/désassemblage de la
-   lib ARM d'origine** (source de vérité), PAS par du code deviné (cf. PRINCIPLES §4/§4bis).
-   ← PROCHAINES ÉTAPES : (a) **récupérer + désassembler la lib `spine-native` ARM d'origine** →
-   rendre `getVertices` (drawCalls) et `cparticle` (format `.np` + simulation) fidèles ; (b)
+   État : **cspine natif fonctionne, banding CORRIGÉ** (2026-07-11). `Skeleton_getVertices` regroupe
+   désormais les triangles par **page d'atlas** et émet `drawCalls` = N paires `(indexCount, pageIndex
+   0-based)`, renvoie N — contrat **extrait** du renderer Java EN CLAIR `NativeSkeletonRenderer.
+   renderPreparedVertices` (`textures.get(pageIndex).bind()`; `mesh.render(shader,4,indexStart,indexCount,
+   false)`; `indexStart+=indexCount`) et de `NativeAtlas.load` (ordre des pages via `Atlas_getTexture`
+   0..n). De plus le natif recale `position/limit` des buffers Java remplis (le chemin VertexArray fait
+   `buffer.position(offset)/limit(offset+count)`). ⇒ **splash MainScreen rendu proprement, 0 banding**
+   (vérifié vs jeu original : tous les héros Spine multi-pages OK). Reste `cparticle = échafaudage neutre`
+   (à rebâtir fidèlement) + extensions cspine à confirmer (setSlotEyeState/setTintBlack/nextEvent).
+   ⚠️ cparticle DOIT être rendu fidèle par **extraction/désassemblage de la lib ARM d'origine** (source de
+   vérité), PAS par du code deviné (cf. PRINCIPLES §4/§4bis).
+   ← PROCHAINES ÉTAPES : (a) **désassembler la lib `spine-native` ARM d'origine** (oracle qemu prêt) →
+   rendre `cparticle` (format `.np` + simulation) fidèle + confirmer extensions cspine ; (b)
    `gdx-freetype` natif ; (c) refaire DhBridges → INative réel + shim `StrictMode` ; (d) routage
    nouveau joueur → tutoriel `IntroTutorialActV1` + **BootData complet** ; (e) persistance.
    Détail : `desktop-port/BACKEND_STATUS.md`, `desktop-port/INVENTORY.md`, `native/NATIVE_PLAN.md`.
