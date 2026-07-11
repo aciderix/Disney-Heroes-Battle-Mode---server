@@ -9,56 +9,94 @@ import com.perblue.heroes.network.DHXORConnectionWrapper;
 import com.perblue.heroes.network.messages.BootData;
 import com.perblue.heroes.network.messages.ClientInfo;
 import com.perblue.heroes.network.messages.MessageFactory;
+import com.perblue.heroes.network.messages.Ping;
 
+import java.lang.reflect.Field;
+import java.util.LinkedHashSet;
+import java.util.Map;
+import java.util.Set;
 import java.util.concurrent.Executor;
 import java.util.concurrent.Executors;
 
 /**
- * Serveur de login v1 (protocole de jeu TCP).
+ * Serveur de jeu TCP — réutilise INTÉGRALEMENT la pile réseau du jeu (GruntNIOTCPServer via
+ * {@link GruntServerFactory}, codec {@link DHXORConnectionWrapper}, registre {@link MessageFactory}).
+ * Aucune réimplémentation binaire (docs/PRINCIPLES.md §3 : serveur autoritaire basé sur le jeu).
  *
- * Réutilise INTÉGRALEMENT la pile réseau du jeu : le serveur NIO ({@code GruntNIOTCPServer}
- * via {@link GruntServerFactory}), le codec {@link DHXORConnectionWrapper} (Deflate + XOR,
- * clé du jeu) et le registre {@link MessageFactory}. Aucune réimplémentation binaire →
- * sérialisation/chiffrement identiques au client (cf. docs/PROTOCOL.md, docs/PRINCIPLES.md §3).
- *
- * Handshake géré : à la réception d'un {@code ClientInfo1}, répond un {@code BootData1}.
- * Les champs de BootData sont pour l'instant minimaux ; l'ensemble EXACT requis par le
- * vrai client se complétera en observant le client réel (principe : le jeu est la source
- * de vérité — pas d'invention). C'est un squelette v1 : le handshake bout-en-bout est
- * prouvé (server/smoke/HandshakeRoundTrip), la logique login/monde reste à étoffer.
- *
- * Lancement JVM : -Xverify:none + commons-logging au classpath (cf. docs/SHIMS.md).
+ * Cette version INSTRUMENTE : elle journalise CHAQUE message reçu du client (le client = source de
+ * vérité) afin d'établir empiriquement le flux post-BootData (nouveau joueur → tuto) avant d'écrire
+ * les handlers. Répond BootData au ClientInfo ; les autres messages sont journalisés (handlers à venir).
  */
 public final class LoginServer {
 
-  /** Construit la réponse BootData pour un ClientInfo reçu. À enrichir (source = le jeu). */
-  public interface BootDataProvider {
-    BootData bootDataFor(ClientInfo clientInfo);
-  }
+  public interface BootDataProvider { BootData bootDataFor(ClientInfo clientInfo); }
 
   private final int port;
   private final BootDataProvider provider;
 
-  public LoginServer(int port, BootDataProvider provider) {
-    this.port = port;
-    this.provider = provider;
+  public LoginServer(int port, BootDataProvider provider) { this.port = port; this.provider = provider; }
+
+  /** Toutes les classes de message du jeu (dérivées du registre MessageFactory.messageIndex). */
+  @SuppressWarnings("unchecked")
+  private static Set<Class<? extends GruntMessage>> allMessageClasses() {
+    Set<Class<? extends GruntMessage>> out = new LinkedHashSet<>();
+    try {
+      Field f = MessageFactory.class.getDeclaredField("messageIndex");
+      f.setAccessible(true);
+      Map<Object, Object> idx = (Map<Object, Object>) f.get(null);
+      for (Object key : idx.keySet()) {
+        String full = String.valueOf(key);            // ex. "UpdateStats1"
+        String base = full.replaceAll("\\d+$", "");    // retire la version en suffixe
+        try {
+          Class<?> c = Class.forName("com.perblue.heroes.network.messages." + base);
+          if (GruntMessage.class.isAssignableFrom(c)) out.add((Class<? extends GruntMessage>) c);
+        } catch (Throwable ignore) { /* nom non résoluble → ignoré */ }
+      }
+    } catch (Throwable t) { System.out.println("[login] enum messages échec: " + t); }
+    return out;
   }
 
   public void start() throws Exception {
     final Executor exec = Executors.newCachedThreadPool();
+    final Set<Class<? extends GruntMessage>> msgClasses = allMessageClasses();
+    System.out.println("[login] " + msgClasses.size() + " classes de message enregistrées (log)");
+
     GruntConnectionListener listener = new GruntConnectionListener() {
-      public void onOpen(GruntConnection conn) {
-        conn.setListener(ClientInfo.class, new GruntListener<ClientInfo>() {
+      public void onOpen(final GruntConnection conn) {
+        System.out.println("[login] onOpen " + conn);
+        // Handler de LOG universel : journalise chaque message, et répond BootData au ClientInfo.
+        GruntListener<GruntMessage> logger = new GruntListener<GruntMessage>() {
           public void onReceive(GruntConnection c, GruntMessage m) {
-            BootData bd = provider.bootDataFor((ClientInfo) m);
-            bd.setAsReplyTo(m);
-            c.send(bd);
+            String name = m.getFullName();
+            System.out.println("[login] <== " + name);
+            if (m instanceof ClientInfo) {
+              BootData bd = provider.bootDataFor((ClientInfo) m);
+              bd.setAsReplyTo(m);
+              c.send(bd);
+              System.out.println("[login] ==> BootData (reply)");
+            } else if (m instanceof Ping) {
+              // Écho de latence/keepalive : le client mesure le RTT et surveille l'activité serveur.
+              // Sans réponse, son chien de garde ferme la connexion (« Reconnecting… »).
+              Ping in = (Ping) m;
+              long now = System.currentTimeMillis();
+              Ping pong = new Ping();
+              pong.timestamp = in.timestamp;     // renvoyé tel quel (le client calcule le RTT)
+              pong.serverReceive = now;
+              pong.serverTime = now;
+              pong.serverDelay = 0;
+              pong.setAsReplyTo(m);
+              c.send(pong);
+              System.out.println("[login] ==> Ping (echo)");
+            }
           }
-        });
+        };
+        for (Class<? extends GruntMessage> c : msgClasses) {
+          try { conn.setListener(c, logger); } catch (Throwable ignore) {}
+        }
       }
-      public void onClose(GruntConnection conn) {}
+      public void onClose(GruntConnection conn) { System.out.println("[login] onClose " + conn); }
     };
-    // port, factory, executor, listener, codec, sendTimeout, keepAlive, noDelay, proxyProto, buffer
+
     GruntServerFactory.startNioTcp(port, MessageFactory.getInstance(), exec, listener,
         DHXORConnectionWrapper.class, 5000, true, true, false, 65536);
     System.out.println("[login] écoute sur " + port + " (protocole de jeu, codec DHXOR)");
@@ -71,6 +109,6 @@ public final class LoginServer {
       bd.serverTime = System.currentTimeMillis();
       return bd;
     }).start();
-    Thread.currentThread().join(); // reste actif
+    Thread.currentThread().join();
   }
 }

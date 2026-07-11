@@ -128,3 +128,23 @@ com.perblue.heroes.ui.windows.debug.SaveRestoreUserWindow  # save/restore user (
 - [ ] Décompiler → confirmer §1 (framing/codec/clé XOR), §0 (ServerType LIVE), §1.3 (login).
 - [ ] Champs **minimaux requis** de `BootData1` pour ne pas planter le client.
 - [ ] Boucle serveur complète (accept → ClientInfo → BootData → messages suivants).
+
+## 6. Flux post-BootData OBSERVÉ (empirique, client = source de vérité) — 2026-07-11
+Serveur instrumenté (`dhserver.LoginServer` journalise chaque message reçu). Nouveau joueur (userID=0) :
+```
+(pré-login) ArchiveDownloadTracking1 x N, DownloadTime1   # télémétrie de téléchargement d'assets
+ClientInfo1                         -> BootData1 (réponse)
+ClockChange1, SettingsSync1, RecordNetworkEvents1, LoadTime1 x2, PerfReport1   # télémétrie (one-way)
+Ping1                               -> **Ping1 (écho)** REQUIS
+```
+- **Ping1** (`timestamp/serverReceive/serverTime/serverDelay`) = keepalive/latence. **Sans écho, le
+  chien de garde du client ferme la connexion** → boucle « Reconnecting… ». ⇒ le serveur DOIT échoer
+  Ping (serverReceive/serverTime = now). ✅ implémenté → session STABLE dans le hub.
+- Reste : **BootData minimal** (seulement serverTime) → le client reste en état « invité » (CHOOSE NAME /
+  SIGN IN), pas de tuto. Pour router un nouveau joueur vers le **tuto** (`IntroTutorialActV1`), BootData
+  doit porter l'état de nouveau joueur (champs EXACTS à extraire de `GameMain.handleBootData` + la classe
+  `BootData` — source = le client). Chantier serveur suivant.
+- **Désaccord de version** (à traiter) : `SyncStatDataClientHelper.<clinit>` échoue sur des `.tab`
+  (PatchStats/GuildStats : enum `PREDICTIVE_FORTIFICATION` absent, valeurs vides) — le contenu archivé
+  est **game 7.9** alors que le code est **12.1.0**. Toléré (le jeu atteint le hub) mais le serveur
+  devra **synchroniser les stats** (SyncStatData, données extraites du jeu 12.1.0).

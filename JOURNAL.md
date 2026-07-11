@@ -465,3 +465,11 @@ BootData neuf — NE PAS seeder) et capturer. Voir `desktop-port/BACKEND_STATUS.
   serveur de jeu doit MAINTENIR la session (keepalive + messages post-BootData). Et le désaccord de
   stats (`GuildStats` NumberFormatException) → le serveur doit **synchroniser les stats** (SyncStatData,
   extraites du jeu). Prochaines étapes serveur.
+
+### Serveur : session STABLE — écho Ping (2026-07-11)
+- `LoginServer` instrumenté : journalise chaque message reçu (client = source de vérité). Flux nouveau
+  joueur relevé (cf. PROTOCOL.md §6) : ClientInfo→BootData, puis télémétrie + **Ping1**.
+- **Cause du « Reconnecting… » = Ping non répondu** : le keepalive/latence `Ping` sans écho déclenche le
+  chien de garde du client → fermeture. ⇒ serveur échoue Ping (serverReceive/serverTime=now). Résultat :
+  **0 reconnexion, session STABLE dans le hub** (capture `native/reference/shots/mainscreen-hub-stable.png`),
+  spine+particules d'origine rendus (unidbg). Prochain : BootData complet nouveau joueur → tuto.
