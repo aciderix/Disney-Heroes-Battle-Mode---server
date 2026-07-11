@@ -146,12 +146,34 @@ class Handler(BaseHTTPRequestHandler):
                                 break
                             self.wfile.write(chunk)
                 return
-        # 2) sinon redirection vers l'archive publique (archive.org suit les ranges)
+        # 2) sinon RELAIS depuis l'archive publique (archive.org). On NE redirige PAS : le CLIENT
+        #    (java.net du jeu) n'a pas de proxy sortant et ne peut pas joindre archive.org. Le serveur,
+        #    lui, le peut (via curl + le proxy sortant configuré) → on récupère côté serveur et on
+        #    streame au client, qui ne parle qu'à 127.0.0.1. Range transmis (reprise/segmentation).
         target = f"{self.cfg.archive_base}/{name}"
-        self.send_response(302)
-        self.send_header("Location", target)
-        self.send_header("Content-Length", "0")
-        self.end_headers()
+        rng = self.headers.get("Range")
+        cmd = ["curl", "-sS", "-L", "--fail", "--max-time", "1800", target]
+        if rng:
+            cmd += ["-r", rng.split("=", 1)[-1]]  # "bytes=0-1023" -> "0-1023"
+        try:
+            import subprocess
+            proc = subprocess.Popen(cmd, stdout=subprocess.PIPE)
+            first = proc.stdout.read(1 << 16)
+            if proc.poll() not in (None, 0) and not first:
+                self._send(502, "text/plain", b"relay failed\n", head_only)
+                return
+            self.send_response(206 if rng else 200)
+            self.send_header("Content-Type", "application/zip")
+            self.send_header("Accept-Ranges", "bytes")
+            self.end_headers()
+            if not head_only:
+                while first:
+                    self.wfile.write(first)
+                    first = proc.stdout.read(1 << 16)
+            proc.stdout.close(); proc.wait()
+        except Exception as e:
+            try: self._send(502, "text/plain", f"relay error: {e}\n".encode(), head_only)
+            except Exception: pass
 
     def _send(self, code: int, ctype: str, body: bytes, head_only: bool):
         self.send_response(code)
