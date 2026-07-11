@@ -277,7 +277,14 @@ Dépôt de référence (`/workspace/dragonsoul-web`, branche `claude/game-transp
    `gdx-freetype` natif ; (c) refaire DhBridges → INative réel + shim `StrictMode` ; (d) routage
    nouveau joueur → tutoriel `IntroTutorialActV1` + **BootData complet** ; (e) persistance.
    Détail : `desktop-port/BACKEND_STATUS.md`, `desktop-port/INVENTORY.md`, `native/NATIVE_PLAN.md`.
-7. [ ] **Persistance** (SQLite) + **passerelle/multi-serveur** (liste, mot de passe).
+7. [~] **⭐ PHASE SERVEUR AUTORITAIRE — plan ordonné dans [`docs/SERVER_PLAN.md`](docs/SERVER_PLAN.md).**
+   Le client tourne 100% d'origine (spine+particules via unidbg) et atteint le **hub STABLE** (écho
+   `Ping` = keepalive ✅). Étapes ordonnées (une validée avant la suivante) : (1) session stable ✅ ;
+   (2) **stat-sync** (`BootData.statDataTxt/Bin`, données extraites — résout l'incohérence `.tab` interne
+   à l'APK 12.1.0, SANS rustine) ; (3) **BootData nouveau joueur complet** (`new BootData()` + classes du
+   jeu, `handleBootData` lu en entier) → tuto `IntroTutorialActV1` ; (4) handlers du tuto ; (5) persistance
+   SQLite ; (6) handlers du hub ; (7) multi-serveur. Serveur = classes du jeu (GruntNIOTCPServer/codec/
+   MessageFactory), client = source de vérité (LoginServer journalise chaque message).
 8. [ ] **Outil d'extraction data → format serveur** (les `.tab` chargés tels quels).
 
 ---
