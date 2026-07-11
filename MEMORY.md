@@ -260,9 +260,11 @@ Dépôt de référence (`/workspace/dragonsoul-web`, branche `claude/game-transp
    jeu** : `dhbackend/unidbg/UnidbgVM` (VM persistante, dispatch synchronisé) + shadows
    `com.perblue.heroes.cspine/cparticle.Native` (câblage) ; `build.gradle` dep `unidbg-android:0.9.8`
    (binaire hôte unicorn embarqué → **build autonome, rien à installer**) ; `run-desktop.sh -Ddh.spinelib`.
-   **Compile + boote SANS crash** jusqu'au splash. ⚠️ Rendu spine in-game PAS encore exercé (jeu bloqué
-   au pré-download WORLD_ADDITIONAL, avant les écrans à squelettes) → à valider en atteignant un écran
-   héros/combat. `spine-native64.so` (rebuild) = ABANDONNÉ pour desktop (conservé comme oracle/référence).
+   **Compile + boote SANS crash.** ✅ **Rendu spine EN COMBAT VALIDÉ (2026-07-11)** : le tutoriel d'intro
+   atteint le 1ᵉʳ combat (via serveur nouveau joueur + pilote `dh.autotap`) et **tous les héros/ennemis Spine
+   se rendent correctement via unidbg** (Ralph, Vanellope, Elastigirl, ennemis « glitch », + particules/VFX)
+   — capture `native/reference/shots/tutorial-combat1-unidbg.png`. Le doute « spine in-game pas exercé » est
+   levé. `spine-native64.so` (rebuild) = ABANDONNÉ pour desktop (conservé comme oracle/référence).
    Détail : `native/unidbg/README.md`.
 
    **cparticle — avancement `.np`** (désormais moot via unidbg, gardé pour référence) : lecteur natif `ParticleEmitter::load` @0x19755 désassemblé (helpers
