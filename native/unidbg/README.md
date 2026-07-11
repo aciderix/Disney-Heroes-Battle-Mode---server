@@ -56,3 +56,18 @@ java -cp "$CP:." SpineBench ../reference/libspine-native.so \
   d'origine tourne ; on supprime le rebuild `spine-native64.so` et tout le chantier RE particules).
 - Sinon → garder le rebuild natif rapide pour le rendu spine, et unidbg comme **oracle** fidèle
   (remplace l'oracle qemu) pour valider/dériver le reste.
+
+## Perf SPINE (2026-07-11) — le point dur
+`SpineSkel.java` valide le pipeline spine d'origine (Atlas/SkeletonData/Skeleton/AnimationState +
+`Skeleton_getVertices`) — **tout parse et rend correctement via le code d'origine**. Mais le coût :
+- soulless_brute (héros complexe) : update 70 + apply 361 + worldTransform 524 + **getVertices 1218** =
+  ~2111 µs/squelette → **~7 squelettes/frame @60fps**.
+- soulless_sword (plus simple) : ~1467 µs → ~11/frame.
+- **dynarmic** (JIT) : crash/hang (NEON) → pas de gain facile.
+
+⇒ **Particules = unidbg viable. Spine = trop lent sur l'interpréteur** pour le combat (10 héros) et le
+MainScreen (~12 persos). Architecture pragmatique proposée :
+- **Particules → unidbg** (moteur d'origine, résout #NP-V3, ~118 effets/frame).
+- **Spine → rebuild natif x86_64** (déjà rapide et rendu vérifié vs capture d'origine ; banding corrigé).
+Alternatives : (a) réparer dynarmic → spine 100% d'origine rapide ; (b) tout unidbg mais viser 30fps /
+scènes légères ; (c) optimiser (cache squelettes idle, LOD).
