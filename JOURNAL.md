@@ -426,3 +426,25 @@ BootData neuf — NE PAS seeder) et capturer. Voir `desktop-port/BACKEND_STATUS.
   ou ctor `C2` (base) insuffisant / désalignement sous émulation. ← À FINIR : ctor complet `C1`, ou
   zéro-init + trace du site d'appel `operator new` ; sinon poursuivre l'auto-parse validé par
   l'invariant des offsets de pool (approche #2, pur Python). Détail : `desktop-port/NP_FORMAT.md`.
+
+### PIVOT unidbg : exécuter le binaire d'origine + intégration en jeu (2026-07-11)
+- **Décision (user)** : « 100% origine ». On exécute le VRAI `libspine-native.so` (ARM) via unidbg au
+  lieu de rebâtir spine / RE les particules.
+- **Prototypes `native/unidbg/`** (SpineUnidbg/SpineLoad/SpineBench/SpineVerts2/SpineSkel) :
+  - Charge la lib d'origine, `Spine_init` OK.
+  - `Atlas_create`+`Effect_create` parsent de vrais assets (err="") → **#NP-V3 résolu par exécution**.
+  - `Effect_getVertices`/`Skeleton_getVertices` rendent de vrais sommets 2-couleurs.
+  - Perf unicorn : particules ~141 µs/frame/effet (~118/frame) ; spine ~1.5-2.1 ms/squelette (7-11/frame).
+  - dynarmic (JIT) : crash NEON (`vldr d16`, registres d16-d31 non activés) → inutilisable.
+  - Trou unidbg comblé : `GetDirectBufferAddress`/`Capacity` (JNI 230/231) implémentés via `ArmSvc`
+    écrasant les slots de la table JNIEnv (renvoie le pointeur émulé du DvmObject).
+- **Intégration en jeu** : `dhbackend/unidbg/UnidbgVM` (VM persistante, dispatch synchronisé mono-thread,
+  buffers émulés réutilisés + recopie vers les FloatBuffer/ShortBuffer du jeu) ; shadows
+  `com.perblue.heroes.cspine.Native`/`cparticle.Native` (mêmes signatures, dispatch → UnidbgVM ; câblage,
+  pas récréation) ; `build.gradle` += `unidbg-android:0.9.8` (hôte unicorn embarqué → autonome) ;
+  `run-desktop.sh` : `-Ddh.spinelib=native/reference/libspine-native.so`, retrait du build spine-native64.so.
+- **État** : compile ; le jeu boote et tourne à travers unidbg **sans crash** jusqu'au splash (capture
+  `desktop-port/build/unidbg.png`). **0 appel natif spine/particule** durant le run → écran encore au
+  pré-download (art statique), pas de squelette vivant. ⚠️ Rendu spine in-game **à valider** en atteignant
+  un écran héros/combat (dépend du pipeline d'assets WORLD_ADDITIONAL). Puis comparer aux captures
+  d'origine (§4bis) + mesurer le fps réel.

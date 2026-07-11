@@ -249,7 +249,23 @@ Dépôt de référence (`/workspace/dragonsoul-web`, branche `claude/game-transp
    (à rebâtir fidèlement) + extensions cspine à confirmer (setSlotEyeState/setTintBlack/nextEvent).
    ⚠️ cparticle DOIT être rendu fidèle par **extraction/désassemblage de la lib ARM d'origine** (source de
    vérité), PAS par du code deviné (cf. PRINCIPLES §4/§4bis).
-   **cparticle — avancement `.np`** : lecteur natif `ParticleEmitter::load` @0x19755 désassemblé (helpers
+   **⭐ PIVOT ARCHITECTURE (2026-07-11) — unidbg : on exécute le VRAI binaire d'origine.** Au lieu de
+   rebâtir spine (mon code C) ou de RE les particules, on fait tourner `native/reference/libspine-native.so`
+   (ARM, PerBlue, committé) IN-PROCESS via **unidbg** (émulation ARM + bionic/JNI virtuel). Prototypes
+   `native/unidbg/` CONCLUANTS : `Effect_create` parse un vrai `.np` (résout #NP-V3 par exécution),
+   `Skeleton_getVertices`/`Effect_getVertices` rendent de vrais sommets 2-couleurs. Perf (unicorn) :
+   particules ~141 µs/frame/effet (~118/frame, OK) ; spine ~1.5-2.1 ms/squelette (~7-11/frame, limite
+   pour le combat). dynarmic (JIT) inutilisable (crash NEON d16-d31). Trou unidbg comblé :
+   GetDirectBufferAddress/Capacity (JNI 230/231) implémentés via un ArmSvc (plomberie). **Intégré en
+   jeu** : `dhbackend/unidbg/UnidbgVM` (VM persistante, dispatch synchronisé) + shadows
+   `com.perblue.heroes.cspine/cparticle.Native` (câblage) ; `build.gradle` dep `unidbg-android:0.9.8`
+   (binaire hôte unicorn embarqué → **build autonome, rien à installer**) ; `run-desktop.sh -Ddh.spinelib`.
+   **Compile + boote SANS crash** jusqu'au splash. ⚠️ Rendu spine in-game PAS encore exercé (jeu bloqué
+   au pré-download WORLD_ADDITIONAL, avant les écrans à squelettes) → à valider en atteignant un écran
+   héros/combat. `spine-native64.so` (rebuild) = ABANDONNÉ pour desktop (conservé comme oracle/référence).
+   Détail : `native/unidbg/README.md`.
+
+   **cparticle — avancement `.np`** (désormais moot via unidbg, gardé pour référence) : lecteur natif `ParticleEmitter::load` @0x19755 désassemblé (helpers
    classés : readInt 4o BIG-ENDIAN, readBool 1o, readRanged 10o, readScaled 32o — formats IDENTIQUES au
    `ParticleEmitter.saveBinary` clair de game.jar). En-tête `byte0,byte3,int count` confirmé. **#NP-V3
    CONFIRMÉ** : les 535 `.np` réels NE matchent NI l'ordre du saveBinary courant NI la reconstruction
