@@ -249,8 +249,15 @@ Dépôt de référence (`/workspace/dragonsoul-web`, branche `claude/game-transp
    (à rebâtir fidèlement) + extensions cspine à confirmer (setSlotEyeState/setTintBlack/nextEvent).
    ⚠️ cparticle DOIT être rendu fidèle par **extraction/désassemblage de la lib ARM d'origine** (source de
    vérité), PAS par du code deviné (cf. PRINCIPLES §4/§4bis).
-   ← PROCHAINES ÉTAPES : (a) **désassembler la lib `spine-native` ARM d'origine** (oracle qemu prêt) →
-   rendre `cparticle` (format `.np` + simulation) fidèle + confirmer extensions cspine ; (b)
+   **cparticle — avancement `.np`** : lecteur natif `ParticleEmitter::load` @0x19755 désassemblé (helpers
+   classés : readInt 4o BIG-ENDIAN, readBool 1o, readRanged 10o, readScaled 32o — formats IDENTIQUES au
+   `ParticleEmitter.saveBinary` clair de game.jar). En-tête `byte0,byte3,int count` confirmé. **#NP-V3
+   CONFIRMÉ** : les 535 `.np` réels NE matchent NI l'ordre du saveBinary courant NI la reconstruction
+   statique (0/535) → l'ORDRE des champs v3 diffère ; à extraire SANS devinette via (1) oracle d'exécution
+   qemu (struct parsée) ou (2) auto-parse validé par l'invariant des offsets de pool (535/535). Détail :
+   `desktop-port/NP_FORMAT.md`.
+   ← PROCHAINES ÉTAPES : (a) extraire l'ordre v3 CERTIFIÉ (oracle/auto-parse) → `Effect_create` + sim +
+   rendu 2-couleurs cparticle fidèles ; confirmer extensions cspine ; (b)
    `gdx-freetype` natif ; (c) refaire DhBridges → INative réel + shim `StrictMode` ; (d) routage
    nouveau joueur → tutoriel `IntroTutorialActV1` + **BootData complet** ; (e) persistance.
    Détail : `desktop-port/BACKEND_STATUS.md`, `desktop-port/INVENTORY.md`, `native/NATIVE_PLAN.md`.

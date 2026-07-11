@@ -390,3 +390,22 @@ BootData neuf — NE PAS seeder) et capturer. Voir `desktop-port/BACKEND_STATUS.
   Capture de référence : `native/reference/shots/mainscreen-nobanding.png`.
 - Reste : cparticle (échafaudage neutre → moteur fidèle via oracle ARM) ; extensions cspine
   (`setSlotEyeState`, `setTintBlack`, `nextEvent`) à confirmer contre la lib ARM.
+
+### cparticle : format `.np` EXTRAIT + #NP-V3 confirmé (2026-07-11)
+- **Source d'écriture EN CLAIR trouvée** : `ParticleConverter.convertFileNative` →
+  `ParticleEffect.saveBinary(ParticleEffectPacker)` → `ParticleEmitter.saveBinary` (+ `*Value.saveBinary`,
+  `packer.writeTimeline/writeTimelines`) dans game.jar. Donne l'en-tête (`byte 0, byte 3, int count`),
+  les formats de valeurs (Ranged=10o, Scaled=32o, Numeric=5o, Gradient=13o, SpawnShape), et le **pool de
+  timelines différé** par emitter (poolSize, tagLen, pool floats, atlasTag).
+- **Lecteur natif désassemblé** (`ParticleEmitter::load` @ 0x19755, ARM). Helpers classés :
+  `readInt` @0x1a770 = 4 o **BIG-ENDIAN** (`rev`), `readBool` @0x1a0c4 = 1 o, `readRanged` @0x19fd0 = 10 o,
+  `readScaled` @0x1a020 = 32 o — **formats IDENTIQUES** au `*Value.saveBinary` clair. Registres : `r4`=
+  readScaled, `fp`=read4 (préservé). L'encodage bas niveau est donc certifié.
+- **#NP-V3 CONFIRMÉ (2 fois)** : parse des 535 assets `.np` réels avec (a) l'ordre du `saveBinary`
+  COURANT → **0/535** EOF-exact ; (b) l'ordre reconstruit statiquement depuis la séquence d'appels du
+  lecteur natif → **0/535**. Les FORMATS matchent ; seul l'ORDRE/ensemble des champs diffère (le writer
+  courant a évolué). ⇒ Ne PAS implémenter un parseur deviné (PRINCIPLES §2/§4).
+- **Voie suivante SANS devinette** : (1) oracle d'exécution (faire tourner le vrai `ParticleEffect::load`
+  sous qemu → struct parsée = vérité bit-à-bit) ; OU (2) auto-parse validé par l'invariant des offsets de
+  pool (chaque triplet timeline `(N, offA, offB)` doit égaler le curseur de pool courant) → l'ordre correct
+  = celui qui donne 535/535. Détail complet : `desktop-port/NP_FORMAT.md`.

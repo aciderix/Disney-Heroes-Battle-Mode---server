@@ -1,69 +1,88 @@
-# Format `.np` (particules natives PerBlue) — analyse de rétro-ingénierie
+# Format `.np` (particules natives PerBlue) — rétro-ingénierie par EXTRACTION
 
-But : réimplémenter le moteur de particules natif (`com.perblue.heroes.cparticle.*`, lib C absente
-des splits x86_64) **pour de vrai** — PAS en stub. Approche : lire le `.np` → reconstruire un
-`com.badlogic.gdx.graphics.g2d.ParticleEffect` **libGDX du jeu** (qui possède déjà la simulation
-`update()` ET le rendu 2-couleurs `drawPositiveDepth/NegativeDepth(TwoColorPolygonBatch)`), puis
-piloter ce moteur depuis les shadows cparticle. Aucune réimplémentation de physique.
+But : réimplémenter FIDÈLEMENT le lecteur `.np` du moteur natif `cparticle` (lib C++ propriétaire,
+absente en x86_64), pour que le code Java d'origine `com.perblue.heroes.cparticle.*` tourne INCHANGÉ.
+**Règle** (PRINCIPLES §4) : rien de deviné/inventé — tout est **extrait** (désassemblage de la lib ARM
+d'origine = source de vérité) et **vérifié bit-à-bit** contre de vrais assets.
 
-## Mécanique validée (octet à octet sur les vrais `.np`)
+## Sources de vérité (dans l'APK)
+- **Lecteur natif** `libspine-native.so` (ARM, non strippé, `native/reference/`) — LIT les `.np` livrés.
+  - `ParticleEffect::load(uchar*, uint)` @ `0x1a5e5` — en-tête + boucle emitters.
+  - `ParticleEmitter::load(uchar*&, uint&)` @ `0x19755` (2132 o) — **LES CHAMPS d'un emitter** (v3).
+- **Écrivain** `game.jar` EN CLAIR : `ParticleConverter.convertFileNative` → `ParticleEffect.saveBinary`
+  → `ParticleEmitter.saveBinary(ParticleEffectPacker)` (+ `*Value.saveBinary`, `packer.writeTimeline*`).
+  ⚠️ C'est le writer **COURANT** ; son ORDRE de champs **ne correspond PAS** aux assets v3 livrés (#NP-V3).
 
-Le `.np` est produit au build par `ParticleConverter` → `ParticleEffect.saveBinary(ParticleEffectPacker)`
-(libGDX MODIFIÉ PerBlue). Structure globale :
-
+## En-tête de fichier (EXTRAIT + confirmé natif) — `ParticleEffect.saveBinary` / `::load`
 ```
-byte 0x00, byte 0x03                 # magie + VERSION (=3)
-int  emitterCount
-emitterCount × emitter :
-    int minParticleCount, int maxParticleCount
-    <suite de valeurs>               # Ranged/Scaled/Numeric/SpawnShape/GradientColor
-    float frameDuration
-    bool attached, continuous, aligned
-    byte flags                       # bit0=additive, bit1=premultipliedAlpha, bit2=multiply
-    bool behind
-    # section pool de timelines (writeTimelines) :
-    int  poolSize                    # nb de floats
-    int  atlasTagLen                 # longueur du nom de région (UTF-8)
-    float[poolSize] pool
-    byte[atlasTagLen] atlasTag       # nom de région d'atlas de l'emitter
+byte 0x00, byte 0x03        # magie + VERSION = 3   (natif : exige len>5, teste data[0]==0 && data[1]==3)
+int  emitterCount           # big-endian
+emitterCount × emitter      # natif : alloue count × 0x904 (2308) octets/emitter
 ```
 
-Encodage des valeurs (`*Value.saveBinary`) :
-- `ParticleValue`        : `bool active`
-- `RangedNumericValue`   : super + `float lowMin, float lowMax, bool lowUsesLinkedRange`  (10 o)
-- `ScaledNumericValue`   : Ranged + `float highMin, float highMax, bool highUsesLinkedRange, bool relative`
-                           + timeline `(int stride, int idxA, int idxB)`                 (32 o)
-- `NumericValue`         : super + `float value`                                          (5 o)
-- `SpawnShapeValue`      : super + `byte code` [+ si code==3 (ellipse) : `bool edges, byte side`]
-- `GradientColorValue`   : super + timeline stride 3 `(int 3, int idxA, int idxB)`        (13 o)
+## Encodage bas niveau (EXTRAIT du natif — décisif)
+- **Entiers/flottants = 4 octets BIG-ENDIAN.** `readInt` @ `0x1a770` : `ldr; ldr [],#4; rev` (byte-swap
+  BE→hôte LE). Donc `struct '>i'`/`'>f'` en Python. `readBool` @ `0x1a0c4` : 1 octet, normalisé 0/1.
+- Un `.np` ne contient **aucun nom de champ** : que des valeurs binaires en séquence fixe.
 
-**Timelines (dédup)** : chaque valeur Scaled/Gradient écrit EN LIGNE `(stride, idxA, idxB)`.
-`idxA` = compteur courant du pool (invariant d'ancrage FORT), `idxB = idxA + longueur(premier tableau)`.
-Le pool est vidé par emitter. Résolution : `scaling/colors = pool[idxA .. idxB)` (longueur `idxB-idxA`),
-`timeline = pool[idxB .. idxB + (idxB-idxA)/stride)`.
+## Formats de valeurs (EXTRAITS du natif — IDENTIQUES au `*Value.saveBinary` clair)
+Vérifiés par désassemblage des sous-lecteurs (offsets de stockage struct entre crochets) :
+- `readRanged` @ `0x19fd0` (**10 o**) : `active(bool)`, `lowMin(f)`, `lowMax(f)`, `lowUsesLinkedRange(bool)`.
+- `readScaled` @ `0x1a020` (**32 o**) : `readRanged`(10) + `highMin(f)` + `highMax(f)` + `highLinked(bool)`
+  + `relative(bool)` + **timeline** `(int N, int offTimeline, int offScaling)`.
+- `readNumeric` (**5 o**) : `active(bool)` + `value(f)`.
+- `readGradient` (**13 o**) : `active(bool)` + timeline `(int N, int offColors, int offTimeline)`.
+- `readSpawnShape` : `active(bool)` + `code(byte)` [+ si ellipse : `edges(bool)`, `side(byte)`].
 
-Vérifié sur `hero_chooser_add.np` : magie [0,3], 6 emitters, refs consécutifs `(0,1)(2,3)(4,5)…`,
-`poolSize`/`atlasTag` cohérents, tail = 9 o.
+## Timelines : pool différé par emitter (EXTRAIT de `ParticleEffectPacker`)
+Chaque valeur Scaled/Gradient n'écrit EN LIGNE que le triplet `(N, offA, offB)` = longueur + 2 offsets
+dans un **pool de flottants** propre à l'emitter. `addTimeline` renvoie l'offset AVANT d'ajouter ; pour
+un Scaled il ajoute `timeline[N]` puis `scaling[N]` (offB=offA+N). Le pool + le nom d'atlas sont
+sérialisés à la FIN de l'emitter (`writeTimelines`) :
+```
+int  poolSize               # nb de flottants du pool
+int  atlasTagLen            # longueur UTF-8 du nom de région
+float[poolSize]             # le pool (données de toutes les timelines de l'emitter)
+byte[atlasTagLen]           # nom de région d'atlas
+```
+Le natif lit ce bloc via malloc+memcpy (PLT en fin de `ParticleEmitter::load`).
 
-## ⚠️ Blocage : le jeu de champs V3 ≠ writer courant (#NP-V3)
+## #NP-V3 — l'ordre des champs v3 ≠ writer courant (CONFIRMÉ 2 fois)
+- Parse des 535 `.np` réels avec l'ordre EXACT du `saveBinary` COURANT → **0/535** EOF-exact.
+- Parse avec l'ordre reconstruit statiquement depuis la séquence d'appels de `ParticleEmitter::load`
+  → **0/535** (reconstruction encore imprécise : bools/valeurs intercalés au milieu, cf. ci-dessous).
+- Les **formats** de valeurs correspondent (readRanged/readScaled = *Value.saveBinary) ; seul l'**ordre /
+  l'ensemble** des champs diffère (le writer courant a évolué : ajout `velocityZ, zOffset,
+  tangential*, centripetal*` absents/différents en v3).
 
-L'octet de version vaut **3**. Or les assets `.np` (v3) n'ont PAS le même ensemble/ordre de champs
-que le `saveBinary` COURANT de game.jar (le code a évolué sans changer l'octet de version). Constats
-empiriques (carte des refs de `hero_chooser_add.np`, emitter 0, offsets 14–777) :
+### Séquence d'appels classée de `ParticleEmitter::load` (à finaliser)
+Helpers résolus : `read4`=`0x19fa8`(4 o), `readBool`=`0x1a0c4`, `readRanged`=`0x19fd0`,
+`readScaled`=`0x1a020` ; registres `r4`=readScaled (gros du travail), `fp`=read4 (préservé).
+Ordre observé (offsets struct entre parenthèses) :
+```
+read4(0x7c0), read4(0x7c4),            # min/maxParticleCount
+readRanged(0x3d8), readRanged(0x410),  # delay, duration
+readScaled ×6,
+readBoolInto(0x660), read4(0x664),     # NumericValue ? (active + value)
+readBoolInto(0x6b8), readBool,         # (spawnShape ? à confirmer)
+readScaled ×12,
+readRanged, readScaled ×2, readRanged, readScaled,
+readBoolInto, read4 ×3,                # GradientColorValue ? (active + timeline)
+readScaled, read4,                     # (à confirmer)
+readBool ×4,                           # attached/continuous/aligned/behind
+<trailer writeTimelines : poolSize, tagLen, pool, tag>
+```
+⚠️ Cette séquence donne 0/535 EOF-exact → **imprécise**. NE PAS l'implémenter en l'état
+(interdiction de deviner, PRINCIPLES §2/§4).
 
-- Après `lifeOffset` (ref 4,5) le champ suivant est **directement** un Scaled (ref 6,7) → les champs
-  `xOffset, yOffset, zOffset, zToYMultiplier, spawnShape` du writer courant sont **absents/déplacés**.
-- Séquence : **8 valeurs Scaled** (refs 0..15) puis **1 dégradé** (`stride 3`, pool +8 = 2 couleurs +
-  2 timeline) puis d'autres Scaled (refs 24..) puis un **2ᵉ dégradé** en fin → cohérent avec le mode
-  **2-couleurs** de PerBlue (tint clair + tint sombre), non reflété par le writer courant.
-- Un **champ de ~7 octets** non identifié apparaît entre le bloc `size` et `velocity`.
-
-⇒ L'ordre EXACT des champs de la **v3** doit être établi avant de peupler correctement les emitters
-(sinon on lit « wind » à la place de « velocity », etc. = simulation fausse = INTERDIT, cf.
-PRINCIPLES §2). Pistes : (a) retrouver un `saveBinary` d'une version antérieure du jeu (APK plus
-ancien) dont l'ordre correspond à la v3 ; (b) dériver l'ordre v3 empiriquement via la carte des refs
-sur un large échantillon de `.np` + recoupement avec l'ordre historique de libGDX `ParticleEmitter` ;
-(c) confirmer le 2ᵉ dégradé (2-couleurs) et le champ 7 o.
-
-`NpUnpacker.java` implémente la mécanique + l'ordre du writer COURANT (décalé pour la v3) : à NE PAS
-câbler tant que #NP-V3 n'est pas résolu.
+## Étape suivante (extraction SANS devinette)
+1. **Oracle d'exécution** : faire tourner le vrai `ParticleEffect::load` sous qemu (harnais
+   `native/oracle/`, dlopen déjà OK) sur des `.np` réels → lire la struct parsée (2308 o) et la longueur
+   consommée = **vérité bit-à-bit** de l'ordre/tailles des champs. **OU**
+2. **Auto-parse validé par les offsets de pool** : parser chaque valeur en vérifiant le triplet
+   `(N, offA, offB)` contre le compteur de pool courant → détecte le type à chaque position sans
+   supposer l'ordre ; l'ordre correct = celui qui donne **535/535** EOF-exact + offsets cohérents.
+3. Une fois l'ordre CERTIFIÉ (535/535), implémenter `cparticle_jni.c` `Effect_create` fidèle,
+   puis la simulation (via `ParticleEmitter.update` clair = comportement identique à `updateParticles`)
+   et le rendu 2-couleurs (`getTwoColorSprite`), validés contre l'oracle.
+```
