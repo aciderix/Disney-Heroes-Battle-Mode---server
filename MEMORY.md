@@ -6,7 +6,8 @@
 > des fichiers et un historique **court**. L'historique **détaillé** est dans
 > [`JOURNAL.md`](JOURNAL.md). **Maintenir ce fichier à jour en permanence.**
 
-Dernière mise à jour : **2026-07-09** (bootstrap du projet).
+Dernière mise à jour : **2026-07-11** (jeu original tournant en natif jusqu'au MainScreen ;
+architecture native `spine-native` ; règle renforcée : **on n'écrit rien à la main, on extrait**).
 
 ---
 
@@ -222,19 +223,30 @@ Dépôt de référence (`/workspace/dragonsoul-web`, branche `claude/game-transp
    `{"status":"good","data":"host:port"}` → **se connecte à notre serveur de jeu TCP**
    (`run-online.sh` : contenu+login :8080 + jeu :8081 + client). Contenu = **auto** via le
    FileDownloader du jeu (java.net) pointé sur notre serveur ; `fetch_assets.sh` = cache offline.
-   **✅ LE JEU ATTEINT LE MAINSCREEN INTERACTIF** de bout en bout avec NOTRE serveur (capture
-   `desktop-port/build/online.png` : ville hivernale animée + UI complète héros/objets/quêtes +
-   « CHOOSE NAME » = nouveau joueur). Chaîne : `/login` → BootData1 (notre LoginServer) →
-   `handleBootData` → MainScreen. Correctifs clés (aucun stub) : **reframe ASM** de game-logic.jar
-   (StackMapTable → plus de crash JVM sur les stats binaires, retrait `-Xverify:none`) ; shadow
-   **FirebasePerfUrlConnection** (analytics off, download réel) ; **DhBridges** no-op imbriqués
-   (purchasing) ; **#SPINE ✅ RÉEL** : module `cspine.*` sur spine-libgdx 3.6.53.1 **re-ciblé sur
-   l'ABI PerBlue** (shadow `DataInput` + patcheur ASM `PatchGdxCalls` : `Array.add …V→…Z`) → 0 échec
-   `.skel`, squelettes animés. **#CPARTICLE ⚠️ DETTE** : moteur natif `.np` non rendu (stub
-   `cparticle.Native` étiqueté ; blocage #NP-V3 = format v3 ≠ writer courant, cf. `NP_FORMAT.md`).
-   ← PROCHAINES ÉTAPES : (a) routage nouveau joueur → tutoriel `IntroTutorialActV1` + **BootData
-   complet/correct** (serveur autoritatif) ; (b) #NP-V3 (particules réelles) ; (c) persistance.
-   Détail : `desktop-port/BACKEND_STATUS.md`.
+   **✅ LE JEU ORIGINAL TOURNE EN NATIF JUSQU'AU MAINSCREEN INTERACTIF** de bout en bout avec NOTRE
+   serveur (capture `desktop-port/build/online.png`). Chaîne : `/login` → BootData1 (notre
+   LoginServer) → `handleBootData` → MainScreen. Correctifs (aucune réécriture de jeu) : **reframe
+   ASM** de game-logic.jar (StackMapTable → plus de crash JVM sur les stats binaires, retrait
+   `-Xverify:none`) ; shadow **FirebasePerfUrlConnection** (analytics off, download réel — à
+   remplacer par un shim Android `StrictMode`) ; **DhBridges** no-op (à refaire en INative réel).
+
+   **ARCHITECTURE NATIVE (voie fidèle — cf. `native/NATIVE_PLAN.md`, `desktop-port/INVENTORY.md`)** :
+   Disney Heroes ≠ DragonSoul. DragonSoul = Spine **Java** (tourne tel quel). Disney Heroes =
+   **natif C** : `cspine.Native`/`cparticle.Native` chargent la lib `spine-native` (PerBlue l'a
+   bâtie pour desktop, mode `COMBAT_AUTOMATOR`). ⇒ On fournit **`spine-native64.so`** (rebâti sur
+   spine-c **officiel** 3.6, interface JNI EXACTE de PerBlue via `native/`), et le **code d'origine
+   `cspine.*`/`cparticle.*` du jeu tourne INCHANGÉ**. On a **SUPPRIMÉ** les réécritures Java
+   (shadows cspine, spine-libgdx, shadow DataInput). Libs natives requises (cf. INVENTORY) :
+   `gdx` ✅, `gdx-freetype` ⬜ (polices), `spine-native` 🔨, opensl/adcolony non requis.
+   État : **cspine natif fonctionne** (0 crash, décor Spine rendu) — reste un **banding**
+   (`getVertices`/drawCalls à rendre fidèle) ; **cparticle = échafaudage neutre** (à rebâtir
+   fidèlement). ⚠️ Ces deux points DOIVENT être rendus fidèles par **extraction/désassemblage de la
+   lib ARM d'origine** (source de vérité), PAS par du code deviné (cf. PRINCIPLES §4/§4bis).
+   ← PROCHAINES ÉTAPES : (a) **récupérer + désassembler la lib `spine-native` ARM d'origine** →
+   rendre `getVertices` (drawCalls) et `cparticle` (format `.np` + simulation) fidèles ; (b)
+   `gdx-freetype` natif ; (c) refaire DhBridges → INative réel + shim `StrictMode` ; (d) routage
+   nouveau joueur → tutoriel `IntroTutorialActV1` + **BootData complet** ; (e) persistance.
+   Détail : `desktop-port/BACKEND_STATUS.md`, `desktop-port/INVENTORY.md`, `native/NATIVE_PLAN.md`.
 7. [ ] **Persistance** (SQLite) + **passerelle/multi-serveur** (liste, mot de passe).
 8. [ ] **Outil d'extraction data → format serveur** (les `.tab` chargés tels quels).
 
@@ -242,6 +254,12 @@ Dépôt de référence (`/workspace/dragonsoul-web`, branche `claude/game-transp
 
 ## 8. Conventions
 
+- **RÈGLE D'OR : on ne réécrit RIEN du jeu à la main — on EXTRAIT (données ET code) par commande**,
+  dans des fichiers régénérables. La seule couche écrite à la main = la **plateforme** (`dhbackend/`),
+  minimale, sans logique de jeu. Binaires natifs = code du jeu → binaire d'origine, ou rebuild
+  **vérifié fidèle** (désassemblage lib d'origine), jamais **inventé**. Cf. `docs/PRINCIPLES.md` §4.
+- **Fidélité vérifiée** contre des **captures du jeu original** : tout écart de rendu/UI = **bug à
+  corriger** (retour au comportement d'origine), pas une approximation. Cf. PRINCIPLES §4bis.
 - Commits/pushes **réguliers** sur `claude/disney-heroes-port-rhhtuj` (le conteneur peut
   être reset — ne jamais perdre de travail). Artefacts lourds **régénérables par script**.
 - **Ne jamais** faire apparaître l'identifiant du modèle dans un commit/artefact.

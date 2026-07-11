@@ -346,3 +346,15 @@ Modules natifs Spine/particules franchis. **Prochaine étape** : lancer **`run-o
 (`ClientInfo1`→`BootData1`), atteindre le menu / le tutoriel `IntroTutorialActV1` (nouveau joueur,
 BootData neuf — NE PAS seeder) et capturer. Voir `desktop-port/BACKEND_STATUS.md` (#SPINE ✅,
 #CPARTICLE ⚠️, #AUDIO, #BRIDGES).
+
+### Règle renforcée + jeu original en natif (2026-07-11)
+- **Règle d'or clarifiée** (PRINCIPLES §4/§4bis) : on ne réécrit RIEN du jeu à la main — on **extrait**
+  (données ET code) par commande. Seule couche manuelle = plateforme (`dhbackend/`), minimale. Binaires
+  natifs = code du jeu → binaire d'origine, sinon rebuild **vérifié fidèle** (désassemblage lib
+  d'origine), jamais inventé. **Fidélité vérifiée contre captures du jeu original**.
+- **Bascule sur le code d'origine natif** : suppression des shadows Java (cspine, spine-libgdx, DataInput) ;
+  `spine-native64.so` (spine-c officiel + interface JNI exacte de PerBlue) branché via le
+  `SharedLibraryLoader` du jeu → `cspine.*`/`cparticle.*` d'ORIGINE tournent. MainScreen rendu, 0 crash.
+- **Dettes de fidélité identifiées** (à corriger par extraction, pas invention) : `getVertices` (banding =
+  drawCalls multi-pages à rendre fidèles) ; `cparticle` (échafaudage neutre → vrai moteur). Source de
+  vérité = **désassemblage de la lib `spine-native` ARM d'origine**.
