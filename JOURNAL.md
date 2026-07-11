@@ -7,6 +7,47 @@
 
 ---
 
+## 2026-07-11 — Serveur autoritaire étape 4 : handlers du tuto (intro) + pilote headless (vérifié en jeu)
+
+### Résumé
+Le serveur **applique/persiste la progression du tutoriel** (`ChangeTutorialStep`) dans un état autoritaire
+(`ServerUser`). Fait extrait : le **tutoriel d'intro est 100% piloté par le client** (aucun aller-retour
+serveur), donc le serveur n'a qu'à **suivre la progression**. Ajout d'un **pilote headless** (`dh.autotap`)
+qui traverse les dialogues « tap to continue » : le tuto se joue **de bout en bout jusqu'au 1ᵉʳ combat**.
+
+### Détails (extraction = source de vérité)
+- **`IntroTutorialActV2` n'émet AUCUN message réseau** (aucun `sendMessage`/`networkProvider`) ; son combat
+  est **local** : `CombatSimHelper.createUnitData((IUser)new User(), …)`, `pauseCombat/resumeCombat`,
+  `PauseCombatEvent/ResumeCombatEvent`, `TutorialHelper.startCombatTimerEvent`. Les étapes (`Step` enum) sont
+  toutes des états de dialogue/combat côté client (GATE_DIALOG_*, TRANSFORM_ANIMATION, COMBAT1_*, COMBAT_2_*,
+  POST_COMBAT_*, DONE). ⇒ **seule sortie serveur = `ChangeTutorialStep`** (framework), fire-and-forget.
+- **`ChangeTutorialStep`** = `{type, step, forceSkip}`. `step` **absolu** (cf. `finishIntroForced` pose
+  `step = maxStep`). `ServerUser.applyTutorialStep` met à jour l'acte : `step` ← message, `maxStep` ←
+  max(courant, step) (« plus haut pas vu »). Copie défensive dans `bootData()` (le client ne mute pas
+  l'état autoritaire).
+- **Pilote headless** `DesktopLauncher` : `dh.autotap=N` injecte un tap central toutes les N frames via
+  l'infra existante `DhInput.tap`→`drain`. Traverse les gates « tap to continue » sans utilisateur.
+
+### Vérifications
+- **Unitaire** (sans libGDX) : nouveau joueur = 122 actes step 0 ; apply 12/25/3 → step=3, maxStep=25 ;
+  état autoritaire non muté par la copie client ; survit au round-trip wire.
+- **En jeu** (`run-online.sh` + `DH_AUTOTAP=45`) : le serveur applique les `ChangeTutorialStep` **réels**
+  (INTRO 1→2→3, FRIEND_MISSION 6, FRIENDSHIP_UNLOCK 17, REAL_GEAR_UNLOCK 11, FRIEND_CAMPAIGN 20,
+  HEIST_NARRATION 1…), **tous** trouvés dans les 122 actes (0 « type inconnu »), **0 réponse** requise. Le
+  client joue l'intro **de bout en bout jusqu'au 1ᵉʳ combat** : GATE_SIGN_DROP → GATE_RALPH_ENTER →
+  GATE_VANELLOPE_ENTER → GATE_DIALOG_2 → TRANSFORM_ANIMATION → COMBAT1_INTRO → …_SHOW_LOGO →
+  …_POST_LOGO_DIALOG → …_POST_GLITCH_DIALOG. Session stable (Ping échoé).
+
+### Fichiers touchés
+- `server/java/dhserver/ServerUser.java` (NEW) : état joueur autoritaire (BootData + progression tuto).
+- `server/java/dhserver/LoginServer.java` : handler `ChangeTutorialStep` ; BootData depuis `ServerUser`.
+- `server/java/dhserver/NewUserState.java` : recentré (fabrique tutoriels + `latestVersion`).
+- `desktop-port/src/main/java/dhdesktop/DesktopLauncher.java`, `run-desktop.sh` : pilote `dh.autotap`.
+- Reste : actions post-intro server-validées (nom, campagne, récompenses) = **handlers du hub (étape 6)** ;
+  **persistance SQLite (étape 5)** de `ServerUser`.
+
+---
+
 ## 2026-07-11 — Serveur autoritaire étape 3 : BootData nouveau joueur → TUTORIEL (vérifié en jeu)
 
 ### Résumé

@@ -155,8 +155,14 @@ Ping1                               -> **Ping1 (écho)** REQUIS
   et émet **`ChangeTutorialStep1`**. Les `SEVERE: Missing row in tutorials.tab` sont **intrinsèques au
   chargement de `tutorials.tab`** (incluent `REMOVED__CRYPT`, hors de mes actes) — comportement d'origine
   tolérant (`TutorialStats.onMissingRow`), pas causé par le serveur, aucune rustine.
-- Reste (étape 4) : **traiter/persister** `ChangeTutorialStep1` (type/step/forceSkip) — le serveur met à
-  jour l'acte du joueur et persiste (aujourd'hui journalisé seulement).
+- **Handlers du tuto (étape 4) — ✅ FAIT (intro).** Le tutoriel d'intro est **100% piloté par le client** :
+  `IntroTutorialActV2` **n'émet aucun message réseau** et son combat est **local** (`CombatSimHelper`,
+  `pause/resumeCombat`, timers). La **seule** sortie serveur est **`ChangeTutorialStep1`** (fire-and-forget).
+  `ServerUser` applique la progression (`step` absolu ; `maxStep` = plus haut pas vu) → la reconnexion
+  renvoie un BootData à jour. Vérifié en jeu (pilote headless `dh.autotap`) : intro jouable **de bout en
+  bout jusqu'au 1ᵉʳ combat** (GATE_DIALOG → TRANSFORM → COMBAT1 cinématique + logo), serveur = 0 réponse,
+  0 message inconnu. Les actions post-intro **server-validées** (nom, campagne réelle, récompenses) →
+  handlers du hub (étape 6).
 - **Incohérence stats `.tab` — ✅ NON-PROBLÈME (2 corrections successives de mes lectures)** :
   1ʳᵉ hypothèse « 7.9 vs 12.1.0 » = FAUSSE. 2ᵉ hypothèse « crash `<clinit>` » = **FAUSSE aussi**.
   Fait vérifié : la valeur `PREDICTIVE_FORTIFICATION` (ligne 159, EVIL_QUEEN) de

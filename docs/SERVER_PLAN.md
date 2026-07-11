@@ -59,8 +59,18 @@ pour garantir que **chaque objet déréférencé est non-null** — pas de « mi
    PATCHED_HEROES, TEAM_LEVEL_UP, BATTLE_PASS_V2…) sont **intrinsèques au chargement de `tutorials.tab`**
    (le SEVERE inclut `REMOVED__CRYPT`, jamais dans mes actes ⇒ ça vient de `TutorialStats.onMissingRow`
    sur l'enum complet, pas de mon BootData) — comportement d'origine tolérant, comme l'étape 2. Aucune rustine.
-4. [~] **Handlers du tuto** — journaliser puis traiter les messages émis pendant le tuto (le serveur
-   valide/persiste la progression ; réponses via classes du jeu). Critère : tuto jouable de bout en bout.
+4. [x] **Handlers du tuto — ✅ FAIT (intro) & VÉRIFIÉ EN JEU.** Fait extrait : le **tutoriel d'intro est
+   entièrement piloté par le client** — `IntroTutorialActV2` n'émet **aucun** message réseau, et son combat
+   est **local** (`CombatSimHelper.createUnitData(new User(), …)`, `pause/resumeCombat`, timers) ; la seule
+   sortie serveur est **`ChangeTutorialStep`** (type/step/forceSkip, fire-and-forget). ⇒ le serveur **valide/
+   persiste la progression** et n'a **aucune réponse** à fournir pendant l'intro. `ServerUser` (état
+   autoritaire) applique `ChangeTutorialStep` (step absolu ; `maxStep` = plus haut pas vu) → le BootData de
+   reconnexion reflète la progression. **Vérifié en jeu** (pilote headless `dh.autotap`) : le tuto se joue de
+   bout en bout de la scène d'ouverture jusqu'au **1ᵉʳ combat** (GATE_DIALOG → TRANSFORM_ANIMATION →
+   COMBAT1_… → révélation du logo), le serveur appliquant tous les `ChangeTutorialStep` reçus (INTRO 1→2→3…,
+   FRIEND_MISSION, FRIENDSHIP_UNLOCK…), 0 réponse requise, 0 message inconnu. Reste (hors intro, avec la
+   suite du monde) : les actions post-intro server-validées (choix du nom, 1ᵉʳ combat de campagne réel,
+   claim de récompenses) relèvent des **handlers du hub (étape 6)**.
 5. [ ] **Persistance** (SQLite) — tout l'état joueur sérialisé via les classes du jeu (octets = wire).
 6. [ ] **Monde / hub post-tuto** — handlers des requêtes du hub (héros, items, campagne…) au fur et à
    mesure, pilotés par le client. Critère : navigation stable, fidèle aux captures d'origine.

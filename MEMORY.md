@@ -288,9 +288,14 @@ Dépôt de référence (`/workspace/dragonsoul-web`, branche `claude/game-transp
    **`IntroTutorialActV2`** (correction : v2, pas V1) et rend la scène d'ouverture (Ralph + Vanellope +
    portail) — capture `desktop-port/build/online-tuto.png` ; émet `ChangeTutorialStep`. Les SEVERE
    `Missing row in tutorials.tab` sont intrinsèques au chargement de la `.tab` (incluent `REMOVED__CRYPT`,
-   hors de mes actes), pas causés par le serveur. Reste : (4) **traiter/persister** `ChangeTutorialStep`
-   (aujourd'hui journalisé) ; (5) persistance SQLite ; (6) handlers du hub ; (7) multi-serveur. Serveur =
-   classes du jeu (GruntNIOTCPServer/codec/MessageFactory), client = source de vérité (LoginServer journalise).
+   hors de mes actes), pas causés par le serveur.
+   **(4) Handlers du tuto ✅ (intro) VÉRIFIÉ EN JEU** : le tuto d'intro est **100% client** (IntroTutorialActV2
+   n'émet aucun message ; combat local `CombatSimHelper`) ; seule sortie serveur = `ChangeTutorialStep`.
+   `ServerUser` (état autoritaire) l'applique (step absolu ; maxStep=plus haut vu) → reconnexion à jour.
+   Pilote headless `dh.autotap` : intro jouable **de bout en bout jusqu'au 1ᵉʳ combat** (GATE→TRANSFORM→
+   COMBAT1 + logo), serveur = 0 réponse. Reste : (5) **persistance SQLite** (ServerUser en mémoire → disque) ;
+   (6) handlers du hub (nom, campagne réelle, récompenses = actions post-intro server-validées) ;
+   (7) multi-serveur. Serveur = classes du jeu (GruntNIOTCPServer/codec/MessageFactory), client = source de vérité.
 8. [ ] **Outil d'extraction data → format serveur** (les `.tab` chargés tels quels).
 
 ---
