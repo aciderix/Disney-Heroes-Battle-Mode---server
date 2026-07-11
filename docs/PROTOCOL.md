@@ -144,7 +144,12 @@ Ping1                               -> **Ping1 (écho)** REQUIS
   SIGN IN), pas de tuto. Pour router un nouveau joueur vers le **tuto** (`IntroTutorialActV1`), BootData
   doit porter l'état de nouveau joueur (champs EXACTS à extraire de `GameMain.handleBootData` + la classe
   `BootData` — source = le client). Chantier serveur suivant.
-- **Désaccord de version** (à traiter) : `SyncStatDataClientHelper.<clinit>` échoue sur des `.tab`
-  (PatchStats/GuildStats : enum `PREDICTIVE_FORTIFICATION` absent, valeurs vides) — le contenu archivé
-  est **game 7.9** alors que le code est **12.1.0**. Toléré (le jeu atteint le hub) mais le serveur
-  devra **synchroniser les stats** (SyncStatData, données extraites du jeu 12.1.0).
+- **Incohérence stats `.tab` (CAUSE CORRIGÉE — ma 1ʳᵉ hypothèse « 7.9 vs 12.1.0 » était FAUSSE)** :
+  vérifié — la `.tab` fautive vient de l'**APK 12.1.0 de base** (`build/apk/assets/stats/`), et la valeur
+  `PREDICTIVE_FORTIFICATION` (ligne 159, héros EVIL_QUEEN) est **absente de TOUT le code 12.1.0** (grep
+  sur tous les `.dex` + enum `PatchTalent` décompilé). C'est une **incohérence INTERNE à l'APK 12.1.0**
+  (donnée `.tab` ≠ enum du code) ; `saveRow` fait `Enum.valueOf` sans try/catch → crash dur.
+  Pourquoi le vrai jeu n'en meurt pas : stats **serveur-autoritaires** — `BootData` porte
+  `statDataTxt`/`statDataBin`/`statVersions` (le serveur envoie les stats à jour qui remplacent la `.tab`
+  bootstrap embarquée). ⇒ correctif conforme = **le serveur peuple statDataTxt/Bin** (données extraites
+  du jeu). AUCUNE rustine (pas d'édition de `.tab`, pas de ligne supprimée, pas d'erreur avalée).
