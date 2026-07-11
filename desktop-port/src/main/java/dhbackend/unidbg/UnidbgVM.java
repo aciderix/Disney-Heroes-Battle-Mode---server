@@ -75,9 +75,12 @@ public final class UnidbgVM {
         cPart  = vm.resolveClass("com/perblue/heroes/cparticle/Native");
         cSpine.callStaticJniMethod(emulator, "Spine_init()V");
 
-        embVerts   = memory.malloc(2300 * 6 * 4, false);   // maxVertices(2300) * 6 floats
-        embIndices = memory.malloc(6900 * 2, false);       // maxIndices(6900)
-        embDraw    = memory.malloc(4096, false);           // drawCalls
+        // Dimensionnés pour le PLUS GRAND des deux meshes : spine (2300 v / 6900 i) et particules
+        // (4000 v / 6000 i, 6 floats/sommet). copyFloats recopie capacity() floats → le buffer émulé
+        // doit couvrir la capacité du buffer de mesh du jeu.
+        embVerts   = memory.malloc(8192 * 6 * 4, false);
+        embIndices = memory.malloc(16384 * 2, false);
+        embDraw    = memory.malloc(8192 * 2, false);
         objVerts   = vm.resolveClass("java/nio/FloatBuffer").newObject(embVerts.getPointer());
         objIndices = vm.resolveClass("java/nio/ShortBuffer").newObject(embIndices.getPointer());
         objDraw    = vm.resolveClass("java/nio/ShortBuffer").newObject(embDraw.getPointer());
@@ -237,19 +240,24 @@ public final class UnidbgVM {
     public synchronized int effectCreate(byte[] np, int atlasH) { return pi("Effect_create([BI)I", new ByteArray(vm, np), atlasH); }
     public synchronized int effectClone(int h) { return pi("Effect_clone(I)I", h); }
     public synchronized void effectDispose(int h) { pv("Effect_dispose(I)V", h); }
+    // Particules : le drawCalls a **3 shorts par draw call** PUIS **1 short = nombre total de sommets**
+    // (NativeParticleEffect.getVertices lit drawCalls.get(n*3) pour dériver verts.limit/indices.limit) →
+    // on copie n*3+1 shorts. (≠ spine : 2 shorts/pair.) Le nombre de sommets à l'index n*3 est écrit
+    // par le natif d'origine.
+    private static int drawShorts(int n) { return n > 0 ? n * 3 + 1 : 0; }
     public synchronized int effectGetVertices(int h, FloatBuffer verts, ShortBuffer draws) {
         int n = pi("Effect_getVertices(ILjava/nio/FloatBuffer;Ljava/nio/ShortBuffer;)I", h, objVerts, objDraw);
         copyFloats(embVerts, verts, verts == null ? 0 : verts.capacity());
-        copyShorts(embDraw, draws, n * 2);
+        copyShorts(embDraw, draws, drawShorts(n));
         return n;
     }
     public synchronized int effectGetVerticesAboveZ(int h, float z, FloatBuffer verts, ShortBuffer draws) {
         int n = pi("Effect_getVerticesAboveZ(IFLjava/nio/FloatBuffer;Ljava/nio/ShortBuffer;)I", h, fb(z), objVerts, objDraw);
-        copyFloats(embVerts, verts, verts == null ? 0 : verts.capacity()); copyShorts(embDraw, draws, n * 2); return n;
+        copyFloats(embVerts, verts, verts == null ? 0 : verts.capacity()); copyShorts(embDraw, draws, drawShorts(n)); return n;
     }
     public synchronized int effectGetVerticesBelowZ(int h, float z, FloatBuffer verts, ShortBuffer draws) {
         int n = pi("Effect_getVerticesBelowZ(IFLjava/nio/FloatBuffer;Ljava/nio/ShortBuffer;)I", h, fb(z), objVerts, objDraw);
-        copyFloats(embVerts, verts, verts == null ? 0 : verts.capacity()); copyShorts(embDraw, draws, n * 2); return n;
+        copyFloats(embVerts, verts, verts == null ? 0 : verts.capacity()); copyShorts(embDraw, draws, drawShorts(n)); return n;
     }
     public synchronized void effectStart(int h) { pv("Effect_start(I)V", h); }
     public synchronized void effectReset(int h) { pv("Effect_reset(I)V", h); }
