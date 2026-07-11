@@ -1,0 +1,14 @@
+plugins { id 'java' }
+repositories { mavenCentral() }
+dependencies {
+  implementation 'com.github.zhkl0228:unidbg-android:0.9.8'
+  implementation 'com.github.zhkl0228:unidbg-dynarmic:0.9.8'
+}
+tasks.register('cp') {
+  doLast {
+    def f = new File("$buildDir/runtime.cp")
+    f.parentFile.mkdirs()
+    f.text = configurations.runtimeClasspath.files.collect{it.absolutePath}.join(':')
+    println "WROTE ${f.absolutePath} (${configurations.runtimeClasspath.files.size()} jars)"
+  }
+}
