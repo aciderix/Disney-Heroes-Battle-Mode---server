@@ -104,9 +104,15 @@ public final class LoginServer {
 
   public static void main(String[] args) throws Exception {
     int port = args.length > 0 ? Integer.parseInt(args[0]) : 8081;
+    // Étape 3 : BootData NOUVEAU JOUEUR complet → tutoriel d'intro. Structure entièrement issue
+    // des classes du jeu (new BootData() complet par ses initialiseurs ; actes de tuto lus dans
+    // le registre TutorialHelper) — aucune donnée écrite à la main (docs/PRINCIPLES.md §4).
+    // userID fixe pour l'instant (la persistance = étape 5, docs/SERVER_PLAN.md).
     new LoginServer(port, ci -> {
       BootData bd = new BootData();
-      bd.serverTime = System.currentTimeMillis();
+      NewUserState.fillNewPlayer(bd, /*userID*/ 1L, /*shardID*/ 1);
+      System.out.println("[login] ==> BootData nouveau joueur : "
+          + bd.individualUserExtra.tutorialActs.size() + " actes de tuto (step 0)");
       return bd;
     }).start();
     Thread.currentThread().join();
