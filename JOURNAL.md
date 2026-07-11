@@ -409,3 +409,20 @@ BootData neuf — NE PAS seeder) et capturer. Voir `desktop-port/BACKEND_STATUS.
   sous qemu → struct parsée = vérité bit-à-bit) ; OU (2) auto-parse validé par l'invariant des offsets de
   pool (chaque triplet timeline `(N, offA, offB)` doit égaler le curseur de pool courant) → l'ordre correct
   = celui qui donne 535/535. Détail complet : `desktop-port/NP_FORMAT.md`.
+
+### cparticle : oracle d'exécution qemu — avancement (2026-07-11)
+- But : exécuter le VRAI `ParticleEffect::load`/`ParticleEmitter::load` (ARM) sous qemu sur de vrais
+  `.np` → struct parsée + octets consommés = **vérité bit-à-bit** de l'ordre v3 (pas de devinette).
+- `native/oracle/harness_np.c` : dlopen + ctor `ParticleEmitter` + `load(&cursor,&remaining)` + dump.
+- **Corrections du shim bionic** (`gen_shim.py`) qui ont supprimé le SIGSEGV initial :
+  1. `__aeabi_mem{cpy,move,set,clr}{4,8}` (supposent l'alignement, fautent sous qemu sur la source non
+     alignée du pool `.np`) → repointées vers la variante NON alignée de base (même sémantique).
+  2. Repli **no-op** pour tout symbole absent de la glibc (ex. `_zf_log_write`, log Android) au lieu
+     d'un pointeur NULL (crash). 3. Littéral `.word` EMBARQUÉ dans chaque trampoline naked (le pool
+     distant cassait l'assemblage « pool needs to be closer »).
+- **État** : plus de crash, mais **hang** dans `operator new` (boucle retry malloc @0x31406 ; helpers
+  résolus : `0x155b4`=malloc PLT, `0x15974`=`std::get_new_handler`) → `malloc` échoue sur une taille
+  aberrante. Cause probable : membres C++ non initialisés (Effect::load malloc les emitters SANS ctor)
+  ou ctor `C2` (base) insuffisant / désalignement sous émulation. ← À FINIR : ctor complet `C1`, ou
+  zéro-init + trace du site d'appel `operator new` ; sinon poursuivre l'auto-parse validé par
+  l'invariant des offsets de pool (approche #2, pur Python). Détail : `desktop-port/NP_FORMAT.md`.
