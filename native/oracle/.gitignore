@@ -1,0 +1,6 @@
+sysroot/
+harness
+libc_shim.c
+libc.ver
+empty.c
+*.o
