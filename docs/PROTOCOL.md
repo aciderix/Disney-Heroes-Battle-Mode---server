@@ -144,12 +144,13 @@ Ping1                               -> **Ping1 (écho)** REQUIS
   SIGN IN), pas de tuto. Pour router un nouveau joueur vers le **tuto** (`IntroTutorialActV1`), BootData
   doit porter l'état de nouveau joueur (champs EXACTS à extraire de `GameMain.handleBootData` + la classe
   `BootData` — source = le client). Chantier serveur suivant.
-- **Incohérence stats `.tab` (CAUSE CORRIGÉE — ma 1ʳᵉ hypothèse « 7.9 vs 12.1.0 » était FAUSSE)** :
-  vérifié — la `.tab` fautive vient de l'**APK 12.1.0 de base** (`build/apk/assets/stats/`), et la valeur
-  `PREDICTIVE_FORTIFICATION` (ligne 159, héros EVIL_QUEEN) est **absente de TOUT le code 12.1.0** (grep
-  sur tous les `.dex` + enum `PatchTalent` décompilé). C'est une **incohérence INTERNE à l'APK 12.1.0**
-  (donnée `.tab` ≠ enum du code) ; `saveRow` fait `Enum.valueOf` sans try/catch → crash dur.
-  Pourquoi le vrai jeu n'en meurt pas : stats **serveur-autoritaires** — `BootData` porte
-  `statDataTxt`/`statDataBin`/`statVersions` (le serveur envoie les stats à jour qui remplacent la `.tab`
-  bootstrap embarquée). ⇒ correctif conforme = **le serveur peuple statDataTxt/Bin** (données extraites
-  du jeu). AUCUNE rustine (pas d'édition de `.tab`, pas de ligne supprimée, pas d'erreur avalée).
+- **Incohérence stats `.tab` — ✅ NON-PROBLÈME (2 corrections successives de mes lectures)** :
+  1ʳᵉ hypothèse « 7.9 vs 12.1.0 » = FAUSSE. 2ᵉ hypothèse « crash `<clinit>` » = **FAUSSE aussi**.
+  Fait vérifié : la valeur `PREDICTIVE_FORTIFICATION` (ligne 159, EVIL_QUEEN) de
+  `patched_heroes_talent_assignments.tab` (APK 12.1.0 de base) est absente du code 12.1.0 → `saveRow`
+  lève `IllegalArgumentException`. MAIS `RowGeneralStats.parseStats` **enveloppe `saveRow` en try/catch →
+  `onStatError`** qui **LOGue** (`LOG.error(msg, throwable)` — d'où la stack imprimée, illusion de crash)
+  puis **`return`** ; la ligne est **sautée** (`finishRow(false)`). Vérifié : **0 `ExceptionInInitializerError`**
+  dans le run. ⇒ **comportement d'origine du jeu** (tolère une `.tab` bootstrap imparfaite), **pas un
+  crash, pas de rustine, rien à corriger**. Le serveur pourra envoyer `statDataTxt/Bin` pour de vrais
+  changements d'équilibrage live, mais ce n'est ni un bug ni bloquant.

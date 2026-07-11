@@ -39,10 +39,12 @@ pour garantir que **chaque objet déréférencé est non-null** — pas de « mi
 
 ## Étapes ORDONNÉES (une validée avant la suivante)
 1. [ ] **Session stable** — écho `Ping`. ✅ FAIT (hub stable, 0 reconnexion).
-2. [ ] **Stat-sync** — peupler `BootData.statDataTxt/Bin/statVersions` avec les stats **extraites** du jeu ;
-   comprendre l'ordre de chargement (le crash `SyncStatDataClientHelper.<clinit>` a lieu au *setup réseau*,
-   avant BootData → vérifier comment le client applique statDataTxt). Critère : plus de crash `<clinit>`
-   stats, à la source (pas de rustine).
+2. [x] **Stat-sync — NON-PROBLÈME (investigation « creuse d'abord »).** Les erreurs `.tab` (ex. EVIL_QUEEN
+   `PREDICTIVE_FORTIFICATION`) sont **attrapées et loguées** par le propre `RowGeneralStats.parseStats`/
+   `onStatError` du jeu, puis la ligne est **sautée** (0 `ExceptionInInitializerError`). Ma lecture « crash
+   `<clinit>` » était fausse (une exception **loguée** ≠ fatale). ⇒ rien à corriger, aucune rustine ; c'est
+   le comportement d'origine (tolère la `.tab` bootstrap). `statDataTxt/Bin` pourra servir plus tard pour
+   l'équilibrage live, non bloquant.
 3. [ ] **BootData nouveau joueur complet** — `new BootData()` + `UserInfo/UserExtra` nouveau joueur (aucun
    flag de tuto) via classes du jeu → le client route vers `IntroTutorialActV1`. Critère : le tuto démarre.
 4. [ ] **Handlers du tuto** — journaliser puis traiter les messages émis pendant le tuto (le serveur
