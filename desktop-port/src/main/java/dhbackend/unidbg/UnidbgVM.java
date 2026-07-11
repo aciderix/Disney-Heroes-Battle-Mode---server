@@ -195,8 +195,10 @@ public final class UnidbgVM {
         System.arraycopy(a.getValue(), 0, out, 0, out.length);
     }
 
+    private boolean loggedSkel, loggedEff;
     public synchronized int skeletonGetVertices(int h, FloatBuffer verts, ShortBuffer indices, ShortBuffer draws) {
         int n = si("Skeleton_getVertices(ILjava/nio/FloatBuffer;Ljava/nio/ShortBuffer;Ljava/nio/ShortBuffer;)I", h, objVerts, objIndices, objDraw);
+        if (!loggedSkel) { loggedSkel = true; System.out.println("[UnidbgVM] 1er Skeleton_getVertices (spine d'origine via unidbg) -> drawCount=" + n); }
         copyFloats(embVerts, verts, verts == null ? 0 : verts.capacity());
         copyShorts(embIndices, indices, indices == null ? 0 : indices.capacity());
         copyShorts(embDraw, draws, n * 2);
@@ -247,6 +249,7 @@ public final class UnidbgVM {
     private static int drawShorts(int n) { return n > 0 ? n * 3 + 1 : 0; }
     public synchronized int effectGetVertices(int h, FloatBuffer verts, ShortBuffer draws) {
         int n = pi("Effect_getVertices(ILjava/nio/FloatBuffer;Ljava/nio/ShortBuffer;)I", h, objVerts, objDraw);
+        if (!loggedEff) { loggedEff = true; System.out.println("[UnidbgVM] 1er Effect_getVertices (particules d'origine via unidbg) -> n=" + n); }
         copyFloats(embVerts, verts, verts == null ? 0 : verts.capacity());
         copyShorts(embDraw, draws, drawShorts(n));
         return n;

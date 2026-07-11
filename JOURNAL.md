@@ -448,3 +448,20 @@ BootData neuf — NE PAS seeder) et capturer. Voir `desktop-port/BACKEND_STATUS.
   pré-download (art statique), pas de squelette vivant. ⚠️ Rendu spine in-game **à valider** en atteignant
   un écran héros/combat (dépend du pipeline d'assets WORLD_ADDITIONAL). Puis comparer aux captures
   d'origine (§4bis) + mesurer le fps réel.
+
+### JEU DANS LE HUB PRINCIPAL — spine + particules d'origine via unidbg (2026-07-11)
+- **Serveur de contenu = RELAIS** : le 302 vers archive.org échouait (le java.net du jeu n'a pas de
+  proxy). Le serveur relaie désormais (fetch via proxy côté serveur, stream au client). Le jeu
+  télécharge WORLD_ADDITIONAL (394 Mo) etc. et **franchit la barrière de download**.
+- **Rendu particules corrigé** : `NativeParticleEffect.getVertices` lit `drawCalls.get(n*3)` = nombre
+  total de sommets (écrit par le natif APRÈS les n*3 shorts de draw calls) pour poser verts.limit/
+  indices.limit. On copie donc **n*3+1** shorts (≠ spine : 2/pair). Buffers émulés dimensionnés pour le
+  plus grand mesh (particules 4000 v). Plus de crash `newPosition > limit`.
+- **✅ RÉSULTAT** : le jeu atteint le **HUB PRINCIPAL** (ville Zootopia enneigée, menu HEROES/ITEMS/…,
+  CAMPAIGN/CRATES, nouveau joueur CHOOSE NAME) — capture `native/reference/shots/mainscreen-hub-unidbg.png`.
+  Confirmé par logs `[UnidbgVM]` : `Skeleton_getVertices -> drawCount=39` (spine d'origine rendu) +
+  `Effect_getVertices` (particules d'origine) — **100% code d'origine via unidbg, 0 crash de rendu**.
+- ⚠️ RESTE (serveur) : la connexion TCP tombe après BootData → overlay **« Reconnecting… »**. Le
+  serveur de jeu doit MAINTENIR la session (keepalive + messages post-BootData). Et le désaccord de
+  stats (`GuildStats` NumberFormatException) → le serveur doit **synchroniser les stats** (SyncStatData,
+  extraites du jeu). Prochaines étapes serveur.
