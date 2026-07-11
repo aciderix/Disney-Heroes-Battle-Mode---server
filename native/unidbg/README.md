@@ -6,18 +6,34 @@ rétro-ingénierer le format `.np` des particules, on **exécute le binaire ARM 
 virtuel). Le code Java d'origine `cspine.Native`/`cparticle.Native` serait remplacé par un **shim mince**
 de dispatch vers unidbg (plomberie plateforme, PAS de logique de jeu — conforme PRINCIPLES §4).
 
-## Résultats du prototype (2026-07-11)
+## Résultats du prototype (2026-07-11) — PIPELINE PARTICULES COMPLET VALIDÉ
 
 - **Chargement OK** : unidbg charge `libspine-native.so` et exécute ses fonctions JNI d'origine
   (`Spine_init`, `getLastSpineError` → "").
 - **`Effect_create` parse un vrai `.np` sans erreur** (`particleErr=""`, handle valide) →
   **#NP-V3 résolu par EXÉCUTION du code d'origine, zéro RE du format.**
-- **Perf simulation par-frame** (`Effect_update`, la physique `updateParticles`) : **~46 µs/appel**
-  (backend unicorn). Budget frame 60 fps = 16 667 µs → ~365 updates/frame possibles. **Très large.**
+- **Simulation par-frame** (`Effect_update`, `updateParticles`) : **~46 µs/appel** (backend unicorn).
+- **RENDU par-frame** (`Effect_getVertices`) : renvoie de **vrais sommets 2-couleurs** (6 floats/sommet :
+  x, y, light, dark, u, v) générés par le moteur d'origine. `update + getVertices` = **~141 µs/frame/effet**
+  → budget 60 fps (16 667 µs) = **~118 effets/frame**. Une scène en a 5-30 → **large**.
+- **Trou unidbg corrigé** : `GetDirectBufferAddress`/`GetDirectBufferCapacity` (JNI 230/231) ne sont pas
+  implémentés par unidbg (throw `UnsupportedOperationException`). On les **implémente** (≈15 lignes,
+  `SpineVerts2.java`) en écrasant ces slots de la table `JNIEnv` par un `ArmSvc` qui renvoie le pointeur
+  émulé porté par le `DvmObject`. Plomberie plateforme standard, pas de logique jeu.
 - **dynarmic** (JIT plus rapide) : plante sur NEON (`vldr/vcvt`) dans `loadImages` — **inutile**,
   unicorn suffit.
-- **Reste à valider** : marshaling des `FloatBuffer`/`ShortBuffer` directs de
-  `Skeleton_getVertices`/`Effect_getVertices` (chemin de rendu) + coût de recopie par frame.
+
+⇒ **Le moteur de particules D'ORIGINE tourne entièrement (parse + simulation + sommets) à perf viable.**
+  Par extension, spine (même lib, même schéma de buffers) devrait suivre. La stratégie « câblage du
+  binaire d'origine » est **validée** pour spine ET particules.
+
+## Reste à faire pour l'intégration réelle
+1. Tester `Skeleton_getVertices` (spine) avec un vrai `.skel` (haute confiance, même mécanisme).
+2. Shim `cspine.Native`/`cparticle.Native` → dispatch vers une VM unidbg **persistante** (chargée une
+   fois). Un seul thread appelant (thread de rendu) — les VM unidbg ne sont pas thread-safe.
+3. Buffers émulés alloués UNE fois et réutilisés par frame ; recopie vers les `FloatBuffer` du jeu.
+4. Rendre à l'écran et **comparer aux captures du jeu original** (PRINCIPLES §4bis).
+5. Committer le binaire hôte unicorn (déjà dans le jar unidbg) — rien à rebâtir.
 
 ## Fichiers
 - `SpineUnidbg.java` : charge la lib + `Spine_init` + chrono basique.
