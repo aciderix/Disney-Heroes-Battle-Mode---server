@@ -1,4 +1,7 @@
+# spine-c récupéré au build (licence Spine Runtimes) — non committé
 /spine-c/
+# artefacts de build
 /build/
 *.o
-*.so
+# lib bâtie (régénérable) — mais on GARDE native/reference/ (binaires d'origine, source de vérité)
+/build/*.so
