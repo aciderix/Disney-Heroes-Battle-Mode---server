@@ -7,6 +7,59 @@
 
 ---
 
+## 2026-07-11 — Serveur autoritaire étape 3 : BootData nouveau joueur → TUTORIEL (vérifié en jeu)
+
+### Résumé
+Le serveur envoie désormais un **BootData de nouveau joueur complet** construit **à partir des classes
+du jeu**, et le client d'origine **route vers le tutoriel d'intro** : `IntroTutorialActV2` démarre et rend
+la scène d'ouverture (Ralph + Vanellope devant le portail). Zéro donnée écrite à la main.
+
+### Détails (décompilation CFR = source de vérité)
+- **`GameMain.handleBootData` lu en entier** (949 lignes bytecode → CFR) : recensé **chaque** champ de
+  `BootData` déréférencé (doit être non-null). **`BootData` décompilé** : le **constructeur du jeu**
+  initialise TOUS ces champs (`userInfo=new UserInfo()`, `userExtra`, `privateUserInfo`, `guildInfo`,
+  `currentServer=new Server()`, `allContests`, `individualUserExtra`, `invasionInfo`, `specialEvents`,
+  `statData*/statVersions=new HashMap`, `loginEvent=""`, `mailMessages=new ArrayList`…). ⇒ `new BootData()`
+  est **complet par construction** (règle : la complétude vient des initialiseurs du jeu, pas d'une liste
+  inventée).
+- **Routage tuto (chaîne extraite)** : `handleBootData` → `ClientNetworkStateConverter.getIndividualUser
+  (individualUserExtra)` → `IndividualUser.setExtra` itère **`individualUserExtra.tutorialActs`** (List de
+  `TutorialAct`) → `getUserTutorialAct` → `addTutorialAct`. `TutorialHelper.completedTutorialAct(type)`
+  renvoie **true quand `getTutorialAct(type)==null`** (acte ABSENT ⇒ tuto « fait/sauté ») ; sinon complété
+  sur `step >= act.getMaxStep()` (`AbstractTutorialAct.getCompletionState`). ⇒ un nouveau joueur doit porter
+  **TOUS** les `TutorialHelper.NEW_USER_ACTS` (**122 types**) à **`step 0`** (IN_PROG), sinon des features
+  (UNLOCK_HERO…) seraient considérées « déjà faites » et jamais introduites.
+- **Aucune saisie** : `NewUserState.newUserTutorialActs()` lit la liste **dans le registre du jeu** —
+  `TutorialHelper.NEW_USER_ACTS` (public) + `ACTS` (réflexion, `type→IntMap(version→act)`), en prenant la
+  **dernière version enregistrée** par type. Vérifié : les 122 types résolvent une version (117×v1, 5×v2),
+  aucun non enregistré. `TutorialHelper` **se charge côté serveur sans libGDX** (les ctors d'actes ne
+  touchent pas libGDX à la construction).
+- **Correction de fidélité** : la version INTRO enregistrée dans le 12.1.0 est **`IntroTutorialActV2`**
+  (`getType()==INTRO`, `getVersion()==2`) — `IntroTutorialActV1` n'est **pas** enregistré. Les anciennes
+  notes « IntroTutorialActV1 » étaient erronées.
+- **`SEVERE: Missing row in tutorials.tab`** (EMERALD_RANK, FRANCHISE_TRIALS(+STAGE_SELECT), PATCHED_HEROES,
+  TEAM_LEVEL_UP, BATTLE_PASS_V2…) : **PAS causé par le serveur**. Le SEVERE inclut `REMOVED__CRYPT` (jamais
+  dans mes actes) ⇒ il vient de **`TutorialStats.onMissingRow`** qui parcourt l'enum `TutorialActType`
+  complet au chargement de `tutorials.tab` (l'APK 12.1.0 a du **code** en avance sur sa **donnée** `.tab`).
+  Comportement d'origine tolérant (même catégorie que l'étape 2). Aucune rustine.
+
+### Vérifications
+- **Round-trip wire** (`MessageFactory`, sans libGDX) : BootData nouveau joueur = 8192 o, 122 actes relus,
+  INTRO v2/step0, id/teamLevel OK.
+- **En jeu** (`run-online.sh`, client d'origine via unidbg) : `[login] ==> BootData nouveau joueur : 122
+  actes de tuto (step 0)` ; `IntroTutorialActV2 onTutorialTransition` INITIAL→SCREEN_WAIT→…→GATE_DIALOG_1_A ;
+  8× `ChangeTutorialStep1` reçus ; **capture `desktop-port/build/online-tuto.png`** = scène d'ouverture
+  (Ralph + Vanellope + portail Disney Heroes, dialogue « I can't believe you talked me into this. »).
+
+### Fichiers touchés
+- **`server/java/dhserver/NewUserState.java`** (NEW) : construit le BootData nouveau joueur (identité +
+  `tutorialActs` depuis le registre du jeu).
+- `server/java/dhserver/LoginServer.java` : `main` envoie le BootData nouveau joueur (via `NewUserState`).
+- `docs/SERVER_PLAN.md`, `docs/PROTOCOL.md` §6, `MEMORY.md` : étape 3 ✅ + correction IntroTutorialActV2.
+- Prochain (étape 4) : traiter/persister `ChangeTutorialStep` (aujourd'hui journalisé).
+
+---
+
 ## 2026-07-09 — Bootstrap du projet (session initiale)
 
 ### Résumé

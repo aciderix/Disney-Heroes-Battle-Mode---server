@@ -6,8 +6,8 @@
 > des fichiers et un historique **court**. L'historique **détaillé** est dans
 > [`JOURNAL.md`](JOURNAL.md). **Maintenir ce fichier à jour en permanence.**
 
-Dernière mise à jour : **2026-07-11** (jeu original tournant en natif jusqu'au MainScreen ;
-architecture native `spine-native` ; règle renforcée : **on n'écrit rien à la main, on extrait**).
+Dernière mise à jour : **2026-07-11** (serveur autoritaire étape 3 ✅ : **BootData nouveau joueur → TUTO
+vérifié en jeu** ; le client d'origine lance IntroTutorialActV2, scène d'ouverture Ralph+Vanellope rendue).
 
 ---
 
@@ -280,11 +280,17 @@ Dépôt de référence (`/workspace/dragonsoul-web`, branche `claude/game-transp
 7. [~] **⭐ PHASE SERVEUR AUTORITAIRE — plan ordonné dans [`docs/SERVER_PLAN.md`](docs/SERVER_PLAN.md).**
    Le client tourne 100% d'origine (spine+particules via unidbg) et atteint le **hub STABLE** (écho
    `Ping` = keepalive ✅). Étapes ordonnées (une validée avant la suivante) : (1) session stable ✅ ;
-   (2) **stat-sync** (`BootData.statDataTxt/Bin`, données extraites — résout l'incohérence `.tab` interne
-   à l'APK 12.1.0, SANS rustine) ; (3) **BootData nouveau joueur complet** (`new BootData()` + classes du
-   jeu, `handleBootData` lu en entier) → tuto `IntroTutorialActV1` ; (4) handlers du tuto ; (5) persistance
-   SQLite ; (6) handlers du hub ; (7) multi-serveur. Serveur = classes du jeu (GruntNIOTCPServer/codec/
-   MessageFactory), client = source de vérité (LoginServer journalise chaque message).
+   (2) **stat-sync** ✅ non-problème (incohérence `.tab` = comportement tolérant d'origine) ;
+   (3) **BootData nouveau joueur complet → TUTO ✅ VÉRIFIÉ EN JEU (2026-07-11)** : `new BootData()` est
+   complet par les initialiseurs du jeu (vérifié sur le ctor décompilé) ; le routage tuto passe par
+   `individualUserExtra.tutorialActs` — un nouveau joueur porte **TOUS les `TutorialHelper.NEW_USER_ACTS`
+   (122)** à step 0, **lus dans le registre du jeu** (`NewUserState.java`, zéro saisie). Le client lance
+   **`IntroTutorialActV2`** (correction : v2, pas V1) et rend la scène d'ouverture (Ralph + Vanellope +
+   portail) — capture `desktop-port/build/online-tuto.png` ; émet `ChangeTutorialStep`. Les SEVERE
+   `Missing row in tutorials.tab` sont intrinsèques au chargement de la `.tab` (incluent `REMOVED__CRYPT`,
+   hors de mes actes), pas causés par le serveur. Reste : (4) **traiter/persister** `ChangeTutorialStep`
+   (aujourd'hui journalisé) ; (5) persistance SQLite ; (6) handlers du hub ; (7) multi-serveur. Serveur =
+   classes du jeu (GruntNIOTCPServer/codec/MessageFactory), client = source de vérité (LoginServer journalise).
 8. [ ] **Outil d'extraction data → format serveur** (les `.tab` chargés tels quels).
 
 ---

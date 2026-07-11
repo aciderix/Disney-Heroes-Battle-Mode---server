@@ -140,10 +140,23 @@ Ping1                               -> **Ping1 (écho)** REQUIS
 - **Ping1** (`timestamp/serverReceive/serverTime/serverDelay`) = keepalive/latence. **Sans écho, le
   chien de garde du client ferme la connexion** → boucle « Reconnecting… ». ⇒ le serveur DOIT échoer
   Ping (serverReceive/serverTime = now). ✅ implémenté → session STABLE dans le hub.
-- Reste : **BootData minimal** (seulement serverTime) → le client reste en état « invité » (CHOOSE NAME /
-  SIGN IN), pas de tuto. Pour router un nouveau joueur vers le **tuto** (`IntroTutorialActV1`), BootData
-  doit porter l'état de nouveau joueur (champs EXACTS à extraire de `GameMain.handleBootData` + la classe
-  `BootData` — source = le client). Chantier serveur suivant.
+- **BootData nouveau joueur → TUTO — ✅ FAIT & VÉRIFIÉ EN JEU (2026-07-11).** `new BootData()` produit
+  **tous** les champs non-null (initialiseurs du jeu — `userInfo/userExtra/privateUserInfo/guildInfo/
+  currentServer/allContests/individualUserExtra/invasionInfo/specialEvents/…`, `statData* = HashMap`,
+  `loginEvent=""`). Le routage tuto passe par **`individualUserExtra.tutorialActs`** :
+  `handleBootData` → `getIndividualUser` → `IndividualUser.setExtra` remplit les actes ;
+  `TutorialHelper.completedTutorialAct(type)` renvoie **true quand l'acte est ABSENT** (tuto « fait/sauté »),
+  et se complète sur `step >= act.getMaxStep()`. ⇒ un nouveau joueur doit porter **TOUS** les
+  `TutorialHelper.NEW_USER_ACTS` (122 types) à `step 0` (IN_PROG), sinon des features ne seraient jamais
+  introduites. La liste + versions sont **lues dans le registre du jeu** (`NEW_USER_ACTS` + `ACTS`), zéro
+  saisie — `server/java/dhserver/NewUserState.java`. **Fidélité** : INTRO = **`IntroTutorialActV2`** (v2, seule
+  version enregistrée dans le 12.1.0 ; l'ancienne note « V1 » était erronée). Vérifié : le client lance
+  IntroTutorialActV2 (INITIAL→SCREEN_WAIT→…→GATE_DIALOG_1_A), rend la scène d'ouverture (Ralph + Vanellope)
+  et émet **`ChangeTutorialStep1`**. Les `SEVERE: Missing row in tutorials.tab` sont **intrinsèques au
+  chargement de `tutorials.tab`** (incluent `REMOVED__CRYPT`, hors de mes actes) — comportement d'origine
+  tolérant (`TutorialStats.onMissingRow`), pas causé par le serveur, aucune rustine.
+- Reste (étape 4) : **traiter/persister** `ChangeTutorialStep1` (type/step/forceSkip) — le serveur met à
+  jour l'acte du joueur et persiste (aujourd'hui journalisé seulement).
 - **Incohérence stats `.tab` — ✅ NON-PROBLÈME (2 corrections successives de mes lectures)** :
   1ʳᵉ hypothèse « 7.9 vs 12.1.0 » = FAUSSE. 2ᵉ hypothèse « crash `<clinit>` » = **FAUSSE aussi**.
   Fait vérifié : la valeur `PREDICTIVE_FORTIFICATION` (ligne 159, EVIL_QUEEN) de

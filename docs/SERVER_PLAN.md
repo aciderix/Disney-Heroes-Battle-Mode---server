@@ -45,9 +45,21 @@ pour garantir que **chaque objet déréférencé est non-null** — pas de « mi
    `<clinit>` » était fausse (une exception **loguée** ≠ fatale). ⇒ rien à corriger, aucune rustine ; c'est
    le comportement d'origine (tolère la `.tab` bootstrap). `statDataTxt/Bin` pourra servir plus tard pour
    l'équilibrage live, non bloquant.
-3. [ ] **BootData nouveau joueur complet** — `new BootData()` + `UserInfo/UserExtra` nouveau joueur (aucun
-   flag de tuto) via classes du jeu → le client route vers `IntroTutorialActV1`. Critère : le tuto démarre.
-4. [ ] **Handlers du tuto** — journaliser puis traiter les messages émis pendant le tuto (le serveur
+3. [x] **BootData nouveau joueur complet — ✅ FAIT & VÉRIFIÉ EN JEU.** `new BootData()` (tous champs
+   non-null par les initialiseurs du jeu — vérifié sur le constructeur décompilé) + identité de compte neuf
+   (iD, creationTime, teamLevel=1). Routage tuto : `handleBootData` → `getIndividualUser(individualUserExtra)`
+   → `IndividualUser.setExtra` itère **`individualUserExtra.tutorialActs`**. `completedTutorialAct` renvoie
+   **true si l'acte est ABSENT** (tuto « sauté ») et se complète sur `step >= act.getMaxStep()`. Donc un
+   nouveau joueur porte **TOUS les `TutorialHelper.NEW_USER_ACTS`** (122 types, lus **dans le registre du
+   jeu**, dernière version enregistrée, `step 0`) — `server/java/dhserver/NewUserState.java`. Aucune donnée
+   écrite à la main (régénérable). **Correction de fidélité** : la version INTRO enregistrée dans le 12.1.0
+   est **`IntroTutorialActV2`** (pas V1). **Vérifié** : le client lance IntroTutorialActV2, rend la scène
+   d'ouverture (Ralph + Vanellope + portail, dialogue `TUT_DIALOG`/`GATE_DIALOG_1_A`) et émet des
+   `ChangeTutorialStep`. Les `SEVERE: Missing row in tutorials.tab` (EMERALD_RANK, FRANCHISE_TRIALS,
+   PATCHED_HEROES, TEAM_LEVEL_UP, BATTLE_PASS_V2…) sont **intrinsèques au chargement de `tutorials.tab`**
+   (le SEVERE inclut `REMOVED__CRYPT`, jamais dans mes actes ⇒ ça vient de `TutorialStats.onMissingRow`
+   sur l'enum complet, pas de mon BootData) — comportement d'origine tolérant, comme l'étape 2. Aucune rustine.
+4. [~] **Handlers du tuto** — journaliser puis traiter les messages émis pendant le tuto (le serveur
    valide/persiste la progression ; réponses via classes du jeu). Critère : tuto jouable de bout en bout.
 5. [ ] **Persistance** (SQLite) — tout l'état joueur sérialisé via les classes du jeu (octets = wire).
 6. [ ] **Monde / hub post-tuto** — handlers des requêtes du hub (héros, items, campagne…) au fur et à
