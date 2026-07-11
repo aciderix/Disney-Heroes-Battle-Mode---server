@@ -7,6 +7,41 @@
 
 ---
 
+## 2026-07-11 — Serveur autoritaire étape 5 : persistance SQLite (octets wire des objets du jeu)
+
+### Résumé
+L'état joueur autoritaire est **persisté en SQLite** sous forme d'**octets wire** produits par les
+classes du jeu (aucun schéma inventé pour les données du jeu, cf. PRINCIPLES §6). La progression du
+tutoriel survit à un redémarrage du serveur.
+
+### Détails
+- **`ServerUser` refactoré** : détient l'état comme **objets du jeu** — `UserInfo` (identité),
+  `UserExtra` (héros/ressources/réglages), `IndividualUserExtra` (tutoriels/quêtes). `bootData()` branche
+  ces objets dans un `new BootData()` (complet par ses constructeurs). Sérialisation :
+  `GruntMessage.writeAll` (en-tête + données = wire exact) ↔ `MessageFactory.readMessage` (round-trip
+  symétrique prouvé par les smoke tests).
+- **`UserStore` (SQLite, `sqlite-jdbc`)** : table `users(userID, shardID, userInfo BLOB, userExtra BLOB,
+  individualUserExtra BLOB, updatedAt)`, clé `(userID, shardID)`, upsert `ON CONFLICT`. **Un objet du jeu
+  = un BLOB** → ajouter un champ de jeu persisté = ajouter un BLOB, sans recopier une seule valeur.
+- **`LoginServer`** : `loadOrCreate(1,1)` au démarrage ; `store.save(user)` à chaque `ChangeTutorialStep`.
+- **Dépendances** : `sqlite-jdbc` 3.45 + `slf4j-api` récupérés à la demande par `run-online.sh` (non
+  committés, régénérables — comme ASM). DB sous `server/data/` (gitignore). Le serveur reste « rien à
+  installer » côté utilisateur.
+
+### Vérifications
+- **Unitaire** : session 1 crée le compte (122 actes), avance INTRO au pas 40, `save` ; **session 2**
+  rouvre la DB → état **restauré à l'identique** (122 actes, INTRO step 40), BootData revalide sur le wire.
+- **En jeu** : `LoginServer` démarre, `loadOrCreate` OK (DB `server/data/dh-server.db`), persiste les
+  `ChangeTutorialStep` réels sans erreur.
+
+### Fichiers touchés
+- `server/java/dhserver/UserStore.java` (NEW) : persistance SQLite (BLOB wire).
+- `server/java/dhserver/ServerUser.java` : détient les objets du jeu + sérialisation wire.
+- `server/java/dhserver/LoginServer.java` : load-or-create + save sur ChangeTutorialStep.
+- `desktop-port/run-online.sh` : classpath + fetch sqlite/slf4j ; `.gitignore` : DB runtime.
+
+---
+
 ## 2026-07-11 — Serveur autoritaire étape 4 : handlers du tuto (intro) + pilote headless (vérifié en jeu)
 
 ### Résumé

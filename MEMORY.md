@@ -295,9 +295,14 @@ Dépôt de référence (`/workspace/dragonsoul-web`, branche `claude/game-transp
    n'émet aucun message ; combat local `CombatSimHelper`) ; seule sortie serveur = `ChangeTutorialStep`.
    `ServerUser` (état autoritaire) l'applique (step absolu ; maxStep=plus haut vu) → reconnexion à jour.
    Pilote headless `dh.autotap` : intro jouable **de bout en bout jusqu'au 1ᵉʳ combat** (GATE→TRANSFORM→
-   COMBAT1 + logo), serveur = 0 réponse. Reste : (5) **persistance SQLite** (ServerUser en mémoire → disque) ;
-   (6) handlers du hub (nom, campagne réelle, récompenses = actions post-intro server-validées) ;
-   (7) multi-serveur. Serveur = classes du jeu (GruntNIOTCPServer/codec/MessageFactory), client = source de vérité.
+   COMBAT1 + logo), serveur = 0 réponse.
+   **(5) Persistance SQLite ✅ FAIT & VÉRIFIÉ** : `ServerUser` détient l'état comme **objets du jeu**
+   (`UserInfo`/`UserExtra`/`IndividualUserExtra`) ; `UserStore` (sqlite-jdbc) les stocke en **BLOB d'octets
+   wire** (`writeAll`↔`MessageFactory.readMessage`), 1 objet = 1 BLOB, aucun schéma inventé. `LoginServer`
+   charge-ou-crée au boot + persiste à chaque `ChangeTutorialStep`. Vérifié : reload cross-session (INTRO
+   step 40) + session en jeu réelle (DB reflète la progression). Reste : (6) handlers du hub (nom, campagne
+   réelle, récompenses = actions post-intro server-validées) ; (7) multi-serveur. Serveur = classes du jeu
+   (GruntNIOTCPServer/codec/MessageFactory), client = source de vérité.
 8. [ ] **Outil d'extraction data → format serveur** (les `.tab` chargés tels quels).
 
 ---

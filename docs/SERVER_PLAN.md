@@ -71,7 +71,15 @@ pour garantir que **chaque objet déréférencé est non-null** — pas de « mi
    FRIEND_MISSION, FRIENDSHIP_UNLOCK…), 0 réponse requise, 0 message inconnu. Reste (hors intro, avec la
    suite du monde) : les actions post-intro server-validées (choix du nom, 1ᵉʳ combat de campagne réel,
    claim de récompenses) relèvent des **handlers du hub (étape 6)**.
-5. [ ] **Persistance** (SQLite) — tout l'état joueur sérialisé via les classes du jeu (octets = wire).
+5. [x] **Persistance (SQLite) — ✅ FAIT & VÉRIFIÉ.** `ServerUser` détient l'état comme des **objets du
+   jeu** (`UserInfo`/`UserExtra`/`IndividualUserExtra`) ; `UserStore` (SQLite via `sqlite-jdbc`) les stocke
+   en **BLOB d'octets wire** produits par les classes du jeu (`GruntMessage.writeAll` ↔
+   `MessageFactory.readMessage`) — **aucun schéma inventé** pour les données du jeu ; un objet du jeu = un
+   BLOB (extensible sans recopie). Clé `(userID, shardID)`. `LoginServer` **charge-ou-crée** le compte au
+   démarrage et **persiste** à chaque `ChangeTutorialStep`. Vérifié : progression écrite en session 1, DB
+   fermée, **rechargée à l'identique en session 2** (INTRO step 40, 122 actes, BootData revalide sur le
+   wire). `sqlite-jdbc`/`slf4j-api` récupérés à la demande (non committés, régénérables) ; DB sous
+   `server/data/` (gitignore).
 6. [ ] **Monde / hub post-tuto** — handlers des requêtes du hub (héros, items, campagne…) au fur et à
    mesure, pilotés par le client. Critère : navigation stable, fidèle aux captures d'origine.
 7. [ ] **Multi-serveur / passerelle** (liste, mot de passe optionnel) — cf. ARCHITECTURE.md.

@@ -11,7 +11,15 @@ export JAVA_TOOL_OPTIONS=
 
 HTTP_PORT=8080
 GAME_PORT=8081
-CP="$ROOT/libs/game.jar:$ROOT/libs/commons-logging.jar"
+CP="$ROOT/libs/game.jar:$ROOT/libs/commons-logging.jar:$ROOT/libs/sqlite-jdbc.jar:$ROOT/libs/slf4j-api.jar"
+
+# Dépendances de persistance (SQLite) — récupérées à la demande (non committées, régénérables),
+# comme ASM pour le port. Le serveur reste sans dépendance à installer par l'utilisateur.
+MVN="https://repo1.maven.org/maven2"
+[ -f "$ROOT/libs/sqlite-jdbc.jar" ] || curl -fsSL -o "$ROOT/libs/sqlite-jdbc.jar" \
+    "$MVN/org/xerial/sqlite-jdbc/3.45.3.0/sqlite-jdbc-3.45.3.0.jar"
+[ -f "$ROOT/libs/slf4j-api.jar" ] || curl -fsSL -o "$ROOT/libs/slf4j-api.jar" \
+    "$MVN/org/slf4j/slf4j-api/1.7.36/slf4j-api-1.7.36.jar"
 
 # Compile le serveur de jeu (server/java) si besoin.
 SRVOUT="build/server-classes"; mkdir -p "$SRVOUT"
@@ -26,7 +34,8 @@ python3 "$ROOT/server/content_server.py" --port "$HTTP_PORT" --rewrite-host "127
 CONTENT_PID=$!
 
 echo "[online] serveur de jeu TCP :$GAME_PORT ..."
-java -Xverify:none -XX:TieredStopAtLevel=1 -cp "$CP:$SRVOUT" dhserver.LoginServer "$GAME_PORT" >/tmp/dh_game.log 2>&1 &
+java -Xverify:none -XX:TieredStopAtLevel=1 -Ddh.db="$ROOT/server/data/dh-server.db" \
+     -cp "$CP:$SRVOUT" dhserver.LoginServer "$GAME_PORT" >/tmp/dh_game.log 2>&1 &
 GAME_PID=$!
 sleep 2
 

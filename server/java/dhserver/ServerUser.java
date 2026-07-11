@@ -1,99 +1,121 @@
 package dhserver;
 
+import com.perblue.grunt.translate.GruntMessage;
+import com.perblue.grunt.translate.util.GruntInputStream;
+import com.perblue.grunt.translate.util.GruntOutputStream;
 import com.perblue.heroes.network.messages.BootData;
 import com.perblue.heroes.network.messages.ChangeTutorialStep;
+import com.perblue.heroes.network.messages.IndividualUserExtra;
+import com.perblue.heroes.network.messages.MessageFactory;
 import com.perblue.heroes.network.messages.TutorialAct;
-
-import java.util.ArrayList;
-import java.util.List;
+import com.perblue.heroes.network.messages.UserExtra;
+import com.perblue.heroes.network.messages.UserInfo;
 
 /**
- * État serveur AUTORITAIRE d'un joueur (docs/PRINCIPLES.md §3). Un seul compte pour l'instant
- * (nouveau joueur), en mémoire ; la persistance SQLite = étape 5 (docs/SERVER_PLAN.md).
+ * État serveur AUTORITAIRE d'un joueur (docs/PRINCIPLES.md §3/§6), détenu comme des <b>objets du
+ * jeu</b> : {@link UserInfo} (identité), {@link UserExtra} (héros, ressources, réglages…) et
+ * {@link IndividualUserExtra} (tutoriels, quêtes…). La persistance (étape 5) sérialise ces objets
+ * en <b>octets wire</b> (identiques au réseau) via {@code writeAll} / {@code MessageFactory} — aucun
+ * schéma inventé pour les données du jeu.
  *
- * <p>Détient l'état que le serveur fait autorité et qu'il renvoie dans le {@link BootData}, et
- * qu'il met à jour d'après les messages du client (le client pilote, le serveur valide/persiste) :
- * ici la <b>progression du tutoriel</b> ({@code individualUserExtra.tutorialActs}), avancée par
- * {@link ChangeTutorialStep}.
- *
- * <p>La structure du BootData vient entièrement des classes du jeu (constructeurs) ; la liste des
- * tutoriels d'un nouveau joueur vient du registre du jeu via {@link NewUserState} — aucune donnée
- * écrite à la main.
+ * <p>Le client pilote, le serveur valide/persiste : la progression du tutoriel
+ * ({@code individualUserExtra.tutorialActs}) est avancée par {@link ChangeTutorialStep}.
  */
 public final class ServerUser {
 
   public final long userID;
   public final int shardID;
-  public final long creationTime;
-  public int teamLevel = 1;                       // un compte neuf démarre au niveau d'équipe 1
 
-  /** Progression du tutoriel — état autoritatif (avancé par ChangeTutorialStep). */
-  private final List<TutorialAct> tutorialActs;
+  // État autoritaire = objets du jeu (mutables, persistés en octets wire).
+  private final UserInfo userInfo;
+  private final UserExtra userExtra;
+  private final IndividualUserExtra individualUserExtra;
 
-  /** Crée un NOUVEAU joueur (tous les tutoriels de NEW_USER_ACTS à step 0). */
-  public ServerUser(long userID, int shardID) {
+  private ServerUser(long userID, int shardID,
+                     UserInfo userInfo, UserExtra userExtra, IndividualUserExtra individualUserExtra) {
     this.userID = userID;
     this.shardID = shardID;
-    this.creationTime = System.currentTimeMillis();
-    this.tutorialActs = NewUserState.newUserTutorialActs();
+    this.userInfo = userInfo;
+    this.userExtra = userExtra;
+    this.individualUserExtra = individualUserExtra;
+  }
+
+  /** NOUVEAU joueur : objets du jeu neufs + tutoriels de NEW_USER_ACTS à step 0 (registre du jeu). */
+  public static ServerUser newPlayer(long userID, int shardID) {
+    UserInfo ui = new UserInfo();                 // tous champs non-null (constructeur du jeu)
+    ui.shardID = shardID;
+    ui.basicInfo.iD = userID;
+    ui.basicInfo.creationTime = System.currentTimeMillis();
+    ui.basicInfo.teamLevel = 1;                   // un compte neuf démarre au niveau d'équipe 1
+    UserExtra ue = new UserExtra();
+    IndividualUserExtra iue = new IndividualUserExtra();
+    iue.tutorialActs = NewUserState.newUserTutorialActs();
+    return new ServerUser(userID, shardID, ui, ue, iue);
+  }
+
+  /** Charge un joueur depuis ses octets wire persistés (round-trip symétrique de {@link #wire}). */
+  public static ServerUser fromWire(long userID, int shardID,
+                                    byte[] userInfoWire, byte[] userExtraWire, byte[] individualWire) {
+    UserInfo ui = read(userInfoWire);
+    UserExtra ue = read(userExtraWire);
+    IndividualUserExtra iue = read(individualWire);
+    return new ServerUser(userID, shardID, ui, ue, iue);
   }
 
   /**
-   * Construit un {@link BootData} complet reflétant l'état courant. {@code new BootData()} initialise
-   * TOUS les champs non-null (constructeurs du jeu) ; on ne renseigne que l'identité + la progression.
+   * Construit le {@link BootData} reflétant l'état courant. {@code new BootData()} initialise tout
+   * (constructeurs du jeu) ; on branche nos objets autoritatifs + les champs transitoires (heure).
    */
   public synchronized BootData bootData() {
     BootData bd = new BootData();
     long now = System.currentTimeMillis();
     bd.serverTime = now;
     bd.currentServer.shardID = shardID;
-    bd.userInfo.shardID = shardID;
-    bd.userInfo.lastLoginTime = now;
-    bd.userInfo.basicInfo.iD = userID;
-    bd.userInfo.basicInfo.creationTime = creationTime;
-    bd.userInfo.basicInfo.teamLevel = teamLevel;
-
-    // Copie des actes → le client reçoit l'état courant sans partager nos objets autoritatifs.
-    List<TutorialAct> copy = new ArrayList<>(tutorialActs.size());
-    for (TutorialAct a : tutorialActs) copy.add(clone(a));
-    bd.individualUserExtra.tutorialActs = copy;
+    userInfo.lastLoginTime = now;
+    bd.userInfo = userInfo;
+    bd.userExtra = userExtra;
+    bd.individualUserExtra = individualUserExtra;
     return bd;
   }
 
   /**
-   * Applique une progression de tutoriel reçue du client. {@code step} est absolu (cf.
-   * {@code TutorialHelper.finishIntroForced} qui pose {@code step = maxStep}). On met à jour le pas
-   * courant et le « plus haut pas vu » ({@code TutorialAct.maxStep}). Renvoie {@code true} si un acte
-   * a été mis à jour.
+   * Applique une progression de tutoriel reçue du client ({@code step} absolu ; {@code maxStep} =
+   * plus haut pas vu). Renvoie {@code true} si un acte a été mis à jour/ajouté.
    */
+  @SuppressWarnings("unchecked")
   public synchronized boolean applyTutorialStep(ChangeTutorialStep m) {
-    for (TutorialAct a : tutorialActs) {
+    for (Object o : individualUserExtra.tutorialActs) {
+      TutorialAct a = (TutorialAct) o;             // le champ du jeu est une List brute
       if (a.type == m.type) {
         a.step = m.step;
         if (m.step > a.maxStep) a.maxStep = m.step;
         return true;
       }
     }
-    // Type absent de la liste (hors NEW_USER_ACTS) : le client fait autorité du protocole → on
-    // l'ajoute avec la dernière version enregistrée (registre du jeu, pas de valeur inventée).
-    int version = NewUserState.latestVersion(m.type);
-    if (version < 0) return false;                // type sans acte enregistré dans cet APK
+    int version = NewUserState.latestVersion(m.type);   // registre du jeu, jamais inventé
+    if (version < 0) return false;
     TutorialAct a = new TutorialAct();
-    a.type = m.type;
-    a.version = version;
-    a.step = m.step;
-    a.maxStep = m.step;
-    tutorialActs.add(a);
+    a.type = m.type; a.version = version; a.step = m.step; a.maxStep = m.step;
+    individualUserExtra.tutorialActs.add(a);
     return true;
   }
 
-  /** Copie superficielle d'un {@link TutorialAct} (champs publics type/version/step/maxStep). */
-  private static TutorialAct clone(TutorialAct src) {
-    TutorialAct a = new TutorialAct();
-    a.type = src.type;
-    a.version = src.version;
-    a.step = src.step;
-    a.maxStep = src.maxStep;
-    return a;
+  /** Nombre d'actes de tuto (diagnostic). */
+  public synchronized int tutorialActCount() { return individualUserExtra.tutorialActs.size(); }
+
+  // --- Sérialisation wire (octets identiques au réseau) pour la persistance ---
+  public synchronized byte[] userInfoWire()   { return wire(userInfo); }
+  public synchronized byte[] userExtraWire()  { return wire(userExtra); }
+  public synchronized byte[] individualWire() { return wire(individualUserExtra); }
+
+  private static byte[] wire(GruntMessage m) {
+    GruntOutputStream out = new GruntOutputStream();
+    m.writeAll(out);                              // en-tête (nom) + données = format réseau exact
+    return out.getBytes();
+  }
+
+  @SuppressWarnings("unchecked")
+  private static <T extends GruntMessage> T read(byte[] bytes) {
+    return (T) MessageFactory.getInstance().readMessage(new GruntInputStream(bytes));
   }
 }

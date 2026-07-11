@@ -31,10 +31,14 @@ import java.util.concurrent.Executors;
 public final class LoginServer {
 
   private final int port;
-  /** État serveur autoritaire (un seul compte pour l'instant — persistance = étape 5). */
+  /** État serveur autoritaire (un seul compte pour l'instant). */
   private final ServerUser user;
+  /** Persistance SQLite (octets wire des objets du jeu). */
+  private final UserStore store;
 
-  public LoginServer(int port, ServerUser user) { this.port = port; this.user = user; }
+  public LoginServer(int port, ServerUser user, UserStore store) {
+    this.port = port; this.user = user; this.store = store;
+  }
 
   /** Toutes les classes de message du jeu (dérivées du registre MessageFactory.messageIndex). */
   @SuppressWarnings("unchecked")
@@ -76,12 +80,14 @@ public final class LoginServer {
               System.out.println("[login] ==> BootData (reply) : "
                   + bd.individualUserExtra.tutorialActs.size() + " actes de tuto");
             } else if (m instanceof ChangeTutorialStep) {
-              // Progression du tutoriel : le serveur est autoritaire → on met à jour l'état
-              // (persisté en étape 5). Fire-and-forget côté client (aucune réponse attendue).
+              // Progression du tutoriel : le serveur est autoritaire → on met à jour l'état ET on
+              // PERSISTE (SQLite, octets wire). Fire-and-forget côté client (aucune réponse attendue).
               ChangeTutorialStep cts = (ChangeTutorialStep) m;
               boolean applied = user.applyTutorialStep(cts);
+              if (applied) { try { store.save(user); } catch (Exception e) {
+                System.out.println("[login]     ! persistance échouée: " + e); } }
               System.out.println("[login]     tuto " + cts.type + " -> step " + cts.step
-                  + (cts.forceSkip ? " (forceSkip)" : "") + (applied ? "" : " [type inconnu, ignoré]"));
+                  + (cts.forceSkip ? " (forceSkip)" : "") + (applied ? " [persisté]" : " [type inconnu, ignoré]"));
             } else if (m instanceof Ping) {
               // Écho de latence/keepalive : le client mesure le RTT et surveille l'activité serveur.
               // Sans réponse, son chien de garde ferme la connexion (« Reconnecting… »).
@@ -112,12 +118,16 @@ public final class LoginServer {
 
   public static void main(String[] args) throws Exception {
     int port = args.length > 0 ? Integer.parseInt(args[0]) : 8081;
-    // Étapes 3-4 : compte NOUVEAU JOUEUR autoritaire → tutoriel d'intro, avec progression du tuto
-    // appliquée côté serveur (ChangeTutorialStep). Structure/valeurs entièrement issues des classes
-    // du jeu (docs/PRINCIPLES.md §4). userID fixe pour l'instant (persistance = étape 5).
-    ServerUser user = new ServerUser(/*userID*/ 1L, /*shardID*/ 1);
-    System.out.println("[login] compte nouveau joueur créé (id=1, tutoriels au step 0)");
-    new LoginServer(port, user).start();
+    // Étapes 3-5 : compte autoritaire → tutoriel d'intro, progression du tuto appliquée ET PERSISTÉE
+    // (SQLite, octets wire des objets du jeu). Structure/valeurs 100% classes du jeu (PRINCIPLES §4/§6).
+    // Un seul compte pour l'instant (id=1) ; DB régénérable (recréée si absente).
+    String dbPath = System.getProperty("dh.db", "server/data/dh-server.db");
+    new java.io.File(dbPath).getAbsoluteFile().getParentFile().mkdirs();
+    UserStore store = new UserStore(dbPath);
+    ServerUser user = store.loadOrCreate(/*userID*/ 1L, /*shardID*/ 1);
+    System.out.println("[login] compte id=1 chargé/créé (" + user.tutorialActCount()
+        + " actes de tuto) — DB " + dbPath);
+    new LoginServer(port, user, store).start();
     Thread.currentThread().join();
   }
 }
