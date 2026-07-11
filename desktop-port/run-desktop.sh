@@ -105,6 +105,7 @@ JOPTS="-XX:TieredStopAtLevel=1 -Dorg.lwjgl.util.Debug=false -Ddh.rundir=$BUILD/r
 JOPTS="$JOPTS -Ddh.spinelib=$(cd .. && pwd)/native/reference/libspine-native.so"
 [ -f "$NATDIR/libgdx64.so" ] && JOPTS="$JOPTS -Ddh.gdxnative=$NATDIR/libgdx64.so"
 [ -n "${DH_SERVER:-}" ] && JOPTS="$JOPTS -Ddh.server=$DH_SERVER"
+[ -n "${DH_AUTOTAP:-}" ] && JOPTS="$JOPTS -Ddh.autotap=$DH_AUTOTAP"
 [ -n "${DH_FRAMES:-}" ] && JOPTS="$JOPTS -Ddh.frames=$DH_FRAMES"
 [ -n "${DH_SHOT:-}" ] && JOPTS="$JOPTS -Ddh.shot=$DH_SHOT"
 

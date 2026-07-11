@@ -103,12 +103,19 @@ public final class DesktopLauncher {
         long frames = 0;
         double last = glfwGetTime();
         String shot = System.getProperty("dh.shot");
+        // Pilotage headless : dh.autotap=N injecte un tap au centre toutes les N frames (0 = off).
+        // Sert à FAIRE AVANCER le tutoriel (dialogues « tap to continue ») sans utilisateur, pour
+        // vérifier « tuto jouable de bout en bout » et observer ce que le client envoie ensuite.
+        int autotap = Integer.getInteger("dh.autotap", 0);
         while (!glfwWindowShouldClose(win) && (maxFrames == 0 || frames < maxFrames)) {
             double now = glfwGetTime();
             graphics.deltaTime = (float) (now - last);
             graphics.frameId = frames;
             last = now;
 
+            if (autotap > 0 && frames > 90 && frames % autotap == 0) {
+                input.tap(W / 2, H / 2);   // « tap to continue » : le narrateur accepte un tap n'importe où
+            }
             input.drain();          // input synthétique (pilotage) sur le thread render
             app.drainRunnables();   // Gdx.app.postRunnable
             game.render();
