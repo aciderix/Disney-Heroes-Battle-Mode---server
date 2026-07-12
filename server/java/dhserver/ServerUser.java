@@ -208,6 +208,18 @@ public final class ServerUser {
   private boolean applyCommand(Action m, User user) {
     String cmd = m.command == null ? "" : m.command.name();
     switch (cmd) {
+      case "EQUIP_ITEM": {
+        // Équiper un objet d'équipement sur un héros (logique d'origine HeroHelper.equipItem). Le slot
+        // est déterminé par le jeu (getSlotThatCanEquip = 1ᵉʳ slot valide) — cohérent pour le tuto (1ᵉʳ
+        // équipement). TODO : si l'Action porte le slot (extra/iD), l'honorer pour la fidélité multi-slot.
+        com.perblue.heroes.game.objects.IHero hero = user.getHero(m.heroType);
+        if (hero == null) { System.out.println("[action] EQUIP_ITEM: héros absent " + m.heroType); return false; }
+        com.perblue.heroes.network.messages.HeroEquipSlot slot =
+            com.perblue.heroes.game.logic.HeroHelper.getSlotThatCanEquip(user, hero);
+        if (slot == null) { System.out.println("[action] EQUIP_ITEM: aucun slot équipable"); return false; }
+        com.perblue.heroes.game.logic.HeroHelper.equipItem(m.heroType, m.itemType, slot, user);
+        return true;
+      }
       case "EQUIP_REAL_GEAR": {
         // Le jeu mappe l'objet → RealGearType puis équipe (RealGearHelper = logique d'origine).
         com.perblue.heroes.network.messages.RealGearType rg =
