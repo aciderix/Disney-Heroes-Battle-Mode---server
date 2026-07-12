@@ -154,10 +154,11 @@ public final class ServerUser {
     // Donne les récompenses au joueur autoritatif + remplit heroesUnlocked (bl=true) — code du jeu.
     ChestHelper.giveChestRewards(user, type, lr, null, m.eventID, true, count);
     ChestHelper.updateChestRollCounters(user, type, count, m.usedItem, lr.wasFree, m.hasBulkBonus);
-    // NOTE (PARTIEL, §2) : updateChestCounters (compteurs QUOTIDIENS d'ouverture, pour les limites
-    // d'achat) passe par la couche évènements spéciaux (SpecialEventsHelper.helper), non initialisée
-    // headless → NPE. Non requis pour le tuto (coffre gratuit, sans limite). À réactiver quand on
-    // initialisera cette couche (limites/évènements). Le compteur de ROLL (rig/PreviousRolls) est, lui, à jour.
+    // Compteurs QUOTIDIENS d'ouverture (limites d'achat + tâches de contest sur don d'objet). Passe par
+    // la couche évènements spéciaux (SpecialEventsHelper.helper) — initialisée dans ServerContext (comme
+    // GameMain.create()) → plus de NPE. Le don d'objet des coffres (RewardHelper.giveReward →
+    // ContestHelper.onItemEarn → getActiveContestsWithTask) fonctionne aussi grâce à cette couche.
+    ChestHelper.updateChestCounters(user, type, count, m.usedItem, lr.wasFree, m.hasBulkBonus);
 
     if (m.roll != null) {                          // réponse de roll attendue par le client
       ServerRollResponse rr = new ServerRollResponse();

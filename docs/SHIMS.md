@@ -32,18 +32,18 @@ Le serveur **exécute le code du jeu** (PRINCIPLES §3 « lire & exécuter »). 
 | **`ServerStats`** (ouvreur `.tab`) | ✅ **RÉEL** | Installe `StatFileHelper.setExt` lisant `game-data/stats/` → les classes de données du jeu (`ChestStats`, `UnitStats`…) se peuplent avec les **vraies données**. Miroir serveur de `dhbackend.DhStatFileExt`. |
 | **`DH.app` (shim `GameMain` headless)** | ✅ **RÉEL** pour les getters utilisés | Beaucoup de classes passent par `DH.app` (ex. `User.getIndividual()` = `DH.app.getYourIndividualUser()`). On alloue un `GameMain` **sans constructeur** (`Unsafe.allocateInstance`) et on pose `user`/`individualUser` → les getters simples répondent. Couche plateforme (§4). **Risque** : les chemins de logique qui touchent d'AUTRES champs de `GameMain` (non posés) lèveront NPE → à traiter au cas par cas (cf. TODO ci-dessous). |
 | **joda-time (données de fuseaux)** | ✅ **RÉEL** | `game.jar` a les classes joda mais pas la donnée `org/joda/time/tz/data/*` (requise par `TimeUtil`). Jar standard fourni (classes ombrées par game.jar, seule la ressource utilisée) = donnée du jeu. |
-| **`ServerUser.openChest`** | ✅ **RÉEL** (coffre gratuit) | Exécute `ChestStats`/`DropTable`/`ChestHelper.giveChestRewards` sur un `User` bâti sur nos objets wire ; resync héros. Vérifié wire (`ChestWireTest`) : `BuyChests(GOLD)`→`LootResults{Frozone}`. |
+| **`ServerUser.openChest`** | ✅ **RÉEL** (coffre gratuit) | Exécute `ChestStats`/`DropTable`/`ChestHelper.giveChestRewards`+`updateChestCounters` sur un `User` bâti sur nos objets wire ; resync héros. Vérifié wire (`ChestWireTest`) : `BuyChests(GOLD)`→`LootResults{Frozone}` ; unitaire : 3 coffres d'affilée (dont un à récompense d'objet) sans NPE. |
+| **`ServerSpecialEventsExt`** (couche évènements) | ✅ **RÉEL** | `GameMain.create()` fait `SpecialEventsHelper.init(new ClientEventUserProvider(), new ClientSpecialEventsHelperExt())`. L'extension **cliente** touche libGDX (`Gdx.app` → « not available » headless) car elle **pousse au serveur** les temps de visionnage (`UpdateEventViewTimes`). On fournit l'**équivalent serveur** (`dhserver.ServerSpecialEventsExt`) : `sendEventRewards` reproduit à l'identique la logique d'état cliente (PREMIUM_STAMINA_CONSUMABLE → `convertTimeLimitedItems`+`setTime`, sans libGDX) ; `trySetEventViewed` conserve l'inscription **autoritative** (`getEventViewTimes().put`) et omet la poussée réseau client→serveur (dénuée de sens sur le serveur). `ServerContext.init` appelle `SpecialEventsHelper.init(...)`, `ServerContext.bind` appelle `setSpecialEvents(new SpecialEventsRaw(), user, shardID)` (comme `handleBootData`). Débloque le don d'objet des coffres (`giveChestRewards`→`onItemEarn`→`getActiveContestsWithTask`) et `updateChestCounters`. |
 
 ### TODO suivis (dette technique — quoi faire quand on y arrivera)
 
-1. **`updateChestCounters` (compteurs QUOTIDIENS d'ouverture / limites d'achat) — DIFFÉRÉ.**
-   *Où* : `ServerUser.openChest` (appel commenté). *Pourquoi* : passe par `getDailyUses` →
-   `DailyActivityHelper`/`PrizeWallHelper` → `SpecialEventsHelper.helper` **null** headless → NPE.
-   **À faire** : initialiser la couche évènements spéciaux **comme `GameMain.handleBootData`** (créer le
-   `SpecialEventsHelper.helper` puis `SpecialEventsHelper.setSpecialEvents(new SpecialEventsRaw(), user,
-   shardID)`) dans `ServerContext.bind`, puis réactiver `updateChestCounters`. *Risque actuel* : les
-   **limites d'achat quotidiennes** ne sont pas comptées côté serveur (OK pour le tuto = coffre gratuit
-   sans limite).
+1. **`updateChestCounters` (compteurs QUOTIDIENS d'ouverture / limites d'achat) — ✅ RÉSOLU (2026-07-12).**
+   La couche évènements spéciaux est désormais initialisée dans `ServerContext` (`SpecialEventsHelper.init`
+   + `setSpecialEvents`, extension serveur `ServerSpecialEventsExt`) comme `GameMain` → `SpecialEventsHelper
+   .helper` non-null → `updateChestCounters` **réactivé** dans `ServerUser.openChest`. Découvert par un run
+   client réel : le **2ᵉ** `BuyChests` (récompense d'objet) plantait en NPE via `giveChestRewards` →
+   `RewardHelper.giveReward` → `ContestHelper.onItemEarn` → `getActiveContestsWithTask`. Vérifié : 3 coffres
+   d'affilée (dont objet) sans NPE + `ChestWireTest` OK.
 
 2. **Coffres PAYANTS (débit de la monnaie, ex. diamants) — NON couvert.**
    *Où* : `ServerUser.openChest` (`wasFree` ; pas de charge). *Pourquoi* : `IndividualUser.setResource`

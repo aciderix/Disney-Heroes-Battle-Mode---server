@@ -2,8 +2,11 @@ package dhserver;
 
 import com.perblue.heroes.DH;
 import com.perblue.heroes.GameMain;
+import com.perblue.heroes.game.logic.SpecialEventsHelper;
 import com.perblue.heroes.game.objects.IndividualUser;
 import com.perblue.heroes.game.objects.User;
+import com.perblue.heroes.game.specialevent.ClientEventUserProvider;
+import com.perblue.heroes.network.messages.SpecialEventsRaw;
 
 import java.lang.reflect.Field;
 
@@ -41,7 +44,13 @@ public final class ServerContext {
       Field appF = DH.class.getDeclaredField("app"); appF.setAccessible(true); appF.set(null, app);
       userField = field(GameMain.class, "user");
       individualField = field(GameMain.class, "individualUser");
-      System.out.println("[ctx] DH.app headless installé + données du jeu chargées");
+      // Couche évènements spéciaux — comme GameMain.create() :
+      // SpecialEventsHelper.init(new ClientEventUserProvider(), extension). L'extension CLIENTE touche
+      // libGDX (« Gdx.app not available » headless) → on fournit l'équivalent SERVEUR (ServerSpecialEventsExt).
+      // Sans ça, SpecialEventsHelper.helper est null → NPE dès qu'un don d'objet enregistre une tâche de
+      // contest (ChestHelper.giveChestRewards → RewardHelper.giveReward → ContestHelper.onItemEarn).
+      SpecialEventsHelper.init(new ClientEventUserProvider(), new ServerSpecialEventsExt());
+      System.out.println("[ctx] DH.app headless + données du jeu + couche évènements spéciaux");
     } catch (Throwable t) {
       throw new RuntimeException("échec init contexte serveur (DH.app)", t);
     }
@@ -50,8 +59,13 @@ public final class ServerContext {
   /** Lie le joueur courant au shim {@code DH.app} (getYourUser/getYourIndividualUser). */
   public static synchronized void bind(User user, IndividualUser individualUser) {
     init();
-    try { userField.set(app, user); individualField.set(app, individualUser); }
-    catch (Throwable t) { throw new RuntimeException("échec bind DH.app", t); }
+    try {
+      userField.set(app, user); individualField.set(app, individualUser);
+      // Charge les évènements du joueur dans la couche — comme GameMain.handleBootData
+      // (SpecialEventsHelper.setSpecialEvents). Nouveau joueur sans évènement live = raw vide → aucun
+      // contest actif (getActiveContestsWithTask renvoie une liste vide au lieu de NPE).
+      SpecialEventsHelper.setSpecialEvents(new SpecialEventsRaw(), user, user.getShardID());
+    } catch (Throwable t) { throw new RuntimeException("échec bind DH.app", t); }
   }
 
   private static Field field(Class<?> c, String name) throws NoSuchFieldException {

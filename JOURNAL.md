@@ -7,6 +7,60 @@
 
 ---
 
+## 2026-07-12 — Diagnostic signal 16/exit 144 (strace) + couche évènements spéciaux (2ᵉ coffre débloqué)
+
+### Résumé
+Deux résultats liés, obtenus en poussant le run client réel jusqu'au coffre : (1) **diagnostic définitif**
+du `exit 144` (SIGSTKFLT) via `strace -f` ; (2) un **bug réel** révélé par ce run — le **2ᵉ** coffre plantait
+côté serveur — **corrigé fidèlement** en initialisant la couche évènements spéciaux du jeu (tâche #14).
+
+### (1) signal 16 / exit 144 — `strace -f` = kill EXTERNE, pas de crash natif
+Client lancé sous `strace -f -e trace=kill,tgkill,tkill,rt_sigqueueinfo,rt_tgsigqueueinfo,exit_group,exit
+-e signal=all`. Sur **6 runs** (30→1500 frames, hors-ligne ET en ligne atteignant le combat) :
+- **Aucun `SIGSTKFLT`**, aucun `tgkill`/`rt_sigqueueinfo` **interne** (rien ne s'auto-tue), `exit_group(0)`
+  **propre** par le thread leader de la JVM. Seulement **2 `SIGSEGV`/run**, mais **normaux** (HotSpot les
+  utilise pour ses null-checks implicites + safepoint polling, les rattrape, continue).
+- Le kill **disparaît sous strace** (ralentissement ptrace) et n'est pas revenu ensuite → réponse au doute
+  « crash natif JNI/.so » (unidbg/unicorn/LWJGL) : **NON**. Un crash natif serait déterministe sur le même
+  chemin (ne disparaît pas juste parce qu'on ralentit) et apparaîtrait dans strace (signal reçu ou auto-kill).
+  `SIGSTKFLT` (16) est quasi inutilisé par le noyau/glibc/JVM → **kill externe transitoire du superviseur**,
+  non bloquant, non lié à notre code (un simple serveur Python en a été victime aussi). Confirme la
+  conclusion précédente (le test `4× yes` avait déjà écarté un budget CPU).
+
+### (2) Couche évènements spéciaux — 2ᵉ coffre (tâche #14)
+Le run client réel a d'abord **prouvé le 1ᵉʳ coffre de bout en bout** (`[login] ==> LootResults : coffre
+GOLD -> 1 héros débloqué`), puis a envoyé un **2ᵉ** `BuyChests` → `openChest` **NPE** :
+`SpecialEventsHelper.helper` null via `giveChestRewards` → `RewardHelper.giveReward` → `UserHelper.giveUser`
+→ `ContestHelper.onItemEarn` → `getActiveContestsWithTask` (les coffres à **récompense d'objet** enregistrent
+des tâches de contest). C'est la dette #14, sur le chemin critique.
+- **Fidélité** : `GameMain.create()` fait `SpecialEventsHelper.init(new ClientEventUserProvider(), new
+  ClientSpecialEventsHelperExt())` (vérifié au bytecode, offsets 589-603), puis `handleBootData` appelle
+  `setSpecialEvents(SpecialEventsRaw, user, shardID)`. L'extension **cliente** touche libGDX (`Gdx.app not
+  available` headless) car elle **pousse au serveur** les temps de visionnage (`UpdateEventViewTimes`).
+- **`dhserver.ServerSpecialEventsExt`** (NEW) = équivalent **serveur** de l'interface (RÉEL) :
+  `sendEventRewards` reproduit la logique d'état cliente à l'identique (PREMIUM_STAMINA_CONSUMABLE →
+  `ItemHelper.convertTimeLimitedItems` + `setTime(LAST_AMPED_STAMINA_BUY)`, aucun libGDX) ; `trySetEventViewed`
+  conserve l'inscription **autoritative** (`user.getIndividual().getEventViewTimes().put`) et **omet** la
+  poussée réseau client→serveur (le serveur EST le destinataire → sans objet). Zéro donnée falsifiée.
+- **`ServerContext`** : `init()` appelle `SpecialEventsHelper.init(new ClientEventUserProvider(), new
+  ServerSpecialEventsExt())` (une fois, comme `create()`) ; `bind()` appelle `setSpecialEvents(new
+  SpecialEventsRaw(), user, shardID)` (par joueur, comme `handleBootData`). Nouveau joueur sans évènement
+  live = raw vide → `getActiveContestsWithTask` renvoie une liste **vide** (au lieu de NPE).
+- **`ServerUser.openChest`** : `updateChestCounters` **réactivé** (plus de PARTIEL).
+
+### Vérifications
+- **Unitaire** : nouveau joueur → **3 coffres GOLD d'affilée** : coffre 1 = Frozone (héros 0→1), coffre 2 =
+  **récompense d'objet** (`heroesUnlocked=0`, le chemin qui plantait) **sans NPE**, coffre 3 OK.
+- **Wire** (`ChestWireTest`) : `BuyChests(GOLD)` → `LootResults{Frozone}` en ~746 ms, **aucune régression**.
+- **En jeu** : run client réel relançé (serveurs recompilés) pour rejouer les 2 coffres du tuto.
+
+### Fichiers touchés
+- `server/java/dhserver/ServerSpecialEventsExt.java` (NEW), `ServerContext.java` (init/bind couche évènements),
+  `ServerUser.java` (`updateChestCounters` réactivé).
+- `docs/SHIMS.md` (TODO #1 → RÉSOLU, entrée `ServerSpecialEventsExt`), `docs/SERVER_PLAN.md` §6, `MEMORY.md`.
+
+---
+
 ## 2026-07-12 — Handler `BuyChests` complet : le serveur exécute la logique du jeu (Frozone, vérifié wire)
 
 ### Résumé

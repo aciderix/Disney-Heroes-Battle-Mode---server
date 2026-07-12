@@ -109,10 +109,17 @@ pour garantir que **chaque objet déréférencé est non-null** — pas de « mi
    (donne + remplit `heroesUnlocked`) → `updateChestRollCounters` → resync héros (`getHeroData`) → répond
    **`LootResults`**. Vérifié : unitaire (nouveau joueur 0 héros → `openChest(GOLD)` → Frozone, **persiste au
    reload**) ET **sur le wire** (`server/smoke/ChestWireTest` : `BuyChests(GOLD)` → `LootResults{Frozone}` en
-   ~630 ms). **PARTIEL noté (§2)** : `updateChestCounters` (compteurs quotidiens) différé (couche évènements
-   spéciaux non initialisée headless → NPE) — non requis pour le tuto (coffre gratuit) ; coffres **payants**
-   (charge diamants) nécessitent d'étoffer le shim `DH.app` (battlePassV2). Le run client complet meurt
-   parfois (exit 144, signal d'environnement sur runs longs) — le handler est prouvé sur le protocole.
+   ~630 ms). **Couche évènements spéciaux ✅ (2026-07-12)** : un run client réel a révélé que le **2ᵉ**
+   `BuyChests` (récompense d'objet) plantait en NPE (`giveChestRewards`→`RewardHelper.giveReward`→
+   `ContestHelper.onItemEarn`→`SpecialEventsHelper.getActiveContestsWithTask`, `helper` null headless).
+   Corrigé fidèlement : `ServerContext` initialise la couche comme `GameMain` (`SpecialEventsHelper.init`
+   + `setSpecialEvents`) avec une **extension serveur** (`ServerSpecialEventsExt` : logique d'état d'origine,
+   sans la poussée réseau cliente qui exige libGDX). `updateChestCounters` **réactivé**. Vérifié : 3 coffres
+   d'affilée (dont objet) sans NPE + `ChestWireTest`. **PARTIEL restant (§2)** : coffres **payants** (charge
+   diamants via `setResource`→`DH.app.getUserBattlePassV2`) nécessitent d'étoffer le shim `DH.app`
+   (battlePassV2) — le tuto n'ouvre que des coffres **gratuits**. Le run client complet meurt parfois
+   (exit 144 = SIGSTKFLT, **kill externe du superviseur**, confirmé sous `strace -f` : aucun crash natif
+   JNI/.so, `exit_group(0)` propre, disparaît sous ptrace) — le handler est prouvé sur le protocole.
    Reste, pilotés par le client : `Action`, choix du nom, 1ᵉʳ combat de campagne réel, claims… Critère :
    navigation stable, fidèle aux captures d'origine.
 7. [ ] **Multi-serveur / passerelle** (liste, mot de passe optionnel) — cf. ARCHITECTURE.md.
