@@ -9,6 +9,12 @@ set -e
 cd "$(dirname "$0")"
 export JAVA_TOOL_OPTIONS=
 export LIBGL_ALWAYS_SOFTWARE=1
+# Locale UTF-8 : sans ça le conteneur est en POSIX/ASCII (sun.jnu.encoding=ANSI_X3.4-1968) et
+# l'extraction d'assets échoue sur des noms de fichiers Unicode (ex. un .skel d'unité) —
+# InvalidPathException dans applyFileAttributes -> tâche d'extraction avortée -> catégorie SOUND
+# incomplète -> le tuto ne démarre jamais. C.utf8 (dispo) donne sun.jnu.encoding=UTF-8 : les noms
+# Unicode s'encodent correctement. Correctif de plateforme (lanceur), pas une modif du jeu.
+export LC_ALL="${LC_ALL:-C.utf8}"
 
 APK="../game/disney-heroes-12.1.0.apk"
 BUILD="build"

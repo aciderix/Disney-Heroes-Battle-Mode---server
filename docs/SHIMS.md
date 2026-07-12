@@ -60,8 +60,11 @@ Le serveur **exécute le code du jeu** (PRINCIPLES §3 « lire & exécuter »). 
 4. **Smoke tests obsolètes** : `HandshakeRoundTrip` utilise l'ancien constructeur `LoginServer(port, provider)`
    (changé en `LoginServer(port, ServerUser, UserStore)`) → à mettre à jour.
 
-## Couche plateforme desktop (`dhbackend/`, à venir — miroir DragonSoul `dsbackend/`)
+## Couche plateforme desktop (`dhbackend/`, lanceur)
 
-À remplir au fur et à mesure (Application/Graphics/Input/Files/Audio/GL/Net/Preferences/
-DeviceInfo/bridges). Voir le registre SHIMS de DragonSoul comme modèle. Chaque entrée devra
-préciser fidélité + risque. **Rien pour l'instant** (le port desktop n'est pas commencé).
+| Élément | Statut | Détail / risque |
+|---|---|---|
+| **Locale UTF-8 (`LC_ALL=C.utf8`)** | ✅ **RÉEL** (correctif d'env) | Le conteneur démarre en **POSIX/ASCII** (`sun.jnu.encoding=ANSI_X3.4-1968`). L'extraction d'assets (zip4j) échoue alors sur un nom de fichier **Unicode** (ex. `.../launchpad_mcquack<char>.skel`) : `applyFileAttributes` → `new File(nom).toPath()` lève `InvalidPathException: unmappable characters` → la **tâche d'extraction entière est avortée** → catégorie SOUND « Missing or Halfway » → **le tuto ne démarre jamais**. `run-desktop.sh` exporte `LC_ALL=C.utf8` (dispo) → `sun.jnu.encoding=UTF-8`, les noms Unicode s'encodent, extraction complète. Correctif de **plateforme** (lanceur), aucune modif du jeu. (Les runs antérieurs ne le voyaient pas car les assets étaient déjà entièrement en cache.) |
+
+À compléter au fur et à mesure (Application/Graphics/Input/Files/Audio/GL/Net/Preferences/
+DeviceInfo/bridges) — voir le registre SHIMS de DragonSoul comme modèle.
