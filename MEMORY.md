@@ -302,7 +302,7 @@ Dépôt de référence (`/workspace/dragonsoul-web`, branche `claude/game-transp
    OK** : `ChestStats.getDropTable(GOLD)`+`DropTable.rollNode("ROOT")` → **Frozone** (1ᵉʳ coffre nouveau
    joueur, rig `PreviousRolls(0)`). Dépendance : **joda-time** (données fuseaux hors `game.jar`, fournie).
    Faits : 0 héros avant le coffre (intro synthétique) ; Frozone prédéfini ; coffres hors-tuto = roll serveur
-   des `<type>_chest_drops.tab`. Réponse client = `LootResults`. Reste : finir le handler `BuyChests`.
+   des `<type>_chest_drops.tab`. Réponse client = `LootResults`. **Handler `BuyChests` ✅ FAIT & VÉRIFIÉ WIRE** (ServerContext = données+shim DH.app ; ServerUser.openChest exécute le code du jeu ; `ChestWireTest` : BuyChests(GOLD)→LootResults{Frozone} ~630ms ; persiste). PARTIEL : compteurs quotidiens + coffres payants (shim à étoffer).
    **(4bis) Tuto d'intro joué JUSQU'À `DONE` (harnais DEV, 2026-07-12)** : `TutorialDriver` (guidé par
    `TutorialHelper.getPointers`) + `dh.autofight` (auto-combat d'origine `setAutoAttack`) — **outils DEV
    côté lanceur, off par défaut, aucune modif jeu/serveur, rien en prod**. Intro complet (COMBAT1+COMBAT_2)

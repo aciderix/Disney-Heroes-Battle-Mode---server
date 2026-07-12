@@ -7,6 +7,53 @@
 
 ---
 
+## 2026-07-12 — Handler `BuyChests` complet : le serveur exécute la logique du jeu (Frozone, vérifié wire)
+
+### Résumé
+Étape 6 démarrée avec un **handler `BuyChests` fully functional** (option B) : le serveur **exécute le code
+du jeu** sur l'état autoritatif → roule la vraie table, donne Frozone, répond `LootResults`, persiste.
+
+### Architecture (option B, choisie avec l'utilisateur)
+- **`ServerContext`** : `ServerStats.install()` (données du jeu) + **shim `DH.app`** — beaucoup de classes
+  passent par le singleton client `GameMain` (ex. `User.getIndividual()` = `DH.app.getYourIndividualUser()`).
+  On alloue un `GameMain` **sans constructeur** (`Unsafe.allocateInstance`), pose `user`/`individualUser`,
+  affecte `DH.app`. Couche plateforme (§4), pas de logique de jeu.
+- **`ServerUser.openChest(BuyChests)`** : construit `User`/`IndividualUser` de jeu **sur nos objets wire**
+  (`getUser` fait `this.extra = userExtra` → **les mutations via `this.extra` persistent d'elles-mêmes** :
+  `setResource`/`setChannelRollCount` écrivent dans `this.extra`). Roule `ChestStats.getDropTable(GOLD)` +
+  `DropTable.rollNode("ROOT")`, `DropConverter.convert`, `ChestHelper.giveChestRewards(bl=true)` (donne +
+  remplit `heroesUnlocked`), `updateChestRollCounters`. **Resync** des champs hors `this.extra` (héros via
+  `getHeroData`, `chestUpgradeXP`). Renvoie `LootResults`.
+- **`LoginServer`** : `BuyChests` → `openChest` → répond `LootResults` + persiste (SQLite).
+
+### Sérialisation inverse (le point clé résolu)
+Le jeu n'a pas de sérialiseur `User→wire` complet, MAIS ses setters écrivent dans `this.extra` (l'objet
+wire qu'on lui passe). En construisant le `User` **sur nos propres objets wire**, la plupart des mutations
+persistent automatiquement ; seul un **ensemble fermé** (héros, `chestUpgradeXP`) est resynchronisé.
+Validé par round-trip.
+
+### Vérifications
+- **Unitaire** : nouveau joueur (0 héros) → `openChest(GOLD)` → `LootResults{lootDrops=1, heroesUnlocked=1}`,
+  joueur possède Frozone, **persiste au reload** (SQLite).
+- **Sur le wire** (`server/smoke/ChestWireTest`) : client `ClientInfo→BootData` puis `BuyChests(GOLD)` →
+  **`LootResults{Frozone}` reçu en ~630 ms**. Handler prouvé sur le protocole réel.
+- **En jeu** : le client atteint le coffre et envoie `BuyChests1` à notre serveur (confirmé). Le run client
+  complet meurt parfois (exit 144, signal d'environnement sur runs longs) avant d'afficher la réponse —
+  d'où la vérification par `ChestWireTest` (rapide, déterministe).
+
+### PARTIEL noté (§2, avec risque)
+- `updateChestCounters` (compteurs QUOTIDIENS, limites d'achat) passe par `SpecialEventsHelper.helper`
+  (couche évènements non initialisée headless) → différé. Non requis pour le tuto (coffre gratuit).
+- Coffres **payants** (charge diamants via `setResource`→`DH.app.getUserBattlePassV2`) : nécessitent
+  d'étoffer le shim (battlePassV2). Le coffre **gratuit** du tuto est complet.
+
+### Fichiers touchés
+- `server/java/dhserver/ServerContext.java` (NEW), `ServerUser.java` (openChest + resync), `LoginServer.java`
+  (handler BuyChests), `server/smoke/ChestWireTest.java` (NEW), `desktop-port/run-online.sh` (-Ddh.stats),
+  `docs/PRINCIPLES.md` §3 (shim DH.app + sérialisation inverse), `docs/SERVER_PLAN.md` §6, `MEMORY.md`.
+
+---
+
 ## 2026-07-12 — Enquête coffres/héros + fondation « serveur exécute le code+données du jeu » (spike Frozone)
 
 ### Résumé

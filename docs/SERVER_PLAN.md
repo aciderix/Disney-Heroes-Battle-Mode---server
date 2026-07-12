@@ -103,10 +103,18 @@ pour garantir que **chaque objet déréférencé est non-null** — pas de « mi
      NoneAre(YourHero)`, payant/gratuit, VIP, locale, pools `@NON_EXCLUSIVE_HEROES`/`@GOLD_CHEST_EXCLUSIVE_HEROES`).
      `channelRollCount` (dans `IndividualUserExtra`) alimente `PreviousRolls` → à persister.
 
-   **Handler `BuyChests` (à finir) :** `ChestHelper.doPreRollUpdates` → roll `ROOT` (count) →
-   `DropConverter` → **`LootResults`** (`heroesUnlocked`/`lootDrops`/`costs`) → `ChestHelper.applyChestResults`
-   → re-sérialiser l'`IndividualUser`/`UserExtra` → **répondre `LootResults`**. Puis `Action`, choix du nom,
-   1ᵉʳ combat de campagne réel, claims… Critère : navigation stable, fidèle aux captures d'origine.
+   **Handler `BuyChests` — ✅ FAIT & VÉRIFIÉ SUR LE WIRE.** `ServerContext` (données du jeu + shim
+   `DH.app`) + `ServerUser.openChest` : construit un `User` de jeu SUR les objets wire → roule la vraie
+   table (`ChestStats`/`DropTable.rollNode("ROOT")`) → `DropConverter` → `ChestHelper.giveChestRewards`
+   (donne + remplit `heroesUnlocked`) → `updateChestRollCounters` → resync héros (`getHeroData`) → répond
+   **`LootResults`**. Vérifié : unitaire (nouveau joueur 0 héros → `openChest(GOLD)` → Frozone, **persiste au
+   reload**) ET **sur le wire** (`server/smoke/ChestWireTest` : `BuyChests(GOLD)` → `LootResults{Frozone}` en
+   ~630 ms). **PARTIEL noté (§2)** : `updateChestCounters` (compteurs quotidiens) différé (couche évènements
+   spéciaux non initialisée headless → NPE) — non requis pour le tuto (coffre gratuit) ; coffres **payants**
+   (charge diamants) nécessitent d'étoffer le shim `DH.app` (battlePassV2). Le run client complet meurt
+   parfois (exit 144, signal d'environnement sur runs longs) — le handler est prouvé sur le protocole.
+   Reste, pilotés par le client : `Action`, choix du nom, 1ᵉʳ combat de campagne réel, claims… Critère :
+   navigation stable, fidèle aux captures d'origine.
 7. [ ] **Multi-serveur / passerelle** (liste, mot de passe optionnel) — cf. ARCHITECTURE.md.
 
 ## Outils de DEV (jamais actifs en prod ; aucune modif du jeu ni du serveur)
