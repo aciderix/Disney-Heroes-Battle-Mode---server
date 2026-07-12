@@ -89,9 +89,19 @@ public final class TutorialDriver {
                     if (DEBUG) System.out.println("[tutodrive] popup " + cls + " fermée (récompense)");
                     return true;
                 }
-                if (DEBUG) System.out.println("[tutodrive] popup " + cls
-                        + " interactive → tap central (non fermée)");
-                return false;   // fenêtre interactive : laisse le lanceur taper au centre (bouton)
+                // Popup interactive (ex. « CRATE READY » avec bouton VIEW) : le tap central du lanceur
+                // frappe le fond, pas le bouton (qui n'est PAS au centre). On frappe le bouton d'action
+                // PRINCIPAL = le bouton-texte du jeu (DFTextButton « VIEW/OPEN/OK »).
+                List<Actor> primary = new ArrayList<>();
+                collectTextButtons((Actor) top, primary);
+                if (!primary.isEmpty()) {
+                    if (DEBUG && !cls.equals(lastTrace)) {
+                        lastTrace = cls; dumpActionable((Actor) top, cls);
+                    }
+                    return tapAll(primary, input, w, h);
+                }
+                if (DEBUG && !cls.equals(lastTrace)) { lastTrace = cls; dumpActionable((Actor) top, cls); }
+                return false;   // pas de bouton-texte : laisse le lanceur taper au centre
             }
 
             // 2) Pas de popup : il faut une cible de tutoriel pour agir.
@@ -109,6 +119,50 @@ public final class TutorialDriver {
         } catch (Throwable t) {
             return false;   // écran/étape sans pointeur exploitable → no-op
         }
+    }
+
+    /** Collecte les boutons-texte cliquables (action principale : « VIEW/OPEN/OK/CONTINUE »…). */
+    private static void collectTextButtons(Actor a, List<Actor> out) {
+        if (a.getClass().getSimpleName().contains("TextButton") && a.getWidth() > 0 && a.getHeight() > 0) {
+            boolean clickable = false;
+            for (com.badlogic.gdx.scenes.scene2d.EventListener l : a.getListeners())
+                if (l instanceof com.badlogic.gdx.scenes.scene2d.utils.ClickListener) { clickable = true; break; }
+            if (clickable) out.add(a);
+        }
+        if (a instanceof Group) for (Actor c : ((Group) a).getChildren()) collectTextButtons(c, out);
+    }
+
+    /** DEV : liste les acteurs actionnables d'une fenêtre (bouton/label/tag tuto + position stage). */
+    private static void dumpActionable(Actor window, String cls) {
+        System.out.println("[tutodrive] --- acteurs actionnables de " + cls + " ---");
+        dumpRec(window);
+        System.out.println("[tutodrive] --- fin " + cls + " ---");
+    }
+
+    private static void dumpRec(Actor a) {
+        boolean clickable = false;
+        for (com.badlogic.gdx.scenes.scene2d.EventListener l : a.getListeners()) {
+            if (l instanceof com.badlogic.gdx.scenes.scene2d.utils.ClickListener) { clickable = true; break; }
+        }
+        String text = null;
+        if (a instanceof com.badlogic.gdx.scenes.scene2d.ui.Label) {
+            CharSequence t = ((com.badlogic.gdx.scenes.scene2d.ui.Label) a).getText();
+            if (t != null && t.length() > 0) text = t.toString();
+        }
+        if (clickable || text != null || a.getTutorialName() != null) {
+            String pos = "";
+            Stage st = a.getStage();
+            if (st != null && a.getWidth() > 0) {
+                Vector2 v = a.localToStageCoordinates(new Vector2(a.getWidth() / 2f, a.getHeight() / 2f));
+                pos = " @stage(" + (int) v.x + "," + (int) v.y + ") size(" + (int) a.getWidth() + "x" + (int) a.getHeight() + ")";
+            }
+            System.out.println("[tutodrive]   " + a.getClass().getSimpleName()
+                + (clickable ? " [CLICK]" : "")
+                + (a.getTutorialName() != null ? " tut=" + a.getTutorialName() : "")
+                + (text != null ? " text=\"" + text + "\"" : "")
+                + pos + " touch=" + a.getTouchable());
+        }
+        if (a instanceof Group) for (Actor c : ((Group) a).getChildren()) dumpRec(c);
     }
 
     /** Popup d'AFFICHAGE de récompense (à rejeter), vs popup interactive (à actionner). */
