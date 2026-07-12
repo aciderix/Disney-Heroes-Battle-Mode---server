@@ -86,14 +86,23 @@ public final class UnidbgVM {
         objDraw    = vm.resolveClass("java/nio/ShortBuffer").newObject(embDraw.getPointer());
     }
 
-    // ----- helpers de dispatch -----
-    private int si(String sig, Object... a)   { return cSpine.callStaticJniMethodInt(emulator, sig, a); }
-    private void sv(String sig, Object... a)  { cSpine.callStaticJniMethod(emulator, sig, a); }
-    private float sf(String sig, Object... a) { return cSpine.callStaticJniMethodInt(emulator, sig, a); } // float via bits ci-dessous
-    private DvmObject<?> so(String sig, Object... a) { return cSpine.callStaticJniMethodObject(emulator, sig, a); }
-    private int pi(String sig, Object... a)   { return cPart.callStaticJniMethodInt(emulator, sig, a); }
-    private void pv(String sig, Object... a)  { cPart.callStaticJniMethod(emulator, sig, a); }
-    private DvmObject<?> po(String sig, Object... a) { return cPart.callStaticJniMethodObject(emulator, sig, a); }
+    // ----- profilage : temps cumulé passé DANS l'émulation unidbg (spine+particules) -----
+    // Permet d'attribuer le coût par frame (unidbg vs rasterisation logicielle). Getter/reset statiques.
+    private static final java.util.concurrent.atomic.AtomicLong EMU_NANOS = new java.util.concurrent.atomic.AtomicLong();
+    private static final java.util.concurrent.atomic.AtomicLong EMU_CALLS = new java.util.concurrent.atomic.AtomicLong();
+    public static long emuNanos() { return EMU_NANOS.get(); }
+    public static long emuCalls() { return EMU_CALLS.get(); }
+    public static void emuReset() { EMU_NANOS.set(0); EMU_CALLS.set(0); }
+
+    // ----- helpers de dispatch (chronométrés) -----
+    private int si(String sig, Object... a)   { long t=System.nanoTime(); try { return cSpine.callStaticJniMethodInt(emulator, sig, a); } finally { rec(t); } }
+    private void sv(String sig, Object... a)  { long t=System.nanoTime(); try { cSpine.callStaticJniMethod(emulator, sig, a); } finally { rec(t); } }
+    private float sf(String sig, Object... a) { long t=System.nanoTime(); try { return cSpine.callStaticJniMethodInt(emulator, sig, a); } finally { rec(t); } } // float via bits ci-dessous
+    private DvmObject<?> so(String sig, Object... a) { long t=System.nanoTime(); try { return cSpine.callStaticJniMethodObject(emulator, sig, a); } finally { rec(t); } }
+    private int pi(String sig, Object... a)   { long t=System.nanoTime(); try { return cPart.callStaticJniMethodInt(emulator, sig, a); } finally { rec(t); } }
+    private void pv(String sig, Object... a)  { long t=System.nanoTime(); try { cPart.callStaticJniMethod(emulator, sig, a); } finally { rec(t); } }
+    private DvmObject<?> po(String sig, Object... a) { long t=System.nanoTime(); try { return cPart.callStaticJniMethodObject(emulator, sig, a); } finally { rec(t); } }
+    private static void rec(long startNanos) { EMU_NANOS.addAndGet(System.nanoTime() - startNanos); EMU_CALLS.incrementAndGet(); }
     private static int fb(float f) { return Float.floatToRawIntBits(f); }
 
     private static String str(DvmObject<?> o) { return o == null ? null : (String) o.getValue(); }

@@ -107,6 +107,10 @@ public final class DesktopLauncher {
         // Sert à FAIRE AVANCER le tutoriel (dialogues « tap to continue ») sans utilisateur, pour
         // vérifier « tuto jouable de bout en bout » et observer ce que le client envoie ensuite.
         int autotap = Integer.getInteger("dh.autotap", 0);
+        // Mesure FPS : moyenne glissante toutes les N frames (dh.fps=N, 0=off), avec l'écran courant
+        // → permet de relever les FPS EN COMBAT (screen=CoreAttackScreen/…).
+        int fpsWindow = Integer.getInteger("dh.fps", 0);
+        double fpsWindowStart = glfwGetTime();
         while (!glfwWindowShouldClose(win) && (maxFrames == 0 || frames < maxFrames)) {
             double now = glfwGetTime();
             graphics.deltaTime = (float) (now - last);
@@ -122,12 +126,34 @@ public final class DesktopLauncher {
             glfwSwapBuffers(win);
             glfwPollEvents();
             frames++;
+
+            if (fpsWindow > 0 && frames % fpsWindow == 0) {
+                double t = glfwGetTime();
+                double fps = fpsWindow / (t - fpsWindowStart);
+                fpsWindowStart = t;
+                // Part du temps passée DANS l'émulation unidbg (spine+particules) vs le reste
+                // (rasterisation logicielle llvmpipe, logique de jeu) → attribution du coût.
+                double emuMs = dhbackend.unidbg.UnidbgVM.emuNanos() / 1e6 / fpsWindow;
+                long emuCalls = dhbackend.unidbg.UnidbgVM.emuCalls() / fpsWindow;
+                dhbackend.unidbg.UnidbgVM.emuReset();
+                System.out.printf("[fps] frame %d: %.1f fps (%.1f ms/frame)  unidbg=%.1f ms/frame (%d appels)  reste=%.1f ms  screen=%s%n",
+                    frames, fps, 1000.0 / fps, emuMs, emuCalls, Math.max(0, 1000.0 / fps - emuMs), currentScreen(game));
+            }
         }
 
         if (shot != null) capture(W, H, shot);
         System.out.println("[launcher] arrêt après " + frames + " frames");
         glfwDestroyWindow(win);
         glfwTerminate();
+    }
+
+    /** Nom (simple) de l'écran courant, par réflexion — best-effort pour l'étiquette FPS. */
+    private static String currentScreen(GameMain game) {
+        try {
+            Object sm = game.getClass().getMethod("getScreenManager").invoke(game);
+            Object screen = sm.getClass().getMethod("getScreen").invoke(sm);
+            return screen == null ? "null" : screen.getClass().getSimpleName();
+        } catch (Throwable t) { return "?"; }
     }
 
     private static void wireBridges(GameMain game) {
