@@ -7,6 +7,49 @@
 
 ---
 
+## 2026-07-12 — Traversée du tuto en autonomie (pilote DEV) : intro→coffres→héros→équipement
+
+### Résumé
+Mise au point du **pilote DEV** (`TutorialDriver`) + méthodologie **reprise persistée + capture/inspection**
+pour traverser le tuto in-game et faire une **passe de features**. Franchi : intro+combat → coffre GOLD
+(Frozone) → coffre SILVER (Badge of Friendship) → CRATE READY → menu HÉROS → liste → détail héros →
+onglet GEAR → **équipement du badge**. **0 exception serveur** partout. Frontière atteinte : l'équipement
+passe par `Action1` non traité côté serveur → prochain handler.
+
+### Corrections du pilote (chacune trouvée par capture d'écran + dump des acteurs)
+- **Popups de récompense** (`ChestResultsWindow` = « CRATE REWARDS ») : fermées via l'API du jeu
+  `BaseModalWindow.hide()` (le tap central ratait le X). Distinction affichage-récompense vs interactif.
+- **Popups interactives** (`ChestReadyWindow` = « CRATE READY ») : frappe du **bouton-texte principal**
+  (`DFTextButton` « VIEW », à stage(640,180)≠centre) — trouvé via `dumpActionable` (dump classe/tag/texte/pos).
+- **Recherche dans TOUTE la scène** (`stage.getRoot`, pas seulement `getRootStack`) : le menu latéral
+  (HEROES/ITEMS…) était hors du rootStack → `BASE_MENU_HERO_BUTTON` introuvable (trouvés=0) alors que le jeu
+  y pointe. Corrigé → enchaîne HeroList→HeroDetail→GEAR→EQUIP.
+
+### Méthodologie (documentée dans MEMORY §6ter)
+- **Reprise RAPIDE** : ne pas supprimer `server/data/dh-server.db` → le client **reprend au hub** (saute
+  l'intro), **~20 s** au lieu de ~4 min (0 rejeu de combat). **Snapshots** DB aux points sûrs
+  (`dh-snapshot-postchests.db`, `dh-snapshot-postequip.db`) pour restaurer une frontière.
+- **Boucle** : au blocage → screenshot (voir l'écran) + `dumpActionable` (quoi taper) → faire frapper le
+  **bon acteur du jeu** (jamais une coordonnée devinée) → recompiler → relancer (reprise rapide).
+- **Lire les logs avec `grep -a`** (le log serveur peut avoir du bourrage NUL).
+
+### Finding (prochain handler serveur)
+L'**équipement de gear** (et sans doute d'autres actions) part en **`Action1`** (fire-and-forget) que le
+serveur **journalise mais ne TRAITE pas** → l'état autoritatif ne reflète pas l'équipement → au **reload**
+le tuto ne peut pas avancer (idle sur MainScreen, INTRO_FEATURES step 29). ⇒ prochain : **traiter `Action`
+côté serveur** (équipement…), comme on a fait pour `BuyChests`.
+
+### Infra
+- **Garde-fou serveurs** (`run-online.sh`) : détecte/kill les anciens serveurs (zombies) + refuse si port pris.
+- Email d'auteur des commits corrigé → `noreply@anthropic.com` (GitHub vérifié).
+
+### Fichiers touchés
+- `desktop-port/src/main/java/dhdesktop/TutorialDriver.java` (fermeture popups, bouton-texte, recherche
+  scène, dump), `desktop-port/run-online.sh` (garde-fou + DH_TUTODBG/DH_FPS + DH_FRAMES vide=non plafonné),
+  `desktop-port/run-desktop.sh` (LC_ALL=C.utf8), `MEMORY.md` (§6bis lancement + §6ter méthodologie).
+
+---
+
 ## 2026-07-12 — Diagnostic signal 16/exit 144 (strace) + couche évènements spéciaux (2ᵉ coffre débloqué)
 
 ### Résumé
