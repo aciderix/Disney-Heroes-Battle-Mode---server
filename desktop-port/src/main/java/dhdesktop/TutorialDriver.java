@@ -73,14 +73,25 @@ public final class TutorialDriver {
                 if (!trace.equals(lastTrace)) { lastTrace = trace; System.out.println("[tutodrive] " + trace); }
             }
             if (windows != null && !windows.isEmpty()) {
+                // Le tuto pointe DANS une popup ouverte → taper dedans (bouton désigné).
                 List<Actor> inWindow = new ArrayList<>();
                 for (Object win : windows) if (win instanceof Actor) collect((Actor) win, targets, inWindow);
                 if (!inWindow.isEmpty()) return tapAll(inWindow, input, w, h);
+
                 Object top = windows.get(windows.size() - 1);
-                top.getClass().getMethod("hide").invoke(top);
-                if (DEBUG) System.out.println("[tutodrive] popup " + top.getClass().getSimpleName()
-                        + " fermée (cibles tuto=" + targets + ")");
-                return true;
+                String cls = top.getClass().getSimpleName();
+                // On ne FERME (hide) que les popups d'AFFICHAGE de récompense (« CRATE REWARDS » =
+                // ChestResultsWindow, écrans de butin) : le joueur les rejette, elles n'ont pas d'action.
+                // Les popups INTERACTIVES (ChestReadyWindow « ouvrir le coffre », confirmations…) ne
+                // doivent PAS être fermées → on laisse le tap central du lanceur en frapper le bouton.
+                if (isRewardDisplay(cls)) {
+                    top.getClass().getMethod("hide").invoke(top);
+                    if (DEBUG) System.out.println("[tutodrive] popup " + cls + " fermée (récompense)");
+                    return true;
+                }
+                if (DEBUG) System.out.println("[tutodrive] popup " + cls
+                        + " interactive → tap central (non fermée)");
+                return false;   // fenêtre interactive : laisse le lanceur taper au centre (bouton)
             }
 
             // 2) Pas de popup : il faut une cible de tutoriel pour agir.
@@ -98,6 +109,12 @@ public final class TutorialDriver {
         } catch (Throwable t) {
             return false;   // écran/étape sans pointeur exploitable → no-op
         }
+    }
+
+    /** Popup d'AFFICHAGE de récompense (à rejeter), vs popup interactive (à actionner). */
+    private static boolean isRewardDisplay(String simpleClassName) {
+        String n = simpleClassName.toLowerCase();
+        return n.contains("result") || n.contains("reward") || n.contains("loot");
     }
 
     /** Liste des popups modaux ouverts sur l'écran ({@code BaseScreen.getScreenWindows()}). */
