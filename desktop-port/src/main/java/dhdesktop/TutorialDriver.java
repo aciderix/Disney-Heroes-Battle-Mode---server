@@ -108,8 +108,14 @@ public final class TutorialDriver {
             if (targets.isEmpty()) return false;
             Group root = (Group) screen.getClass().getMethod("getRootStack").invoke(screen);
             if (root == null) return false;
+            // Chercher dans TOUTE la scène (pas seulement getRootStack) : certains éléments (menu latéral
+            // HEROES/ITEMS…, overlays) sont hors du rootStack → sinon l'acteur désigné (ex.
+            // BASE_MENU_HERO_BUTTON) n'est pas trouvé alors que le jeu, lui, y pointe (flèche jaune).
+            Group searchRoot = root;
+            Stage stg = root.getStage();
+            if (stg != null && stg.getRoot() != null) searchRoot = stg.getRoot();
             List<Actor> found = new ArrayList<>();
-            collect(root, targets, found);
+            collect(searchRoot, targets, found);
             if (DEBUG && !targets.toString().equals(lastTargets)) {
                 lastTargets = targets.toString();
                 System.out.println("[tutodrive] " + screen.getClass().getSimpleName()
