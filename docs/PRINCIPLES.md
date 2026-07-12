@@ -39,6 +39,17 @@ le **codec réseau** du jeu ; il **intègre et exécute la LOGIQUE du jeu** :
 Ainsi la fidélité **vient du code+données du jeu**, pas d'une réimplémentation. Corollaire : quand une
 action serveur (coffre, combat, coût…) est à implémenter, on **cherche d'abord la classe du jeu qui la
 fait** et on l'exécute ; on n'écrit que la **glue** (orchestration/aller-retour wire), jamais la règle.
+
+**Contexte d'exécution (shim `DH.app`).** Beaucoup de classes du jeu passent par le singleton client
+`DH.app` (un `GameMain`) — ex. `User.getIndividual()` = `DH.app.getYourIndividualUser()`. Côté serveur
+`DH.app` est null → NPE. On fournit donc un **`GameMain` headless** (alloué **sans** constructeur, champs
+`user`/`individualUser` posés) affecté à `DH.app` : les getters simples (`getYourUser`/`getYourIndividualUser`)
+répondent, et la logique du jeu tourne. C'est de la **couche plateforme** (§4, comme `dhbackend/`), pas de
+la logique de jeu. **Sérialisation inverse `User→wire`** : le jeu n'a pas de sérialiseur complet (le client
+n'en a jamais besoin), MAIS ses setters écrivent **directement dans `this.extra`** (l'objet wire qu'on lui
+a passé) → si le serveur construit le `User` **sur ses propres objets wire**, la plupart des mutations
+**persistent automatiquement** ; seuls quelques champs gardés à part (héros, `chestUpgradeXP`) sont
+**re-synchronisés** explicitement (ensemble fermé, validé par **round-trip**). Zéro règle réécrite.
 Dépendances runtime que dex2jar laisse hors de `game.jar` (ex. **joda-time** : données de fuseaux
 `org/joda/time/tz/data/*` requises par `TimeUtil`) sont **fournies** (jar standard, classes ombrées par
 `game.jar`, seule la ressource utilisée) — c'est de la donnée du jeu, pas une réécriture.

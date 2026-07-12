@@ -7,8 +7,10 @@ import com.perblue.grunt.translate.GruntMessage;
 import com.perblue.grunt.translate.GruntServerFactory;
 import com.perblue.heroes.network.DHXORConnectionWrapper;
 import com.perblue.heroes.network.messages.BootData;
+import com.perblue.heroes.network.messages.BuyChests;
 import com.perblue.heroes.network.messages.ChangeTutorialStep;
 import com.perblue.heroes.network.messages.ClientInfo;
+import com.perblue.heroes.network.messages.LootResults;
 import com.perblue.heroes.network.messages.MessageFactory;
 import com.perblue.heroes.network.messages.Ping;
 
@@ -88,6 +90,23 @@ public final class LoginServer {
                 System.out.println("[login]     ! persistance échouée: " + e); } }
               System.out.println("[login]     tuto " + cts.type + " -> step " + cts.step
                   + (cts.forceSkip ? " (forceSkip)" : "") + (applied ? " [persisté]" : " [type inconnu, ignoré]"));
+            } else if (m instanceof BuyChests) {
+              // Ouverture de coffre : le serveur EXÉCUTE la logique du jeu (roll table + give) sur
+              // l'état autoritatif, répond LootResults (le client applique de son côté), et persiste.
+              try {
+                BuyChests bc = (BuyChests) m;
+                LootResults lr = user.openChest(bc);
+                lr.setAsReplyTo(m);
+                c.send(lr);
+                try { store.save(user); } catch (Exception e) {
+                  System.out.println("[login]     ! persistance échouée: " + e); }
+                System.out.println("[login] ==> LootResults : coffre " + bc.chestType
+                    + " -> " + lr.heroesUnlocked.size() + " héros débloqué(s), joueur en possède "
+                    + user.heroCount() + " [persisté]");
+              } catch (Throwable t) {
+                System.out.println("[login]     ! openChest échec: " + t);
+                t.printStackTrace();
+              }
             } else if (m instanceof Ping) {
               // Écho de latence/keepalive : le client mesure le RTT et surveille l'activité serveur.
               // Sans réponse, son chien de garde ferme la connexion (« Reconnecting… »).
@@ -121,6 +140,7 @@ public final class LoginServer {
     // Étapes 3-5 : compte autoritaire → tutoriel d'intro, progression du tuto appliquée ET PERSISTÉE
     // (SQLite, octets wire des objets du jeu). Structure/valeurs 100% classes du jeu (PRINCIPLES §4/§6).
     // Un seul compte pour l'instant (id=1) ; DB régénérable (recréée si absente).
+    ServerContext.init();                 // charge les données du jeu + shim DH.app (logique headless)
     String dbPath = System.getProperty("dh.db", "server/data/dh-server.db");
     new java.io.File(dbPath).getAbsoluteFile().getParentFile().mkdirs();
     UserStore store = new UserStore(dbPath);
