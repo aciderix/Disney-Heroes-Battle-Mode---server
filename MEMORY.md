@@ -171,6 +171,40 @@ Dépôt de référence (`/workspace/dragonsoul-web`, branche `claude/game-transp
 
 ---
 
+## 6bis. Lancement (procédure CANONIQUE — à suivre, ne pas improviser)
+
+**Pile complète (serveur + client) — la voie normale :**
+```bash
+cd desktop-port
+./run-online.sh              # contenu :8080 + jeu :8081 (LoginServer) + client (redirigé vers notre serveur)
+```
+- **Garde-fou intégré** : `run-online.sh` détecte un serveur DÉJÀ en cours (PID `dhserver.LoginServer`/
+  `content_server.py` ou ports 8080/8081 occupés) et **arrête les anciens** avant de relancer (mettre
+  `DH_KILL_OLD=0` pour seulement alerter et abandonner). Évite les **serveurs zombies** (plusieurs
+  LoginServer sur le même port → le client parle à l'un, on lit le log de l'autre).
+- **Variables** : `DH_FRAMES` non défini → 120 frames ; **`DH_FRAMES=` (vide) → NON plafonné** (joue tout
+  le tuto, borné par `DH_TIMEOUT`). `DH_AUTOTAP=1`/`DH_AUTOFIGHT=1` = pilote DEV (tuto/combat auto, off en
+  prod). Ex. traverser tout le tuto : `DH_FRAMES= DH_TIMEOUT=600 DH_AUTOTAP=1 DH_AUTOFIGHT=1 ./run-online.sh`.
+
+**Client seul** (`./run-desktop.sh`) : suppose un serveur déjà lancé (sinon → serveur PerBlue hors ligne).
+Exporte `LC_ALL=C.utf8` (sinon l'extraction d'assets aux noms Unicode plante, cf. SHIMS). Sans GPU : ~9 fps.
+
+**Serveur seul** (rare) :
+```bash
+java -Xverify:none -XX:TieredStopAtLevel=1 -Ddh.db=server/data/dh-server.db \
+     -Ddh.stats=game-data/stats -cp "<CP>:desktop-port/build/server-classes" dhserver.LoginServer 8081
+```
+Classpath serveur `<CP>` = `libs/{game,commons-logging,sqlite-jdbc,slf4j-api,joda-time}.jar` (les 3
+dernières récupérées à la demande par `run-online.sh`). **Nouveau joueur** : supprimer `server/data/dh-server.db`.
+
+**Pièges à éviter :**
+- **NE PAS tronquer** (`: > /tmp/dh_game.log`) un log tenu ouvert par le serveur → bourrage NUL → `grep`
+  le prend pour un binaire et n'affiche RIEN. Lire avec **`grep -a`**, ou redémarrer proprement le serveur.
+- Le `exit 144` (SIGSTKFLT) = **kill externe du superviseur** (pas un crash) ; il peut tuer les runs longs
+  ET les commandes bash. Lancer serveurs/clients en **tâche détachée** pour survivre au kill du wrapper.
+
+---
+
 ## 7. État courant & prochaines étapes
 
 ### Fait (2026-07-09, bootstrap)
