@@ -40,6 +40,7 @@ CONTENT_PID=$!
 
 echo "[online] serveur de jeu TCP :$GAME_PORT ..."
 java -Xverify:none -XX:TieredStopAtLevel=1 -Ddh.db="$ROOT/server/data/dh-server.db" \
+     -Ddh.stats="$ROOT/game-data/stats" \
      -cp "$CP:$SRVOUT" dhserver.LoginServer "$GAME_PORT" >/tmp/dh_game.log 2>&1 &
 GAME_PID=$!
 sleep 2
