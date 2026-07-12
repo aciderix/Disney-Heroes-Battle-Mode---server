@@ -123,7 +123,9 @@ public final class DesktopLauncher {
             last = now;
 
             if (autotap > 0 && frames > 90 && frames % autotap == 0) {
-                input.tap(W / 2, H / 2);   // « tap to continue » : le narrateur accepte un tap n'importe où
+                // DEV : d'abord taper la cible désignée par le tutoriel (bouton héros, etc.) via les
+                // API du jeu ; sinon (dialogue « tap to continue ») taper au centre.
+                if (!TutorialDriver.driveOnce(game, input, W, H)) input.tap(W / 2, H / 2);
             }
             if (autofight && frames % 20 == 0) enableAutoCombat(game);  // DEV : bouton AUTO d'origine
             input.drain();          // input synthétique (pilotage) sur le thread render
