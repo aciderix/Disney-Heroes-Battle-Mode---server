@@ -25,38 +25,68 @@ import java.util.Set;
  * l'écran (tag {@code Actor.getTutorialName()}, comme le fait {@code Group.findTutorialActor}), et on
  * tape son centre (converti stage → écran par le jeu). Sans pointeur actif (dialogue « tap to
  * continue »), on tape au centre. Aucune coordonnée devinée : tout vient de l'acteur désigné par le jeu.
+ *
+ * <p><b>Popups modaux</b> (récompenses de coffre « CRATE REWARDS », info héros…) : ils captent l'entrée
+ * et masquent l'écran de base. La cible désignée par le tuto (ex. {@code MAIN_SCREEN_AVATAR}) est alors
+ * « not visible » car <b>derrière</b> la popup, et un tap sur ses coordonnées est absorbé par la fenêtre.
+ * On interroge {@code BaseScreen.getScreenWindows()} : si le tuto pointe DANS la popup, on tape dedans ;
+ * sinon on <b>ferme</b> la popup via l'API du jeu ({@code BaseModalWindow.hide()}, exactement ce que fait
+ * le bouton X / le retour) pour révéler la cible. Aucune coordonnée devinée, aucune modif du jeu.
  */
 public final class TutorialDriver {
 
     private TutorialDriver() {}
 
-    private static final boolean DEBUG = Boolean.getBoolean("dh.tutodrive.debug");
+    // NB: Boolean.getBoolean n'accepte que "true" → on accepte aussi "1".
+    private static final boolean DEBUG = System.getProperty("dh.tutodrive.debug") != null
+            && !"0".equals(System.getProperty("dh.tutodrive.debug"))
+            && !"false".equalsIgnoreCase(System.getProperty("dh.tutodrive.debug"));
     private static String lastTargets = "";
+    private static String lastTrace = "";
 
-    /** Renvoie true si un tap a été injecté sur une cible désignée par le tutoriel. */
+    /** Renvoie true si un tap/fermeture a été injecté sur une cible désignée par le tutoriel. */
     public static boolean driveOnce(GameMain game, DhInput input, int w, int h) {
         try {
             User user = game.getYourUser();
             if (user == null) return false;
-            List<?> pointers = TutorialHelper.getPointers(user);
-            if (pointers == null || pointers.isEmpty()) return false;
 
-            // Noms des composants visés par le tutoriel à cet instant (nom + index héros).
+            Object screen = game.getScreenManager().getScreen();
+            if (screen == null) return false;
+
+            // Cibles désignées par le tutoriel (peut être vide : ex. le tuto attend qu'on ferme une popup).
+            List<?> pointers = TutorialHelper.getPointers(user);
             Set<String> targets = new HashSet<>();
-            for (Object p : pointers) {
+            if (pointers != null) for (Object p : pointers) {
                 String name = ((TutorialPointerInfo) p).getActorTutorialName();
                 if (name != null && !name.isEmpty()) targets.add(name);
             }
-            if (targets.isEmpty()) return false;
 
-            // Racine de l'écran courant.
-            Object screen = game.getScreenManager().getScreen();
-            if (screen == null) return false;
+            // 1) Popups modaux ouverts (coffre « CRATE REWARDS », récompense, info) — traités AVANT tout,
+            //    même sans pointeur actif : le tuto met souvent en pause ses pointeurs tant que la popup
+            //    n'est pas fermée. Si le tuto pointe DANS la popup → taper dedans ; sinon la popup bloque
+            //    → la FERMER via l'API du jeu (BaseModalWindow.hide(), = bouton X / retour).
+            List<?> windows = screenWindows(screen);
+            if (DEBUG) {
+                StringBuilder wl = new StringBuilder();
+                if (windows != null) for (Object win : windows) wl.append(win.getClass().getSimpleName()).append(',');
+                String trace = screen.getClass().getSimpleName() + " win=[" + wl + "] cibles=" + targets;
+                if (!trace.equals(lastTrace)) { lastTrace = trace; System.out.println("[tutodrive] " + trace); }
+            }
+            if (windows != null && !windows.isEmpty()) {
+                List<Actor> inWindow = new ArrayList<>();
+                for (Object win : windows) if (win instanceof Actor) collect((Actor) win, targets, inWindow);
+                if (!inWindow.isEmpty()) return tapAll(inWindow, input, w, h);
+                Object top = windows.get(windows.size() - 1);
+                top.getClass().getMethod("hide").invoke(top);
+                if (DEBUG) System.out.println("[tutodrive] popup " + top.getClass().getSimpleName()
+                        + " fermée (cibles tuto=" + targets + ")");
+                return true;
+            }
+
+            // 2) Pas de popup : il faut une cible de tutoriel pour agir.
+            if (targets.isEmpty()) return false;
             Group root = (Group) screen.getClass().getMethod("getRootStack").invoke(screen);
             if (root == null) return false;
-
-            // Tape TOUS les acteurs portant un des noms visés (gère l'index héros 0/1/2 :
-            // seul l'acteur réellement actionnable par le tutoriel réagira).
             List<Actor> found = new ArrayList<>();
             collect(root, targets, found);
             if (DEBUG && !targets.toString().equals(lastTargets)) {
@@ -64,22 +94,31 @@ public final class TutorialDriver {
                 System.out.println("[tutodrive] " + screen.getClass().getSimpleName()
                     + " cibles=" + targets + " trouvés=" + found.size());
             }
-            boolean tapped = false;
-            for (Actor a : found) {
-                Stage st = a.getStage();
-                if (st == null || a.getWidth() <= 0 || a.getHeight() <= 0) continue;
-                Vector2 v = a.localToStageCoordinates(new Vector2(a.getWidth() / 2f, a.getHeight() / 2f));
-                // stage (unités virtuelles, y montant) → écran (pixels, y descendant). Le viewport UI
-                // remplit la fenêtre → mise à l'échelle par la taille virtuelle du stage.
-                float sw = st.getWidth(), sh = st.getHeight();
-                if (sw <= 0 || sh <= 0) continue;
-                input.tap(Math.round(v.x / sw * w), Math.round(h - v.y / sh * h));
-                tapped = true;
-            }
-            return tapped;
+            return tapAll(found, input, w, h);
         } catch (Throwable t) {
             return false;   // écran/étape sans pointeur exploitable → no-op
         }
+    }
+
+    /** Liste des popups modaux ouverts sur l'écran ({@code BaseScreen.getScreenWindows()}). */
+    private static List<?> screenWindows(Object screen) {
+        try { return (List<?>) screen.getClass().getMethod("getScreenWindows").invoke(screen); }
+        catch (Throwable t) { return null; }
+    }
+
+    /** Tape le centre de chaque acteur trouvé (conversion stage → écran par le viewport du jeu). */
+    private static boolean tapAll(List<Actor> found, DhInput input, int w, int h) {
+        boolean tapped = false;
+        for (Actor a : found) {
+            Stage st = a.getStage();
+            if (st == null || a.getWidth() <= 0 || a.getHeight() <= 0) continue;
+            Vector2 v = a.localToStageCoordinates(new Vector2(a.getWidth() / 2f, a.getHeight() / 2f));
+            float sw = st.getWidth(), sh = st.getHeight();
+            if (sw <= 0 || sh <= 0) continue;
+            input.tap(Math.round(v.x / sw * w), Math.round(h - v.y / sh * h));
+            tapped = true;
+        }
+        return tapped;
     }
 
     /** Collecte récursivement les acteurs dont {@code getTutorialName()} ∈ targets. */
