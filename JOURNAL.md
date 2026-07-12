@@ -54,10 +54,28 @@ des tâches de contest). C'est la dette #14, sur le chemin critique.
 - **Wire** (`ChestWireTest`) : `BuyChests(GOLD)` → `LootResults{Frozone}` en ~746 ms, **aucune régression**.
 - **En jeu** : run client réel relançé (serveurs recompilés) pour rejouer les 2 coffres du tuto.
 
+### Confirmation IN-GAME du 2ᵉ coffre (2026-07-12, après coup)
+Un run client **non plafonné** (`dh.frames` absent → tourne jusqu'à ce que le tuto se joue) a traversé
+l'intro + les DEUX coffres : GOLD → Frozone, puis **SILVER → `LootResults` avec 0 héros = récompense
+d'OBJET** (exactement le chemin `onItemEarn` qui plantait). Résultat serveur : **0 exception** de tout le
+run (`helper is null`/`NullPointer` = 0), tuto poursuivi jusqu'à **INTRO_FEATURES step 29**, `Action1`
+(claims de coffre) acceptés. ⇒ le 2ᵉ coffre est **corrigé et vérifié in-game**. (Piège d'outillage noté :
+tronquer le log serveur avec `: >` laisse du bourrage NUL → `grep` le prend pour un binaire et n'affiche
+rien ; utiliser `grep -a`. Ne pas tronquer un log tenu ouvert par le serveur.)
+
+### `sendEventRewards` : plus aucune recopie (2026-07-12)
+Suite à la demande utilisateur (« éviter la recopie manuelle, exécuter le code du jeu »), `ServerSpecialEventsExt`
+alloue l'instance du jeu `ClientSpecialEventsHelperExt` **sans constructeur** (Unsafe, le ctor touche libGDX)
+et **délègue `sendEventRewards`** à la vraie méthode (elle ne dépend pas de libGDX). `trySetEventViewed` reste
+de la glue serveur (enregistre le temps de visionnage, sans la poussée réseau client→serveur sans cible).
+Zéro ligne de logique de jeu recopiée. Vérifié : 3 coffres d'affilée inchangés.
+
 ### Fichiers touchés
-- `server/java/dhserver/ServerSpecialEventsExt.java` (NEW), `ServerContext.java` (init/bind couche évènements),
-  `ServerUser.java` (`updateChestCounters` réactivé).
-- `docs/SHIMS.md` (TODO #1 → RÉSOLU, entrée `ServerSpecialEventsExt`), `docs/SERVER_PLAN.md` §6, `MEMORY.md`.
+- `server/java/dhserver/ServerSpecialEventsExt.java` (NEW puis délégation), `ServerContext.java` (init/bind
+  couche évènements), `ServerUser.java` (`updateChestCounters` réactivé).
+- `desktop-port/run-desktop.sh` (`LC_ALL=C.utf8` — extraction d'assets aux noms Unicode).
+- `docs/SHIMS.md` (TODO #1 → RÉSOLU, entrées `ServerSpecialEventsExt` + locale plateforme),
+  `docs/SERVER_PLAN.md` §6, `MEMORY.md`.
 
 ---
 
