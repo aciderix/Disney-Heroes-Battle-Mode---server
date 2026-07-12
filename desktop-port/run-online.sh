@@ -11,15 +11,20 @@ export JAVA_TOOL_OPTIONS=
 
 HTTP_PORT=8080
 GAME_PORT=8081
-CP="$ROOT/libs/game.jar:$ROOT/libs/commons-logging.jar:$ROOT/libs/sqlite-jdbc.jar:$ROOT/libs/slf4j-api.jar"
+CP="$ROOT/libs/game.jar:$ROOT/libs/commons-logging.jar:$ROOT/libs/sqlite-jdbc.jar:$ROOT/libs/slf4j-api.jar:$ROOT/libs/joda-time.jar"
 
-# Dépendances de persistance (SQLite) — récupérées à la demande (non committées, régénérables),
-# comme ASM pour le port. Le serveur reste sans dépendance à installer par l'utilisateur.
+# Dépendances serveur — récupérées à la demande (non committées, régénérables), comme ASM pour le
+# port. Le serveur reste sans dépendance à installer par l'utilisateur.
 MVN="https://repo1.maven.org/maven2"
 [ -f "$ROOT/libs/sqlite-jdbc.jar" ] || curl -fsSL -o "$ROOT/libs/sqlite-jdbc.jar" \
     "$MVN/org/xerial/sqlite-jdbc/3.45.3.0/sqlite-jdbc-3.45.3.0.jar"
 [ -f "$ROOT/libs/slf4j-api.jar" ] || curl -fsSL -o "$ROOT/libs/slf4j-api.jar" \
     "$MVN/org/slf4j/slf4j-api/1.7.36/slf4j-api-1.7.36.jar"
+# joda-time : game.jar contient les CLASSES joda (dex2jar) mais PAS la donnée fuseaux
+# (org/joda/time/tz/data/*), que TimeUtil charge → on fournit le jar standard (ses classes sont
+# ombrées par celles de game.jar, seule la ressource data est utilisée). C'est une donnée du jeu.
+[ -f "$ROOT/libs/joda-time.jar" ] || curl -fsSL -o "$ROOT/libs/joda-time.jar" \
+    "$MVN/joda-time/joda-time/2.12.2/joda-time-2.12.2.jar"
 
 # Compile le serveur de jeu (server/java) si besoin.
 SRVOUT="build/server-classes"; mkdir -p "$SRVOUT"
