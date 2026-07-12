@@ -4,8 +4,6 @@ import com.perblue.common.droptable.DropTable;
 import com.perblue.grunt.translate.GruntMessage;
 import com.perblue.grunt.translate.util.GruntInputStream;
 import com.perblue.grunt.translate.util.GruntOutputStream;
-import com.perblue.heroes.game.ActionHelper;
-import com.perblue.heroes.game.ActionListener;
 import com.perblue.heroes.game.ClientNetworkStateConverter;
 import com.perblue.heroes.game.data.chest.ChestContext;
 import com.perblue.heroes.game.data.chest.ChestStats;
@@ -179,34 +177,54 @@ public final class ServerUser {
 
   /**
    * Applique une {@link Action} (commande générique du jeu : équiper du gear, promouvoir, vendre…) en
-   * <b>exécutant le dispatcher d'origine</b> {@code ActionHelper.doAction(command, heroType, itemType,
-   * user, extra, listener)} (docs/PRINCIPLES.md §3). Construit un {@link User} de jeu SUR nos objets wire
-   * puis re-synchronise les héros. Renvoie {@code true} si l'action a été appliquée.
+   * exécutant la <b>logique cœur du jeu</b> (docs/PRINCIPLES.md §3), construite sur nos objets wire.
    *
-   * <p><b>PARTIEL (docs/SHIMS.md TODO) :</b> {@code doAction} passe par {@code GameStateManager.startAction}
-   * → {@code GameMain.getYourGuildInfo} → {@code GuildStats.<clinit>} qui échoue headless
-   * ({@code NumberFormatException} au chargement de la couche stats guilde). Tant que ce point n'est pas
-   * résolu, on exécute {@code doAction} en <b>best-effort</b> : on capture le résultat, on re-synchronise,
-   * et on n'échoue jamais la session (fire-and-forget comme le client). Log du contenu côté LoginServer.
+   * <p><b>Pourquoi PAS {@code ActionHelper.doAction} ?</b> {@code doAction} est le chemin <b>CLIENT</b>
+   * « appliquer + UI » : il touche {@code GameMain.getScreenManager().getScreen()} (×4) et l'état d'action
+   * client ({@code GameStateManager}). Côté serveur il n'y a pas d'écran → on appelle directement les
+   * <b>helpers de logique du jeu</b> (comme {@code openChest} utilise {@code ChestStats}/{@code DropTable}
+   * et non un flux « acheter un coffre » client). Chaque commande route vers son helper d'origine ;
+   * on n'écrit que l'aiguillage, jamais la règle. Renvoie {@code true} si l'action a été appliquée.
    */
-  @SuppressWarnings("unchecked")
   public synchronized boolean applyAction(Action m) {
     ServerContext.init();
     User user = ClientNetworkStateConverter.getUser(userInfo, userExtra, "action");
     IndividualUser iu = ClientNetworkStateConverter.getIndividualUser(
         individualUserExtra, userID, userInfo.diamonds, "action");
     ServerContext.bind(user, iu);
-    boolean[] ok = {false};
-    ActionListener listener = (success, result) -> ok[0] = success;   // onResult(boolean, Object)
+    boolean applied;
     try {
-      ActionHelper.doAction(m.command, m.heroType, m.itemType, user, m.extra, listener);
-      resyncHeroes(user);
+      applied = applyCommand(m, user);
     } catch (Throwable t) {
-      // PARTIEL connu (GuildStats headless) — ne pas casser la session. Voir Javadoc + SHIMS.
-      System.out.println("[action] " + m.command + " non appliquée (dépendance headless) : " + t);
+      System.out.println("[action] " + m.command + " échec : " + t);
       return false;
     }
-    return ok[0];
+    if (applied) resyncHeroes(user);
+    return applied;
+  }
+
+  /** Aiguille une commande vers la logique cœur du jeu. Le nom est comparé en String (l'enum du jeu
+   *  a des annotations dex2jar qui gênent un switch). Étendu au fur et à mesure des commandes du jeu. */
+  private boolean applyCommand(Action m, User user) {
+    String cmd = m.command == null ? "" : m.command.name();
+    switch (cmd) {
+      case "EQUIP_REAL_GEAR": {
+        // Le jeu mappe l'objet → RealGearType puis équipe (RealGearHelper = logique d'origine).
+        com.perblue.heroes.network.messages.RealGearType rg =
+            com.perblue.heroes.game.data.item.ItemStats.getRealGearType(m.itemType);
+        if (rg == null) return false;
+        if (!com.perblue.heroes.game.logic.RealGearHelper.canEquipGear(user, rg)) {
+          System.out.println("[action] EQUIP_REAL_GEAR refusé (canEquipGear=false) : " + rg);
+          return false;
+        }
+        com.perblue.heroes.game.logic.RealGearHelper.equipGear(user, rg);
+        return true;
+      }
+      default:
+        System.out.println("[action] commande non encore gérée: " + cmd + " (hero=" + m.heroType
+            + " item=" + m.itemType + ") — à ajouter (helper de logique du jeu)");
+        return false;
+    }
   }
 
   /** Re-sync des héros (état hors {@code this.extra}) vers le wire — persistance complète. */

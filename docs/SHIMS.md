@@ -60,21 +60,32 @@ Le serveur **exécute le code du jeu** (PRINCIPLES §3 « lire & exécuter »). 
 4. **Smoke tests obsolètes** : `HandshakeRoundTrip` utilise l'ancien constructeur `LoginServer(port, provider)`
    (changé en `LoginServer(port, ServerUser, UserStore)`) → à mettre à jour.
 
-5. **Handler `Action` (équiper/promouvoir/vendre…) — PARTIEL (best-effort).**
-   *Où* : `ServerUser.applyAction` / `LoginServer` (branche `Action`). On exécute le dispatcher d'origine
-   `ActionHelper.doAction(command, heroType, itemType, user, extra, listener)` (la bonne voie §3), MAIS il
-   passe par `GameStateManager.startAction` → `GameMain.getYourGuildInfo` → `GuildPerkHelper` →
-   **`GuildStats.<clinit>` qui lève `NumberFormatException: ""`** headless (couche stats guilde :
-   `guild_perk_levels.tab`/`guild_perks.tab` ont des cellules vides qu'un `parseInt` refuse ; le client les
-   charge autrement — cf. note « GuildStats NumberFormatException » du 2026-07-11, lié au **stat-sync**).
-   Donc `applyAction` est **best-effort** (try/catch, ne casse jamais la session ; log du contenu exact de
-   l'Action pour cartographier les commandes). **À faire** : (a) résoudre le chargement de `GuildStats`
-   headless (charger la `.tabb` binaire ou corriger le parse des cellules vides / stat-sync), ce qui
-   débloque **doAction générique** (toutes les commandes) ; OU (b) traiter par commande via la logique
-   cœur (`RealGearHelper.equipGear` + `ItemStats.getRealGearType` pour l'équipement) en contournant
-   `GameStateManager`. *Risque actuel* : les actions (équipement de gear…) ne sont **pas persistées côté
-   serveur** → au reload, le tuto peut rester bloqué sur l'étape correspondante. Le **contenu exact** de
-   l'Action d'équipement du tuto reste **à capturer** (repro non déterministe sur reprise).
+5. **Handler `Action` (équiper/voir/promouvoir…) — EN COURS (logique CŒUR par commande).**
+   *Où* : `ServerUser.applyAction`/`applyCommand` + `LoginServer` (branche `Action`).
+   **Décisions/faits établis (2026-07-12) :**
+   - **`GuildStats` n'est PAS bloquant** (mon 1ᵉʳ diagnostic était faux — « illusion de crash », comme
+     EVIL_QUEEN) : `guild_perk_levels.tab` a des `CONTENT_TL` vides (lignes `TIMED_*`) → `parseInt("")` lève,
+     mais `GeneralStats.parseStats` l'**attrape** (`onStatError` LOGue + saute la ligne). Vérifié :
+     `GuildStats` **se charge OK** headless. La stack imprimée était celle **loguée**, pas fatale.
+   - **`DH.app.guildInfo` requis** : beaucoup de chemins passent par `getYourGuildInfo()` (ex.
+     `GameStateManager.startAction` → `GuildPerkHelper.updateGuildInfoTimedPerks` lit `guildInfo.perkEndTimes`).
+     **Corrigé** : `ServerContext.bind` pose un `new GuildInfo()` (nouveau joueur) sur le shim.
+   - **`ActionHelper.doAction` = chemin CLIENT « appliquer + UI »** : il appelle `getScreenManager()
+     .getScreen()` (×4) → NPE headless (pas d'écran). ⇒ **on N'UTILISE PAS `doAction`** côté serveur. Comme
+     `openChest` (qui appelle `ChestStats`/`DropTable`, pas un flux « acheter » client), on appelle la
+     **logique cœur** par commande (`RealGearHelper.equipGear`, `HeroHelper.equipItem`, …). Aiguillage écrit,
+     règle exécutée.
+   - **L'objet « Badge of Friendship » N'est PAS du real gear** (`ItemStats.getRealGearType(BADGE_OF_FRIENDSHIP)
+     = DEFAULT`) → la commande d'équipement du tuto n'est **pas** `EQUIP_REAL_GEAR` mais probablement
+     `EQUIP_ITEM` (`HeroHelper.equipItem(heroType, itemType, HeroEquipSlot, user)`), à confirmer.
+   - **Commandes réellement observées** (log serveur) : `VIEWED_CHESTS`, `RECORD_SERVER_ROLL_FINISHED`
+     (mises à jour d'état légères) — l'`Action` d'équipement reste **à capturer** (repro in-game NON
+     déterministe : le pilote n'atteint pas toujours l'onglet gear).
+   **À faire** : capturer de façon fiable l'`Action` d'équipement (command + `extra`/`iD` = slot ?), puis
+   router `EQUIP_ITEM` → `HeroHelper.equipItem` (+ slot via `getSlotThatCanEquip` ou `extra`), et ajouter les
+   autres commandes du tuto au fur et à mesure. `applyCommand` **log les commandes non gérées** (sert de
+   cartographie). *Risque actuel* : les actions non routées ne sont pas persistées → au reload le tuto peut
+   caler sur l'étape correspondante.
 
 ## Couche plateforme desktop (`dhbackend/`, lanceur)
 

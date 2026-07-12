@@ -6,6 +6,7 @@ import com.perblue.heroes.game.logic.SpecialEventsHelper;
 import com.perblue.heroes.game.objects.IndividualUser;
 import com.perblue.heroes.game.objects.User;
 import com.perblue.heroes.game.specialevent.ClientEventUserProvider;
+import com.perblue.heroes.network.messages.GuildInfo;
 import com.perblue.heroes.network.messages.SpecialEventsRaw;
 
 import java.lang.reflect.Field;
@@ -26,7 +27,7 @@ import java.lang.reflect.Field;
 public final class ServerContext {
 
   private static GameMain app;              // GameMain headless (DH.app)
-  private static Field userField, individualField;
+  private static Field userField, individualField, guildInfoField;
 
   private ServerContext() {}
 
@@ -44,6 +45,7 @@ public final class ServerContext {
       Field appF = DH.class.getDeclaredField("app"); appF.setAccessible(true); appF.set(null, app);
       userField = field(GameMain.class, "user");
       individualField = field(GameMain.class, "individualUser");
+      guildInfoField = field(GameMain.class, "guildInfo");
       // Couche évènements spéciaux — comme GameMain.create() :
       // SpecialEventsHelper.init(new ClientEventUserProvider(), extension). L'extension CLIENTE touche
       // libGDX (« Gdx.app not available » headless) → on fournit l'équivalent SERVEUR (ServerSpecialEventsExt).
@@ -61,6 +63,11 @@ public final class ServerContext {
     init();
     try {
       userField.set(app, user); individualField.set(app, individualUser);
+      // guildInfo : beaucoup de chemins passent par DH.app.getYourGuildInfo() (ex.
+      // GameStateManager.startAction → GuildPerkHelper.updateGuildInfoTimedPerks lit guildInfo.perkEndTimes).
+      // Nouveau joueur sans guilde = new GuildInfo() (champs non-null par le constructeur, perkEndTimes = map
+      // vide) → plus de NPE. À remplacer par le vrai GuildInfo du joueur quand les guildes seront gérées.
+      if (guildInfoField.get(app) == null) guildInfoField.set(app, new GuildInfo());
       // Charge les évènements du joueur dans la couche — comme GameMain.handleBootData
       // (SpecialEventsHelper.setSpecialEvents). Nouveau joueur sans évènement live = raw vide → aucun
       // contest actif (getActiveContestsWithTask renvoie une liste vide au lieu de NPE).
