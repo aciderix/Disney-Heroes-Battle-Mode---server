@@ -7,6 +7,56 @@
 
 ---
 
+## 2026-07-12 — Tuto d'intro joué DE BOUT EN BOUT (harnais DEV) + FPS combat + frontière du hub
+
+### Résumé
+Ajout d'un **harnais de DEV** (drapeaux lanceur, off par défaut, **aucune modif jeu/serveur**, **rien en
+prod**) qui pilote le jeu headless via **les outils/API du jeu** : le tuto d'intro se joue **de bout en
+bout jusqu'à `DONE`**, puis atteint sa 1ᵉʳ action serveur (**coffre de départ → `BuyChests1`**) = frontière
+de la phase hub. Mesure FPS/profilage du combat.
+
+### Outils de DEV ajoutés (côté lanceur `desktop-port`)
+- **`TutorialDriver`** (piloté par `dh.autotap`) : interroge `TutorialHelper.getPointers(user)` → cible
+  (`TutorialPointerInfo.getActorTutorialName()` = nom+index), retrouve l'acteur via `getTutorialName()`
+  (comme `Group.findTutorialActor`) dans `getRootStack()`, convertit stage→écran (viewport plein cadre) et
+  tape via `DhInput`. Sans pointeur → tap central (dialogues). **Zéro coordonnée devinée** : tout vient de
+  l'acteur désigné par le jeu. C'est du **contrôle headless**, pas une modif.
+- **`dh.autofight`** : appelle l'API publique **`CoreAttackScreen.setAutoAttack(true)`** (bouton AUTO
+  d'origine) → auto-combat du jeu (utile hors tuto ; le tuto d'intro **met le combat en pause** et exige un
+  tap manuel sur le héros désigné → assuré par le driver).
+- **`dh.fps`** : FPS glissants + **profilage** (chrono des appels unidbg vs reste). Compteurs statiques dans
+  `UnidbgVM` autour du dispatch `si/sv/so/pi/pv/po`.
+- **Inventaire des outils d'auto du jeu** (pour info) : `automation/{TouchRecorder,TouchPlayback}` (rejoue un
+  enregistrement), `automation/crawler/*` (scripts de clics FIXES : Example/Chest/Market/Purchase),
+  message serveur `TriggerCrawler`, `TutorialHelper.finishIntroForced/finishAllTutorials` (saut). **Aucun**
+  n'est un « joueur de tuto » clé en main ; le driver ci-dessus s'appuie sur le **système de pointeurs** du jeu.
+
+### FPS combat (sur cette machine, headless llvmpipe SANS GPU)
+- **~9 fps** en combat (`TutorialAttackScreen`). Répartition par frame : **unidbg (spine+particules) ~50 ms
+  (combat léger) → ~80 ms (combat plein, DOMINANT)** ; rendu logiciel+logique ~40-60 ms. Deux pire-cas :
+  pas de GPU (le « reste » s'effondrerait avec une carte) + émulation ARM (plancher dur d'unidbg). ⇒ perf
+  combat = futur chantier d'optim (moins d'appels unidbg/frame, JIT dynarmic cassé à réparer, etc.).
+
+### Déroulé vérifié (run-online.sh + DH_AUTOTAP + DH_AUTOFIGHT)
+- Intro : GATE_DIALOG → TRANSFORM → **COMBAT1** (ACTIVE_1/2/3 franchis via taps guidés) → POST_COMBAT →
+  **COMBAT_2** → **`DONE`**. Serveur = 0 réponse requise pour tout l'intro (client-side).
+- Puis **INTRO_FEATURES** : chargement des VFX `reward_boxes`, **`BuyChests1`** + `Action1` envoyés →
+  écran **« CRATE REWARDS / Waiting for results… »** (capture `native/reference/shots/
+  tutorial-intro-done-crate.png`). Le serveur journalise mais **ne répond pas** → le client attend.
+
+### Conclusion / prochaine phase
+Réponse à « gagne-t-on des héros de départ, le serveur gère-t-il ? » : **OUI**, le tuto donne les héros de
+départ via un **coffre** (`BuyChests1`) juste après l'intro, et **le serveur doit le gérer** (contenu du
+coffre autoritatif = héros de départ, réponse). ⇒ **étape 6 (hub)** démarre par le handler **`BuyChests`**.
+
+### Fichiers touchés
+- `desktop-port/src/main/java/dhdesktop/TutorialDriver.java` (NEW), `DesktopLauncher.java` (autotap→driver,
+  `dh.autofight`, `dh.fps`+profilage), `dhbackend/unidbg/UnidbgVM.java` (chrono), `run-desktop.sh` (drapeaux).
+- `docs/SERVER_PLAN.md` (étape 6 amorcée + section Outils de DEV), `MEMORY.md`, `JOURNAL.md`.
+- Captures : `native/reference/shots/{tutorial-combat1-unidbg,tutorial-intro-done-crate}.png`.
+
+---
+
 ## 2026-07-11 — Serveur autoritaire étape 5 : persistance SQLite (octets wire des objets du jeu)
 
 ### Résumé

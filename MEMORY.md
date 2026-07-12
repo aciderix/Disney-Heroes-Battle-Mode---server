@@ -296,6 +296,12 @@ Dépôt de référence (`/workspace/dragonsoul-web`, branche `claude/game-transp
    `ServerUser` (état autoritaire) l'applique (step absolu ; maxStep=plus haut vu) → reconnexion à jour.
    Pilote headless `dh.autotap` : intro jouable **de bout en bout jusqu'au 1ᵉʳ combat** (GATE→TRANSFORM→
    COMBAT1 + logo), serveur = 0 réponse.
+   **(4bis) Tuto d'intro joué JUSQU'À `DONE` (harnais DEV, 2026-07-12)** : `TutorialDriver` (guidé par
+   `TutorialHelper.getPointers`) + `dh.autofight` (auto-combat d'origine `setAutoAttack`) — **outils DEV
+   côté lanceur, off par défaut, aucune modif jeu/serveur, rien en prod**. Intro complet (COMBAT1+COMBAT_2)
+   puis **coffre de départ → `BuyChests1`+`Action1`** → écran « Waiting for results… ». ⇒ **frontière du
+   hub** : le serveur doit gérer `BuyChests` (héros de départ). **FPS combat ~9** (headless SANS GPU ;
+   unidbg spine ~80 ms/frame dominant en combat plein → futur chantier perf). Captures shots/*.
    **(5) Persistance SQLite ✅ FAIT & VÉRIFIÉ** : `ServerUser` détient l'état comme **objets du jeu**
    (`UserInfo`/`UserExtra`/`IndividualUserExtra`) ; `UserStore` (sqlite-jdbc) les stocke en **BLOB d'octets
    wire** (`writeAll`↔`MessageFactory.readMessage`), 1 objet = 1 BLOB, aucun schéma inventé. `LoginServer`
