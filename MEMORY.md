@@ -203,6 +203,35 @@ dernières récupérées à la demande par `run-online.sh`). **Nouveau joueur** 
 - Le `exit 144` (SIGSTKFLT) = **kill externe du superviseur** (pas un crash) ; il peut tuer les runs longs
   ET les commandes bash. Lancer serveurs/clients en **tâche détachée** pour survivre au kill du wrapper.
 
+## 6ter. Méthodologie DEV — traverser le tuto vite et sûrement (À NE PAS OUBLIER)
+
+**A. Reprise RAPIDE par la persistance (gain énorme).** La progression (tuto/héros) est **persistée**
+(SQLite `server/data/dh-server.db`). ⇒ entre deux itérations, **NE PAS supprimer la DB** : le client
+**reprend au hub** (saute l'intro cinématique+combat) → **~20 s** jusqu'à la frontière au lieu de **~4 min**.
+Vérifié : reprise `LoadingScreen→MainScreen→ChestsScreen→SilverChestDetailScreen`, **0 rejeu de combat**.
+- Reset (`rm server/data/dh-server.db`) **uniquement** pour un vrai test « nouveau joueur ».
+- **Snapshot** aux points sûrs (`cp server/data/dh-server.db server/data/dh-<étape>.db`) pour restaurer
+  une frontière connue si le pilote corrompt l'état.
+
+**B. Boucle « capture → inspecter ce qui est cliquable → corriger le pilote ».** Pour franchir un écran de
+hub où l'auto-tap cale :
+1. Lancer avec `DH_TUTODBG=1` (+ `DH_SHOT`). Au blocage, **convertir le `.ppm` en `.png` et REGARDER**
+   l'écran (source de vérité visuelle).
+2. Le pilote **dumpe les acteurs actionnables** de la popup (`TutorialDriver.dumpActionable` : classe,
+   `getTutorialName()`, texte du `Label`, **position stage**, `[CLICK]`). Ça dit **exactement** quoi taper.
+3. Faire frapper par le pilote le **bon acteur du jeu** (pointeur tuto ; sinon `DFTextButton` principal
+   « VIEW/OPEN/OK » ; sinon bouton par nom) — **jamais une coordonnée devinée**, toujours l'acteur/API du jeu.
+4. Recompiler (`gradle -q compileJava`), relancer (reprise rapide via A).
+
+**C. Comportement du pilote** (`TutorialDriver.driveOnce`, ordre) : (1) popup ouverte + pointeur tuto DEDANS
+→ taper dedans ; (2) popup d'**affichage de récompense** (`*Result*`/`*Reward*` : `ChestResultsWindow`) →
+**fermer** (`BaseModalWindow.hide()`) ; (3) popup **interactive** (`ChestReadyWindow` « CRATE READY ») →
+frapper le **`DFTextButton`** principal (VIEW…) ; (4) sinon pointeur tuto sur l'écran de base → taper
+l'acteur ; (5) rien → tap central (lanceur). Conversion stage→écran : `sx=v.x/stageW*w ; sy=h−v.y/stageH*h`.
+
+**D. Lire les logs** : **toujours `grep -a`** (NUL possible). Serveur = `/tmp/dh_game.log` (ou la sortie de
+tâche du LoginServer réellement à l'écoute — vérifier `readlink /proc/<pid>/fd/1` en cas de doute).
+
 ---
 
 ## 7. État courant & prochaines étapes
