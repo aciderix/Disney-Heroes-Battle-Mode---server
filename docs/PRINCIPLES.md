@@ -21,11 +21,27 @@ est perdue. Chaque substitution est soit **RÉELLE** (équivalente à l'original
 explicitement notée PARTIEL/NO-OP/FACTICE **avec son risque** (registre des shims à tenir,
 cf. `SHIMS.md` à créer). **Résoudre les causes, jamais masquer les symptômes.**
 
-## 3. Le serveur est la source de vérité (autoritatif)
+## 3. Le serveur est la source de vérité (autoritatif) — il EXÉCUTE le code+données du jeu
 Le serveur doit être **entièrement autoritatif** pour limiter la triche. Il **ne contient
 aucune copie écrite à la main** des données du jeu ; il utilise **directement les données
 officielles** comme référence. On le construit **en miroir du code du jeu** (mêmes calculs
 de coûts/loot/combat via les classes/données du jeu), pas en réinventant les règles.
+
+**Règle affinée (2026-07-12) — modèle « lire & exécuter ».** Le serveur ne réutilise pas seulement
+le **codec réseau** du jeu ; il **intègre et exécute la LOGIQUE du jeu** :
+1. il **charge la couche données** du jeu — `dhserver.ServerStats` installe l'ouvreur de stats du
+   jeu (`StatFileHelper.setExt`) lisant `game-data/stats/*.tab` → les classes de données du jeu
+   (`ChestStats`, `UnitStats`, `CampaignStats`…) se peuplent **avec les vraies données**, headless ;
+2. il **reconstruit des objets de jeu** (`User`/`IndividualUser`) depuis l'état wire, via
+   `ClientNetworkStateConverter` ;
+3. il **appelle la logique d'origine** sur ces objets (`ChestStats.getDropTable` + `DropTable.roll`,
+   `ChestHelper.applyChestResults`, calculs de combat…), puis **re-sérialise** l'état.
+Ainsi la fidélité **vient du code+données du jeu**, pas d'une réimplémentation. Corollaire : quand une
+action serveur (coffre, combat, coût…) est à implémenter, on **cherche d'abord la classe du jeu qui la
+fait** et on l'exécute ; on n'écrit que la **glue** (orchestration/aller-retour wire), jamais la règle.
+Dépendances runtime que dex2jar laisse hors de `game.jar` (ex. **joda-time** : données de fuseaux
+`org/joda/time/tz/data/*` requises par `TimeUtil`) sont **fournies** (jar standard, classes ombrées par
+`game.jar`, seule la ressource utilisée) — c'est de la donnée du jeu, pas une réécriture.
 
 ## 4. Aucune réécriture manuelle — on EXTRAIT le code/les données du jeu (par commande)
 Règle **non négociable** : on ne **réécrit rien** du jeu à la main (ni données ni **code**).

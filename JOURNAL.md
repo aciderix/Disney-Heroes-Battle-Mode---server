@@ -7,6 +7,45 @@
 
 ---
 
+## 2026-07-12 — Enquête coffres/héros + fondation « serveur exécute le code+données du jeu » (spike Frozone)
+
+### Résumé
+Investigation (question utilisateur) sur le 1ᵉʳ coffre du tuto, puis **fondation de l'étape 6** : le serveur
+**charge les données du jeu et exécute sa logique** (règle affinée §3). **Spike concluant** : le vrai code
+de coffre du jeu roule côté serveur → **Frozone** pour un nouveau joueur.
+
+### Enquête (extraite du code/données)
+- **Héros avant le 1ᵉʳ coffre = 0.** Combat d'intro = synthétique (`CombatSimHelper.createUnitData(new
+  User(),…)`). 5 « héros tuto » du jeu = `RemoveIf(SpecificHeroes, VANELLOPE, RALPH, YAX, ELASTIGIRL,
+  FROZONE)` (`black_market_merchant_drops.tab`), acquis progressivement (Frozone→Vanellope `UnlockHeroActV1`
+  →Yax campagne 1-13…). `starter_deal_heroes.tab` = pack **payant**, pas le roster gratuit.
+- **1ᵉʳ coffre = FROZONE prédéfini** : `IntroFeaturesActV2.getChestUnitType()=FROZONE` **et** rig de la table
+  `gold_chest_drops.tab` (`ROOT_1X_FIRST ? PreviousRolls(0) ? ROOT_1X_RIG_1 ? CJK ? HERO_BUZZ ? HERO_FROZONE`).
+- **Coffres hors tuto** : `BuyChests{chestType,count,roll:ServerRollRequest}` → serveur roule
+  `<type>_chest_drops.tab` (`DropTable`) : rigs 1ᵉʳ/2ᵉ, pitié 10× `Try NoneAre(YourHero)`, payant/gratuit,
+  VIP, locale, pools `@NON_EXCLUSIVE/GOLD_CHEST_EXCLUSIVE_HEROES`. `channelRollCount` alimente `PreviousRolls`.
+- Réponse au client = **`LootResults`** (`heroesUnlocked`/`lootDrops`/`costs`/`roll`).
+
+### Fondation « lire & exécuter » (spike)
+- **`ServerStats`** (NEW) installe l'ouvreur de stats du jeu (`StatFileHelper.setExt`) lisant
+  `game-data/stats/` → 274 `.tab` chargés headless (SEVERE = quirks `.tab` tolérés, comme en jeu).
+- **Dépendance joda-time** : `game.jar` a les classes joda (dex2jar) mais **pas** la donnée fuseaux
+  `org/joda/time/tz/data/*` (requise par `TimeUtil.<clinit>`, appelé via `ContentStats`/`CampaignStats` lors
+  de `IndividualUser.setExtra`). Fournie par le jar standard joda-time-2.12.2 (classes ombrées par game.jar,
+  seule la ressource tz utilisée) — donnée du jeu, pas une réécriture. Récupéré à la demande par `run-online.sh`.
+- **Spike** (`ChestSpike`) : install stats → `ChestStats.getDropTable(GOLD)` (table 38 nœuds, parsée) →
+  `User`/`IndividualUser` construits depuis l'état wire (`ClientNetworkStateConverter`) → `ChestContext(user)`
+  avec `setChestType(GOLD)`+`setCount(1)` → `DropTable.rollNode("ROOT")` = **`HERO_FROZONE`**. (count=0 →
+  `RetainCount(0)` = 0 drop : d'où l'importance de `setCount`.) **Zéro donnée écrite à la main.**
+
+### Fichiers touchés
+- `server/java/dhserver/ServerStats.java` (NEW), `desktop-port/run-online.sh` (classpath+fetch joda).
+- `docs/PRINCIPLES.md` §3 (règle affinée « lire & exécuter »), `docs/SERVER_PLAN.md` §6 (archi + faits coffres),
+  `MEMORY.md`, `JOURNAL.md`.
+- Reste : handler `BuyChests` complet (roll→`LootResults`→`applyChestResults`→re-sérialiser→répondre).
+
+---
+
 ## 2026-07-12 — Tuto d'intro joué DE BOUT EN BOUT (harnais DEV) + FPS combat + frontière du hub
 
 ### Résumé

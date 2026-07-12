@@ -296,6 +296,13 @@ Dépôt de référence (`/workspace/dragonsoul-web`, branche `claude/game-transp
    `ServerUser` (état autoritaire) l'applique (step absolu ; maxStep=plus haut vu) → reconnexion à jour.
    Pilote headless `dh.autotap` : intro jouable **de bout en bout jusqu'au 1ᵉʳ combat** (GATE→TRANSFORM→
    COMBAT1 + logo), serveur = 0 réponse.
+   **(6) Hub EN COURS — archi « serveur exécute le code+données du jeu » (règle affinée §3, 2026-07-12)** :
+   `ServerStats` charge les `.tab` (`StatFileHelper.setExt`) → la logique du jeu tourne headless ; on
+   reconstruit un `User` de jeu (`ClientNetworkStateConverter`) et on appelle la logique d'origine. **Spike
+   OK** : `ChestStats.getDropTable(GOLD)`+`DropTable.rollNode("ROOT")` → **Frozone** (1ᵉʳ coffre nouveau
+   joueur, rig `PreviousRolls(0)`). Dépendance : **joda-time** (données fuseaux hors `game.jar`, fournie).
+   Faits : 0 héros avant le coffre (intro synthétique) ; Frozone prédéfini ; coffres hors-tuto = roll serveur
+   des `<type>_chest_drops.tab`. Réponse client = `LootResults`. Reste : finir le handler `BuyChests`.
    **(4bis) Tuto d'intro joué JUSQU'À `DONE` (harnais DEV, 2026-07-12)** : `TutorialDriver` (guidé par
    `TutorialHelper.getPointers`) + `dh.autofight` (auto-combat d'origine `setAutoAttack`) — **outils DEV
    côté lanceur, off par défaut, aucune modif jeu/serveur, rien en prod**. Intro complet (COMBAT1+COMBAT_2)

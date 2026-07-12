@@ -80,13 +80,33 @@ pour garantir que **chaque objet déréférencé est non-null** — pas de « mi
    fermée, **rechargée à l'identique en session 2** (INTRO step 40, 122 actes, BootData revalide sur le
    wire). `sqlite-jdbc`/`slf4j-api` récupérés à la demande (non committés, régénérables) ; DB sous
    `server/data/` (gitignore).
-6. [~] **Monde / hub post-tuto — EN COURS, frontière EXTRAITE.** Tuto d'intro joué **de bout en bout**
-   jusqu'à `DONE` (harnais DEV, cf. ci-dessous), puis le tuto (INTRO_FEATURES) ouvre le **COFFRE DE DÉPART**
-   → envoie **`BuyChests1`** (+ `Action1`) et **attend la réponse du serveur** (« Waiting for results… »,
-   capture `native/reference/shots/tutorial-intro-done-crate.png`). ⇒ 1ᵉʳ handler du hub = **`BuyChests`
-   autoritatif** (déterminer le contenu du coffre = **héros de départ** via les données/classes du jeu, et
-   répondre). Puis, pilotés par le client : `Action`, choix du nom, 1ᵉʳ combat de campagne réel, claims…
-   Critère : navigation stable, fidèle aux captures d'origine.
+6. [~] **Monde / hub post-tuto — EN COURS.** Tuto d'intro joué **de bout en bout** jusqu'à `DONE` (harnais
+   DEV), puis le tuto (INTRO_FEATURES) ouvre le **COFFRE DE DÉPART** → envoie **`BuyChests1`** (+ `Action1`)
+   et **attend la réponse** (« Waiting for results… », `native/reference/shots/tutorial-intro-done-crate.png`).
+
+   **Architecture (règle affinée §3 « lire & exécuter ») :** le serveur **charge les données du jeu**
+   (`ServerStats` → `.tab`), **reconstruit un `User` de jeu** (`ClientNetworkStateConverter`) et **exécute
+   la logique du jeu** ; il n'écrit que la glue. **Spike validé** : `ChestStats.getDropTable(GOLD)` +
+   `DropTable.rollNode("ROOT")` sur `ChestContext(user, count=1)` → **`HERO_FROZONE`** (rig `PreviousRolls(0)`).
+
+   **Faits coffres/héros (extraits) :**
+   - **Avant le 1ᵉʳ coffre : 0 héros possédé.** Le combat d'intro (Ralph/Vanellope/Elastigirl) est
+     **scripté/synthétique** (`CombatSimHelper.createUnitData(new User(), …)`). Les 5 « héros tuto » du jeu
+     (`black_market_merchant_drops.tab` → `RemoveIf(SpecificHeroes, VANELLOPE, RALPH, YAX, ELASTIGIRL,
+     FROZONE)`) sont acquis **progressivement** : Frozone (1ᵉʳ, coffre), Vanellope (`UnlockHeroActV1`, éclats),
+     Yax (campagne 1-13 `HERO_YAX`), etc. Pas de roster de départ (`starter_deal_heroes.tab` = pack payant).
+   - **1ᵉʳ coffre = FROZONE, prédéfini** (`IntroFeaturesActV2.getChestUnitType()=FROZONE`), garanti par la
+     **table** : `gold_chest_drops.tab` `ROOT_1X_FIRST ? PreviousRolls(0) ? ROOT_1X_RIG_1` puis
+     `? CJK ? HERO_BUZZ ? HERO_FROZONE` (Buzz en locale CJK). Puis coffre SILVER → objet d'équipement.
+   - **Coffres hors tuto = 100% serveur** : `BuyChests{chestType, count, roll:ServerRollRequest{channelRollCount…}}`
+     → le serveur roule `<type>_chest_drops.tab` via `DropTable` (rig 1ᵉʳ/2ᵉ tirage, pitié 10× `Try
+     NoneAre(YourHero)`, payant/gratuit, VIP, locale, pools `@NON_EXCLUSIVE_HEROES`/`@GOLD_CHEST_EXCLUSIVE_HEROES`).
+     `channelRollCount` (dans `IndividualUserExtra`) alimente `PreviousRolls` → à persister.
+
+   **Handler `BuyChests` (à finir) :** `ChestHelper.doPreRollUpdates` → roll `ROOT` (count) →
+   `DropConverter` → **`LootResults`** (`heroesUnlocked`/`lootDrops`/`costs`) → `ChestHelper.applyChestResults`
+   → re-sérialiser l'`IndividualUser`/`UserExtra` → **répondre `LootResults`**. Puis `Action`, choix du nom,
+   1ᵉʳ combat de campagne réel, claims… Critère : navigation stable, fidèle aux captures d'origine.
 7. [ ] **Multi-serveur / passerelle** (liste, mot de passe optionnel) — cf. ARCHITECTURE.md.
 
 ## Outils de DEV (jamais actifs en prod ; aucune modif du jeu ni du serveur)
