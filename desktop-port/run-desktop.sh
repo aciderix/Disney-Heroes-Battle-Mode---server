@@ -107,6 +107,7 @@ JOPTS="$JOPTS -Ddh.spinelib=$(cd .. && pwd)/native/reference/libspine-native.so"
 [ -n "${DH_SERVER:-}" ] && JOPTS="$JOPTS -Ddh.server=$DH_SERVER"
 [ -n "${DH_AUTOTAP:-}" ] && JOPTS="$JOPTS -Ddh.autotap=$DH_AUTOTAP"
 [ -n "${DH_FPS:-}" ] && JOPTS="$JOPTS -Ddh.fps=$DH_FPS"
+[ -n "${DH_AUTOFIGHT:-}" ] && JOPTS="$JOPTS -Ddh.autofight=$DH_AUTOFIGHT"
 [ -n "${DH_FRAMES:-}" ] && JOPTS="$JOPTS -Ddh.frames=$DH_FRAMES"
 [ -n "${DH_SHOT:-}" ] && JOPTS="$JOPTS -Ddh.shot=$DH_SHOT"
 

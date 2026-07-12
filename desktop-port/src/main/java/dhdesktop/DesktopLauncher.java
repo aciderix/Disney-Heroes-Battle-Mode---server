@@ -107,6 +107,11 @@ public final class DesktopLauncher {
         // Sert à FAIRE AVANCER le tutoriel (dialogues « tap to continue ») sans utilisateur, pour
         // vérifier « tuto jouable de bout en bout » et observer ce que le client envoie ensuite.
         int autotap = Integer.getInteger("dh.autotap", 0);
+        // Pilotage headless de DEV uniquement (off par défaut) : dh.autofight=1 active l'AUTO-COMBAT
+        // D'ORIGINE du jeu (appel de son API publique setAutoAttack) quand on est dans un écran de
+        // combat → les héros combattent seuls (l'IA lance les compétences). AUCUNE modif du jeu, AUCUN
+        // effet en prod (le joueur lance sans ce drapeau) ni côté serveur. Sert à tester le jeu headless.
+        boolean autofight = Boolean.getBoolean("dh.autofight");
         // Mesure FPS : moyenne glissante toutes les N frames (dh.fps=N, 0=off), avec l'écran courant
         // → permet de relever les FPS EN COMBAT (screen=CoreAttackScreen/…).
         int fpsWindow = Integer.getInteger("dh.fps", 0);
@@ -120,6 +125,7 @@ public final class DesktopLauncher {
             if (autotap > 0 && frames > 90 && frames % autotap == 0) {
                 input.tap(W / 2, H / 2);   // « tap to continue » : le narrateur accepte un tap n'importe où
             }
+            if (autofight && frames % 20 == 0) enableAutoCombat(game);  // DEV : bouton AUTO d'origine
             input.drain();          // input synthétique (pilotage) sur le thread render
             app.drainRunnables();   // Gdx.app.postRunnable
             game.render();
@@ -145,6 +151,38 @@ public final class DesktopLauncher {
         System.out.println("[launcher] arrêt après " + frames + " frames");
         glfwDestroyWindow(win);
         glfwTerminate();
+    }
+
+    /**
+     * DEV : active l'AUTO-COMBAT d'origine du jeu si l'écran courant l'expose (API publique
+     * {@code setAutoAttack} de {@code CoreAttackScreen}). Réflexion → aucune dépendance de compilation,
+     * aucune modif du jeu. No-op hors combat. Idempotent (n'appelle que si pas déjà en auto).
+     */
+    private static boolean autoCombatLogged = false;
+    private static void enableAutoCombat(GameMain game) {
+        try {
+            Object sm = game.getClass().getMethod("getScreenManager").invoke(game);
+            Object screen = sm.getClass().getMethod("getScreen").invoke(sm);
+            if (screen == null) return;
+            java.lang.reflect.Method isAuto = findMethod(screen.getClass(), "isAutoAttack");
+            java.lang.reflect.Method setAuto = findMethod(screen.getClass(), "setAutoAttack", boolean.class);
+            if (isAuto == null || setAuto == null) return;   // pas un écran de combat
+            if (!((Boolean) isAuto.invoke(screen))) {
+                setAuto.invoke(screen, true);
+                if (!autoCombatLogged) { autoCombatLogged = true;
+                    System.out.println("[dev] auto-combat d'origine activé (setAutoAttack) sur "
+                        + screen.getClass().getSimpleName()); }
+            }
+        } catch (Throwable ignore) { /* écran sans auto → no-op */ }
+    }
+
+    /** Trouve une méthode (par nom+params) en remontant la hiérarchie. */
+    private static java.lang.reflect.Method findMethod(Class<?> c, String name, Class<?>... params) {
+        for (Class<?> k = c; k != null; k = k.getSuperclass()) {
+            try { java.lang.reflect.Method m = k.getDeclaredMethod(name, params); m.setAccessible(true); return m; }
+            catch (NoSuchMethodException e) { /* remonter */ }
+        }
+        return null;
     }
 
     /** Nom (simple) de l'écran courant, par réflexion — best-effort pour l'étiquette FPS. */
