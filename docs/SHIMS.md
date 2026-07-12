@@ -23,6 +23,43 @@ natif d'origine, avec fidélité et risque. Légende : **RÉEL** (équivalent), 
 | `server/smoke/MessageRoundTrip` | ✅ **RÉEL** | `BootData.writeAll` → `MessageFactory.readMessage` round-trip OK ; `MessageFactory`/`BootData` chargent **sans libGDX**. |
 | `server/smoke/HandshakeRoundTrip` | ✅ **RÉEL** | Handshake login **bout-en-bout sur socket TCP** : `LoginServer` (réutilise `GruntNIOTCPServer` + codec + `MessageFactory` du jeu) reçoit un `ClientInfo1` et répond un `BootData1` que le client (`GruntBuilder`) accepte. Toute la pile réseau du jeu tourne sur JVM desktop headless. |
 
+## Serveur — exécution de la logique du jeu headless (`ServerContext`, handlers)
+
+Le serveur **exécute le code du jeu** (PRINCIPLES §3 « lire & exécuter »). Contexte + substitutions :
+
+| Élément | Statut | Détail / risque |
+|---|---|---|
+| **`ServerStats`** (ouvreur `.tab`) | ✅ **RÉEL** | Installe `StatFileHelper.setExt` lisant `game-data/stats/` → les classes de données du jeu (`ChestStats`, `UnitStats`…) se peuplent avec les **vraies données**. Miroir serveur de `dhbackend.DhStatFileExt`. |
+| **`DH.app` (shim `GameMain` headless)** | ✅ **RÉEL** pour les getters utilisés | Beaucoup de classes passent par `DH.app` (ex. `User.getIndividual()` = `DH.app.getYourIndividualUser()`). On alloue un `GameMain` **sans constructeur** (`Unsafe.allocateInstance`) et on pose `user`/`individualUser` → les getters simples répondent. Couche plateforme (§4). **Risque** : les chemins de logique qui touchent d'AUTRES champs de `GameMain` (non posés) lèveront NPE → à traiter au cas par cas (cf. TODO ci-dessous). |
+| **joda-time (données de fuseaux)** | ✅ **RÉEL** | `game.jar` a les classes joda mais pas la donnée `org/joda/time/tz/data/*` (requise par `TimeUtil`). Jar standard fourni (classes ombrées par game.jar, seule la ressource utilisée) = donnée du jeu. |
+| **`ServerUser.openChest`** | ✅ **RÉEL** (coffre gratuit) | Exécute `ChestStats`/`DropTable`/`ChestHelper.giveChestRewards` sur un `User` bâti sur nos objets wire ; resync héros. Vérifié wire (`ChestWireTest`) : `BuyChests(GOLD)`→`LootResults{Frozone}`. |
+
+### TODO suivis (dette technique — quoi faire quand on y arrivera)
+
+1. **`updateChestCounters` (compteurs QUOTIDIENS d'ouverture / limites d'achat) — DIFFÉRÉ.**
+   *Où* : `ServerUser.openChest` (appel commenté). *Pourquoi* : passe par `getDailyUses` →
+   `DailyActivityHelper`/`PrizeWallHelper` → `SpecialEventsHelper.helper` **null** headless → NPE.
+   **À faire** : initialiser la couche évènements spéciaux **comme `GameMain.handleBootData`** (créer le
+   `SpecialEventsHelper.helper` puis `SpecialEventsHelper.setSpecialEvents(new SpecialEventsRaw(), user,
+   shardID)`) dans `ServerContext.bind`, puis réactiver `updateChestCounters`. *Risque actuel* : les
+   **limites d'achat quotidiennes** ne sont pas comptées côté serveur (OK pour le tuto = coffre gratuit
+   sans limite).
+
+2. **Coffres PAYANTS (débit de la monnaie, ex. diamants) — NON couvert.**
+   *Où* : `ServerUser.openChest` (`wasFree` ; pas de charge). *Pourquoi* : `IndividualUser.setResource`
+   pour `DIAMONDS` appelle `DH.app.getUserBattlePassV2().setProgress(...)` → NPE (champ `battlePassV2` du
+   shim non posé). **À faire** : étoffer le shim `DH.app` (poser un `IBattlePassV2Data` réel/minimal via
+   `getUserBattlePassV2`), puis charger le coût (`ChestHelper.getBasePurchaseCost` + `setResource`) et
+   remplir `LootResults.costs`. *Risque actuel* : ouvrir un coffre **payant** lèverait NPE (le tuto n'ouvre
+   que des coffres **gratuits** → non bloquant).
+
+3. **Sérialisation `User→wire`** : couverte pour l'ouverture de coffre (héros + `chestUpgradeXP` resync ;
+   le reste via `this.extra` partagé). **À étendre** au fur et à mesure des handlers : chaque nouveau
+   champ qu'un handler mute **hors `this.extra`** doit être resync + validé par un round-trip.
+
+4. **Smoke tests obsolètes** : `HandshakeRoundTrip` utilise l'ancien constructeur `LoginServer(port, provider)`
+   (changé en `LoginServer(port, ServerUser, UserStore)`) → à mettre à jour.
+
 ## Couche plateforme desktop (`dhbackend/`, à venir — miroir DragonSoul `dsbackend/`)
 
 À remplir au fur et à mesure (Application/Graphics/Input/Files/Audio/GL/Net/Preferences/
