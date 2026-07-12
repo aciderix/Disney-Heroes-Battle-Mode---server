@@ -7,6 +7,7 @@ import com.perblue.grunt.translate.GruntMessage;
 import com.perblue.grunt.translate.GruntServerFactory;
 import com.perblue.heroes.network.DHXORConnectionWrapper;
 import com.perblue.heroes.network.messages.BootData;
+import com.perblue.heroes.network.messages.Action;
 import com.perblue.heroes.network.messages.BuyChests;
 import com.perblue.heroes.network.messages.ChangeTutorialStep;
 import com.perblue.heroes.network.messages.ClientInfo;
@@ -107,6 +108,19 @@ public final class LoginServer {
                 System.out.println("[login]     ! openChest échec: " + t);
                 t.printStackTrace();
               }
+            } else if (m instanceof Action) {
+              // Commande générique du jeu (équiper, promouvoir, vendre…). On journalise le contenu exact
+              // ET on tente de l'appliquer via le dispatcher du jeu (best-effort — cf. ServerUser.applyAction
+              // / SHIMS : GuildStats headless PARTIEL). Fire-and-forget côté client (aucune réponse attendue).
+              Action act = (Action) m;
+              System.out.println("[login] <== Action : command=" + act.command
+                  + " hero=" + act.heroType + " item=" + act.itemType + " iD=" + act.iD
+                  + " extra=" + (act.extra == null ? "{}" : act.extra));
+              boolean applied = user.applyAction(act);
+              if (applied) { try { store.save(user); } catch (Exception e) {
+                System.out.println("[login]     ! persistance échouée: " + e); } }
+              System.out.println("[login]     action " + act.command
+                  + (applied ? " appliquée [persisté]" : " non appliquée (PARTIEL)"));
             } else if (m instanceof Ping) {
               // Écho de latence/keepalive : le client mesure le RTT et surveille l'activité serveur.
               // Sans réponse, son chien de garde ferme la connexion (« Reconnecting… »).

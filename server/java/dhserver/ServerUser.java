@@ -4,11 +4,14 @@ import com.perblue.common.droptable.DropTable;
 import com.perblue.grunt.translate.GruntMessage;
 import com.perblue.grunt.translate.util.GruntInputStream;
 import com.perblue.grunt.translate.util.GruntOutputStream;
+import com.perblue.heroes.game.ActionHelper;
+import com.perblue.heroes.game.ActionListener;
 import com.perblue.heroes.game.ClientNetworkStateConverter;
 import com.perblue.heroes.game.data.chest.ChestContext;
 import com.perblue.heroes.game.data.chest.ChestStats;
 import com.perblue.heroes.game.logic.ChestHelper;
 import com.perblue.heroes.game.logic.DropConverter;
+import com.perblue.heroes.network.messages.Action;
 import com.perblue.heroes.game.objects.IndividualUser;
 import com.perblue.heroes.game.objects.UnitData;
 import com.perblue.heroes.game.objects.User;
@@ -169,13 +172,51 @@ public final class ServerUser {
     }
 
     // Re-synchronise les champs hors this.extra vers le wire (persistance complète).
+    resyncHeroes(user);
+    individualUserExtra.chestUpgradeXP = iu.getChestUpgradeXP();
+    return lr;
+  }
+
+  /**
+   * Applique une {@link Action} (commande générique du jeu : équiper du gear, promouvoir, vendre…) en
+   * <b>exécutant le dispatcher d'origine</b> {@code ActionHelper.doAction(command, heroType, itemType,
+   * user, extra, listener)} (docs/PRINCIPLES.md §3). Construit un {@link User} de jeu SUR nos objets wire
+   * puis re-synchronise les héros. Renvoie {@code true} si l'action a été appliquée.
+   *
+   * <p><b>PARTIEL (docs/SHIMS.md TODO) :</b> {@code doAction} passe par {@code GameStateManager.startAction}
+   * → {@code GameMain.getYourGuildInfo} → {@code GuildStats.<clinit>} qui échoue headless
+   * ({@code NumberFormatException} au chargement de la couche stats guilde). Tant que ce point n'est pas
+   * résolu, on exécute {@code doAction} en <b>best-effort</b> : on capture le résultat, on re-synchronise,
+   * et on n'échoue jamais la session (fire-and-forget comme le client). Log du contenu côté LoginServer.
+   */
+  @SuppressWarnings("unchecked")
+  public synchronized boolean applyAction(Action m) {
+    ServerContext.init();
+    User user = ClientNetworkStateConverter.getUser(userInfo, userExtra, "action");
+    IndividualUser iu = ClientNetworkStateConverter.getIndividualUser(
+        individualUserExtra, userID, userInfo.diamonds, "action");
+    ServerContext.bind(user, iu);
+    boolean[] ok = {false};
+    ActionListener listener = (success, result) -> ok[0] = success;   // onResult(boolean, Object)
+    try {
+      ActionHelper.doAction(m.command, m.heroType, m.itemType, user, m.extra, listener);
+      resyncHeroes(user);
+    } catch (Throwable t) {
+      // PARTIEL connu (GuildStats headless) — ne pas casser la session. Voir Javadoc + SHIMS.
+      System.out.println("[action] " + m.command + " non appliquée (dépendance headless) : " + t);
+      return false;
+    }
+    return ok[0];
+  }
+
+  /** Re-sync des héros (état hors {@code this.extra}) vers le wire — persistance complète. */
+  @SuppressWarnings("unchecked")
+  private void resyncHeroes(User user) {
     userExtra.heroes.clear();
     for (Object o : user.getHeroes()) {
       UnitData ud = (UnitData) o;
       userExtra.heroes.put(ud.getType(), ClientNetworkStateConverter.getHeroData(ud));
     }
-    individualUserExtra.chestUpgradeXP = iu.getChestUpgradeXP();
-    return lr;
   }
 
   /** Coffre gratuit ? (logique du jeu ; défaut prudent = gratuit si l'appel échoue headless). */

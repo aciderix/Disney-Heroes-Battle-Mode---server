@@ -60,6 +60,22 @@ Le serveur **exécute le code du jeu** (PRINCIPLES §3 « lire & exécuter »). 
 4. **Smoke tests obsolètes** : `HandshakeRoundTrip` utilise l'ancien constructeur `LoginServer(port, provider)`
    (changé en `LoginServer(port, ServerUser, UserStore)`) → à mettre à jour.
 
+5. **Handler `Action` (équiper/promouvoir/vendre…) — PARTIEL (best-effort).**
+   *Où* : `ServerUser.applyAction` / `LoginServer` (branche `Action`). On exécute le dispatcher d'origine
+   `ActionHelper.doAction(command, heroType, itemType, user, extra, listener)` (la bonne voie §3), MAIS il
+   passe par `GameStateManager.startAction` → `GameMain.getYourGuildInfo` → `GuildPerkHelper` →
+   **`GuildStats.<clinit>` qui lève `NumberFormatException: ""`** headless (couche stats guilde :
+   `guild_perk_levels.tab`/`guild_perks.tab` ont des cellules vides qu'un `parseInt` refuse ; le client les
+   charge autrement — cf. note « GuildStats NumberFormatException » du 2026-07-11, lié au **stat-sync**).
+   Donc `applyAction` est **best-effort** (try/catch, ne casse jamais la session ; log du contenu exact de
+   l'Action pour cartographier les commandes). **À faire** : (a) résoudre le chargement de `GuildStats`
+   headless (charger la `.tabb` binaire ou corriger le parse des cellules vides / stat-sync), ce qui
+   débloque **doAction générique** (toutes les commandes) ; OU (b) traiter par commande via la logique
+   cœur (`RealGearHelper.equipGear` + `ItemStats.getRealGearType` pour l'équipement) en contournant
+   `GameStateManager`. *Risque actuel* : les actions (équipement de gear…) ne sont **pas persistées côté
+   serveur** → au reload, le tuto peut rester bloqué sur l'étape correspondante. Le **contenu exact** de
+   l'Action d'équipement du tuto reste **à capturer** (repro non déterministe sur reprise).
+
 ## Couche plateforme desktop (`dhbackend/`, lanceur)
 
 | Élément | Statut | Détail / risque |
