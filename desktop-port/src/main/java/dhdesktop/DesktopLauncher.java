@@ -107,6 +107,14 @@ public final class DesktopLauncher {
         // Utile quand le superviseur tue la run avant la fin (exit 144/SIGSTKFLT) : la dernière frame
         // atteinte reste sur disque, même sans arrêt gracieux de la boucle. Aucun effet en prod.
         int shotEvery = Integer.getInteger("dh.shotevery", 0);
+        // DEV : ENREGISTREUR pas-à-pas (dh.tutorec) — une capture NUMÉROTÉE par tick d'autotap dans
+        // build/rec/step_NNN.ppm, synchronisée avec les dumps [tutorec] du pilote → reconstitution exacte
+        // de ce que le tuto déclenche étape par étape. Off par défaut, aucun effet en prod.
+        boolean tutoRec = System.getProperty("dh.tutorec") != null
+                && !"0".equals(System.getProperty("dh.tutorec"));
+        int recCount = 0;
+        boolean recTickPending = false;
+        if (tutoRec) new java.io.File("build/rec").mkdirs();
         // Pilotage headless : dh.autotap=N injecte un tap au centre toutes les N frames (0 = off).
         // Sert à FAIRE AVANCER le tutoriel (dialogues « tap to continue ») sans utilisateur, pour
         // vérifier « tuto jouable de bout en bout » et observer ce que le client envoie ensuite.
@@ -134,6 +142,7 @@ public final class DesktopLauncher {
                 // « Follow the tutorial arrow! »). Le pilote gère alors le retour vers le hub lui-même.
                 if (!TutorialDriver.driveOnce(game, input, W, H) && !TutorialDriver.hadActiveTarget())
                     input.tap(W / 2, H / 2);
+                recTickPending = tutoRec;   // capture après le rendu/swap de ce tick (buffer complet)
             }
             if (autofight && frames % 20 == 0) enableAutoCombat(game);  // DEV : bouton AUTO d'origine
             input.drain();          // input synthétique (pilotage) sur le thread render
@@ -144,6 +153,7 @@ public final class DesktopLauncher {
             frames++;
 
             if (shot != null && shotEvery > 0 && frames % shotEvery == 0) capture(W, H, shot);
+            if (recTickPending) { capture(W, H, String.format("build/rec/step_%03d.ppm", recCount++)); recTickPending = false; }
 
             if (fpsWindow > 0 && frames % fpsWindow == 0) {
                 double t = glfwGetTime();

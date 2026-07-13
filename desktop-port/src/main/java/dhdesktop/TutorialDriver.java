@@ -44,6 +44,13 @@ public final class TutorialDriver {
     private static final boolean DEBUG = System.getProperty("dh.tutodrive.debug") != null
             && !"0".equals(System.getProperty("dh.tutodrive.debug"))
             && !"false".equalsIgnoreCase(System.getProperty("dh.tutodrive.debug"));
+    // Mode ENREGISTREUR (dh.tutorec) : à CHAQUE tick, dump EXHAUSTIF (sans dédup) de l'état + de TOUS les
+    // pointeurs du tuto (pointAt / tutorialName) + des acteurs actionnables → pour reconstituer pas à pas
+    // ce que le tuto désigne (couplé aux captures numérotées du lanceur). Sert au diagnostic « manuel ».
+    private static final boolean REC = System.getProperty("dh.tutorec") != null
+            && !"0".equals(System.getProperty("dh.tutorec"))
+            && !"false".equalsIgnoreCase(System.getProperty("dh.tutorec"));
+    private static int recStep = 0;
     private static String lastTargets = "";
     private static String lastTrace = "";
     private static boolean hadTarget = false;
@@ -85,6 +92,33 @@ public final class TutorialDriver {
                 if (windows != null) for (Object win : windows) wl.append(win.getClass().getSimpleName()).append(',');
                 String trace = screen.getClass().getSimpleName() + " win=[" + wl + "] cibles=" + targets;
                 if (!trace.equals(lastTrace)) { lastTrace = trace; System.out.println("[tutodrive] " + trace); }
+            }
+
+            // ENREGISTREUR : dump exhaustif à CHAQUE tick (numéro de step = celui des captures du lanceur).
+            if (REC) {
+                StringBuilder wl = new StringBuilder();
+                if (windows != null) for (Object win : windows) wl.append(win.getClass().getSimpleName()).append(',');
+                System.out.println("[tutorec] === step " + recStep + " === écran=" + screen.getClass().getSimpleName()
+                    + " fenêtres=[" + wl + "]");
+                if (pointers != null) for (Object p : pointers) {
+                    TutorialPointerInfo pi = (TutorialPointerInfo) p;
+                    System.out.println("[tutorec]   POINTEUR pointAt=" + pi.getPointAt()
+                        + " tutorialName=" + pi.getActorTutorialName());
+                }
+                if (pointers == null || pointers.isEmpty())
+                    System.out.println("[tutorec]   (aucun pointeur actif)");
+                // acteurs actionnables : de la fenêtre du dessus si popup, sinon de l'écran de base.
+                Actor dumpRoot = null;
+                if (windows != null && !windows.isEmpty() && windows.get(windows.size() - 1) instanceof Actor)
+                    dumpRoot = (Actor) windows.get(windows.size() - 1);
+                else {
+                    try {
+                        Group r = (Group) screen.getClass().getMethod("getRootStack").invoke(screen);
+                        if (r != null && r.getStage() != null) dumpRoot = r.getStage().getRoot(); else dumpRoot = r;
+                    } catch (Throwable ignore) {}
+                }
+                if (dumpRoot != null) dumpRec(dumpRoot);
+                recStep++;
             }
             if (windows != null && !windows.isEmpty()) {
                 // C'est le TUTO qui désigne où agir. Une seule fenêtre modale (celle du DESSUS) reçoit
