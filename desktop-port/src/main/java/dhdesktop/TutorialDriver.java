@@ -305,51 +305,20 @@ public final class TutorialDriver {
     private static boolean tapAll(List<Actor> found, DhInput input, int w, int h) {
         boolean tapped = false;
         for (Actor a : found) {
-            // Certains boutons désignés par le tuto sont une Table `touch=childrenOnly` : elle ne REÇOIT
-            // pas le touch (seuls ses enfants le reçoivent, l'évènement bulle vers son ClickListener). Taper
-            // le centre de la Table peut manquer l'enfant cliquable → on résout vers l'enfant touchable réel
-            // (ex. GOLD_CHEST_FREE_BUTTON). Sinon on tape l'acteur lui-même.
-            Actor target = resolveTapTarget(a);
-            Stage st = target.getStage();
-            if (st == null || target.getWidth() <= 0 || target.getHeight() <= 0) continue;
-            Vector2 v = target.localToStageCoordinates(new Vector2(target.getWidth() / 2f, target.getHeight() / 2f));
+            // On tape le CENTRE de l'acteur désigné (une Table `touch=childrenOnly` reçoit le clic via ses
+            // enfants → l'évènement bulle vers son ClickListener ; taper le centre fonctionne, vérifié).
+            // NB : décaler la cible vers un « enfant touchable » cassait ce cas — le blocage à autotap élevé
+            // sur GOLD_CHEST_FREE_BUTTON était un problème de TIMING (bouton pulsé), résolu en pilotant à
+            // chaque frame (le recorder décime ses captures), pas une histoire de coordonnée.
+            Stage st = a.getStage();
+            if (st == null || a.getWidth() <= 0 || a.getHeight() <= 0) continue;
+            Vector2 v = a.localToStageCoordinates(new Vector2(a.getWidth() / 2f, a.getHeight() / 2f));
             float sw = st.getWidth(), sh = st.getHeight();
             if (sw <= 0 || sh <= 0) continue;
             input.tap(Math.round(v.x / sw * w), Math.round(h - v.y / sh * h));
             tapped = true;
         }
         return tapped;
-    }
-
-    /** Si l'acteur est `touch=childrenOnly` (ne reçoit pas le touch), vise l'enfant touchable réel. */
-    private static Actor resolveTapTarget(Actor a) {
-        if (a.getTouchable() == com.badlogic.gdx.scenes.scene2d.Touchable.childrenOnly) {
-            Actor c = largestTouchableDescendant(a);
-            if (c != null) return c;
-        }
-        return a;
-    }
-
-    /** Descendant touchable (enabled) de plus grande aire — cible la zone cliquable réelle (le clic bulle
-     *  vers le ClickListener du parent `childrenOnly`). Traverse les sous-groupes `childrenOnly`. */
-    private static Actor largestTouchableDescendant(Actor a) {
-        if (!(a instanceof Group)) return null;
-        Actor best = null; float bestArea = -1f;
-        for (Actor c : ((Group) a).getChildren()) {
-            if (!c.isVisible() || c.getWidth() <= 0 || c.getHeight() <= 0) continue;
-            com.badlogic.gdx.scenes.scene2d.Touchable t = c.getTouchable();
-            if (t == com.badlogic.gdx.scenes.scene2d.Touchable.enabled) {
-                float area = c.getWidth() * c.getHeight();
-                if (area > bestArea) { bestArea = area; best = c; }
-            } else if (t == com.badlogic.gdx.scenes.scene2d.Touchable.childrenOnly) {
-                Actor deep = largestTouchableDescendant(c);
-                if (deep != null) {
-                    float area = deep.getWidth() * deep.getHeight();
-                    if (area > bestArea) { bestArea = area; best = deep; }
-                }
-            }
-        }
-        return best;
     }
 
     /** Retrouve les acteurs portant un {@code getTutorialName()} donné (helper pour BACK_BUTTON…). */
