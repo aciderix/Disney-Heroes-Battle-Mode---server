@@ -322,7 +322,8 @@ public final class TutorialDriver {
             if (REC || DEBUG) {
                 Actor hit = st.hit(v.x, v.y, true);
                 boolean onTarget = hit != null && (hit == a || isDescendant(a, hit) || isDescendant(hit, a));
-                System.out.println("[tuthit] cible=" + a.getTutorialName() + " @stage(" + (int) v.x + ","
+                // System.err = NON bufferisé (lisible en direct, contrairement à System.out redirigé fichier).
+                System.err.println("[tuthit] cible=" + a.getTutorialName() + " @stage(" + (int) v.x + ","
                     + (int) v.y + ") → touché=" + describe(hit) + (onTarget ? "  [OK]" : "  [!! HORS-CIBLE]"));
             }
             input.tap(Math.round(v.x / sw * w), Math.round(h - v.y / sh * h));
