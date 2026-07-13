@@ -102,6 +102,16 @@ public final class ServerUser {
     long staminaCap = com.perblue.heroes.game.logic.UserHelper.getResourceCap(
         com.perblue.heroes.network.messages.ResourceType.STAMINA, user);
     user.setResource(com.perblue.heroes.network.messages.ResourceType.STAMINA, staminaCap, "newuser");
+
+    // ROSTER DE DÉPART : un compte neuf possède déjà des héros AVANT le coffre (fidélité vérifiée sur la
+    // vidéo de gameplay, PRINCIPLES §4bis) : **Ralph + Elastigirl** (les héros contrôlés dès l'intro).
+    // Frozone arrive ENSUITE via le coffre GOLD. On les crée au même état de base qu'un héros de coffre
+    // (WHITE, niveau 1, 1 étoile) via la méthode du jeu User.createAndAddHero (type = observé, état =
+    // défaut « nouveau héros » ; aucune valeur inventée). resyncHeroes → wire (userExtra.heroes).
+    com.perblue.heroes.network.messages.Rarity white = com.perblue.heroes.network.messages.Rarity.WHITE;
+    user.createAndAddHero(com.perblue.heroes.network.messages.UnitType.RALPH, white, 1, 1, new String[]{"new_user"});
+    user.createAndAddHero(com.perblue.heroes.network.messages.UnitType.ELASTIGIRL, white, 1, 1, new String[]{"new_user"});
+    resyncHeroes(user);
   }
 
   /** Charge un joueur depuis ses octets wire persistés (round-trip symétrique de {@link #wire}). */

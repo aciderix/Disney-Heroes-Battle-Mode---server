@@ -49,6 +49,17 @@ tuto reprend ses pointeurs (`MAIN_SCREEN_CAMPAIGN`→`CAMPAIGN_CHAPTER_ONE_NAME`
 unidbg). Le tuto atteint l'acte **`FAST_FORWARD`** (post-INTRO_FEATURES). Capture
 `desktop-port/build/campaign.png`. ⇒ frontière équipement **entièrement franchie**, on est dans le monde/combat.
 
+### Roster de départ : Ralph + Elastigirl (fidélité vidéo)
+Constat utilisateur (vidéo de gameplay) : un compte neuf possède **Ralph + Elastigirl** AVANT Frozone — or
+notre nouveau joueur n'avait que Frozone (du coffre). L'intro combat les crée en SYNTHÉTIQUE
+(`createUnitDatas`→`new User()`+`CombatSimHelper.createUnitData`) et ne les ajoute PAS au roster ; le roster
+de départ est une décision de **création de compte** (serveur, qu'on contrôle). Ajout dans
+`ServerUser.initNewPlayerResources` : `user.createAndAddHero(RALPH/ELASTIGIRL, WHITE, 1, 1, "new_user")`
+(méthode du jeu ; état = défaut « nouveau héros » = celui de Frozone-coffre) + resync wire. Frozone reste
+donné ENSUITE par le coffre GOLD. Vérifié (`server/smoke/RosterTest`) : {Ralph,Elastigirl} WHITE niv.1 →
++Frozone → persiste au wire ; 0 régression (Equip/Resource/ViewedChests/ChestWire OK). À confirmer contre la
+vidéo : Vanellope (dans l'intro combat mais débloquée plus tard via `UnlockHeroActV1`) + rang/niveau/étoiles.
+
 ### Piège découvert : reprise POLLUÉE
 Reprendre depuis un `dh-server.db` d'une run **tuée** en plein coffre laisse un état incohérent (coffre Gold
 déjà ouvert → bouton « gratuit » en cooldown, mais step de tuto non avancé) → deadlock (le tuto pointe un
