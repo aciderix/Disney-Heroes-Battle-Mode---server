@@ -26,12 +26,15 @@ import java.util.Set;
  * tape son centre (converti stage → écran par le jeu). Sans pointeur actif (dialogue « tap to
  * continue »), on tape au centre. Aucune coordonnée devinée : tout vient de l'acteur désigné par le jeu.
  *
- * <p><b>Popups modaux</b> (récompenses de coffre « CRATE REWARDS », info héros…) : ils captent l'entrée
- * et masquent l'écran de base. La cible désignée par le tuto (ex. {@code MAIN_SCREEN_AVATAR}) est alors
- * « not visible » car <b>derrière</b> la popup, et un tap sur ses coordonnées est absorbé par la fenêtre.
- * On interroge {@code BaseScreen.getScreenWindows()} : si le tuto pointe DANS la popup, on tape dedans ;
- * sinon on <b>ferme</b> la popup via l'API du jeu ({@code BaseModalWindow.hide()}, exactement ce que fait
- * le bouton X / le retour) pour révéler la cible. Aucune coordonnée devinée, aucune modif du jeu.
+ * <p><b>Popups modaux (y compris EMPILÉES)</b> (récompenses de coffre « CRATE REWARDS », « CRATE READY »,
+ * info héros…) : seule la fenêtre du <b>dessus</b> reçoit l'entrée ; taper la cible du tuto quand elle est
+ * <b>derrière</b> une modale est absorbé par celle-ci (faux « tapé » → blocage). On interroge
+ * {@code BaseScreen.getScreenWindows()} et on raisonne sur la fenêtre du dessus : (a) le tuto pointe DEDANS
+ * → on tape le bouton désigné ; (b) le tuto pointe AILLEURS (la modale est un <b>résidu</b> couvrant la
+ * cible, ex. « CRATE READY » restée par-dessus l'onglet GEAR) → on la <b>ferme</b> ({@code BaseModalWindow
+ * .hide()}, = bouton X / retour), ce qui <b>draine la pile</b> une fenêtre par frame jusqu'à révéler la
+ * cible ; (c) aucune cible active → on ATTEND sur la popup (récompense → fermer ; interactive → bouton
+ * VIEW/OK). Aucune coordonnée devinée, aucune modif du jeu — c'est le tuto qui dicte l'action.
  */
 public final class TutorialDriver {
 
@@ -73,25 +76,43 @@ public final class TutorialDriver {
                 if (!trace.equals(lastTrace)) { lastTrace = trace; System.out.println("[tutodrive] " + trace); }
             }
             if (windows != null && !windows.isEmpty()) {
-                // Le tuto pointe DANS une popup ouverte → taper dedans (bouton désigné).
-                List<Actor> inWindow = new ArrayList<>();
-                for (Object win : windows) if (win instanceof Actor) collect((Actor) win, targets, inWindow);
-                if (!inWindow.isEmpty()) return tapAll(inWindow, input, w, h);
-
+                // C'est le TUTO qui désigne où agir. Une seule fenêtre modale (celle du DESSUS) reçoit
+                // l'entrée ; taper les coordonnées d'un acteur situé DERRIÈRE elle est absorbé par la modale
+                // (→ faux « tapé », blocage). On raisonne donc sur la fenêtre du dessus uniquement.
                 Object top = windows.get(windows.size() - 1);
                 String cls = top.getClass().getSimpleName();
-                // On ne FERME (hide) que les popups d'AFFICHAGE de récompense (« CRATE REWARDS » =
-                // ChestResultsWindow, écrans de butin) : le joueur les rejette, elles n'ont pas d'action.
-                // Les popups INTERACTIVES (ChestReadyWindow « ouvrir le coffre », confirmations…) ne
-                // doivent PAS être fermées → on laisse le tap central du lanceur en frapper le bouton.
+
+                // (a) Le tuto pointe DANS la fenêtre du dessus → taper le bouton désigné.
+                List<Actor> inTop = new ArrayList<>();
+                if (top instanceof Actor) collect((Actor) top, targets, inTop);
+                if (!inTop.isEmpty()) return tapAll(inTop, input, w, h);
+
+                // (b) Le tuto pointe AILLEURS (écran de base ou fenêtre inférieure) : la modale du dessus
+                //     n'est PAS la cible courante → c'est un RÉSIDU qui COUVRE la cible (ex. « CRATE READY »
+                //     empilée par-dessus l'onglet GEAR). On la FERME via l'API du jeu (BaseModalWindow.hide()
+                //     = bouton X / retour). Draine la pile une fenêtre par frame jusqu'à révéler la cible.
+                //     Distinction clé (pas de rustine) : on ne ferme que si le tuto veut manifestement autre
+                //     chose ; sans cible active (c), on ATTEND sur la popup au lieu de la fermer.
+                if (!targets.isEmpty() && top instanceof Actor) {
+                    try {
+                        top.getClass().getMethod("hide").invoke(top);
+                        if (DEBUG) System.out.println("[tutodrive] popup " + cls
+                            + " fermée (résidu bloquant ; cible du tuto ailleurs=" + targets + ")");
+                        return true;
+                    } catch (Throwable t) { /* pas de hide() → traiter comme (c) */ }
+                }
+
+                // (c) Aucune cible de tuto active → on est EN ATTENTE sur cette popup (le tuto met souvent
+                //     ses pointeurs en pause tant qu'elle n'est pas traitée).
+                //   - popup d'AFFICHAGE de récompense (« CRATE REWARDS » = ChestResultsWindow, butin) : la
+                //     rejeter (hide()) — pas d'action, le joueur la ferme.
                 if (isRewardDisplay(cls)) {
                     top.getClass().getMethod("hide").invoke(top);
                     if (DEBUG) System.out.println("[tutodrive] popup " + cls + " fermée (récompense)");
                     return true;
                 }
-                // Popup interactive (ex. « CRATE READY » avec bouton VIEW) : le tap central du lanceur
-                // frappe le fond, pas le bouton (qui n'est PAS au centre). On frappe le bouton d'action
-                // PRINCIPAL = le bouton-texte du jeu (DFTextButton « VIEW/OPEN/OK »).
+                //   - popup INTERACTIVE (« CRATE READY » avec bouton VIEW) : frapper le bouton d'action
+                //     PRINCIPAL = le bouton-texte du jeu (DFTextButton « VIEW/OPEN/OK »), pas le centre.
                 List<Actor> primary = new ArrayList<>();
                 collectTextButtons((Actor) top, primary);
                 if (!primary.isEmpty()) {
