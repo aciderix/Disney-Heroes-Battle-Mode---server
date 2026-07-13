@@ -51,10 +51,27 @@ désormais traitées **fidèlement** : `VIEWED_CHESTS` (RÉEL) et `RECORD_SERVER
   puis `applyAction(RECORD_SERVER_ROLL_FINISHED, extra{ID,TYPE,COUNT,TIME})` → round-trip wire →
   `getTime(LAST_CHESTS_VIEW_TIME)` == la valeur envoyée ; les deux `applyAction` renvoient `true`.
 
+### Ressources du nouveau joueur — énergie « 39,96 M / 120 » CORRIGÉE
+- **Bug** (repéré à la capture du hub) : l'énergie affichait **des millions** (« 39,96 M / 120 »). Cause :
+  un `new IndividualUserExtra()` laisse `getLastResourceGenerationTime(STAMINA)=0` ; le jeu calcule la
+  stamina courante = `UserHelper.updateAndGetResource(STAMINA, …, serverTimeNow())` = régénération **depuis
+  l'époque 1970** (≈ 56 ans / intervalle 6 min ≈ des millions).
+- **Correctif fidèle** (`ServerUser.initNewPlayerResources`, appelé par `newPlayer`) : comme un serveur à la
+  création d'un compte — **ancre l'horloge de génération** de chaque ressource régénérée
+  (`UserHelper.resourceGenerates(rt)` → `iu.setLastResourceGenerationTime(rt, creationTime)`) puis met la
+  **stamina au cap du jeu** (`UserHelper.getResourceCap(STAMINA, user)` = `MAX_STAMINA` de `team_levels.tab`,
+  **120** au niveau d'équipe 1). Valeurs issues de la logique/données du jeu (pas inventées). `setResource`
+  écrit `individualUserExtra.resources` (partagé → persiste) ; sa branche `battlePassV2` ne concerne QUE les
+  diamants → sûr headless.
+- **Gestion/valeurs vérifiées** (`server/smoke/ResourceTest`) : compte neuf → **STAMINA=120/120**,
+  **GOLD=0**, **DIAMONDS=0**, et la stamina **ne se re-gonfle pas** au round-trip wire (gen-time persisté).
+  Note : GOLD/DIAMONDS=0 = valeur du constructeur du jeu pour un compte neuf (le jeu/tuto les accorde en
+  jouant) ; à revoir si une dotation de départ (diamants) doit être seedée.
+
 ### Fichiers touchés
 - `desktop-port/src/main/java/dhdesktop/TutorialDriver.java` : drainage des modales empilées (logique (a)/(b)/(c)).
-- `server/java/dhserver/ServerUser.java` : `applyCommand` += `VIEWED_CHESTS` (RÉEL) + `RECORD_SERVER_ROLL_FINISHED` (NO-OP).
-- `server/smoke/ViewedChestsTest.java` (NEW) : vérifie la persistance de `LAST_CHESTS_VIEW_TIME` + le NO-OP.
+- `server/java/dhserver/ServerUser.java` : `applyCommand` += `VIEWED_CHESTS` (RÉEL) + `RECORD_SERVER_ROLL_FINISHED` (NO-OP) ; `newPlayer`/`initNewPlayerResources` (ancrage gen-time + stamina au cap).
+- `server/smoke/ViewedChestsTest.java` (NEW), `server/smoke/ResourceTest.java` (NEW).
 - `docs/SHIMS.md` #5, `MEMORY.md` (date + §7), `JOURNAL.md`.
 
 ---

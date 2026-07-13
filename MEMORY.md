@@ -10,7 +10,9 @@ Dernière mise à jour : **2026-07-13** (pilote DEV : **pop-ups modales EMPILÉE
 la frontière équipement et atteint le **HUB PRINCIPAL propre** (nouveau joueur), suivant = `HERO_FILTERS` ;
 capture `desktop-port/build/herofilters.png`. Actions de bookkeeping **`VIEWED_CHESTS` ✅ REAL** (setTime,
 persiste au wire) + **`RECORD_SERVER_ROLL_FINISHED` ✅ NO-OP fidèle** (le code client ne mute rien) — plus
-« PARTIEL » ; vérifiées `server/smoke/ViewedChestsTest`. Cf. §7 + JOURNAL + SHIMS #5).
+« PARTIEL ». **Ressources compte neuf** : énergie « 39,96 M / 120 » ✅ **CORRIGÉE** (gen-time ancré à la
+création + stamina au cap 120 ; `ServerUser.initNewPlayerResources`) ; GOLD/DIAMONDS=0. Vérifiés
+`server/smoke/{ViewedChestsTest,ResourceTest}`. Cf. §7 + JOURNAL + SHIMS #5).
 
 ---
 

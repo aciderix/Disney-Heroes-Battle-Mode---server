@@ -63,12 +63,45 @@ public final class ServerUser {
     UserInfo ui = new UserInfo();                 // tous champs non-null (constructeur du jeu)
     ui.shardID = shardID;
     ui.basicInfo.iD = userID;
-    ui.basicInfo.creationTime = System.currentTimeMillis();
+    long creation = System.currentTimeMillis();
+    ui.basicInfo.creationTime = creation;
     ui.basicInfo.teamLevel = 1;                   // un compte neuf démarre au niveau d'équipe 1
     UserExtra ue = new UserExtra();
     IndividualUserExtra iue = new IndividualUserExtra();
     iue.tutorialActs = NewUserState.newUserTutorialActs();
-    return new ServerUser(userID, shardID, ui, ue, iue);
+    ServerUser su = new ServerUser(userID, shardID, ui, ue, iue);
+    su.initNewPlayerResources(creation);
+    return su;
+  }
+
+  /**
+   * Initialise les RESSOURCES d'un compte neuf (docs/PRINCIPLES.md §3 « lire & exécuter »). Sans ça,
+   * un {@code new IndividualUserExtra()} laisse {@code getLastResourceGenerationTime(...)=0} : le jeu
+   * calcule alors la stamina courante = régénération depuis l'ÉPOQUE (1970) → des <b>millions</b>
+   * d'énergie affichés (bug « 39,96 M / 120 »). Le serveur autoritatif, comme à la création d'un compte,
+   * <b>ancre l'horloge de génération</b> de chaque ressource régénérée à la création et met la
+   * <b>stamina au cap</b> du jeu (via {@code UserHelper.getResourceCap} = {@code MAX_STAMINA} de
+   * {@code team_levels.tab}, 120 au niveau 1). Valeurs issues de la logique/données du jeu, non inventées.
+   */
+  private void initNewPlayerResources(long creation) {
+    ServerContext.init();
+    User user = ClientNetworkStateConverter.getUser(userInfo, userExtra, "newuser");
+    IndividualUser iu = ClientNetworkStateConverter.getIndividualUser(
+        individualUserExtra, userID, userInfo.diamonds, "newuser");
+    ServerContext.bind(user, iu);                 // DH.app requis par setResource/getResourceCap
+    // Ancre l'horloge de génération de CHAQUE ressource qui se régénère (STAMINA, GOLD_CHEST…) à la
+    // création du compte → plus de « génération depuis 1970 ». (setLastResourceGenerationTime écrit
+    // dans individualUserExtra → persiste via this.extra.)
+    for (com.perblue.heroes.network.messages.ResourceType rt
+        : com.perblue.heroes.network.messages.ResourceType.values()) {
+      if (com.perblue.heroes.game.logic.UserHelper.resourceGenerates(rt))
+        iu.setLastResourceGenerationTime(rt, creation);
+    }
+    // Stamina pleine à la création = cap du jeu (setResource(STAMINA,…) écrit resources.put + ré-ancre
+    // le gen-time ; la branche battlePassV2 de setResource ne concerne QUE les diamants — sûr headless).
+    long staminaCap = com.perblue.heroes.game.logic.UserHelper.getResourceCap(
+        com.perblue.heroes.network.messages.ResourceType.STAMINA, user);
+    user.setResource(com.perblue.heroes.network.messages.ResourceType.STAMINA, staminaCap, "newuser");
   }
 
   /** Charge un joueur depuis ses octets wire persistés (round-trip symétrique de {@link #wire}). */
