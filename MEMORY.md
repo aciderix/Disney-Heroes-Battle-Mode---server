@@ -183,10 +183,13 @@ Dépôt de référence (`/workspace/dragonsoul-web`, branche `claude/game-transp
 cd desktop-port
 ./run-online.sh              # contenu :8080 + jeu :8081 (LoginServer) + client (redirigé vers notre serveur)
 ```
-- **Garde-fou intégré** : `run-online.sh` détecte un serveur DÉJÀ en cours (PID `dhserver.LoginServer`/
-  `content_server.py` ou ports 8080/8081 occupés) et **arrête les anciens** avant de relancer (mettre
-  `DH_KILL_OLD=0` pour seulement alerter et abandonner). Évite les **serveurs zombies** (plusieurs
-  LoginServer sur le même port → le client parle à l'un, on lit le log de l'autre).
+- **Garde-fou intégré** : `run-online.sh` détecte les process DÉJÀ en cours de CE projet — serveurs (PID
+  `dhserver.LoginServer`/`content_server.py` ou ports 8080/8081 occupés) **ET client jeu**
+  (`dhdesktop.DesktopLauncher`) **ET `Xvfb :99`** — et les **arrête tous** avant de relancer (mettre
+  `DH_KILL_OLD=0` pour seulement alerter et abandonner). Évite les **serveurs/clients zombies** (plusieurs
+  LoginServer sur le même port → le client parle à l'un, on lit le log de l'autre ; client orphelin qui
+  fausse les captures). NB : `pgrep -f DesktopLauncher` matche **aussi ta propre commande shell** (la
+  chaîne est dans la ligne de commande) → pour compter les VRAIS jeux, filtrer `java.*dhdesktop.DesktopLauncher`.
 - **Variables** : `DH_FRAMES` non défini → 120 frames ; **`DH_FRAMES=` (vide) → NON plafonné** (joue tout
   le tuto, borné par `DH_TIMEOUT`). `DH_AUTOTAP=1`/`DH_AUTOFIGHT=1` = pilote DEV (tuto/combat auto, off en
   prod). Ex. traverser tout le tuto : `DH_FRAMES= DH_TIMEOUT=600 DH_AUTOTAP=1 DH_AUTOFIGHT=1 ./run-online.sh`.

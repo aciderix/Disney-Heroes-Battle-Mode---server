@@ -37,13 +37,18 @@ trap cleanup EXIT
 # Évite les serveurs zombies (plusieurs LoginServer sur le même port → le client parle à l'un
 # et on lit le log de l'autre). DH_KILL_OLD=0 pour seulement alerter et abandonner.
 port_busy() { (exec 3<>/dev/tcp/127.0.0.1/"$1") 2>/dev/null; }
-old=$(pgrep -f 'dhserver.LoginServer|content_server.py' 2>/dev/null | tr '\n' ' ' || true)
+# Détection des ANCIENS process de CE projet : serveurs (LoginServer/content_server) ET client jeu
+# (DesktopLauncher) ET Xvfb :99. Un client orphelin d'une run précédente peut fausser les captures /
+# retenir le display → on le nettoie aussi (pas seulement les serveurs).
+old=$(pgrep -f 'dhserver.LoginServer|content_server.py|dhdesktop.DesktopLauncher' 2>/dev/null | tr '\n' ' ' || true)
 if [ -n "$old" ] || port_busy "$HTTP_PORT" || port_busy "$GAME_PORT"; then
-  echo "[online] ⚠ serveur(s) DÉJÀ en cours (PID: ${old:-?} ; ports $HTTP_PORT/$GAME_PORT)."
+  echo "[online] ⚠ process DÉJÀ en cours (PID: ${old:-?} ; ports $HTTP_PORT/$GAME_PORT)."
   if [ "${DH_KILL_OLD:-1}" = "1" ]; then
-    echo "[online]   → arrêt des anciens (DH_KILL_OLD=0 pour désactiver)"
-    pkill -f 'dhserver.LoginServer' 2>/dev/null || true
-    pkill -f 'content_server.py'   2>/dev/null || true
+    echo "[online]   → arrêt des anciens (serveur + client + Xvfb ; DH_KILL_OLD=0 pour désactiver)"
+    pkill -f 'dhserver.LoginServer'    2>/dev/null || true
+    pkill -f 'content_server.py'       2>/dev/null || true
+    pkill -f 'dhdesktop.DesktopLauncher' 2>/dev/null || true
+    pkill -f 'Xvfb :99'                2>/dev/null || true
     for i in 1 2 3 4 5; do port_busy "$HTTP_PORT" || port_busy "$GAME_PORT" || break; sleep 1; done
   fi
   if port_busy "$HTTP_PORT" || port_busy "$GAME_PORT"; then
