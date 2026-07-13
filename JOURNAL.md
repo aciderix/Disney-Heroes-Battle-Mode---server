@@ -1043,3 +1043,46 @@ BootData neuf — NE PAS seeder) et capturer. Voir `desktop-port/BACKEND_STATUS.
   chien de garde du client → fermeture. ⇒ serveur échoue Ping (serverReceive/serverTime=now). Résultat :
   **0 reconnexion, session STABLE dans le hub** (capture `native/reference/shots/mainscreen-hub-stable.png`),
   spine+particules d'origine rendus (unidbg). Prochain : BootData complet nouveau joueur → tuto.
+
+### Coffre GRATUIT du tuto débloqué — cause racine du blocage à l'étape GOLD (2026-07-13, nuit)
+**Symptôme** : après avoir « ouvert » le coffre GOLD, le tuto (`IntroFeaturesActV2`) ne repartait pas.
+Capture (`build/goldstuck.png`) : écran de détail du coffre GOLD (« DIAMOND CRATE »), mention
+**« Free in : 1j 23h 46m 28s »**, et un pop-up « You can't do that just yet. Follow the tutorial arrow! »
+— le pilote DEV, sans cible, tapait les boutons d'achat payants et se faisait bloquer.
+
+**Ce que le tuto attend** : il exige que le joueur **POSSÈDE Frozone** après le coffre GOLD
+(`checkForMissingFrozone`→`finishTutorial` si absent ; `HERO_LIST_TAP_FROZONE` requiert
+`getHero(FROZONE)!=null`). Il était bloqué à l'étape 9 (serveur : `INTRO_FEATURES -> step 9`).
+
+**Mécanisme réel** (décompilation, source de vérité) :
+- `ChestHelper.openChest(...)` construit **toujours** un `BuyChests` (avec `ServerRollRequest` CHEST) et
+  appelle `ServerRollHelper.sendRollRequest` → `NetworkProvider.sendMessage`. Le serveur répond
+  `LootResults{heroesUnlocked=[Frozone]}` ; le client ajoute Frozone → le tuto avance.
+- MAIS l'ouverture n'a lieu que si le coffre est **gratuit et disponible** :
+  `ChestHelper.getTimeUntilNextFreeChest = UserHelper.getResourceGenerationRemaining(freeChestResource)`,
+  et `getFreeChestResource(GOLD) = ResourceType.GOLD_CHEST`. `hasFreeChest(GOLD)` ⇔ `getResource(GOLD_CHEST) >= 1`.
+
+**Cause racine** : le coffre gratuit est une **ressource régénérée** (comme la stamina). Notre amorce
+compte-neuf (`ServerUser.initNewPlayerResources`) ancrait le gen-time de toutes les ressources régénérées à
+la création MAIS ne mettait au cap **que STAMINA**. Donc `GOLD_CHEST=0`, gen-time = maintenant → « Free in
+~48 h » → `hasFreeChest=false` → le bouton FREE n'ouvre rien → **aucun `BuyChests` envoyé** (confirmé : le
+`LoginServer` journalise chaque message reçu ; **0 `BuyChests`, 0 `ServerRollRequest`** dans le run — que
+`ChangeTutorialStep`×69 + télémétrie + 1 `Action` VIEWED_CHESTS) → Frozone jamais accordé → tuto bouclé.
+
+**Correctif** (fidèle, PRINCIPLES §3 « lire & exécuter ») : à t=création aucun temps ne s'est écoulé → un
+compte neuf démarre **chaque ressource régénérée à SON cap** (généralisation exacte du fix stamina).
+Boucle unique : `setLastResourceGenerationTime(rt, creation)` + `setResource(rt, getResourceCap(rt))` pour
+chaque `resourceGenerates(rt)`. Caps du jeu au niv.1 (probe) : STAMINA=120, GOLD_CHEST=1, SILVER_CHEST=1,
+SOCIAL_CHEST=1, SKILL_POINTS=50, SOUL_CHEST=0, FRIEND_STAMINA=175, INVASION_STAMINA=80… **Aucune valeur
+inventée** (caps issus de `UserHelper.getResourceCap`).
+
+**Vérifications** :
+- `hasFreeChest(GOLD)=true`, `GOLD_CHEST=1`, `SILVER_CHEST=1`, `STAMINA=120`, roster=2 (probe).
+- `ServerUser.openChest(BuyChests{GOLD})` d'un compte neuf → **Frozone 8/8** (la table de drop GOLD du jeu
+  est déterministe pour le nouveau joueur — le serveur exécute `DropTable.rollNode("ROOT")`, rien de truqué).
+- `server/smoke/ResourceTest` étendu (assertions `GOLD_CHEST=1`, `SILVER_CHEST=1`, `hasFreeChest(GOLD)`),
+  `RosterTest`/`ViewedChestsTest` toujours OK.
+
+**Chaîne complète attendue en jeu** : coffre GOLD dispo → clic FREE → `BuyChests` → serveur
+`LootResults{Frozone}` → `getHero(FROZONE)!=null` → tuto passe à `HERO_LIST_TAP_FROZONE`. Fichiers :
+`server/java/dhserver/ServerUser.java` (initNewPlayerResources), `server/smoke/ResourceTest.java`.

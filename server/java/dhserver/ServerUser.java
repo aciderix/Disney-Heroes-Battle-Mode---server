@@ -89,19 +89,23 @@ public final class ServerUser {
     IndividualUser iu = ClientNetworkStateConverter.getIndividualUser(
         individualUserExtra, userID, userInfo.diamonds, "newuser");
     ServerContext.bind(user, iu);                 // DH.app requis par setResource/getResourceCap
-    // Ancre l'horloge de génération de CHAQUE ressource qui se régénère (STAMINA, GOLD_CHEST…) à la
-    // création du compte → plus de « génération depuis 1970 ». (setLastResourceGenerationTime écrit
-    // dans individualUserExtra → persiste via this.extra.)
+    // Un compte NEUF démarre chaque ressource régénérée À SON CAP, l'horloge de génération ancrée à la
+    // création (docs/PRINCIPLES.md §3 « lire & exécuter » : à l'instant t=création, aucun temps ne s'est
+    // écoulé → chaque réserve est pleine). Sans ça, getLastResourceGenerationTime=0 → « génération depuis
+    // 1970 » (bug énergie 39,96 M) ET les COFFRES GRATUITS (GOLD_CHEST/SILVER_CHEST, eux aussi des
+    // ResourceType qui se régénèrent) restent à 0 → coffre « gratuit dans 1j 23h » indisponible → le clic
+    // du tuto n'envoie aucun BuyChests → Frozone jamais accordé → tuto bloqué à l'étape du coffre GOLD.
+    // Caps au niveau 1 (team_levels/ressources du jeu, non inventés) : STAMINA=120, GOLD_CHEST=1,
+    // SILVER_CHEST=1, SOCIAL_CHEST=1, SKILL_POINTS=50, SOUL_CHEST=0, FRIEND_STAMINA=175, INVASION=80…
+    // setResource écrit resources.put + ré-ancre le gen-time ; sa branche battlePassV2 ne concerne QUE
+    // les diamants (sûr headless). getResourceCap gère le gating (feature verrouillée → cap 0).
     for (com.perblue.heroes.network.messages.ResourceType rt
         : com.perblue.heroes.network.messages.ResourceType.values()) {
-      if (com.perblue.heroes.game.logic.UserHelper.resourceGenerates(rt))
-        iu.setLastResourceGenerationTime(rt, creation);
+      if (!com.perblue.heroes.game.logic.UserHelper.resourceGenerates(rt)) continue;
+      iu.setLastResourceGenerationTime(rt, creation);
+      long cap = com.perblue.heroes.game.logic.UserHelper.getResourceCap(rt, user);
+      user.setResource(rt, cap, "newuser");
     }
-    // Stamina pleine à la création = cap du jeu (setResource(STAMINA,…) écrit resources.put + ré-ancre
-    // le gen-time ; la branche battlePassV2 de setResource ne concerne QUE les diamants — sûr headless).
-    long staminaCap = com.perblue.heroes.game.logic.UserHelper.getResourceCap(
-        com.perblue.heroes.network.messages.ResourceType.STAMINA, user);
-    user.setResource(com.perblue.heroes.network.messages.ResourceType.STAMINA, staminaCap, "newuser");
 
     // ROSTER DE DÉPART : un compte neuf possède déjà des héros AVANT le coffre (fidélité vérifiée sur la
     // vidéo de gameplay, PRINCIPLES §4bis) : **Ralph + Elastigirl** (les héros contrôlés dès l'intro).

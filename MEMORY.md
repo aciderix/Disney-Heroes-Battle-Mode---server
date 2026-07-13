@@ -6,6 +6,22 @@
 > des fichiers et un historique **court**. L'historique **détaillé** est dans
 > [`JOURNAL.md`](JOURNAL.md). **Maintenir ce fichier à jour en permanence.**
 
+Dernière mise à jour : **2026-07-13 (nuit)** — **COFFRE GRATUIT DU TUTO DÉBLOQUÉ ✅ (cause racine du
+blocage à l'étape coffre GOLD trouvée)**. Symptôme : après l'ouverture, le tuto ne repartait pas ;
+l'écran montrait le détail du coffre GOLD (« DIAMOND CRATE ») avec **« Free in : 1j 23h 46m »** et le
+pilote, faute de cible, vagabondait sur les boutons payants (« You can't do that just yet »). Cause :
+`getFreeChestResource(GOLD)=ResourceType.GOLD_CHEST` — le coffre gratuit est une **ressource régénérée**
+comme la stamina ; `hasFreeChest(GOLD)` = `getResource(GOLD_CHEST) >= 1`. Notre amorce compte-neuf ne
+mettait au cap **que STAMINA** → `GOLD_CHEST=0` → coffre indisponible ~48 h → le clic n'envoyait **aucun
+`BuyChests`** (0 reçu côté serveur, log confirmé) → Frozone jamais accordé → tuto bouclé. Correctif
+(fidèle, §3) : un compte neuf démarre **chaque ressource régénérée à son cap** (généralisation exacte du
+fix stamina), caps du jeu au niv.1 : `GOLD_CHEST=1, SILVER_CHEST=1, SOCIAL_CHEST=1, SKILL_POINTS=50,
+STAMINA=120…`. Vérifié : `hasFreeChest(GOLD)=true`, et `ServerUser.openChest(GOLD)` d'un compte neuf rend
+**Frozone 8/8** (la table de drop GOLD du jeu est déterministe pour le nouveau joueur — aucune triche
+inventée). `server/smoke/ResourceTest` étendu (GOLD_CHEST=1 + `hasFreeChest`). Chaîne complète OK :
+coffre dispo → `BuyChests` envoyé → serveur `LootResults{Frozone}` → `getHero(FROZONE)!=null` → le tuto
+avance vers `HERO_LIST_TAP_FROZONE`. Voir §7 + JOURNAL.
+
 Dernière mise à jour : **2026-07-13 (soir 2)** — **Roster de départ ✅** : un compte neuf possède
 **Ralph + Elastigirl** (WHITE niv.1) AVANT le coffre (fidélité vidéo ; Frozone arrive au coffre GOLD ;
 Vanellope = combat d'intro synthétique, débloquée plus tard). `ServerUser.createAndAddHero` + `RosterTest`.

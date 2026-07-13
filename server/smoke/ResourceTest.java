@@ -38,6 +38,25 @@ public final class ResourceTest {
     if (gold != 0) throw new AssertionError("GOLD d'un compte neuf attendu 0, obtenu " + gold);
     if (diamonds != 0) throw new AssertionError("DIAMONDS d'un compte neuf attendu 0, obtenu " + diamonds);
 
+    // COFFRE GRATUIT du tuto : GOLD_CHEST/SILVER_CHEST sont eux aussi des ResourceType régénérées ; un
+    // compte neuf doit les avoir à leur cap (=1) SINON le coffre gratuit est indisponible (« Free in
+    // 1j 23h »), le clic n'envoie aucun BuyChests, Frozone n'est jamais accordé → tuto bloqué au coffre.
+    long goldChest = res(u, ResourceType.GOLD_CHEST);
+    long silverChest = res(u, ResourceType.SILVER_CHEST);
+    System.out.println("[res] GOLD_CHEST=" + goldChest + "  SILVER_CHEST=" + silverChest);
+    if (goldChest != 1)
+      throw new AssertionError("GOLD_CHEST d'un compte neuf attendu 1 (coffre gratuit dispo), obtenu " + goldChest);
+    if (silverChest != 1)
+      throw new AssertionError("SILVER_CHEST d'un compte neuf attendu 1, obtenu " + silverChest);
+    BootData bd = u.bootData();
+    User fu = ClientNetworkStateConverter.getUser(bd.userInfo, bd.userExtra, "res-test");
+    IndividualUser fiu = ClientNetworkStateConverter.getIndividualUser(
+        bd.individualUserExtra, 1L, bd.userInfo.diamonds, "res-test");
+    ServerContext.bind(fu, fiu);
+    boolean freeGold = com.perblue.heroes.game.logic.ChestHelper.hasFreeChest(fu, ChestType.GOLD, null, 1);
+    if (!freeGold)
+      throw new AssertionError("hasFreeChest(GOLD) attendu true pour un compte neuf (coffre du tuto)");
+
     // Round-trip wire : l'énergie ne doit pas se ré-gonfler (gen-time persisté).
     ServerUser u2 = ServerUser.fromWire(1L, 1, u.userInfoWire(), u.userExtraWire(), u.individualWire());
     long stamina2 = res(u2, ResourceType.STAMINA);
