@@ -60,8 +60,16 @@ Le serveur **exécute le code du jeu** (PRINCIPLES §3 « lire & exécuter »). 
 4. **Smoke tests obsolètes** : `HandshakeRoundTrip` utilise l'ancien constructeur `LoginServer(port, provider)`
    (changé en `LoginServer(port, ServerUser, UserStore)`) → à mettre à jour.
 
-5. **Handler `Action` (équiper/voir/promouvoir…) — EN COURS (logique CŒUR par commande).**
+5. **Handler `Action` (équiper/voir/promouvoir…) — `EQUIP_ITEM` ✅ VÉRIFIÉ ; autres commandes à ajouter.**
    *Où* : `ServerUser.applyAction`/`applyCommand` + `LoginServer` (branche `Action`).
+   **`EQUIP_ITEM` ✅ FONCTIONNEL** : `HeroHelper.equipItem(heroType, itemType, slot, user)` (logique
+   d'origine). Le **slot** = celui dont le gear requis (`NormalGearStats.getItem(heroType, rarity, slot)`)
+   égale l'objet (mapping déterministe), non déjà rempli — on **n'utilise PAS** `HeroHelper
+   .getSlotThatCanEquip` car il passe par `ItemStats.isItemReleased(item, ContentHelper.getCurrent(user))`
+   qui renvoie **false headless** (colonne de contenu mal résolue sans serveur de contenu → BUG À PART,
+   affecte toute logique gatée par « contenu released »). **Vérifié** : nouveau joueur → coffres GOLD
+   (Frozone)+SILVER (Badge) → `applyAction(EQUIP_ITEM)` équipe le badge en slot 6 de Frozone, consomme
+   l'objet, et **persiste au round-trip wire** (badge dans `HeroData.items`).
    **Décisions/faits établis (2026-07-12) :**
    - **`GuildStats` n'est PAS bloquant** (mon 1ᵉʳ diagnostic était faux — « illusion de crash », comme
      EVIL_QUEEN) : `guild_perk_levels.tab` a des `CONTENT_TL` vides (lignes `TIMED_*`) → `parseInt("")` lève,

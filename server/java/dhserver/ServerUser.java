@@ -209,15 +209,28 @@ public final class ServerUser {
     String cmd = m.command == null ? "" : m.command.name();
     switch (cmd) {
       case "EQUIP_ITEM": {
-        // Équiper un objet d'équipement sur un héros (logique d'origine HeroHelper.equipItem). Le slot
-        // est déterminé par le jeu (getSlotThatCanEquip = 1ᵉʳ slot valide) — cohérent pour le tuto (1ᵉʳ
-        // équipement). TODO : si l'Action porte le slot (extra/iD), l'honorer pour la fidélité multi-slot.
+        // Équiper un objet d'équipement sur un héros (logique d'origine HeroHelper.equipItem).
+        // Le slot est celui dont le gear REQUIS == l'objet (mapping déterministe NormalGearStats du jeu),
+        // non déjà équipé. NB : on n'utilise PAS HeroHelper.getSlotThatCanEquip car il passe par
+        // ItemStats.isItemReleased(item, ContentHelper.getCurrent(user)) qui renvoie false headless (la
+        // colonne de contenu courante est mal résolue sans serveur de contenu) — bug à corriger à part.
         com.perblue.heroes.game.objects.IHero hero = user.getHero(m.heroType);
         if (hero == null) { System.out.println("[action] EQUIP_ITEM: héros absent " + m.heroType); return false; }
-        com.perblue.heroes.network.messages.HeroEquipSlot slot =
-            com.perblue.heroes.game.logic.HeroHelper.getSlotThatCanEquip(user, hero);
-        if (slot == null) { System.out.println("[action] EQUIP_ITEM: aucun slot équipable"); return false; }
-        com.perblue.heroes.game.logic.HeroHelper.equipItem(m.heroType, m.itemType, slot, user);
+        if (user.getItemAmount(m.itemType) < 1) {
+          System.out.println("[action] EQUIP_ITEM: objet absent " + m.itemType); return false;
+        }
+        com.perblue.heroes.network.messages.HeroEquipSlot target = null;
+        for (com.perblue.heroes.network.messages.HeroEquipSlot slot :
+             com.perblue.heroes.network.messages.HeroEquipSlot.values()) {
+          if (hero.getItem(slot) != null) continue;   // slot déjà rempli
+          if (com.perblue.heroes.game.data.unit.normalgear.NormalGearStats
+                  .getItem(m.heroType, hero.getRarity(), slot) == m.itemType) { target = slot; break; }
+        }
+        if (target == null) {
+          System.out.println("[action] EQUIP_ITEM: aucun slot pour " + m.itemType + " sur " + m.heroType);
+          return false;
+        }
+        com.perblue.heroes.game.logic.HeroHelper.equipItem(m.heroType, m.itemType, target, user);
         return true;
       }
       case "EQUIP_REAL_GEAR": {
