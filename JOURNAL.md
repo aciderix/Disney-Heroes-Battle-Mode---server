@@ -38,11 +38,17 @@ riche → **correction d'un diagnostic**, **1 vrai shim**, et une **conclusion d
   `EQUIP_REAL_GEAR` (`RealGearHelper.equipGear`) ; **log des commandes non gérées** (= cartographie).
 - `LoginServer` (branche `Action`) : **log du contenu exact** (command/hero/item/extra) + `applyAction` + persist.
 
-### Reste (à finaliser — déterministe, sans le client flaky)
-Le probe d'équipement renvoie **« aucun slot équipable »** → à investiguer : (a) le badge est-il en inventaire
-dans le snapshot ? (b) `getSlotThatCanEquip=null` (niveau/slot du badge, ou slot porté par `Action.extra`) ?
-(c) commande réelle `EQUIP_ITEM` vs autre ? Une fois **vert en probe**, le handler est bon quelle que soit la
-repro in-game. Détail : `docs/SHIMS.md` TODO #5.
+### `EQUIP_ITEM` ✅ RÉSOLU & VÉRIFIÉ (débogage déterministe par probes)
+Diagnostic pas à pas (sans le client flaky) : (a) `openChest(SILVER)` **persiste bien** le badge
+(`individualUserExtra.items={BADGE_OF_FRIENDSHIP=1}`) — le « no slot » venait d'un **snapshot périmé** ;
+(b) le badge est le gear **requis du slot 6** de Frozone (`NormalGearStats.getItem(FROZONE, WHITE, SIX)=
+BADGE_OF_FRIENDSHIP`) ; (c) `getSlotThatCanEquip` renvoie null car `ItemStats.isItemReleased(badge,
+ContentHelper.getCurrent(user))=false` **headless** (colonne de contenu mal résolue — bug à corriger à part) ;
+(d) `HeroHelper.equipItem(FROZONE, badge, SIX, user)` **équipe correctement** (slot 6 rempli, badge consommé).
+⇒ **fix** : `applyCommand` route `EQUIP_ITEM` en trouvant le slot par le **mapping déterministe**
+(`NormalGearStats.getItem == item`, slot libre) puis `HeroHelper.equipItem`. **Vérifié** (`server/smoke/
+EquipTest`) : équipe le badge en slot 6 + **persiste au round-trip wire**. Reste : autres commandes
+(`VIEWED_CHESTS`…) + corriger `ContentHelper.getCurrent` headless. Détail : `docs/SHIMS.md` #5.
 
 ### Fichiers touchés
 - `server/java/dhserver/ServerContext.java` (shim guildInfo), `ServerUser.java` (applyAction/applyCommand),

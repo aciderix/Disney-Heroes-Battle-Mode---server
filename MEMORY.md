@@ -372,11 +372,16 @@ tâche du LoginServer réellement à l'écoute — vérifier `readlink /proc/<pi
    (`TutorialDriver`) : ferme les popups de récompense (`hide()`), tape le bouton-texte principal (VIEW),
    **cherche l'acteur dans TOUTE la scène** (menu latéral hors rootStack). **Reprise persistée** (ne pas
    supprimer la DB → ~20 s au hub au lieu de ~4 min ; snapshots `server/data/dh-snapshot-*.db`). Méthodo dans §6ter.
-   **Handler `Action` EN COURS (2026-07-12)** : logique **CŒUR par commande** (`ServerUser.applyCommand` →
-   `HeroHelper.equipItem`/`RealGearHelper.equipGear`) — **PAS `doAction`** (chemin CLIENT couplé UI :
-   `getScreenManager().getScreen()`×4 → NPE headless). Correctifs : **`GuildStats` n'est PAS bloquant**
-   (illusion de crash, loguée+sautée), shim **`DH.app.guildInfo`** posé. Équipement **à finaliser** (probe
-   « no slot » ; commande réelle probable `EQUIP_ITEM`). `LoginServer` log chaque `Action`. Cf. SHIMS #5.
+   **Handler `Action` : `EQUIP_ITEM` ✅ VÉRIFIÉ (2026-07-12)** — logique **CŒUR par commande**
+   (`ServerUser.applyCommand`), **PAS `doAction`** (chemin CLIENT couplé UI : `getScreenManager().getScreen()`
+   ×4 → NPE headless). `EQUIP_ITEM` = `HeroHelper.equipItem` dans le slot dont le gear requis
+   (`NormalGearStats.getItem`) == l'objet (on évite `getSlotThatCanEquip` : son `isItemReleased`/
+   `ContentHelper.getCurrent` renvoie false headless — bug de colonne de contenu à corriger à part).
+   Vérifié (`server/smoke/EquipTest`) : nouveau joueur → coffres GOLD+SILVER → équipe le Badge en slot 6 de
+   Frozone, consomme l'objet, **persiste au round-trip wire**. Correctifs annexes : **`GuildStats` PAS
+   bloquant** (illusion de crash), shim **`DH.app.guildInfo`**. `LoginServer` log+applique chaque `Action`.
+   Autres commandes à ajouter au fur et à mesure (`VIEWED_CHESTS`/`RECORD_SERVER_ROLL_FINISHED` = état léger).
+   Cf. SHIMS #5.
    **(4bis) Tuto d'intro joué JUSQU'À `DONE` (harnais DEV, 2026-07-12)** : `TutorialDriver` (guidé par
    `TutorialHelper.getPointers`) + `dh.autofight` (auto-combat d'origine `setAutoAttack`) — **outils DEV
    côté lanceur, off par défaut, aucune modif jeu/serveur, rien en prod**. Intro complet (COMBAT1+COMBAT_2)
