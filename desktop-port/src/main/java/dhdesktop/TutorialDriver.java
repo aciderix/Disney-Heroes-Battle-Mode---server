@@ -54,6 +54,15 @@ public final class TutorialDriver {
     private static String lastTargets = "";
     private static String lastTrace = "";
     private static boolean hadTarget = false;
+    // Back-out « libre » : nombre de ticks consécutifs SANS pointeur sur le même écran non-hub, au-delà
+    // duquel on tape le bouton RETOUR (le tuto attend qu'on sorte du sous-écran, ex. post-équip).
+    private static int idleTicks = 0;
+    private static String idleScreen = "";
+    // Seuil exprimé en ~frames d'inactivité (≈120 frames ≈ plusieurs sec), robuste à l'intervalle d'autotap
+    // (idleTicks compte les APPELS = 1 par intervalle) : un vrai blocage post-équip accumulait ~49 ticks à
+    // autotap=30 ; un dialogue « tap to continue » avance en 1-2 taps → pas de retour prématuré.
+    private static final int IDLE_BACK_THRESHOLD =
+        Math.max(3, 120 / Math.max(1, Integer.getInteger("dh.autotap", 1)));
 
     /**
      * Vrai si, au dernier {@link #driveOnce}, le tutoriel avait un <b>pointeur ACTIF</b> (cible désignée).
@@ -170,39 +179,54 @@ public final class TutorialDriver {
                 return false;   // pas de bouton-texte : laisse le lanceur taper au centre
             }
 
-            // 2) Pas de popup : il faut une cible de tutoriel pour agir.
-            if (targets.isEmpty()) return false;
+            // 2) Pas de popup. Racine de recherche = TOUTE la scène (menu latéral HEROES/ITEMS…, overlays
+            //    hors rootStack) → sinon l'acteur désigné (ex. BASE_MENU_HERO_BUTTON) n'est pas trouvé.
             Group root = (Group) screen.getClass().getMethod("getRootStack").invoke(screen);
             if (root == null) return false;
-            // Chercher dans TOUTE la scène (pas seulement getRootStack) : certains éléments (menu latéral
-            // HEROES/ITEMS…, overlays) sont hors du rootStack → sinon l'acteur désigné (ex.
-            // BASE_MENU_HERO_BUTTON) n'est pas trouvé alors que le jeu, lui, y pointe (flèche jaune).
             Group searchRoot = root;
             Stage stg = root.getStage();
             if (stg != null && stg.getRoot() != null) searchRoot = stg.getRoot();
+            String screenName = screen.getClass().getSimpleName();
+
+            // Aucun pointeur de tuto : soit un dialogue « tap to continue » (le lanceur tape au centre), soit
+            // le tuto attend qu'on SORTE d'un sous-écran de nous-mêmes (ex. post-équip sur HeroDetailScreen :
+            // AUCUN pointeur n'est émis — vérifié : getPointers rafraîchit et renvoie vide — le jeu attend un
+            // retour « libre », le bouton retour est mis en avant). Heuristique : après IDLE_BACK_THRESHOLD
+            // ticks INACTIFS sur un même écran NON-hub, on tape le bouton RETOUR pour revenir vers le hub (où
+            // le tuto reprendra ses pointeurs). Un dialogue, lui, avance au tap central → l'écran/état change
+            // → le compteur se réinitialise (pas de retour prématuré).
+            if (targets.isEmpty()) {
+                if (screenName.equals(idleScreen)) idleTicks++; else { idleScreen = screenName; idleTicks = 0; }
+                if (!screenName.contains("MainScreen") && idleTicks >= IDLE_BACK_THRESHOLD) {
+                    List<Actor> back = findByName(searchRoot, "BACK_BUTTON");
+                    if (!back.isEmpty()) {
+                        if (DEBUG) System.out.println("[tutodrive] " + screenName + " sans pointeur depuis "
+                            + idleTicks + " ticks → RETOUR (BACK_BUTTON) vers le hub");
+                        idleTicks = 0;
+                        return tapAll(back, input, w, h);
+                    }
+                }
+                return false;   // dialogue → le lanceur tape au centre (aucun pointeur actif)
+            }
+            idleTicks = 0; idleScreen = screenName;   // un pointeur est actif → pas d'inactivité
+
             List<Actor> found = new ArrayList<>();
             collect(searchRoot, targets, found);
             if (DEBUG && !targets.toString().equals(lastTargets)) {
                 lastTargets = targets.toString();
-                System.out.println("[tutodrive] " + screen.getClass().getSimpleName()
-                    + " cibles=" + targets + " trouvés=" + found.size());
+                System.out.println("[tutodrive] " + screenName + " cibles=" + targets + " trouvés=" + found.size());
             }
             if (!found.isEmpty()) return tapAll(found, input, w, h);
 
-            // Cible désignée par le tuto INTROUVABLE sur l'écran courant : c'est typiquement un élément du
-            // HUB (ex. BASE_MENU_HERO_BUTTON) alors qu'on est resté sur un écran de détail (coffre…). Le tap
-            // central du lanceur est DÉSACTIVÉ ici (hadActiveTarget=true) pour ne pas vagabonder. On tente de
-            // REVENIR vers le hub en frappant le bouton RETOUR du jeu (BACK_BUTTON) s'il est présent → l'écran
-            // se rapproche de la cible, frame après frame. Sinon on attend (no-op, sans taper au hasard).
-            Set<String> backName = new HashSet<>();
-            backName.add("BACK_BUTTON");
-            List<Actor> back = new ArrayList<>();
-            collect(searchRoot, backName, back);
+            // Cible désignée INTROUVABLE sur l'écran courant : typiquement un élément du HUB (ex.
+            // BASE_MENU_HERO_BUTTON) alors qu'on est resté sur un écran de détail. Le tap central est
+            // désactivé (hadActiveTarget=true) → on REVIENT vers le hub via BACK_BUTTON. Sinon on attend.
+            List<Actor> back = findByName(searchRoot, "BACK_BUTTON");
             if (!back.isEmpty()) {
                 if (DEBUG && !("BACK:" + targets).equals(lastTargets)) {
                     lastTargets = "BACK:" + targets;
-                    System.out.println("[tutodrive] cible " + targets + " absente de "
-                        + screen.getClass().getSimpleName() + " → RETOUR (BACK_BUTTON) vers le hub");
+                    System.out.println("[tutodrive] cible " + targets + " absente de " + screenName
+                        + " → RETOUR (BACK_BUTTON) vers le hub");
                 }
                 return tapAll(back, input, w, h);
             }
@@ -281,6 +305,14 @@ public final class TutorialDriver {
             tapped = true;
         }
         return tapped;
+    }
+
+    /** Retrouve les acteurs portant un {@code getTutorialName()} donné (helper pour BACK_BUTTON…). */
+    private static List<Actor> findByName(Actor root, String name) {
+        Set<String> s = new HashSet<>(); s.add(name);
+        List<Actor> out = new ArrayList<>();
+        collect(root, s, out);
+        return out;
     }
 
     /** Collecte récursivement les acteurs dont {@code getTutorialName()} ∈ targets. */
