@@ -51,6 +51,10 @@ public final class TutorialDriver {
             && !"0".equals(System.getProperty("dh.tutorec"))
             && !"false".equalsIgnoreCase(System.getProperty("dh.tutorec"));
     private static int recStep = 0;
+    // Tap RÉEL (press-relâche sur N frames, comme un doigt) au lieu du tap 1-frame : certains boutons
+    // (ex. DHResourceButton du coffre) ne déclenchent pas sur un down+up instantané. 0 = tap 1-frame.
+    private static final int TAP_HOLD = Integer.getInteger("dh.taphold", 0);
+    private static int tapCooldown = 0;   // évite d'empiler les press-relâches (attendre la fin du précédent)
     // Le recorder DÉCIME : on pilote à chaque frame (fiable — certains boutons pulsés exigent des taps
     // rapprochés) mais on ne DUMP + capture que toutes les RECEVERY frames (étapes nettes, peu de fichiers).
     private static final int RECEVERY = Math.max(1, Integer.getInteger("dh.recevery", 20));
@@ -320,9 +324,17 @@ public final class TutorialDriver {
                 System.err.println("[tuthit] cible=" + a.getTutorialName() + " @stage(" + (int) v.x + ","
                     + (int) v.y + ") → touché=" + describe(hit) + (onTarget ? "  [OK]" : "  [!! HORS-CIBLE]"));
             }
-            input.tap(Math.round(v.x / sw * w), Math.round(h - v.y / sh * h));
-            tapped = true;
+            int sx = Math.round(v.x / sw * w), sy = Math.round(h - v.y / sh * h);
+            if (TAP_HOLD > 0) {
+                // Press-relâche RÉEL, un seul en vol à la fois (cooldown = maintien + petit intervalle) :
+                // évite les down/up superposés qui empêchent les boutons de déclencher.
+                if (tapCooldown <= 0) { input.tapHold(sx, sy, TAP_HOLD); tapCooldown = TAP_HOLD + 3; tapped = true; }
+            } else {
+                input.tap(sx, sy);
+                tapped = true;
+            }
         }
+        if (tapCooldown > 0) tapCooldown--;
         return tapped;
     }
 

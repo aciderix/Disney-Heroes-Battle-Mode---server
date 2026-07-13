@@ -84,10 +84,23 @@ public final class DhInput implements Input {
 
     // --- injection synthétique (pilotage CLI), drainée chaque frame ---
     public void inject(Runnable r) { injected.add(r); }
+    // touchUp DIFFÉRÉS : pour un press-relâche RÉEL (down maintenant, up après N drains, comme un doigt).
+    private final java.util.List<int[]> pendingUp = java.util.Collections.synchronizedList(new java.util.ArrayList<>());
     public void drain() {
         justPressed.clear(); // "just pressed" = valable pour la frame courante
         Runnable r; while ((r = injected.poll()) != null) { try { r.run(); } catch (Throwable t) { t.printStackTrace(); } }
+        synchronized (pendingUp) {
+            for (java.util.Iterator<int[]> it = pendingUp.iterator(); it.hasNext();) {
+                int[] d = it.next();
+                if (--d[3] <= 0) { touchUp(d[0], d[1], 0); it.remove(); }
+            }
+        }
     }
-    /** Tap complet (down+up) en un point, en injection. */
+    /** Tap complet (down+up) en un point, en injection (même frame). */
     public void tap(int x, int y) { inject(() -> { touchDown(x, y, 0); touchUp(x, y, 0); }); }
+    /** Press-relâche RÉEL : touchDown maintenant, touchUp après {@code holdFrames} drains (comme un doigt). */
+    public void tapHold(int x, int y, int holdFrames) {
+        inject(() -> touchDown(x, y, 0));
+        synchronized (pendingUp) { pendingUp.add(new int[]{x, y, 0, Math.max(1, holdFrames)}); }
+    }
 }
