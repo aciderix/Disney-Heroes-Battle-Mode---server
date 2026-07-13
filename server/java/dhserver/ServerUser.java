@@ -232,6 +232,27 @@ public final class ServerUser {
         com.perblue.heroes.game.logic.RealGearHelper.equipGear(user, rg);
         return true;
       }
+      case "VIEWED_CHESTS": {
+        // Logique d'origine EXACTE (ActionHelper.doAction, branche VIEWED_CHESTS) :
+        //   user.setTime(LAST_CHESTS_VIEW_TIME, Long.parseLong((String) extra.get(TIME)))
+        // Marque l'horodatage « dernière consultation des coffres » → efface la pastille « nouveau ».
+        // setTime écrit dans this.extra.times (UserExtra partagé) → persiste automatiquement (§3).
+        Object t = m.extra == null ? null
+            : m.extra.get(com.perblue.heroes.network.messages.ActionExtraType.TIME);
+        if (t == null) { System.out.println("[action] VIEWED_CHESTS: pas de TIME dans l'extra"); return false; }
+        user.setTime(com.perblue.heroes.network.messages.TimeType.LAST_CHESTS_VIEW_TIME,
+            Long.parseLong((String) t));
+        return true;
+      }
+      case "RECORD_SERVER_ROLL_FINISHED":
+        // NO-OP FIDÈLE (pas une rustine). Le code CLIENT du jeu ne mute AUCUN état pour cette
+        // commande : ClientActionHelper.recordServerRollFinished ne fait que construire l'extra et
+        // appeler ActionHelper.doAction(RECORD_SERVER_ROLL_FINISHED, …) — or doAction n'a AUCUNE
+        // branche pour ce CommandType (vérifié au bytecode) → notification pure client→serveur.
+        // Le comptage AUTORITATIF des rolls est déjà effectué par openChest (ChestHelper
+        // .updateChestRollCounters) au moment du BuyChests. On ACQUITTE donc sans rien simuler ;
+        // inventer un registre de rollId violerait PRINCIPLES §4 (ne rien inventer). Cf. SHIMS #5.
+        return true;
       default:
         System.out.println("[action] commande non encore gérée: " + cmd + " (hero=" + m.heroType
             + " item=" + m.itemType + ") — à ajouter (helper de logique du jeu)");

@@ -91,14 +91,28 @@ Le serveur **exécute le code du jeu** (PRINCIPLES §3 « lire & exécuter »). 
    - **L'objet « Badge of Friendship » N'est PAS du real gear** (`ItemStats.getRealGearType(BADGE_OF_FRIENDSHIP)
      = DEFAULT`) → la commande d'équipement du tuto n'est **pas** `EQUIP_REAL_GEAR` mais probablement
      `EQUIP_ITEM` (`HeroHelper.equipItem(heroType, itemType, HeroEquipSlot, user)`), à confirmer.
-   - **Commandes réellement observées** (log serveur) : `VIEWED_CHESTS`, `RECORD_SERVER_ROLL_FINISHED`
-     (mises à jour d'état légères) — l'`Action` d'équipement reste **à capturer** (repro in-game NON
-     déterministe : le pilote n'atteint pas toujours l'onglet gear).
-   **À faire** : capturer de façon fiable l'`Action` d'équipement (command + `extra`/`iD` = slot ?), puis
-   router `EQUIP_ITEM` → `HeroHelper.equipItem` (+ slot via `getSlotThatCanEquip` ou `extra`), et ajouter les
-   autres commandes du tuto au fur et à mesure. `applyCommand` **log les commandes non gérées** (sert de
-   cartographie). *Risque actuel* : les actions non routées ne sont pas persistées → au reload le tuto peut
-   caler sur l'étape correspondante.
+   - **Commandes de bookkeeping léger — ✅ TRAITÉES (2026-07-13), plus « PARTIEL ».**
+     - **`VIEWED_CHESTS` → RÉEL** : logique d'origine EXACTE de `ActionHelper.doAction` (branche extraite au
+       bytecode) = `user.setTime(TimeType.LAST_CHESTS_VIEW_TIME, Long.parseLong((String) extra.get(TIME)))`.
+       `setTime` écrit dans `this.extra.times` (`UserExtra` partagé) → **persiste** via `this.extra` (§3).
+       Efface la pastille « nouveau » sur les coffres.
+     - **`RECORD_SERVER_ROLL_FINISHED` → NO-OP FIDÈLE** (pas une rustine) : le code **client** du jeu ne mute
+       aucun état — `ClientActionHelper.recordServerRollFinished` construit l'extra et appelle
+       `ActionHelper.doAction(RECORD_SERVER_ROLL_FINISHED, …)`, or `doAction` **n'a AUCUNE branche** pour ce
+       `CommandType` (vérifié au bytecode) → pure notification client→serveur. Le comptage **autoritatif** des
+       rolls est déjà fait par `openChest` (`ChestHelper.updateChestRollCounters`). On ACQUITTE sans rien
+       simuler ; inventer un registre de `rollId` violerait §4. **Vérifié** (`server/smoke/ViewedChestsTest`) :
+       `VIEWED_CHESTS` persiste `LAST_CHESTS_VIEW_TIME` au round-trip wire ; `RECORD_SERVER_ROLL_FINISHED`
+       renvoie `true` sans lever.
+   **À faire** : ajouter les autres commandes du hub au fur et à mesure (`applyCommand` **log les commandes
+   non gérées** = cartographie). *Risque résiduel* : une commande non routée n'est pas persistée → au reload
+   le tuto peut caler sur l'étape correspondante.
+   - **Pilote DEV — pop-ups modales EMPILÉES ✅ (2026-07-13)** : `TutorialDriver` draine désormais les
+     modales résiduelles (ex. `ChestReadyWindow` « CRATE READY » restée par-dessus l'écran héros). Il raisonne
+     sur la fenêtre du dessus : cible tuto dedans → taper ; cible ailleurs → fermer la modale (`hide()`, une
+     par frame) ; aucune cible → attendre (récompense=fermer, interactive=VIEW). **Vérifié en jeu** : le tuto
+     franchit la frontière équipement et atteint le **hub principal propre** (nouveau joueur), tuto suivant
+     `HERO_FILTERS` en attente (capture `desktop-port/build/herofilters.png`).
 
 ## Couche plateforme desktop (`dhbackend/`, lanceur)
 

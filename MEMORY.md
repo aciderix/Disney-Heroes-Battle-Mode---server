@@ -6,9 +6,11 @@
 > des fichiers et un historique **court**. L'historique **détaillé** est dans
 > [`JOURNAL.md`](JOURNAL.md). **Maintenir ce fichier à jour en permanence.**
 
-Dernière mise à jour : **2026-07-12** (handlers `BuyChests`✅ + `Action` EN COURS ; **tuto traversé in-game
-par le pilote DEV** jusqu'à l'équipement — intro→2 coffres→héros→gear ; **reprise persistée** ~20 s ;
-handler `Action` = logique cœur par commande, `doAction` écarté car couplé UI client. Cf. §7 + JOURNAL).
+Dernière mise à jour : **2026-07-13** (pilote DEV : **pop-ups modales EMPILÉES drainées** → le tuto franchit
+la frontière équipement et atteint le **HUB PRINCIPAL propre** (nouveau joueur), suivant = `HERO_FILTERS` ;
+capture `desktop-port/build/herofilters.png`. Actions de bookkeeping **`VIEWED_CHESTS` ✅ REAL** (setTime,
+persiste au wire) + **`RECORD_SERVER_ROLL_FINISHED` ✅ NO-OP fidèle** (le code client ne mute rien) — plus
+« PARTIEL » ; vérifiées `server/smoke/ViewedChestsTest`. Cf. §7 + JOURNAL + SHIMS #5).
 
 ---
 

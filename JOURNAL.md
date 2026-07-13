@@ -7,6 +7,58 @@
 
 ---
 
+## 2026-07-13 — Pilote : pop-ups empilées drainées (hub atteint) + Actions de bookkeeping REAL/NO-OP
+
+### Résumé
+Le correctif du pilote DEV pour les **pop-ups modales EMPILÉES** est **validé en jeu** : le tuto franchit la
+frontière de l'équipement et atteint le **hub principal propre** d'un nouveau joueur ; frontière suivante =
+tuto `HERO_FILTERS`. Les deux Actions de bookkeeping que le serveur loguait « non appliquée (PARTIEL) » sont
+désormais traitées **fidèlement** : `VIEWED_CHESTS` (RÉEL) et `RECORD_SERVER_ROLL_FINISHED` (NO-OP fidèle).
+
+### Pilote — drainage des modales empilées (`TutorialDriver.driveOnce`)
+- **Bug** : quand le tuto pointe une cible (ex. bouton EQUIP de `CraftingWindow`) mais qu'une modale
+  résiduelle (`ChestReadyWindow` « CRATE READY ») est empilée par-dessus, l'ancien code faisait `collect()`
+  sur **toutes** les fenêtres, trouvait la cible dans la fenêtre inférieure et « tapait » ses coordonnées —
+  mais le tap est **absorbé par la modale du dessus** (seule elle reçoit l'entrée) → faux « tapé »
+  (`return true`) → **blocage infini**.
+- **Correctif** (guidé par le tuto, sans coordonnée devinée) : on raisonne sur la fenêtre du **dessus**.
+  (a) le tuto pointe DEDANS → taper le bouton désigné ; (b) le tuto pointe **AILLEURS** → la modale du dessus
+  est un **résidu bloquant** → la fermer via l'API du jeu (`BaseModalWindow.hide()` = bouton X), ce qui
+  **draine la pile une fenêtre/frame** jusqu'à révéler la cible ; (c) aucune cible active → attendre
+  (récompense=`hide()`, interactive=bouton VIEW).
+- **Vérifié en jeu** (reprise persistée depuis le snapshot post-coffres) : sur `HeroListScreen` une
+  `ChestReadyWindow` résiduelle (coffre Gold) apparaît empilée → **drainée** (VIEW → `ChestResultsWindow` →
+  fermeture). Le tuto progresse **au-delà** de l'équipement (INTRO_FEATURES step 29 → `HERO_FILTERS`) ; le
+  jeu atteint le **hub principal rendu** (menu HEROES/ITEMS/…, CHOOSE NAME, CAMPAIGN!/CRATES!), session
+  stable (Ping échangés). Capture `desktop-port/build/herofilters.png`.
+- **Nouvelle frontière** (`HERO_FILTERS`) : `getPointers` n'émet le pointeur d'un step (`DIALOG_1` →
+  `UIComponentName.FILTER_BUTTON`) que si `Step.logic().matches()` est vrai (sinon `cibles=[]`, attente).
+  À la reprise, le client repart du hub (`MainScreen`) alors que `HERO_FILTERS` attend `HeroListScreen` →
+  le pilote devra naviguer vers HEROES (chantier suivant).
+
+### Actions de bookkeeping — `VIEWED_CHESTS` (RÉEL) + `RECORD_SERVER_ROLL_FINISHED` (NO-OP fidèle)
+- **`VIEWED_CHESTS`** : branche extraite au bytecode de `ActionHelper.doAction` =
+  `user.setTime(TimeType.LAST_CHESTS_VIEW_TIME, Long.parseLong((String) extra.get(ActionExtraType.TIME)))`.
+  `User.setTime` écrit dans `this.extra.times` (`UserExtra` partagé) → **persiste** via `this.extra` (§3).
+  Marque « coffres vus » (efface la pastille « nouveau »).
+- **`RECORD_SERVER_ROLL_FINISHED`** : `ClientActionHelper.recordServerRollFinished` ne fait que construire
+  l'extra (`ID/TYPE/COUNT/TIME`) et appeler `ActionHelper.doAction(RECORD_SERVER_ROLL_FINISHED, …)` — or
+  `doAction` **n'a AUCUNE branche** pour ce `CommandType` (vérifié) → le code **client** du jeu ne mute rien.
+  Pure notification client→serveur ; le comptage **autoritatif** des rolls est déjà fait par `openChest`
+  (`ChestHelper.updateChestRollCounters`). ⇒ **NO-OP fidèle** (pas une rustine : rien n'est simulé ;
+  inventer un registre de `rollId` violerait §4).
+- **Vérifié** (`server/smoke/ViewedChestsTest`) : nouveau joueur → `applyAction(VIEWED_CHESTS, extra{TIME})`
+  puis `applyAction(RECORD_SERVER_ROLL_FINISHED, extra{ID,TYPE,COUNT,TIME})` → round-trip wire →
+  `getTime(LAST_CHESTS_VIEW_TIME)` == la valeur envoyée ; les deux `applyAction` renvoient `true`.
+
+### Fichiers touchés
+- `desktop-port/src/main/java/dhdesktop/TutorialDriver.java` : drainage des modales empilées (logique (a)/(b)/(c)).
+- `server/java/dhserver/ServerUser.java` : `applyCommand` += `VIEWED_CHESTS` (RÉEL) + `RECORD_SERVER_ROLL_FINISHED` (NO-OP).
+- `server/smoke/ViewedChestsTest.java` (NEW) : vérifie la persistance de `LAST_CHESTS_VIEW_TIME` + le NO-OP.
+- `docs/SHIMS.md` #5, `MEMORY.md` (date + §7), `JOURNAL.md`.
+
+---
+
 ## 2026-07-12 — Handler `Action` : investigation + architecture « logique cœur par commande »
 
 ### Résumé
