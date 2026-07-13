@@ -167,6 +167,19 @@ public final class ServerUser {
   /** Nombre de héros possédés (diagnostic). */
   public synchronized int heroCount() { return userExtra.heroes.size(); }
 
+  /** Ajoute un héros au roster (état de base WHITE niv.1, comme un compte neuf) via la logique du jeu
+   *  ({@code User.createAndAddHero}) + resync wire. Idempotent (ne double pas un héros déjà possédé). */
+  public synchronized void grantHero(com.perblue.heroes.network.messages.UnitType type) {
+    ServerContext.init();
+    User user = ClientNetworkStateConverter.getUser(userInfo, userExtra, "grant");
+    IndividualUser iu = ClientNetworkStateConverter.getIndividualUser(
+        individualUserExtra, userID, userInfo.diamonds, "grant");
+    ServerContext.bind(user, iu);
+    if (user.getHero(type) == null)
+      user.createAndAddHero(type, com.perblue.heroes.network.messages.Rarity.WHITE, 1, 1, new String[]{"grant"});
+    resyncHeroes(user);
+  }
+
   /**
    * Ouvre un coffre en <b>exécutant la logique du jeu</b> (docs/PRINCIPLES.md §3) : construit un
    * {@link User}/{@link IndividualUser} de jeu SUR nos objets wire (références partagées → la plupart
