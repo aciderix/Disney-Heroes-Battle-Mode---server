@@ -127,9 +127,13 @@ public final class DesktopLauncher {
             last = now;
 
             if (autotap > 0 && frames > 90 && frames % autotap == 0) {
-                // DEV : d'abord taper la cible désignée par le tutoriel (bouton héros, etc.) via les
-                // API du jeu ; sinon (dialogue « tap to continue ») taper au centre.
-                if (!TutorialDriver.driveOnce(game, input, W, H)) input.tap(W / 2, H / 2);
+                // DEV : d'abord taper la cible désignée par le tutoriel (bouton héros, etc.) via les API du
+                // jeu. Le tap central de secours n'est légitime QUE pour un dialogue « tap to continue »
+                // (aucun pointeur actif) : si le tuto a une cible non résolue sur l'écran courant
+                // (hadActiveTarget), NE PAS taper au centre — ça partirait hors-script (coffre Diamant →
+                // « Follow the tutorial arrow! »). Le pilote gère alors le retour vers le hub lui-même.
+                if (!TutorialDriver.driveOnce(game, input, W, H) && !TutorialDriver.hadActiveTarget())
+                    input.tap(W / 2, H / 2);
             }
             if (autofight && frames % 20 == 0) enableAutoCombat(game);  // DEV : bouton AUTO d'origine
             input.drain();          // input synthétique (pilotage) sur le thread render

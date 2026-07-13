@@ -46,9 +46,19 @@ public final class TutorialDriver {
             && !"false".equalsIgnoreCase(System.getProperty("dh.tutodrive.debug"));
     private static String lastTargets = "";
     private static String lastTrace = "";
+    private static boolean hadTarget = false;
+
+    /**
+     * Vrai si, au dernier {@link #driveOnce}, le tutoriel avait un <b>pointeur ACTIF</b> (cible désignée).
+     * Le lanceur ne doit PAS taper au centre dans ce cas : le tuto veut un élément <b>précis</b> (pas le
+     * centre) et un tap central part hors-script (ex. coffre Diamant → « Follow the tutorial arrow! »).
+     * Le tap central n'est légitime que pour les dialogues « tap to continue » (aucun pointeur).
+     */
+    public static boolean hadActiveTarget() { return hadTarget; }
 
     /** Renvoie true si un tap/fermeture a été injecté sur une cible désignée par le tutoriel. */
     public static boolean driveOnce(GameMain game, DhInput input, int w, int h) {
+        hadTarget = false;
         try {
             User user = game.getYourUser();
             if (user == null) return false;
@@ -63,6 +73,7 @@ public final class TutorialDriver {
                 String name = ((TutorialPointerInfo) p).getActorTutorialName();
                 if (name != null && !name.isEmpty()) targets.add(name);
             }
+            hadTarget = !targets.isEmpty();
 
             // 1) Popups modaux ouverts (coffre « CRATE REWARDS », récompense, info) — traités AVANT tout,
             //    même sans pointeur actif : le tuto met souvent en pause ses pointeurs tant que la popup
@@ -142,7 +153,26 @@ public final class TutorialDriver {
                 System.out.println("[tutodrive] " + screen.getClass().getSimpleName()
                     + " cibles=" + targets + " trouvés=" + found.size());
             }
-            return tapAll(found, input, w, h);
+            if (!found.isEmpty()) return tapAll(found, input, w, h);
+
+            // Cible désignée par le tuto INTROUVABLE sur l'écran courant : c'est typiquement un élément du
+            // HUB (ex. BASE_MENU_HERO_BUTTON) alors qu'on est resté sur un écran de détail (coffre…). Le tap
+            // central du lanceur est DÉSACTIVÉ ici (hadActiveTarget=true) pour ne pas vagabonder. On tente de
+            // REVENIR vers le hub en frappant le bouton RETOUR du jeu (BACK_BUTTON) s'il est présent → l'écran
+            // se rapproche de la cible, frame après frame. Sinon on attend (no-op, sans taper au hasard).
+            Set<String> backName = new HashSet<>();
+            backName.add("BACK_BUTTON");
+            List<Actor> back = new ArrayList<>();
+            collect(searchRoot, backName, back);
+            if (!back.isEmpty()) {
+                if (DEBUG && !("BACK:" + targets).equals(lastTargets)) {
+                    lastTargets = "BACK:" + targets;
+                    System.out.println("[tutodrive] cible " + targets + " absente de "
+                        + screen.getClass().getSimpleName() + " → RETOUR (BACK_BUTTON) vers le hub");
+                }
+                return tapAll(back, input, w, h);
+            }
+            return false;   // cible absente et pas de RETOUR → attendre (le lanceur ne tape PAS au centre)
         } catch (Throwable t) {
             return false;   // écran/étape sans pointeur exploitable → no-op
         }
