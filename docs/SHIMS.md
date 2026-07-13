@@ -62,14 +62,19 @@ Le serveur **exécute le code du jeu** (PRINCIPLES §3 « lire & exécuter »). 
 
 5. **Handler `Action` (équiper/voir/promouvoir…) — `EQUIP_ITEM` ✅ VÉRIFIÉ ; autres commandes à ajouter.**
    *Où* : `ServerUser.applyAction`/`applyCommand` + `LoginServer` (branche `Action`).
-   **`EQUIP_ITEM` ✅ FONCTIONNEL** : `HeroHelper.equipItem(heroType, itemType, slot, user)` (logique
-   d'origine). Le **slot** = celui dont le gear requis (`NormalGearStats.getItem(heroType, rarity, slot)`)
-   égale l'objet (mapping déterministe), non déjà rempli — on **n'utilise PAS** `HeroHelper
-   .getSlotThatCanEquip` car il passe par `ItemStats.isItemReleased(item, ContentHelper.getCurrent(user))`
-   qui renvoie **false headless** (colonne de contenu mal résolue sans serveur de contenu → BUG À PART,
-   affecte toute logique gatée par « contenu released »). **Vérifié** : nouveau joueur → coffres GOLD
-   (Frozone)+SILVER (Badge) → `applyAction(EQUIP_ITEM)` équipe le badge en slot 6 de Frozone, consomme
-   l'objet, et **persiste au round-trip wire** (badge dans `HeroData.items`).
+   **`EQUIP_ITEM` ✅ FONCTIONNEL** : `HeroHelper.getSlotThatCanEquip` (valide niveau/released/craft) puis
+   `HeroHelper.equipItem(heroType, itemType, slot, user)` — **logique d'origine, sans contournement**.
+   **Vérifié** (`server/smoke/EquipTest`) : nouveau joueur → coffres GOLD (Frozone)+SILVER (Badge) →
+   `applyAction(EQUIP_ITEM)` équipe le badge en slot 6 de Frozone, consomme l'objet, et **persiste au
+   round-trip wire** (badge dans `HeroData.items`).
+
+   - **Couche CONTENU (colonnes de release) ✅ RÉSOLU** : `ContentHelper` démarre **vide**
+     (`ContentStats.getColumns()=0` → `getColumn(now)=DEFAULT` → `isItemReleased`=false pour TOUT → casse
+     `getSlotThatCanEquip` et **toute logique gatée « contenu released »**). Le jeu charge le contenu du
+     shard via `ShardStats.setShardID(shard, map)` (→ `parseStats("content.<shard>.tab", opener)`).
+     **Corrigé** : `ServerContext.bind` appelle `ContentHelper.get().setShardID(user.getShardID(),
+     new HashMap())` → charge `content.<shard>.tab` (372 colonnes pour shard 1) → `isItemReleased`=true.
+     C'est un **unlock générique** (pas que l'équipement).
    **Décisions/faits établis (2026-07-12) :**
    - **`GuildStats` n'est PAS bloquant** (mon 1ᵉʳ diagnostic était faux — « illusion de crash », comme
      EVIL_QUEEN) : `guild_perk_levels.tab` a des `CONTENT_TL` vides (lignes `TIMED_*`) → `parseInt("")` lève,

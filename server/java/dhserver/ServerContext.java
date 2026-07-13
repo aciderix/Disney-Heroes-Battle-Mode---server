@@ -2,6 +2,7 @@ package dhserver;
 
 import com.perblue.heroes.DH;
 import com.perblue.heroes.GameMain;
+import com.perblue.heroes.game.data.content.ContentHelper;
 import com.perblue.heroes.game.logic.SpecialEventsHelper;
 import com.perblue.heroes.game.objects.IndividualUser;
 import com.perblue.heroes.game.objects.User;
@@ -68,6 +69,12 @@ public final class ServerContext {
       // Nouveau joueur sans guilde = new GuildInfo() (champs non-null par le constructeur, perkEndTimes = map
       // vide) → plus de NPE. À remplacer par le vrai GuildInfo du joueur quand les guildes seront gérées.
       if (guildInfoField.get(app) == null) guildInfoField.set(app, new GuildInfo());
+      // Couche de CONTENU (colonnes de release) : ContentHelper est vide tant qu'on n'a pas chargé le
+      // contenu du shard. Sans ça, ContentStats.getColumns()=0 → getColumn(now)=DEFAULT → isItemReleased
+      // renvoie false pour TOUT → toute logique gatée « contenu released » casse (ex. getSlotThatCanEquip).
+      // setShardID(shard, {}) charge `content.<shard>.tab` via notre ouvreur de stats (comme le boot du jeu).
+      if (ContentHelper.get() != null)
+        ContentHelper.get().setShardID(user.getShardID(), new java.util.HashMap());
       // Charge les évènements du joueur dans la couche — comme GameMain.handleBootData
       // (SpecialEventsHelper.setSpecialEvents). Nouveau joueur sans évènement live = raw vide → aucun
       // contest actif (getActiveContestsWithTask renvoie une liste vide au lieu de NPE).
