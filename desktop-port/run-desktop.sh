@@ -117,6 +117,7 @@ JOPTS="$JOPTS -Ddh.spinelib=$(cd .. && pwd)/native/reference/libspine-native.so"
 [ -n "${DH_TUTODBG:-}" ] && JOPTS="$JOPTS -Ddh.tutodrive.debug=$DH_TUTODBG"
 [ -n "${DH_FRAMES:-}" ] && JOPTS="$JOPTS -Ddh.frames=$DH_FRAMES"
 [ -n "${DH_SHOT:-}" ] && JOPTS="$JOPTS -Ddh.shot=$DH_SHOT"
+[ -n "${DH_SHOTEVERY:-}" ] && JOPTS="$JOPTS -Ddh.shotevery=$DH_SHOTEVERY"
 
 echo "[desktop] lancement (GameMain via backend LWJGL3 maison) ..."
 set +e

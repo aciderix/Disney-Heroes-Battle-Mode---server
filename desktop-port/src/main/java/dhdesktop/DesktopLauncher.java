@@ -103,6 +103,10 @@ public final class DesktopLauncher {
         long frames = 0;
         double last = glfwGetTime();
         String shot = System.getProperty("dh.shot");
+        // DEV : capture PÉRIODIQUE (dh.shotevery=N frames, 0=off) → on écrase `shot` toutes les N frames.
+        // Utile quand le superviseur tue la run avant la fin (exit 144/SIGSTKFLT) : la dernière frame
+        // atteinte reste sur disque, même sans arrêt gracieux de la boucle. Aucun effet en prod.
+        int shotEvery = Integer.getInteger("dh.shotevery", 0);
         // Pilotage headless : dh.autotap=N injecte un tap au centre toutes les N frames (0 = off).
         // Sert à FAIRE AVANCER le tutoriel (dialogues « tap to continue ») sans utilisateur, pour
         // vérifier « tuto jouable de bout en bout » et observer ce que le client envoie ensuite.
@@ -134,6 +138,8 @@ public final class DesktopLauncher {
             glfwSwapBuffers(win);
             glfwPollEvents();
             frames++;
+
+            if (shot != null && shotEvery > 0 && frames % shotEvery == 0) capture(W, H, shot);
 
             if (fpsWindow > 0 && frames % fpsWindow == 0) {
                 double t = glfwGetTime();
