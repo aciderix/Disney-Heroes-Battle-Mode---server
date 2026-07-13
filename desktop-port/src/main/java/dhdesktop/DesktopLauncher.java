@@ -142,7 +142,9 @@ public final class DesktopLauncher {
                 // « Follow the tutorial arrow! »). Le pilote gère alors le retour vers le hub lui-même.
                 if (!TutorialDriver.driveOnce(game, input, W, H) && !TutorialDriver.hadActiveTarget())
                     input.tap(W / 2, H / 2);
-                recTickPending = tutoRec;   // capture après le rendu/swap de ce tick (buffer complet)
+                // Le recorder DÉCIME lui-même (toutes RECEVERY frames) : on capture quand le pilote le
+                // signale → on peut piloter à chaque frame (autotap=1, fiable) sans des milliers de captures.
+                recTickPending = tutoRec && TutorialDriver.recCaptureRequested();
             }
             if (autofight && frames % 20 == 0) enableAutoCombat(game);  // DEV : bouton AUTO d'origine
             input.drain();          // input synthétique (pilotage) sur le thread render

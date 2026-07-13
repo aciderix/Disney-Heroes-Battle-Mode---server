@@ -51,6 +51,13 @@ public final class TutorialDriver {
             && !"0".equals(System.getProperty("dh.tutorec"))
             && !"false".equalsIgnoreCase(System.getProperty("dh.tutorec"));
     private static int recStep = 0;
+    // Le recorder DÉCIME : on pilote à chaque frame (fiable — certains boutons pulsés exigent des taps
+    // rapprochés) mais on ne DUMP + capture que toutes les RECEVERY frames (étapes nettes, peu de fichiers).
+    private static final int RECEVERY = Math.max(1, Integer.getInteger("dh.recevery", 20));
+    private static int recCall = 0;
+    private static boolean recCaptureRequested = false;
+    /** Vrai quand le dernier {@link #driveOnce} était un « pas » d'enregistreur (le lanceur capture alors). */
+    public static boolean recCaptureRequested() { return recCaptureRequested; }
     private static String lastTargets = "";
     private static String lastTrace = "";
     private static boolean hadTarget = false;
@@ -103,8 +110,10 @@ public final class TutorialDriver {
                 if (!trace.equals(lastTrace)) { lastTrace = trace; System.out.println("[tutodrive] " + trace); }
             }
 
-            // ENREGISTREUR : dump exhaustif à CHAQUE tick (numéro de step = celui des captures du lanceur).
-            if (REC) {
+            // ENREGISTREUR (décimé) : dump exhaustif toutes les RECEVERY frames (pilotage à chaque frame).
+            recCaptureRequested = false;
+            if (REC && (++recCall % RECEVERY == 0)) {
+                recCaptureRequested = true;
                 StringBuilder wl = new StringBuilder();
                 if (windows != null) for (Object win : windows) wl.append(win.getClass().getSimpleName()).append(',');
                 System.out.println("[tutorec] === step " + recStep + " === écran=" + screen.getClass().getSimpleName()
@@ -296,15 +305,51 @@ public final class TutorialDriver {
     private static boolean tapAll(List<Actor> found, DhInput input, int w, int h) {
         boolean tapped = false;
         for (Actor a : found) {
-            Stage st = a.getStage();
-            if (st == null || a.getWidth() <= 0 || a.getHeight() <= 0) continue;
-            Vector2 v = a.localToStageCoordinates(new Vector2(a.getWidth() / 2f, a.getHeight() / 2f));
+            // Certains boutons désignés par le tuto sont une Table `touch=childrenOnly` : elle ne REÇOIT
+            // pas le touch (seuls ses enfants le reçoivent, l'évènement bulle vers son ClickListener). Taper
+            // le centre de la Table peut manquer l'enfant cliquable → on résout vers l'enfant touchable réel
+            // (ex. GOLD_CHEST_FREE_BUTTON). Sinon on tape l'acteur lui-même.
+            Actor target = resolveTapTarget(a);
+            Stage st = target.getStage();
+            if (st == null || target.getWidth() <= 0 || target.getHeight() <= 0) continue;
+            Vector2 v = target.localToStageCoordinates(new Vector2(target.getWidth() / 2f, target.getHeight() / 2f));
             float sw = st.getWidth(), sh = st.getHeight();
             if (sw <= 0 || sh <= 0) continue;
             input.tap(Math.round(v.x / sw * w), Math.round(h - v.y / sh * h));
             tapped = true;
         }
         return tapped;
+    }
+
+    /** Si l'acteur est `touch=childrenOnly` (ne reçoit pas le touch), vise l'enfant touchable réel. */
+    private static Actor resolveTapTarget(Actor a) {
+        if (a.getTouchable() == com.badlogic.gdx.scenes.scene2d.Touchable.childrenOnly) {
+            Actor c = largestTouchableDescendant(a);
+            if (c != null) return c;
+        }
+        return a;
+    }
+
+    /** Descendant touchable (enabled) de plus grande aire — cible la zone cliquable réelle (le clic bulle
+     *  vers le ClickListener du parent `childrenOnly`). Traverse les sous-groupes `childrenOnly`. */
+    private static Actor largestTouchableDescendant(Actor a) {
+        if (!(a instanceof Group)) return null;
+        Actor best = null; float bestArea = -1f;
+        for (Actor c : ((Group) a).getChildren()) {
+            if (!c.isVisible() || c.getWidth() <= 0 || c.getHeight() <= 0) continue;
+            com.badlogic.gdx.scenes.scene2d.Touchable t = c.getTouchable();
+            if (t == com.badlogic.gdx.scenes.scene2d.Touchable.enabled) {
+                float area = c.getWidth() * c.getHeight();
+                if (area > bestArea) { bestArea = area; best = c; }
+            } else if (t == com.badlogic.gdx.scenes.scene2d.Touchable.childrenOnly) {
+                Actor deep = largestTouchableDescendant(c);
+                if (deep != null) {
+                    float area = deep.getWidth() * deep.getHeight();
+                    if (area > bestArea) { bestArea = area; best = deep; }
+                }
+            }
+        }
+        return best;
     }
 
     /** Retrouve les acteurs portant un {@code getTutorialName()} donné (helper pour BACK_BUTTON…). */
