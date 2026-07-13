@@ -6,13 +6,16 @@
 > des fichiers et un historique **court**. L'historique **détaillé** est dans
 > [`JOURNAL.md`](JOURNAL.md). **Maintenir ce fichier à jour en permanence.**
 
-Dernière mise à jour : **2026-07-13** (pilote DEV : **pop-ups modales EMPILÉES drainées** → le tuto franchit
-la frontière équipement et atteint le **HUB PRINCIPAL propre** (nouveau joueur), suivant = `HERO_FILTERS` ;
-capture `desktop-port/build/herofilters.png`. Actions de bookkeeping **`VIEWED_CHESTS` ✅ REAL** (setTime,
-persiste au wire) + **`RECORD_SERVER_ROLL_FINISHED` ✅ NO-OP fidèle** (le code client ne mute rien) — plus
-« PARTIEL ». **Ressources compte neuf** : énergie « 39,96 M / 120 » ✅ **CORRIGÉE** (gen-time ancré à la
-création + stamina au cap 120 ; `ServerUser.initNewPlayerResources`) ; GOLD/DIAMONDS=0. Vérifiés
-`server/smoke/{ViewedChestsTest,ResourceTest}`. Cf. §7 + JOURNAL + SHIMS #5).
+Dernière mise à jour : **2026-07-13 (soir)** — **`EQUIP_ITEM` ✅ VÉRIFIÉ IN-GAME (wire)** : vrai client →
+`Action{EQUIP_ITEM, FROZONE, BADGE_OF_FRIENDSHIP, SLOT=SIX}` → serveur « appliquée [persisté] » → tuto avance
+(séquence enregistrée `HERO_GEAR_SLOT_SIX`→`CRAFTING_WINDOW_EQUIP_BUTTON`). **Enregistreur pas-à-pas**
+`dh.tutorec` (dump des pointeurs + captures numérotées) + **pilote discipliné** (tap central seulement sans
+pointeur actif ; RETOUR BACK_BUTTON) → plus de vagabondage sur le coffre Diamant. Micro-frontière suivante :
+post-équip, sortir de `HeroDetailScreen` (pas de pointeur). Piège : reprise depuis une DB de run TUÉE =
+état pollué (coffre déjà ouvert, bouton mort) → tester sur état propre.
+Plus tôt le 2026-07-13 : pop-ups EMPILÉES drainées ; `VIEWED_CHESTS` REAL + `RECORD_SERVER_ROLL_FINISHED`
+NO-OP ; énergie « 39,96 M » CORRIGÉE (stamina cap 120, gen-time ancré). Vérifs
+`server/smoke/{EquipTest,ViewedChestsTest,ResourceTest}`. Cf. §7 + JOURNAL + SHIMS #5.
 
 ---
 

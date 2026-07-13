@@ -63,11 +63,13 @@ Le serveur **exécute le code du jeu** (PRINCIPLES §3 « lire & exécuter »). 
 
 5. **Handler `Action` (équiper/voir/promouvoir…) — `EQUIP_ITEM` ✅ VÉRIFIÉ ; autres commandes à ajouter.**
    *Où* : `ServerUser.applyAction`/`applyCommand` + `LoginServer` (branche `Action`).
-   **`EQUIP_ITEM` ✅ FONCTIONNEL** : `HeroHelper.getSlotThatCanEquip` (valide niveau/released/craft) puis
-   `HeroHelper.equipItem(heroType, itemType, slot, user)` — **logique d'origine, sans contournement**.
-   **Vérifié** (`server/smoke/EquipTest`) : nouveau joueur → coffres GOLD (Frozone)+SILVER (Badge) →
-   `applyAction(EQUIP_ITEM)` équipe le badge en slot 6 de Frozone, consomme l'objet, et **persiste au
-   round-trip wire** (badge dans `HeroData.items`).
+   **`EQUIP_ITEM` ✅ FONCTIONNEL & VÉRIFIÉ IN-GAME (wire)** : `HeroHelper.getSlotThatCanEquip` (valide
+   niveau/released/craft) puis `HeroHelper.equipItem(heroType, itemType, slot, user)` — **logique d'origine,
+   sans contournement**. **Vérifié** (a) `server/smoke/EquipTest` (round-trip wire) ET (b) **EN JEU** : le vrai
+   client émet `Action{EQUIP_ITEM, FROZONE, BADGE_OF_FRIENDSHIP, extra={SLOT=SIX}}` (séquence tuto enregistrée
+   `HERO_GEAR_SLOT_SIX`→`CRAFTING_WINDOW_EQUIP_BUTTON`), le serveur répond `action EQUIP_ITEM appliquée
+   [persisté]` et le tuto INTRO_FEATURES avance. NB : le client passe le slot dans `extra={SLOT=SIX}` (le
+   handler le recalcule via `getSlotThatCanEquip`, concordant ; préférer l'`extra` quand présent).
 
    - **Couche CONTENU (colonnes de release) ✅ RÉSOLU** : `ContentHelper` démarre **vide**
      (`ContentStats.getColumns()=0` → `getColumn(now)=DEFAULT` → `isItemReleased`=false pour TOUT → casse

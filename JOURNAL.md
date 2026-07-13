@@ -7,6 +7,48 @@
 
 ---
 
+## 2026-07-13 (soir) — EQUIP_ITEM VÉRIFIÉ IN-GAME (wire) + enregistreur pas-à-pas + fixes pilote
+
+### Résumé
+Grâce à un **enregistreur pas-à-pas** (`dh.tutorec` : dump exhaustif des pointeurs du tuto + captures
+numérotées par tick) et à un pilote **discipliné** (plus de tap central hors-script), on a capturé la
+**séquence exacte de l'équipement** et **vérifié `EQUIP_ITEM` en jeu sur le wire** : le vrai client envoie
+`Action{EQUIP_ITEM, FROZONE, BADGE_OF_FRIENDSHIP, extra={SLOT=SIX}}`, le serveur répond
+`action EQUIP_ITEM appliquée [persisté]`, et le tuto INTRO_FEATURES avance. Nouvelle micro-frontière :
+post-équip, le tuto n'émet plus de pointeur sur `HeroDetailScreen` (il faut en sortir vers le hub).
+
+### Enregistreur `dh.tutorec` (outil DEV)
+À chaque tick d'autotap : (1) `[tutorec]` dump SANS dédup — écran, fenêtres, **TOUS** les pointeurs du tuto
+(`getPointAt` + `getActorTutorialName`), acteurs actionnables ; (2) capture **numérotée**
+`build/rec/step_NNN.ppm` (après rendu/swap). Câblé `DH_TUTOREC`. Sert à savoir **exactement** ce que le tuto
+désigne à chaque étape (au lieu de deviner). Off par défaut.
+
+### Pilote discipliné (anti-vagabondage)
+1. Le lanceur ne tape au **centre** que si le tuto n'a **aucun pointeur actif** (`hadActiveTarget()`=false,
+   dialogue « tap to continue »). Avant, le tap central partait hors-script quand un pointeur était actif mais
+   non résolu → écran coffre Diamant → « Follow the tutorial arrow! », tuto figé.
+2. Quand la cible désignée est **absente de l'écran courant** (élément du hub alors qu'on est sur un écran de
+   détail), le pilote frappe **BACK_BUTTON** pour se rapprocher du hub.
+
+### Séquence de l'équipement (ENREGISTRÉE, source de vérité)
+`HeroDetailScreen` pointeur **`HERO_GEAR_SLOT_SIX`** (slot 6) → ouvre `CraftingWindow` → pointeur
+**`CRAFTING_WINDOW_EQUIP_BUTTON`** → le client émet `Action{EQUIP_ITEM, FROZONE, BADGE_OF_FRIENDSHIP,
+SLOT=SIX}`. **Le serveur applique + persiste** (handler `ServerUser.applyCommand` EQUIP_ITEM) → tuto avance
+(INTRO_FEATURES step 17→29/21). ⇒ `EQUIP_ITEM` **vérifié bout-en-bout en jeu**, plus seulement au smoke test.
+NB : le client envoie le slot dans `extra={SLOT=SIX}` ; le handler le recalcule via `getSlotThatCanEquip`
+(concordant) — on pourra préférer l'`extra` SLOT quand présent.
+
+### Piège découvert : reprise POLLUÉE
+Reprendre depuis un `dh-server.db` d'une run **tuée** en plein coffre laisse un état incohérent (coffre Gold
+déjà ouvert → bouton « gratuit » en cooldown, mais step de tuto non avancé) → deadlock (le tuto pointe un
+bouton mort, `LootResults=0`). ⇒ tester depuis un état **propre** (snapshot post-coffres, ou nouveau joueur).
+
+### Fichiers touchés
+- `desktop-port/src/main/java/dhdesktop/TutorialDriver.java` : `dh.tutorec` (dump exhaustif) + `hadActiveTarget()` + RETOUR BACK_BUTTON.
+- `desktop-port/src/main/java/dhdesktop/DesktopLauncher.java` : tap central conditionné + capture par tick + capture périodique.
+- `desktop-port/run-desktop.sh`, `run-online.sh` : `DH_TUTOREC`, `DH_SHOTEVERY` ; garde-fou (client+Xvfb).
+- `MEMORY.md`, `JOURNAL.md`, `docs/SHIMS.md`.
+
 ## 2026-07-13 — Pilote : pop-ups empilées drainées (hub atteint) + Actions de bookkeeping REAL/NO-OP
 
 ### Résumé
