@@ -315,10 +315,41 @@ public final class TutorialDriver {
             Vector2 v = a.localToStageCoordinates(new Vector2(a.getWidth() / 2f, a.getHeight() / 2f));
             float sw = st.getWidth(), sh = st.getHeight();
             if (sw <= 0 || sh <= 0) continue;
+            // DIAGNOSTIC (REC/DEBUG) : QUEL acteur reçoit réellement le touch à cette coordonnée ? Le jeu
+            // hit-teste en coords stage (Stage.hit) → si l'acteur touché n'est PAS la cible désignée (ni un
+            // de ses descendants), le tap déclenche AUTRE CHOSE (ex. coffre Diamant) → on le sait au lieu de
+            // deviner. hit-test à la coordonnée EXACTE qu'on va taper (reconvertie écran→stage).
+            if (REC || DEBUG) {
+                Actor hit = st.hit(v.x, v.y, true);
+                boolean onTarget = hit != null && (hit == a || isDescendant(a, hit) || isDescendant(hit, a));
+                System.out.println("[tuthit] cible=" + a.getTutorialName() + " @stage(" + (int) v.x + ","
+                    + (int) v.y + ") → touché=" + describe(hit) + (onTarget ? "  [OK]" : "  [!! HORS-CIBLE]"));
+            }
             input.tap(Math.round(v.x / sw * w), Math.round(h - v.y / sh * h));
             tapped = true;
         }
         return tapped;
+    }
+
+    /** Décrit un acteur touché : classe + tutorialName + chaîne d'ancêtres (tutorialName / classe). */
+    private static String describe(Actor a) {
+        if (a == null) return "(rien)";
+        StringBuilder sb = new StringBuilder(a.getClass().getSimpleName());
+        if (a.getTutorialName() != null) sb.append("[tut=").append(a.getTutorialName()).append(']');
+        Group p = a.getParent();
+        int depth = 0;
+        while (p != null && depth++ < 8) {
+            sb.append(" ← ").append(p.getClass().getSimpleName());
+            if (p.getTutorialName() != null) sb.append("[tut=").append(p.getTutorialName()).append(']');
+            p = p.getParent();
+        }
+        return sb.toString();
+    }
+
+    /** Vrai si {@code maybe} est {@code ancestor} ou un descendant de {@code ancestor}. */
+    private static boolean isDescendant(Actor ancestor, Actor maybe) {
+        for (Actor p = maybe; p != null; p = p.getParent()) if (p == ancestor) return true;
+        return false;
     }
 
     /** Retrouve les acteurs portant un {@code getTutorialName()} donné (helper pour BACK_BUTTON…). */
