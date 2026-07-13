@@ -7,6 +7,49 @@
 
 ---
 
+## 2026-07-12 — Handler `Action` : investigation + architecture « logique cœur par commande »
+
+### Résumé
+Démarrage du **handler `Action`** (commandes génériques du jeu : équiper/voir/promouvoir…). Investigation
+riche → **correction d'un diagnostic**, **1 vrai shim**, et une **conclusion d'architecture**. Handler
+**frameworké et démarré**, **pas encore fonctionnel** pour l'équipement (à finaliser).
+
+### Faits établis (corrigent/précisent)
+- **`GuildStats` n'est PAS un bloqueur** (mon 1ᵉʳ diagnostic était FAUX — « illusion de crash », comme
+  EVIL_QUEEN). `guild_perk_levels.tab` a des `CONTENT_TL` vides (lignes `TIMED_*`) → `parseInt("")` lève,
+  mais `GeneralStats.parseStats` l'**attrape** (`onStatError` LOGue + saute la ligne). Vérifié en isolation
+  (`GuildProbe`) : **`GuildStats` se charge OK**. La stack imprimée était **loguée**, pas fatale.
+- **`DH.app.guildInfo` requis** : `getYourGuildInfo()` → `GuildPerkHelper.updateGuildInfoTimedPerks` lit
+  `guildInfo.perkEndTimes`. **Corrigé** : `ServerContext.bind` pose un `new GuildInfo()` (nouveau joueur).
+- **`ActionHelper.doAction` = chemin CLIENT « appliquer + UI »** : appelle `getScreenManager().getScreen()`
+  **×4** → NPE headless (pas d'écran). ⇒ **on N'UTILISE PAS `doAction`** côté serveur. Comme `openChest`
+  (qui exécute `ChestStats`/`DropTable`, pas un flux « acheter » client), on route **par commande vers la
+  logique CŒUR** (`HeroHelper.equipItem`, `RealGearHelper.equipGear`…). Aiguillage écrit, règle exécutée.
+- **Le badge « Badge of Friendship » n'est PAS du real gear** (`ItemStats.getRealGearType=DEFAULT`) → la
+  commande d'équipement du tuto est vraisemblablement **`EQUIP_ITEM`**, pas `EQUIP_REAL_GEAR`.
+- **Commandes `Action` réellement observées** (log serveur) : `VIEWED_CHESTS`, `RECORD_SERVER_ROLL_FINISHED`
+  (mises à jour d'état légères). L'`Action` d'équipement reste **à capturer** (repro in-game NON déterministe :
+  le pilote n'atteint pas toujours l'onglet gear).
+
+### Ce qui est fait (committé)
+- `ServerContext` : shim `guildInfo` (`new GuildInfo()`), en plus de user/individualUser/évènements.
+- `ServerUser.applyAction`/`applyCommand` : aiguillage **par commande** vers la logique cœur ; routes
+  `EQUIP_ITEM` (`user.getHero` + `HeroHelper.getSlotThatCanEquip` + `HeroHelper.equipItem`) et
+  `EQUIP_REAL_GEAR` (`RealGearHelper.equipGear`) ; **log des commandes non gérées** (= cartographie).
+- `LoginServer` (branche `Action`) : **log du contenu exact** (command/hero/item/extra) + `applyAction` + persist.
+
+### Reste (à finaliser — déterministe, sans le client flaky)
+Le probe d'équipement renvoie **« aucun slot équipable »** → à investiguer : (a) le badge est-il en inventaire
+dans le snapshot ? (b) `getSlotThatCanEquip=null` (niveau/slot du badge, ou slot porté par `Action.extra`) ?
+(c) commande réelle `EQUIP_ITEM` vs autre ? Une fois **vert en probe**, le handler est bon quelle que soit la
+repro in-game. Détail : `docs/SHIMS.md` TODO #5.
+
+### Fichiers touchés
+- `server/java/dhserver/ServerContext.java` (shim guildInfo), `ServerUser.java` (applyAction/applyCommand),
+  `LoginServer.java` (branche Action + log), `docs/SHIMS.md` (#5 réécrit avec les faits).
+
+---
+
 ## 2026-07-12 — Traversée du tuto en autonomie (pilote DEV) : intro→coffres→héros→équipement
 
 ### Résumé

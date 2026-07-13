@@ -6,8 +6,9 @@
 > des fichiers et un historique **court**. L'historique **détaillé** est dans
 > [`JOURNAL.md`](JOURNAL.md). **Maintenir ce fichier à jour en permanence.**
 
-Dernière mise à jour : **2026-07-11** (serveur autoritaire étape 3 ✅ : **BootData nouveau joueur → TUTO
-vérifié en jeu** ; le client d'origine lance IntroTutorialActV2, scène d'ouverture Ralph+Vanellope rendue).
+Dernière mise à jour : **2026-07-12** (handlers `BuyChests`✅ + `Action` EN COURS ; **tuto traversé in-game
+par le pilote DEV** jusqu'à l'équipement — intro→2 coffres→héros→gear ; **reprise persistée** ~20 s ;
+handler `Action` = logique cœur par commande, `doAction` écarté car couplé UI client. Cf. §7 + JOURNAL).
 
 ---
 
@@ -366,6 +367,16 @@ tâche du LoginServer réellement à l'écoute — vérifier `readlink /proc/<pi
    joueur, rig `PreviousRolls(0)`). Dépendance : **joda-time** (données fuseaux hors `game.jar`, fournie).
    Faits : 0 héros avant le coffre (intro synthétique) ; Frozone prédéfini ; coffres hors-tuto = roll serveur
    des `<type>_chest_drops.tab`. Réponse client = `LootResults`. **Handler `BuyChests` ✅ FAIT & VÉRIFIÉ WIRE** (ServerContext = données+shim DH.app ; ServerUser.openChest exécute le code du jeu ; `ChestWireTest` : BuyChests(GOLD)→LootResults{Frozone} ~630ms ; persiste). **Couche évènements spéciaux ✅ (2026-07-12)** : `ServerContext` initialise `SpecialEventsHelper` (init+setSpecialEvents) avec une **extension serveur** (`ServerSpecialEventsExt`, l'extension cliente exige libGDX) → `updateChestCounters` réactivé + le **2ᵉ coffre** (récompense d'objet → `onItemEarn`→contest) ne plante plus (révélé par run client réel). PARTIEL restant : coffres **payants** (shim DH.app battlePassV2 à étoffer). **exit 144 = SIGSTKFLT = kill externe du superviseur** (confirmé sous `strace -f` : 0 crash natif, exit_group(0) propre, disparaît sous ptrace).
+   **Tuto traversé in-game par le pilote DEV (2026-07-12)** jusqu'à l'équipement : intro→2 coffres (GOLD/Frozone,
+   SILVER/**Badge of Friendship**)→CRATE READY→menu HÉROS→détail→onglet GEAR→équip. Correctifs pilote
+   (`TutorialDriver`) : ferme les popups de récompense (`hide()`), tape le bouton-texte principal (VIEW),
+   **cherche l'acteur dans TOUTE la scène** (menu latéral hors rootStack). **Reprise persistée** (ne pas
+   supprimer la DB → ~20 s au hub au lieu de ~4 min ; snapshots `server/data/dh-snapshot-*.db`). Méthodo dans §6ter.
+   **Handler `Action` EN COURS (2026-07-12)** : logique **CŒUR par commande** (`ServerUser.applyCommand` →
+   `HeroHelper.equipItem`/`RealGearHelper.equipGear`) — **PAS `doAction`** (chemin CLIENT couplé UI :
+   `getScreenManager().getScreen()`×4 → NPE headless). Correctifs : **`GuildStats` n'est PAS bloquant**
+   (illusion de crash, loguée+sautée), shim **`DH.app.guildInfo`** posé. Équipement **à finaliser** (probe
+   « no slot » ; commande réelle probable `EQUIP_ITEM`). `LoginServer` log chaque `Action`. Cf. SHIMS #5.
    **(4bis) Tuto d'intro joué JUSQU'À `DONE` (harnais DEV, 2026-07-12)** : `TutorialDriver` (guidé par
    `TutorialHelper.getPointers`) + `dh.autofight` (auto-combat d'origine `setAutoAttack`) — **outils DEV
    côté lanceur, off par défaut, aucune modif jeu/serveur, rien en prod**. Intro complet (COMBAT1+COMBAT_2)
