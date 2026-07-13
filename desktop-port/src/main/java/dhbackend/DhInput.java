@@ -24,6 +24,8 @@ public final class DhInput implements Input {
     private final Set<Integer> justPressed = ConcurrentHashMap.newKeySet();
     private volatile long eventTime;
     private final ConcurrentLinkedQueue<Runnable> injected = new ConcurrentLinkedQueue<>();
+    // Actions à exécuter à la PROCHAINE frame (ex. le touchUp d'un tap, séparé du touchDown).
+    private final ConcurrentLinkedQueue<Runnable> nextFrame = new ConcurrentLinkedQueue<>();
 
     private boolean anyButton() { for (boolean b : buttons) if (b) return true; return false; }
 
@@ -87,7 +89,15 @@ public final class DhInput implements Input {
     public void drain() {
         justPressed.clear(); // "just pressed" = valable pour la frame courante
         Runnable r; while ((r = injected.poll()) != null) { try { r.run(); } catch (Throwable t) { t.printStackTrace(); } }
+        // Bascule les actions différées vers la frame SUIVANTE (drainées au prochain appel).
+        Runnable n; while ((n = nextFrame.poll()) != null) injected.add(n);
     }
-    /** Tap complet (down+up) en un point, en injection. */
-    public void tap(int x, int y) { inject(() -> { touchDown(x, y, 0); touchUp(x, y, 0); }); }
+    /** Tap : touchDown MAINTENANT, touchUp à la PROCHAINE frame. Beaucoup de boutons scene2d (ex.
+     *  {@code DHResourceButton} du coffre) exigent le press puis le release sur des frames DISTINCTES
+     *  (avec un {@code act()} entre) pour déclencher leur {@code clicked()} — down+up dans la même frame
+     *  était ignoré (vérifié : le hit-test touchait le BON bouton, mais le coffre ne s'ouvrait pas). */
+    public void tap(int x, int y) {
+        inject(() -> touchDown(x, y, 0));
+        nextFrame.add(() -> touchUp(x, y, 0));
+    }
 }
