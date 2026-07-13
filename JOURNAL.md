@@ -38,6 +38,17 @@ SLOT=SIX}`. **Le serveur applique + persiste** (handler `ServerUser.applyCommand
 NB : le client envoie le slot dans `extra={SLOT=SIX}` ; le handler le recalcule via `getSlotThatCanEquip`
 (concordant) — on pourra préférer l'`extra` SLOT quand présent.
 
+### Back-out « libre » post-équip → PREMIER COMBAT DE CAMPAGNE atteint
+Indice utilisateur : sur `HeroDetailScreen` post-équip, le **bouton retour est mis en avant** mais
+`getPointers` (rafraîchi) renvoie **vide** → le jeu attend que le joueur **sorte** de lui-même (pas de
+pointeur formel). Ajout au pilote : après ~120 frames d'inactivité (aucun pointeur) sur un écran NON-hub,
+taper **BACK_BUTTON** (seuil en frames, robuste à l'autotap ; un dialogue avance au tap central avant le
+seuil). **Résultat vérifié en jeu** : le pilote sort `HeroDetailScreen`→`HeroListScreen`→…→**hub**, puis le
+tuto reprend ses pointeurs (`MAIN_SCREEN_CAMPAIGN`→`CAMPAIGN_CHAPTER_ONE_NAME`→`CAMPAIGN_PREVIEW_FIGHT_BUTTON`
+→`HERO_CHOOSER_*`) et lance le **1ᵉʳ combat de campagne** (`CampaignAttackScreen`, Frozone équipé, rendu
+unidbg). Le tuto atteint l'acte **`FAST_FORWARD`** (post-INTRO_FEATURES). Capture
+`desktop-port/build/campaign.png`. ⇒ frontière équipement **entièrement franchie**, on est dans le monde/combat.
+
 ### Piège découvert : reprise POLLUÉE
 Reprendre depuis un `dh-server.db` d'une run **tuée** en plein coffre laisse un état incohérent (coffre Gold
 déjà ouvert → bouton « gratuit » en cooldown, mais step de tuto non avancé) → deadlock (le tuto pointe un
