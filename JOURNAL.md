@@ -57,8 +57,8 @@ de départ est une décision de **création de compte** (serveur, qu'on contrôl
 `ServerUser.initNewPlayerResources` : `user.createAndAddHero(RALPH/ELASTIGIRL, WHITE, 1, 1, "new_user")`
 (méthode du jeu ; état = défaut « nouveau héros » = celui de Frozone-coffre) + resync wire. Frozone reste
 donné ENSUITE par le coffre GOLD. Vérifié (`server/smoke/RosterTest`) : {Ralph,Elastigirl} WHITE niv.1 →
-+Frozone → persiste au wire ; 0 régression (Equip/Resource/ViewedChests/ChestWire OK). À confirmer contre la
-vidéo : Vanellope (dans l'intro combat mais débloquée plus tard via `UnlockHeroActV1`) + rang/niveau/étoiles.
++Frozone → persiste au wire ; 0 régression (Equip/Resource/ViewedChests/ChestWire OK). **Confirmé (vidéo)** : Vanellope n'est que dans le 1ᵉʳ combat tuto (synthétique), PAS possédée ensuite →
+roster = Ralph + Elastigirl ; rang/niveau WHITE niv.1 validé.
 
 ### Piège découvert : reprise POLLUÉE
 Reprendre depuis un `dh-server.db` d'une run **tuée** en plein coffre laisse un état incohérent (coffre Gold
