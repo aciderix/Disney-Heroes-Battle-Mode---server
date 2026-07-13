@@ -6,6 +6,12 @@
 > des fichiers et un historique **court**. L'historique **détaillé** est dans
 > [`JOURNAL.md`](JOURNAL.md). **Maintenir ce fichier à jour en permanence.**
 
+Dernière mise à jour : **2026-07-13 (soir 2)** — **Roster de départ ✅** : un compte neuf possède
+**Ralph + Elastigirl** (WHITE niv.1) AVANT le coffre (fidélité vidéo ; Frozone arrive au coffre GOLD ;
+Vanellope = combat d'intro synthétique, débloquée plus tard). `ServerUser.createAndAddHero` + `RosterTest`.
+**Back-out post-équip ✅** (heuristique pilote) → le pilote traverse jusqu'au **1ᵉʳ combat de campagne**
+(acte `FAST_FORWARD`). Voir plus bas.
+
 Dernière mise à jour : **2026-07-13 (soir)** — **`EQUIP_ITEM` ✅ VÉRIFIÉ IN-GAME (wire)** : vrai client →
 `Action{EQUIP_ITEM, FROZONE, BADGE_OF_FRIENDSHIP, SLOT=SIX}` → serveur « appliquée [persisté] » → tuto avance
 (séquence enregistrée `HERO_GEAR_SLOT_SIX`→`CRAFTING_WINDOW_EQUIP_BUTTON`). **Enregistreur pas-à-pas**
