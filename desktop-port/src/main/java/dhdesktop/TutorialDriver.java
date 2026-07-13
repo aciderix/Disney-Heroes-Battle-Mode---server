@@ -301,28 +301,22 @@ public final class TutorialDriver {
         catch (Throwable t) { return null; }
     }
 
-    /** Tape le centre de chaque acteur trouvé (conversion stage → écran par le viewport du jeu). */
+    /** Tape chaque acteur trouvé sur un point dont le HIT-TEST retombe sur la cible (conversion stage →
+     *  écran par le viewport du jeu). Le jeu hit-teste en coords stage ({@code Stage.hit}) ; pour une Table
+     *  {@code touch=childrenOnly} le centre peut ne PAS toucher l'enfant qui reçoit l'évènement (qui bulle
+     *  ensuite vers le ClickListener de la Table). On choisit donc un point qui touche vraiment un descendant
+     *  de la cible → le clic se déclenche de façon fiable (ex. GOLD_CHEST_FREE_BUTTON). */
     private static boolean tapAll(List<Actor> found, DhInput input, int w, int h) {
         boolean tapped = false;
         for (Actor a : found) {
-            // On tape le CENTRE de l'acteur désigné (une Table `touch=childrenOnly` reçoit le clic via ses
-            // enfants → l'évènement bulle vers son ClickListener ; taper le centre fonctionne, vérifié).
-            // NB : décaler la cible vers un « enfant touchable » cassait ce cas — le blocage à autotap élevé
-            // sur GOLD_CHEST_FREE_BUTTON était un problème de TIMING (bouton pulsé), résolu en pilotant à
-            // chaque frame (le recorder décime ses captures), pas une histoire de coordonnée.
             Stage st = a.getStage();
             if (st == null || a.getWidth() <= 0 || a.getHeight() <= 0) continue;
-            Vector2 v = a.localToStageCoordinates(new Vector2(a.getWidth() / 2f, a.getHeight() / 2f));
             float sw = st.getWidth(), sh = st.getHeight();
             if (sw <= 0 || sh <= 0) continue;
-            // DIAGNOSTIC (REC/DEBUG) : QUEL acteur reçoit réellement le touch à cette coordonnée ? Le jeu
-            // hit-teste en coords stage (Stage.hit) → si l'acteur touché n'est PAS la cible désignée (ni un
-            // de ses descendants), le tap déclenche AUTRE CHOSE (ex. coffre Diamant) → on le sait au lieu de
-            // deviner. hit-test à la coordonnée EXACTE qu'on va taper (reconvertie écran→stage).
+            Vector2 v = reliableTapPoint(st, a);   // point dont Stage.hit retombe sur la cible
             if (REC || DEBUG) {
                 Actor hit = st.hit(v.x, v.y, true);
-                boolean onTarget = hit != null && (hit == a || isDescendant(a, hit) || isDescendant(hit, a));
-                // System.err = NON bufferisé (lisible en direct, contrairement à System.out redirigé fichier).
+                boolean onTarget = hit != null && isDescendant(a, hit);
                 System.err.println("[tuthit] cible=" + a.getTutorialName() + " @stage(" + (int) v.x + ","
                     + (int) v.y + ") → touché=" + describe(hit) + (onTarget ? "  [OK]" : "  [!! HORS-CIBLE]"));
             }
@@ -330,6 +324,33 @@ public final class TutorialDriver {
             tapped = true;
         }
         return tapped;
+    }
+
+    /** Point (coords stage) à taper pour déclencher {@code a} : son centre s'il touche déjà un descendant de
+     *  {@code a} (cas normal), sinon le centre d'un descendant intérieur dont le hit-test retombe sur {@code a}
+     *  (gère les Table {@code childrenOnly} dont le centre ne touche pas l'enfant cliquable). */
+    private static Vector2 reliableTapPoint(Stage st, Actor a) {
+        Vector2 c = a.localToStageCoordinates(new Vector2(a.getWidth() / 2f, a.getHeight() / 2f));
+        Actor hit = st.hit(c.x, c.y, true);
+        if (hit != null && isDescendant(a, hit)) return c;      // le centre atteint bien la cible
+        Vector2 alt = pointHittingDescendant(st, a, a);
+        return alt != null ? alt : c;                           // fallback : centre
+    }
+
+    /** Renvoie le centre (stage) du 1er descendant de {@code a} dont le hit-test retombe DANS {@code a}. */
+    private static Vector2 pointHittingDescendant(Stage st, Actor a, Actor node) {
+        if (!(node instanceof Group)) return null;
+        for (Actor c : ((Group) node).getChildren()) {
+            if (c.isVisible() && c.getWidth() > 0 && c.getHeight() > 0
+                && c.getTouchable() != com.badlogic.gdx.scenes.scene2d.Touchable.disabled) {
+                Vector2 cc = c.localToStageCoordinates(new Vector2(c.getWidth() / 2f, c.getHeight() / 2f));
+                Actor hit = st.hit(cc.x, cc.y, true);
+                if (hit != null && isDescendant(a, hit)) return cc;
+            }
+            Vector2 deep = pointHittingDescendant(st, a, c);
+            if (deep != null) return deep;
+        }
+        return null;
     }
 
     /** Décrit un acteur touché : classe + tutorialName + chaîne d'ancêtres (tutorialName / classe). */
