@@ -45,10 +45,18 @@ Diagnostic pas à pas (sans le client flaky) : (a) `openChest(SILVER)` **persist
 BADGE_OF_FRIENDSHIP`) ; (c) `getSlotThatCanEquip` renvoie null car `ItemStats.isItemReleased(badge,
 ContentHelper.getCurrent(user))=false` **headless** (colonne de contenu mal résolue — bug à corriger à part) ;
 (d) `HeroHelper.equipItem(FROZONE, badge, SIX, user)` **équipe correctement** (slot 6 rempli, badge consommé).
-⇒ **fix** : `applyCommand` route `EQUIP_ITEM` en trouvant le slot par le **mapping déterministe**
-(`NormalGearStats.getItem == item`, slot libre) puis `HeroHelper.equipItem`. **Vérifié** (`server/smoke/
-EquipTest`) : équipe le badge en slot 6 + **persiste au round-trip wire**. Reste : autres commandes
-(`VIEWED_CHESTS`…) + corriger `ContentHelper.getCurrent` headless. Détail : `docs/SHIMS.md` #5.
+⇒ **fix** : `applyCommand` route `EQUIP_ITEM` via `HeroHelper.getSlotThatCanEquip` + `equipItem`. **Vérifié**
+(`server/smoke/EquipTest`) : équipe le badge en slot 6 + **persiste au round-trip wire**.
+
+### Couche CONTENU (colonnes de release) ✅ RÉSOLU — unlock générique
+Cause racine du `isItemReleased=false` headless : `ContentHelper` démarre **vide** (`ContentStats
+.getColumns()=0` → `getColumn(now)=DEFAULT`). Le jeu charge le contenu du shard via
+`ShardStats.setShardID(shard, map)` → `parseStats("content.<shard>.tab", opener)` — jamais appelé headless.
+⇒ **fix** : `ServerContext.bind` appelle `ContentHelper.get().setShardID(user.getShardID(), new HashMap())`
+→ charge `content.<shard>.tab` (372 colonnes pour shard 1) → `isItemReleased`=true. **Générique** (débloque
+toute logique gatée « contenu released », pas que l'équipement). `EQUIP_ITEM` repasse alors sur la logique
+d'origine `getSlotThatCanEquip` (plus de contournement). Reste : autres commandes (`VIEWED_CHESTS`…).
+Détail : `docs/SHIMS.md` #5.
 
 ### Fichiers touchés
 - `server/java/dhserver/ServerContext.java` (shim guildInfo), `ServerUser.java` (applyAction/applyCommand),
