@@ -69,6 +69,7 @@ public final class TutorialDriver {
     // (dh.playlevel="chapitre,niveau", défaut 1,1 = tuto). Cf. MEMORY §6ter B-bis (sonde dh.mapprobe).
     private static final int[] PLAY_LEVEL = parseLevel(System.getProperty("dh.playlevel", "1,1"));
     private static int enterCooldown = 0;
+    private static int combatCooldown = 0;   // cadence des taps sur la flèche « TAP TO CONTINUE » (combat)
     private static int[] parseLevel(String s) {
         try { String[] p = s.split(","); return new int[]{Integer.parseInt(p[0].trim()), Integer.parseInt(p[1].trim())}; }
         catch (Throwable t) { return new int[]{1, 1}; }
@@ -238,9 +239,17 @@ public final class TutorialDriver {
             // → le compteur se réinitialise (pas de retour prématuré).
             if (targets.isEmpty()) {
                 if (screenName.equals(idleScreen)) idleTicks++; else { idleScreen = screenName; idleTicks = 0; }
-                // ÉCRAN DE COMBAT (*AttackScreen) : ne JAMAIS faire RETOUR — le combat se joue (auto-combat) et
-                // l'intro « TAP TO CONTINUE » se ferme au tap central du lanceur. Un RETOUR annulerait le combat.
-                if (screenName.contains("AttackScreen")) return false;
+                // ÉCRAN DE COMBAT (*AttackScreen) : ne JAMAIS faire RETOUR. Le « TAP TO CONTINUE » de fin de
+                // vague se ferme en tapant la FLÈCHE (droite-centre) → vague suivante. On tape donc cette zone
+                // périodiquement (inoffensif en combat actif = ciel vide) ; l'auto-combat joue les vagues.
+                if (screenName.contains("AttackScreen")) {
+                    if (combatCooldown <= 0) {
+                        int ax = Math.round(w * 0.93f), ay = Math.round(h * 0.5f);
+                        if (TAP_HOLD > 0) input.tapHold(ax, ay, TAP_HOLD); else input.tap(ax, ay);
+                        combatCooldown = 8;
+                    } else combatCooldown--;
+                    return true;   // géré ici (flèche de continuation) ; pas de tap central du lanceur
+                }
                 if (!screenName.contains("MainScreen") && idleTicks >= IDLE_BACK_THRESHOLD) {
                     List<Actor> back = findByName(searchRoot, "BACK_BUTTON");
                     if (!back.isEmpty()) {
