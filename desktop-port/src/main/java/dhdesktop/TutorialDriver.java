@@ -63,6 +63,16 @@ public final class TutorialDriver {
     private static final String PROBE_ACTOR = System.getProperty("dh.probeactor", "CAMPAIGN_CHAPTER_ONE_NAME");
     private static int probeTick = 0;
     private static String probeLastScreen = "";
+    // Entrée de niveau de campagne : la carte est une scène g2d (CityMapDisplay) sans acteur cliquable, et
+    // getPointers() est vide headless. On entre le niveau JOUABLE via l'API du jeu — la méthode EXACTE que
+    // le vrai tap déclenche : CampaignScreen.onCampaignLevelTapped(CampaignLevelID). Niveau configurable
+    // (dh.playlevel="chapitre,niveau", défaut 1,1 = tuto). Cf. MEMORY §6ter B-bis (sonde dh.mapprobe).
+    private static final int[] PLAY_LEVEL = parseLevel(System.getProperty("dh.playlevel", "1,1"));
+    private static int enterCooldown = 0;
+    private static int[] parseLevel(String s) {
+        try { String[] p = s.split(","); return new int[]{Integer.parseInt(p[0].trim()), Integer.parseInt(p[1].trim())}; }
+        catch (Throwable t) { return new int[]{1, 1}; }
+    }
     // Le recorder DÉCIME : on pilote à chaque frame (fiable — certains boutons pulsés exigent des taps
     // rapprochés) mais on ne DUMP + capture que toutes les RECEVERY frames (étapes nettes, peu de fichiers).
     private static final int RECEVERY = Math.max(1, Integer.getInteger("dh.recevery", 20));
@@ -214,6 +224,10 @@ public final class TutorialDriver {
                 mapProbe(screenName, searchRoot, stg, input, w, h);
                 return true;   // handled : empêche le tap central du lanceur
             }
+            // ENTRÉE DE NIVEAU : sur la carte de campagne (scène g2d, aucun acteur cliquable, getPointers vide),
+            // on déclenche la MÊME méthode du jeu que le vrai tap d'un nœud de niveau (onCampaignLevelTapped)
+            // pour le niveau jouable → ouvre le choix des héros (le pilote gère ensuite le bouton FIGHT).
+            if (!MAP_PROBE && screenName.equals("CampaignScreen") && enterCampaignLevel(screen)) return true;
 
             // Aucun pointeur de tuto : soit un dialogue « tap to continue » (le lanceur tape au centre), soit
             // le tuto attend qu'on SORTE d'un sous-écran de nous-mêmes (ex. post-équip sur HeroDetailScreen :
@@ -419,6 +433,35 @@ public final class TutorialDriver {
         if (TAP_HOLD > 0) { if (tapCooldown <= 0) { input.tapHold(sx, sy, TAP_HOLD); tapCooldown = TAP_HOLD + 3; } }
         else input.tap(sx, sy);
         if (tapCooldown > 0) tapCooldown--;
+    }
+
+    /**
+     * Entre le niveau de campagne JOUABLE en appelant la méthode du jeu qu'un vrai tap de nœud déclenche :
+     * {@code CampaignScreen.onCampaignLevelTapped(new CampaignLevelID(chapitre, niveau))}. La carte étant
+     * une scène g2d ({@code CityMapDisplay}) sans acteur scene2d cliquable et {@code getPointers()} vide
+     * headless, c'est le point d'entrée FIDÈLE (l'API du jeu, pas une coordonnée devinée). Cooldown pour
+     * laisser la transition (→ choix des héros) se faire. Renvoie true si l'appel a été émis.
+     */
+    private static boolean enterCampaignLevel(Object screen) {
+        if (enterCooldown > 0) { enterCooldown--; return false; }
+        try {
+            Class<?> idCls = Class.forName("com.perblue.heroes.ui.campaign.CampaignLevelID");
+            Object id = idCls.getConstructor(int.class, int.class).newInstance(PLAY_LEVEL[0], PLAY_LEVEL[1]);
+            java.lang.reflect.Method m = null;
+            for (Class<?> c = screen.getClass(); c != null && m == null; c = c.getSuperclass()) {
+                try { m = c.getDeclaredMethod("onCampaignLevelTapped", idCls); } catch (NoSuchMethodException ignore) {}
+            }
+            if (m == null) { if (DEBUG) System.out.println("[tutodrive] onCampaignLevelTapped introuvable"); return false; }
+            m.setAccessible(true);
+            m.invoke(screen, id);
+            System.out.println("[tutodrive] CampaignScreen → onCampaignLevelTapped(" + PLAY_LEVEL[0] + "-"
+                + PLAY_LEVEL[1] + ") [API du jeu, entrée niveau]");
+            enterCooldown = 90;   // ~90 frames avant un éventuel nouvel essai (laisse ouvrir le choix héros)
+            return true;
+        } catch (Throwable t) {
+            if (DEBUG) System.out.println("[tutodrive] enterCampaignLevel échec: " + t);
+            return false;
+        }
     }
 
     /** Vrai si un DFLabel sous {@code root} contient {@code sub} dans son texte (réflexion getText). */

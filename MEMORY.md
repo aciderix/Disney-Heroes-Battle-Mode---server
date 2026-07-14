@@ -274,6 +274,19 @@ hub où l'auto-tap cale :
    « VIEW/OPEN/OK » ; sinon bouton par nom) — **jamais une coordonnée devinée**, toujours l'acteur/API du jeu.
 4. Recompiler (`gradle -q compileJava`), relancer (reprise rapide via A).
 
+**B-bis. SONDE « cliquer + monitorer ce qui s'active » (`dh.mapprobe`) — OUTIL DE DIAGNOSTIC À GARDER.**
+Quand un écran n'a **aucun acteur `[CLICK]`** exploitable (ex. carte de campagne = scène **g2d**
+`CityMapDisplay`, pas du scene2d ; `getPointers()` vide headless), on ne devine pas : on **agit comme un
+vrai doigt ET on observe la réaction**. `TutorialDriver.mapProbe` (activé `DH_MAPPROBE=1`) : suspend le
+RETOUR, **hit-teste une grille** autour de la cible (acteur touché + **1er ancêtre porteur de listener** +
+**types de listeners** via `getListeners()`), **tape** le point, puis **journalise la transition d'écran**.
+C'est comme ça qu'on a élucidé l'entrée en chapitre : le tap n'atteint aucun bouton scene2d → le clic est
+géré par `CityMapScreen` (caméra `MapCamera2D` → `CityMapDisplay.getHitCampaignLevel(x,y)` →
+`CampaignLevelID` → `onCampaignLevelTapped(id)`). **Généralisable** : dès qu'on ne sait pas *quel élément
+activer* sur un écran, brancher cette sonde (cliquer + monitorer listeners + transition) révèle la vraie
+mécanique du jeu, puis on câble le pilote sur **l'API du jeu** trouvée (ici `onCampaignLevelTapped`, pas une
+coordonnée). Voir JOURNAL 2026-07-14.
+
 **C. Comportement du pilote** (`TutorialDriver.driveOnce`, ordre) : (1) popup ouverte + pointeur tuto DEDANS
 → taper dedans ; (2) popup d'**affichage de récompense** (`*Result*`/`*Reward*` : `ChestResultsWindow`) →
 **fermer** (`BaseModalWindow.hide()`) ; (3) popup **interactive** (`ChestReadyWindow` « CRATE READY ») →
