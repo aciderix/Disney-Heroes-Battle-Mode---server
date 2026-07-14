@@ -238,6 +238,9 @@ public final class TutorialDriver {
             // → le compteur se réinitialise (pas de retour prématuré).
             if (targets.isEmpty()) {
                 if (screenName.equals(idleScreen)) idleTicks++; else { idleScreen = screenName; idleTicks = 0; }
+                // ÉCRAN DE COMBAT (*AttackScreen) : ne JAMAIS faire RETOUR — le combat se joue (auto-combat) et
+                // l'intro « TAP TO CONTINUE » se ferme au tap central du lanceur. Un RETOUR annulerait le combat.
+                if (screenName.contains("AttackScreen")) return false;
                 if (!screenName.contains("MainScreen") && idleTicks >= IDLE_BACK_THRESHOLD) {
                     List<Actor> back = findByName(searchRoot, "BACK_BUTTON");
                     if (!back.isEmpty()) {
