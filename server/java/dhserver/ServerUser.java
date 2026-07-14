@@ -15,8 +15,14 @@ import com.perblue.heroes.game.objects.UnitData;
 import com.perblue.heroes.game.objects.User;
 import com.perblue.heroes.network.messages.BootData;
 import com.perblue.heroes.network.messages.BuyChests;
+import com.perblue.heroes.network.messages.CampaignAttack;
+import com.perblue.heroes.network.messages.CampaignType;
 import com.perblue.heroes.network.messages.ChangeTutorialStep;
 import com.perblue.heroes.network.messages.ChestType;
+import com.perblue.heroes.network.messages.GameMode;
+import com.perblue.heroes.game.data.campaign.CampaignLevel;
+import com.perblue.heroes.game.logic.CampaignHelper;
+import com.perblue.heroes.game.specialevent.SpecialEventSnapshot;
 import com.perblue.heroes.network.messages.IndividualUserExtra;
 import com.perblue.heroes.network.messages.LootResults;
 import com.perblue.heroes.network.messages.MessageFactory;
@@ -233,6 +239,42 @@ public final class ServerUser {
     resyncHeroes(user);
     individualUserExtra.chestUpgradeXP = iu.getChestUpgradeXP();
     return lr;
+  }
+
+  /**
+   * Enregistre l'issue d'un combat de CAMPAGNE (docs/PRINCIPLES.md §3 : on EXÉCUTE la logique du jeu).
+   * Le client joue le combat (client-side, spine unidbg), construit le {@link CampaignAttack} via
+   * {@code ClientNetworkStateConverter.getCampaignAttack} (qui roule {@code CampaignHelper.recordOutcome}
+   * de SON côté, optimiste) puis l'envoie <b>fire-and-forget</b>. Le serveur AUTORITATIF ré-exécute la
+   * MÊME logique du jeu sur son état : {@code CampaignHelper.recordOutcome} <b>consomme la stamina</b>
+   * ({@code getStaminaCost}+{@code chargeUser}), <b>donne loot/gold/XP</b> ({@code giveLoot}/{@code giveGold}
+   * /{@code giveTeamXP}) et <b>met à jour la progression</b> ({@code ICampaignLevelStatus}). Vérifié par
+   * {@code server/smoke/CampaignAttackTest} (énergie -6, or +340, niveau 1-1 à 3★).
+   *
+   * <p><b>PARTIEL (cf. SHIMS)</b> : (1) {@code SpecialEventSnapshot.NONE} → aucun bonus d'évènement
+   * appliqué (headless sans évènement live) ; (2) l'{@code outcome} est CELUI du client (combat
+   * client-autoritatif comme dans le jeu d'origine) ; (3) réponse : fire-and-forget (aucun listener
+   * client pour {@code CampaignAttack} au bytecode) — à reconfirmer quand le pilote atteindra le combat.
+   */
+  @SuppressWarnings("unchecked")
+  public synchronized void recordCampaignAttack(CampaignAttack m) {
+    ServerContext.init();
+    User user = ClientNetworkStateConverter.getUser(userInfo, userExtra, "campaign");
+    IndividualUser iu = ClientNetworkStateConverter.getIndividualUser(
+        individualUserExtra, userID, userInfo.diamonds, "campaign");
+    ServerContext.bind(user, iu);
+
+    CampaignType type = m.campaignType == null ? CampaignType.NORMAL : m.campaignType;
+    GameMode mode = type == CampaignType.ELITE ? GameMode.ELITE_CAMPAIGN : GameMode.CAMPAIGN;
+    CampaignLevel level = CampaignLevel.of(mode, m.chapter, m.level);
+
+    java.util.List<Object> lootEarned = new java.util.ArrayList<>();
+    java.util.List<Object> memoryChanges = new java.util.ArrayList<>();
+    // base : attackers/defenders = Collection de AttackLineupSummary, outcome + stars remplis par le client.
+    CampaignHelper.recordOutcome(user, user, level, m.base.outcome, m.base.stars, m.stagesCleared,
+        lootEarned, memoryChanges, m.base.attackers, m.base.defenders, SpecialEventSnapshot.NONE);
+
+    resyncHeroes(user);   // héros (XP/état) → wire ; stamina/or/progression sont dans this.extra (auto).
   }
 
   /**

@@ -6,6 +6,24 @@
 > des fichiers et un historique **court**. L'historique **détaillé** est dans
 > [`JOURNAL.md`](JOURNAL.md). **Maintenir ce fichier à jour en permanence.**
 
+Dernière mise à jour : **2026-07-14** — **PIPELINE DE COMBAT DE CAMPAGNE (serveur) ✅ VÉRIFIÉ**. Le
+combat tourne côté CLIENT (unidbg spine) ; le client construit `CampaignAttack{base(attackers,outcome,
+stars), campaignType, chapter, level, stagesCleared}` via `ClientNetworkStateConverter.getCampaignAttack`
+(qui roule `CampaignHelper.recordOutcome` de son côté) et l'envoie **fire-and-forget**. Nouveau handler
+serveur AUTORITATIF **`ServerUser.recordCampaignAttack`** + branche `LoginServer` : ré-exécute
+`CampaignHelper.recordOutcome` sur l'état serveur → **consomme la stamina** (`getStaminaCost`+`chargeUser`),
+**donne loot/gold/XP** (`giveLoot`/`giveGold`/`giveTeamXP`), **met à jour la progression**
+(`ICampaignLevelStatus`), persiste. Vérifié `server/smoke/CampaignAttackTest` : NORMAL 1-1 WIN →
+**énergie -6 (120→114), or +340, niveau à 3★** — pure logique du jeu, rien d'inventé. PARTIEL (SHIMS) :
+`SpecialEventSnapshot.NONE` (pas de bonus évènement), outcome/stars = ceux du client (combat
+client-autoritatif), contrat fire-and-forget à reconfirmer en jeu.
+**Frontière pilote (DEV, #17)** : l'auto-pilote NE sait pas encore ENTRER dans un chapitre. La carte
+`CampaignScreen` (a) joue une animation « SCANNING CITY MAP » gating l'interactivité, (b) `getPointers()`
+renvoie **vide** headless (le pointeur CHAPTER 1 n'est pas émis), (c) le nœud `CAMPAIGN_CHAPTER_ONE_NAME`
+est un `Stack childrenOnly` à label `disabled` sans `[CLICK]` (input carte custom, pas un bouton scene2d).
+→ le pilote idle puis RETOUR, boucle MainScreen↔CampaignScreen. À résoudre pour la démo in-game (le
+pipeline serveur, lui, est prouvé indépendamment).
+
 Dernière mise à jour : **2026-07-13 (nuit)** — **COFFRE GRATUIT DU TUTO DÉBLOQUÉ ✅ (cause racine du
 blocage à l'étape coffre GOLD trouvée)**. Symptôme : après l'ouverture, le tuto ne repartait pas ;
 l'écran montrait le détail du coffre GOLD (« DIAMOND CRATE ») avec **« Free in : 1j 23h 46m »** et le

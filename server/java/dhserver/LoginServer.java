@@ -9,6 +9,7 @@ import com.perblue.heroes.network.DHXORConnectionWrapper;
 import com.perblue.heroes.network.messages.BootData;
 import com.perblue.heroes.network.messages.Action;
 import com.perblue.heroes.network.messages.BuyChests;
+import com.perblue.heroes.network.messages.CampaignAttack;
 import com.perblue.heroes.network.messages.ChangeTutorialStep;
 import com.perblue.heroes.network.messages.ClientInfo;
 import com.perblue.heroes.network.messages.LootResults;
@@ -106,6 +107,22 @@ public final class LoginServer {
                     + user.heroCount() + " [persisté]");
               } catch (Throwable t) {
                 System.out.println("[login]     ! openChest échec: " + t);
+                t.printStackTrace();
+              }
+            } else if (m instanceof CampaignAttack) {
+              // Combat de campagne : le client a joué le combat (client-side) et envoie l'issue
+              // (fire-and-forget). Le serveur AUTORITATIF ré-exécute recordOutcome (stamina, loot/gold/
+              // XP, progression) sur son état et persiste. Pas de réponse (aucun listener client).
+              try {
+                CampaignAttack ca = (CampaignAttack) m;
+                user.recordCampaignAttack(ca);
+                try { store.save(user); } catch (Exception e) {
+                  System.out.println("[login]     ! persistance échouée: " + e); }
+                System.out.println("[login] <== CampaignAttack : " + ca.campaignType + " " + ca.chapter
+                    + "-" + ca.level + " outcome=" + (ca.base == null ? "?" : ca.base.outcome)
+                    + " → recordOutcome appliqué [persisté]");
+              } catch (Throwable t) {
+                System.out.println("[login]     ! recordCampaignAttack échec: " + t);
                 t.printStackTrace();
               }
             } else if (m instanceof Action) {

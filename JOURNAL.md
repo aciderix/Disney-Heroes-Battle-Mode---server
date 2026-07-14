@@ -1086,3 +1086,42 @@ inventée** (caps issus de `UserHelper.getResourceCap`).
 **Chaîne complète attendue en jeu** : coffre GOLD dispo → clic FREE → `BuyChests` → serveur
 `LootResults{Frozone}` → `getHero(FROZONE)!=null` → tuto passe à `HERO_LIST_TAP_FROZONE`. Fichiers :
 `server/java/dhserver/ServerUser.java` (initNewPlayerResources), `server/smoke/ResourceTest.java`.
+
+### Pipeline de combat de CAMPAGNE côté serveur — recordOutcome autoritatif (2026-07-14)
+**Objectif** (demande utilisateur) : valider le pipeline de combat de campagne — entrée, choix héros,
+skills, vagues, loot (gold/items), récompenses, XP, conso énergie.
+
+**Protocole (décompilation, client = source de vérité)** :
+- Le combat tourne CÔTÉ CLIENT (unidbg spine, déjà fonctionnel depuis l'intro).
+- `CampaignAttackScreen.doCombatDone` → `ClientNetworkStateConverter.getCampaignAttack(user, type, ch, lvl,
+  outcome, stars, attackers, stagesCleared, screen, snapshot)` qui **roule `CampaignHelper.recordOutcome`
+  côté client** (optimiste) puis `NetworkProvider.sendMessage(campaignAttack)`.
+- `CampaignAttack{base:AttackBase(attackers,defenders,outcome,stars,…), campaignType, chapter, level,
+  lootEarned, memoryChanges, stagesCleared}`. `attackers/defenders` = Collection de **`AttackLineupSummary`**
+  (`{List units:AttackUnitSummary}`), une par vague. **Aucun champ roll/seed** (≠ BuyChests) ; **aucun
+  listener client** pour la réponse → **fire-and-forget**.
+
+**Logique autoritative = `CampaignHelper.recordOutcome`** (à exécuter, PRINCIPLES §3) :
+consomme la stamina (`getStaminaCost`+`UserHelper.chargeUser`), donne loot/gold/XP
+(`giveLoot`/`giveGold`/`giveTeamXP`), met à jour `ICampaignLevelStatus`. `IUser extends IGuildPerkProvider`
+→ `recordOutcome(user, user, …)`. Param 11 = `SpecialEventSnapshot` : **`.NONE`** (déréférencé sinon NPE).
+
+**Implémenté** : `ServerUser.recordCampaignAttack(CampaignAttack)` + branche `LoginServer` (fire-and-forget,
+persiste). Reconstruit le User, résout `CampaignLevel.of(GameMode.CAMPAIGN/ELITE_CAMPAIGN, ch, lvl)`,
+appelle `recordOutcome`, resync + save.
+
+**Vérifié** `server/smoke/CampaignAttackTest` (NORMAL 1-1, WIN, équipe Ralph+Elastigirl+Frozone) :
+- **énergie -6** (120→114 ; `staminaCost=6`)  — conso énergie ✓
+- **or +340** (0→340 ; `giveGold`→`giveUser`, appliqué direct)  — récompense ✓
+- **niveau 1-1 → 3★** (`ICampaignLevelStatus`)  — progression ✓
+- team XP donné (pas assez pour monter de niveau) ; `lootEarned`=0 objet (normal en 1-1, items seulement).
+ResourceTest/RosterTest toujours OK.
+
+**PARTIEL (SHIMS)** : `SpecialEventSnapshot.NONE` (pas de bonus évènement) ; outcome/stars = ceux du client
+(combat client-autoritatif, comme le jeu d'origine) ; contrat fire-and-forget à reconfirmer en jeu.
+
+**Frontière pilote DEV (non bloquant pour le serveur)** : l'auto-pilote ne sait pas ENTRER dans un chapitre.
+Observé (recorder) sur `CampaignScreen` : animation « SCANNING CITY MAP », `getPointers()` **vide** headless,
+nœud `CAMPAIGN_CHAPTER_ONE_NAME` = `Stack childrenOnly` + label `disabled` sans `[CLICK]` (input carte
+custom). Le pilote idle → RETOUR → boucle. À résoudre séparément pour la démo visuelle in-game.
+Fichiers : `server/java/dhserver/{ServerUser,LoginServer}.java`, `server/smoke/CampaignAttackTest.java`.
