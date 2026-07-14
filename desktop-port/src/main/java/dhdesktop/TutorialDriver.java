@@ -447,16 +447,19 @@ public final class TutorialDriver {
         try {
             Class<?> idCls = Class.forName("com.perblue.heroes.ui.campaign.CampaignLevelID");
             Object id = idCls.getConstructor(int.class, int.class).newInstance(PLAY_LEVEL[0], PLAY_LEVEL[1]);
+            // normalOrEliteNodeSelected = méthode du jeu que le tap d'un nœud atteint (via onCampaignLevelTapped) :
+            // vérifie le statut de déverrouillage puis pousse CampaignPreviewScreen(type, ch, lvl). On la cible
+            // DIRECTEMENT car onCampaignLevelTapped no-ope tant que la carte est dézoomée (garde mapZoomedOut).
             java.lang.reflect.Method m = null;
             for (Class<?> c = screen.getClass(); c != null && m == null; c = c.getSuperclass()) {
-                try { m = c.getDeclaredMethod("onCampaignLevelTapped", idCls); } catch (NoSuchMethodException ignore) {}
+                try { m = c.getDeclaredMethod("normalOrEliteNodeSelected", idCls); } catch (NoSuchMethodException ignore) {}
             }
-            if (m == null) { if (DEBUG) System.out.println("[tutodrive] onCampaignLevelTapped introuvable"); return false; }
+            if (m == null) { if (DEBUG) System.out.println("[tutodrive] normalOrEliteNodeSelected introuvable"); return false; }
             m.setAccessible(true);
             m.invoke(screen, id);
-            System.out.println("[tutodrive] CampaignScreen → onCampaignLevelTapped(" + PLAY_LEVEL[0] + "-"
-                + PLAY_LEVEL[1] + ") [API du jeu, entrée niveau]");
-            enterCooldown = 90;   // ~90 frames avant un éventuel nouvel essai (laisse ouvrir le choix héros)
+            System.out.println("[tutodrive] CampaignScreen → normalOrEliteNodeSelected(" + PLAY_LEVEL[0] + "-"
+                + PLAY_LEVEL[1] + ") [API du jeu → CampaignPreviewScreen]");
+            enterCooldown = 90;   // ~90 frames avant un éventuel nouvel essai (laisse ouvrir l'aperçu du niveau)
             return true;
         } catch (Throwable t) {
             if (DEBUG) System.out.println("[tutodrive] enterCampaignLevel échec: " + t);
