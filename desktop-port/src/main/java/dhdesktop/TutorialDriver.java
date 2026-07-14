@@ -232,7 +232,7 @@ public final class TutorialDriver {
             // ENTRÉE DE NIVEAU : sur la carte de campagne (scène g2d, aucun acteur cliquable, getPointers vide),
             // on déclenche la MÊME méthode du jeu que le vrai tap d'un nœud de niveau (onCampaignLevelTapped)
             // pour le niveau jouable → ouvre le choix des héros (le pilote gère ensuite le bouton FIGHT).
-            if (!MAP_PROBE && screenName.equals("CampaignScreen") && enterCampaignLevel(screen)) return true;
+            if (!MAP_PROBE && screenName.equals("CampaignScreen") && enterCampaignLevel(screen, user)) return true;
 
             // Aucun pointeur de tuto : soit un dialogue « tap to continue » (le lanceur tape au centre), soit
             // le tuto attend qu'on SORTE d'un sous-écran de nous-mêmes (ex. post-équip sur HeroDetailScreen :
@@ -469,11 +469,12 @@ public final class TutorialDriver {
      * headless, c'est le point d'entrée FIDÈLE (l'API du jeu, pas une coordonnée devinée). Cooldown pour
      * laisser la transition (→ choix des héros) se faire. Renvoie true si l'appel a été émis.
      */
-    private static boolean enterCampaignLevel(Object screen) {
+    private static boolean enterCampaignLevel(Object screen, User user) {
         if (enterCooldown > 0) { enterCooldown--; return false; }
         try {
+            int[] lvl = nextPlayableLevel(user);   // enchaîne 1-1 → 1-2 → … (prochain niveau débloqué)
             Class<?> idCls = Class.forName("com.perblue.heroes.ui.campaign.CampaignLevelID");
-            Object id = idCls.getConstructor(int.class, int.class).newInstance(PLAY_LEVEL[0], PLAY_LEVEL[1]);
+            Object id = idCls.getConstructor(int.class, int.class).newInstance(lvl[0], lvl[1]);
             // normalOrEliteNodeSelected = méthode du jeu que le tap d'un nœud atteint (via onCampaignLevelTapped) :
             // vérifie le statut de déverrouillage puis pousse CampaignPreviewScreen(type, ch, lvl). On la cible
             // DIRECTEMENT car onCampaignLevelTapped no-ope tant que la carte est dézoomée (garde mapZoomedOut).
@@ -484,14 +485,34 @@ public final class TutorialDriver {
             if (m == null) { if (DEBUG) System.out.println("[tutodrive] normalOrEliteNodeSelected introuvable"); return false; }
             m.setAccessible(true);
             m.invoke(screen, id);
-            System.out.println("[tutodrive] CampaignScreen → normalOrEliteNodeSelected(" + PLAY_LEVEL[0] + "-"
-                + PLAY_LEVEL[1] + ") [API du jeu → CampaignPreviewScreen]");
+            System.out.println("[tutodrive] CampaignScreen → normalOrEliteNodeSelected(" + lvl[0] + "-"
+                + lvl[1] + ") [API du jeu → CampaignPreviewScreen]");
             enterCooldown = 90;   // ~90 frames avant un éventuel nouvel essai (laisse ouvrir l'aperçu du niveau)
             return true;
         } catch (Throwable t) {
             if (DEBUG) System.out.println("[tutodrive] enterCampaignLevel échec: " + t);
             return false;
         }
+    }
+
+    /**
+     * Prochain niveau JOUABLE de la campagne NORMAL, via l'API du jeu : {@code getLatestCompletedLevel}
+     * (dernier niveau complété) puis le suivant s'il est débloqué ({@code isLevelUnlocked}), sinon le 1ᵉʳ
+     * du chapitre suivant, sinon on rejoue le dernier. Permet d'enchaîner 1-1 → 1-2 → … Override explicite
+     * possible via {@code dh.playlevel="ch,lvl"}. Le combat gagné débloque le suivant (statuts re-syncés serveur).
+     */
+    private static int[] nextPlayableLevel(User user) {
+        if (System.getProperty("dh.playlevel") != null) return PLAY_LEVEL;   // niveau forcé (debug)
+        try {
+            com.perblue.heroes.network.messages.CampaignType N = com.perblue.heroes.network.messages.CampaignType.NORMAL;
+            com.perblue.heroes.game.data.campaign.CampaignLevel latest =
+                com.perblue.heroes.game.logic.CampaignHelper.getLatestCompletedLevel(user, N);
+            if (latest == null) return new int[]{1, 1};
+            int ch = latest.getChapter(), lv = latest.getLevel();
+            if (com.perblue.heroes.game.logic.CampaignHelper.isLevelUnlocked(user, N, ch, lv + 1)) return new int[]{ch, lv + 1};
+            if (com.perblue.heroes.game.logic.CampaignHelper.isLevelUnlocked(user, N, ch + 1, 1)) return new int[]{ch + 1, 1};
+            return new int[]{ch, lv};   // rien de plus débloqué → rejouer le dernier
+        } catch (Throwable t) { return new int[]{1, 1}; }
     }
 
     /** Vrai si un DFLabel sous {@code root} contient {@code sub} dans son texte (réflexion getText). */

@@ -16,9 +16,13 @@ visible, `CampaignAttack(WIN)` reçu par le serveur, `recordOutcome` appliqué).
 la progression campagne (statuts de niveau) vit HORS `this.extra` → `recordCampaignAttack` la re-synchronise
 maintenant vers `individualUserExtra.levelStatuses` (`resyncCampaign`, comme les héros) SINON 1-2 ne se
 débloque jamais. Vérifié `server/smoke/CampaignPersistTest` : après save+reload → **1-1 à 3★, 1-2 DÉBLOQUÉ**.
-⚠️ RESTE : (a) le pilote entre toujours au 1-1 (codé `dh.playlevel`, à généraliser au prochain niveau
-débloqué pour enchaîner 1-1→1-2→…) ; (b) dans un run COMPLET, la stamina persistée réapparaît à « 39,96 M »
-(fuite gen-time dans la phase TUTO, séparé de `recordCampaignAttack` qui la gère bien).
+**Deux bugs corrigés (2026-07-14 nuit)** : (1) **chaînage niveaux** — le pilote entre désormais au **prochain
+niveau débloqué** (`nextPlayableLevel` via `getLatestCompletedLevel`/`isLevelUnlocked`) → enchaîne 1-1→1-2→…
+(override `dh.playlevel`). (2) **stamina 39,96 M** — cause : `updateAndGetResource` gonfle la stamina sur un
+état RECHARGÉ headless (≠ compte neuf ; `getGenerationAmount` racine, à corriger un jour) → au 2ᵉ combat la
+stamina persistée était corrompue. Contournement `anchorGeneratingResources` (fige les ressources capées +
+horloge=maintenant AVANT le débit) → 114→108 correct. Vérifié `ChargeTest`. PARTIEL documenté (SHIMS).
+Prochain : run complet pour vérifier l'enchaînement 1-1→1-2, la persistance des loots, puis autres écrans.
 
 Dernière mise à jour : **2026-07-14** — **PIPELINE DE COMBAT DE CAMPAGNE (serveur) ✅ VÉRIFIÉ**. Le
 combat tourne côté CLIENT (unidbg spine) ; le client construit `CampaignAttack{base(attackers,outcome,

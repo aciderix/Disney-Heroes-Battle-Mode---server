@@ -265,6 +265,12 @@ public final class ServerUser {
         individualUserExtra, userID, userInfo.diamonds, "campaign");
     ServerContext.bind(user, iu);
 
+    // Fige les ressources régénérées à leur valeur courante (capée) + horloge = maintenant, AVANT que
+    // recordOutcome ne débite la stamina. Voir anchorGeneratingResources : contourne une anomalie de
+    // régénération headless sur un état RECHARGÉ (updateAndGetResource gonfle la stamina à ~39,96 M au
+    // lieu de +quelques points), qui corromprait la stamina persistée dès le 2ᵉ combat.
+    anchorGeneratingResources(user, iu);
+
     CampaignType type = m.campaignType == null ? CampaignType.NORMAL : m.campaignType;
     GameMode mode = type == CampaignType.ELITE ? GameMode.ELITE_CAMPAIGN : GameMode.CAMPAIGN;
     CampaignLevel level = CampaignLevel.of(mode, m.chapter, m.level);
@@ -277,6 +283,32 @@ public final class ServerUser {
 
     resyncHeroes(user);   // héros (XP/état) → wire ; stamina/or sont dans this.extra (auto).
     resyncCampaign(iu);   // progression campagne (statuts de niveau) → wire (hors this.extra, comme les héros).
+  }
+
+  /**
+   * <b>PARTIEL / contournement (cf. SHIMS)</b> — <b>non idéal, risque documenté</b>. Fige chaque ressource
+   * régénérée à sa valeur STOCKÉE (capée au {@code getResourceCap}) + horloge de génération = maintenant,
+   * juste avant qu'un débit ({@code chargeUser} dans {@code recordOutcome}) ne s'applique. <b>Pourquoi</b> :
+   * en headless, sur un état <b>rechargé</b> (≠ compte tout neuf), {@code UserHelper.updateAndGetResource}
+   * régénère une valeur ABERRANTE (~39,96 M au lieu de +quelques points, malgré {@code interval=360000},
+   * {@code cap=120} et un {@code elapsed} corrects — anomalie de {@code getGenerationAmount} à la racine, à
+   * investiguer). Sans ce gel, la stamina persistée serait corrompue dès le 2ᵉ combat → chaînage cassé.
+   * <b>Risque</b> : la régénération accumulée côté SERVEUR pendant l'inactivité n'est PAS appliquée (on
+   * charge depuis la dernière valeur persistée). Acceptable dans le modèle « fire-and-forget » (le CLIENT
+   * est autoritaire pour l'AFFICHAGE de la stamina ; il régénère depuis l'état serveur reçu au BootData).
+   * À remplacer par un vrai correctif de {@code updateAndGetResource} headless quand la cause sera trouvée.
+   */
+  private void anchorGeneratingResources(User user, IndividualUser iu) {
+    long now = com.perblue.heroes.util.TimeUtil.serverTimeNow();
+    for (com.perblue.heroes.network.messages.ResourceType rt
+        : com.perblue.heroes.network.messages.ResourceType.values()) {
+      if (!com.perblue.heroes.game.logic.UserHelper.resourceGenerates(rt)) continue;
+      Object v = individualUserExtra.resources.get(rt);
+      long cur = v == null ? 0L : ((Number) v).longValue();
+      long cap = com.perblue.heroes.game.logic.UserHelper.getResourceCap(rt, user);
+      iu.setLastResourceGenerationTime(rt, now);
+      user.setResource(rt, Math.min(cur, cap), "anchor");
+    }
   }
 
   /**
