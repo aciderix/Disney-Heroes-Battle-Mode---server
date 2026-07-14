@@ -1125,3 +1125,37 @@ Observé (recorder) sur `CampaignScreen` : animation « SCANNING CITY MAP », `g
 nœud `CAMPAIGN_CHAPTER_ONE_NAME` = `Stack childrenOnly` + label `disabled` sans `[CLICK]` (input carte
 custom). Le pilote idle → RETOUR → boucle. À résoudre séparément pour la démo visuelle in-game.
 Fichiers : `server/java/dhserver/{ServerUser,LoginServer}.java`, `server/smoke/CampaignAttackTest.java`.
+
+### Combat de campagne JOUÉ & GAGNÉ en jeu + progression persistée (2026-07-14, soir)
+Suite du pipeline campagne. **Pilote DEV** (entrée niveau) : la carte de campagne est une scène **g2d**
+(`CityMapDisplay`), pas du scene2d → aucun acteur cliquable, `getPointers()` vide headless. Découvert via
+une **sonde `dh.mapprobe`** (« cliquer + monitorer quel élément s'active » — outil de diag, cf. MEMORY §6ter
+B-bis) : le tap est géré par `CityMapScreen` (caméra `MapCamera2D` → `CityMapDisplay.getHitCampaignLevel` →
+`onCampaignLevelTapped` → `normalOrEliteNodeSelected(CampaignLevelID)` → `CampaignPreviewScreen`). Le pilote
+appelle donc `normalOrEliteNodeSelected(1-1)` (API du jeu). Ajouts pilote : tap flèche « TAP TO CONTINUE »
+(fin de vague), tap boutons FIGHT par nom sans pointeur (replay après défaite), garde anti-RETOUR sur
+`*AttackScreen`.
+
+**Bug AUTO** (cause de la défaite au 1-1) : `Boolean.getBoolean("dh.autofight")` n'accepte que `"true"` →
+`dh.autofight=1` restait false → `setAutoAttack` jamais appelé → héros passifs, skills seulement sur tap
+manuel → défaite. Corrigé (accepte non-"0"/"false"). Résultat : **VICTOIRE 1-1 en jeu**, `CampaignAttack :
+NORMAL 1-1 outcome=WIN → recordOutcome appliqué [persisté]`, énergie **114/120** visible (débitée de 6).
+Skills confirmés déclenchés (AUTO + 21 taps `ATTACK_SCREEN_HERO_BUTTON` guidés par le tuto SKILL_USE).
+
+**Bug PERSISTANCE progression** (révélé par une sonde post-run : `wire_levelStatuses=0`, `1-1 stars=0`,
+`1-2 unlocked=false` alors que gold=340 persistait) : les statuts de niveau vivent HORS `this.extra`
+(`ClientCampaignLevelStatus` en mémoire, lus depuis `individualUserExtra.levelStatuses` au chargement) ;
+`recordOutcome` les mute EN MÉMOIRE mais n'écrit pas la liste wire → **étoiles/complétion perdues au
+round-trip, 1-2 jamais débloqué**. Correctif `resyncCampaign` (dans `recordCampaignAttack`) : reconstruit
+`individualUserExtra.levelStatuses` depuis `iu.getCampaignLevels()` (champs mappés 1:1 ; `lastWinTime` sans
+getter → 0, non requis), comme `resyncHeroes`. Vérifié `server/smoke/CampaignPersistTest` : après save+reload
+SQLite → **1-1 à 3★, 1-2 DÉBLOQUÉ, or=340, stamina=114**. `CampaignAttackTest` toujours OK.
+
+**Réponse à « ça passe au niveau suivant ? »** : le jeu débloque 1-2 après une victoire au 1-1 (désormais
+persisté). Le pilote, lui, entre toujours au 1-1 (`dh.playlevel`) → à généraliser au prochain niveau
+débloqué (`getLatestCompletedLevel`) pour enchaîner la campagne.
+
+⚠️ Suivi séparé : dans un run COMPLET (tuto→campagne), la stamina persistée réapparaît à « 39,96 M »
+(fuite de gen-time dans la phase TUTO — `recordCampaignAttack` la gère bien, 114 en test isolé).
+Fichiers : `server/java/dhserver/ServerUser.java` (resyncCampaign), `server/smoke/CampaignPersistTest.java`,
+`desktop-port/src/main/java/dhdesktop/{TutorialDriver,DesktopLauncher}.java`.

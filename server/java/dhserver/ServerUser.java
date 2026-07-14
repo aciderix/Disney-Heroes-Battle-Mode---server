@@ -16,6 +16,7 @@ import com.perblue.heroes.game.objects.User;
 import com.perblue.heroes.network.messages.BootData;
 import com.perblue.heroes.network.messages.BuyChests;
 import com.perblue.heroes.network.messages.CampaignAttack;
+import com.perblue.heroes.network.messages.CampaignLevelStatus;
 import com.perblue.heroes.network.messages.CampaignType;
 import com.perblue.heroes.network.messages.ChangeTutorialStep;
 import com.perblue.heroes.network.messages.ChestType;
@@ -274,7 +275,39 @@ public final class ServerUser {
     CampaignHelper.recordOutcome(user, user, level, m.base.outcome, m.base.stars, m.stagesCleared,
         lootEarned, memoryChanges, m.base.attackers, m.base.defenders, SpecialEventSnapshot.NONE);
 
-    resyncHeroes(user);   // héros (XP/état) → wire ; stamina/or/progression sont dans this.extra (auto).
+    resyncHeroes(user);   // héros (XP/état) → wire ; stamina/or sont dans this.extra (auto).
+    resyncCampaign(iu);   // progression campagne (statuts de niveau) → wire (hors this.extra, comme les héros).
+  }
+
+  /**
+   * Re-synchronise la PROGRESSION de campagne vers le wire. Les statuts de niveau vivent en mémoire
+   * ({@code ClientCampaignLevelStatus} construits depuis {@code individualUserExtra.levelStatuses} au
+   * chargement) ; {@code recordOutcome} les mute EN MÉMOIRE mais n'écrit PAS la liste wire → sans ce
+   * re-sync, étoiles/complétion sont perdues au round-trip (1-2 ne se débloque jamais). On reconstruit
+   * {@code individualUserExtra.levelStatuses} depuis {@code iu.getCampaignLevels()} (champs mappés 1:1 ;
+   * {@code lastWinTime} sans getter public → laissé à 0, non requis pour le déblocage). Même schéma que
+   * {@code resyncHeroes} (état gardé hors {@code this.extra}). Ensemble fermé, validé par round-trip.
+   */
+  @SuppressWarnings("unchecked")
+  private void resyncCampaign(IndividualUser iu) {
+    java.util.List<CampaignLevelStatus> out = new java.util.ArrayList<>();
+    for (Object o : iu.getCampaignLevels()) {
+      com.perblue.heroes.game.objects.ClientCampaignLevelStatus c =
+          (com.perblue.heroes.game.objects.ClientCampaignLevelStatus) o;
+      CampaignLevelStatus w = new CampaignLevelStatus();
+      w.campaignType = c.getCampaignType();
+      w.chapter = c.getChapter();
+      w.level = c.getLevel();
+      w.stars = c.getStars();
+      w.claimedOneTimeReward = c.claimedOneTimeReward();
+      w.infectionLevel = c.getInfectionLevel();
+      w.reinfectionTime = c.getReinfectionTime();
+      w.totalAttempts = c.getTotalAttempts();
+      w.totalWins = c.getTotalWins();
+      w.winsAtCurrentStars = c.getWinsAtCurrentStars();
+      out.add(w);
+    }
+    individualUserExtra.levelStatuses = out;
   }
 
   /**

@@ -6,6 +6,20 @@
 > des fichiers et un historique **court**. L'historique **détaillé** est dans
 > [`JOURNAL.md`](JOURNAL.md). **Maintenir ce fichier à jour en permanence.**
 
+Dernière mise à jour : **2026-07-14 (soir)** — **COMBAT DE CAMPAGNE JOUÉ & GAGNÉ EN JEU + progression
+PERSISTÉE**. Le pilote DEV entre dans le niveau (`CampaignScreen.normalOrEliteNodeSelected(1-1)` — la
+carte est une scène g2d `CityMapDisplay`, pas du scene2d ; découvert via la sonde `dh.mapprobe`),
+gère l'aperçu + choix héros + flèche de fin de vague + boutons FIGHT par nom (robuste au replay). **Bug
+AUTO corrigé** : `Boolean.getBoolean("dh.autofight")` n'acceptait que `"true"` → `dh.autofight=1` ignoré,
+AUTO jamais activé → skills passifs → **défaite** ; corrigé → **VICTOIRE 1-1 en jeu** (énergie 114/120
+visible, `CampaignAttack(WIN)` reçu par le serveur, `recordOutcome` appliqué). **Bug persistance corrigé** :
+la progression campagne (statuts de niveau) vit HORS `this.extra` → `recordCampaignAttack` la re-synchronise
+maintenant vers `individualUserExtra.levelStatuses` (`resyncCampaign`, comme les héros) SINON 1-2 ne se
+débloque jamais. Vérifié `server/smoke/CampaignPersistTest` : après save+reload → **1-1 à 3★, 1-2 DÉBLOQUÉ**.
+⚠️ RESTE : (a) le pilote entre toujours au 1-1 (codé `dh.playlevel`, à généraliser au prochain niveau
+débloqué pour enchaîner 1-1→1-2→…) ; (b) dans un run COMPLET, la stamina persistée réapparaît à « 39,96 M »
+(fuite gen-time dans la phase TUTO, séparé de `recordCampaignAttack` qui la gère bien).
+
 Dernière mise à jour : **2026-07-14** — **PIPELINE DE COMBAT DE CAMPAGNE (serveur) ✅ VÉRIFIÉ**. Le
 combat tourne côté CLIENT (unidbg spine) ; le client construit `CampaignAttack{base(attackers,outcome,
 stars), campaignType, chapter, level, stagesCleared}` via `ClientNetworkStateConverter.getCampaignAttack`
