@@ -265,11 +265,9 @@ public final class ServerUser {
         individualUserExtra, userID, userInfo.diamonds, "campaign");
     ServerContext.bind(user, iu);
 
-    // Fige les ressources régénérées à leur valeur courante (capée) + horloge = maintenant, AVANT que
-    // recordOutcome ne débite la stamina. Voir anchorGeneratingResources : contourne une anomalie de
-    // régénération headless sur un état RECHARGÉ (updateAndGetResource gonfle la stamina à ~39,96 M au
-    // lieu de +quelques points), qui corromprait la stamina persistée dès le 2ᵉ combat.
-    anchorGeneratingResources(user, iu);
+    // Normalise les ressources régénérées à leur valeur EFFECTIVE du jeu (régén incluse, capée) + horloge
+    // = maintenant, AVANT que recordOutcome ne débite la stamina. Cf. applyEffectiveResourceCap.
+    applyEffectiveResourceCap(user, iu);
 
     CampaignType type = m.campaignType == null ? CampaignType.NORMAL : m.campaignType;
     GameMode mode = type == CampaignType.ELITE ? GameMode.ELITE_CAMPAIGN : GameMode.CAMPAIGN;
@@ -286,28 +284,29 @@ public final class ServerUser {
   }
 
   /**
-   * <b>PARTIEL / contournement (cf. SHIMS)</b> — <b>non idéal, risque documenté</b>. Fige chaque ressource
-   * régénérée à sa valeur STOCKÉE (capée au {@code getResourceCap}) + horloge de génération = maintenant,
-   * juste avant qu'un débit ({@code chargeUser} dans {@code recordOutcome}) ne s'applique. <b>Pourquoi</b> :
-   * en headless, sur un état <b>rechargé</b> (≠ compte tout neuf), {@code UserHelper.updateAndGetResource}
-   * régénère une valeur ABERRANTE (~39,96 M au lieu de +quelques points, malgré {@code interval=360000},
-   * {@code cap=120} et un {@code elapsed} corrects — anomalie de {@code getGenerationAmount} à la racine, à
-   * investiguer). Sans ce gel, la stamina persistée serait corrompue dès le 2ᵉ combat → chaînage cassé.
-   * <b>Risque</b> : la régénération accumulée côté SERVEUR pendant l'inactivité n'est PAS appliquée (on
-   * charge depuis la dernière valeur persistée). Acceptable dans le modèle « fire-and-forget » (le CLIENT
-   * est autoritaire pour l'AFFICHAGE de la stamina ; il régénère depuis l'état serveur reçu au BootData).
-   * À remplacer par un vrai correctif de {@code updateAndGetResource} headless quand la cause sera trouvée.
+   * Normalise chaque ressource régénérée à sa valeur <b>EFFECTIVE du jeu</b> — {@code min(getResource, cap)}
+   * — puis fixe la stamina persistée à cette valeur avec l'horloge de génération = maintenant, AVANT qu'un
+   * débit ({@code chargeUser} dans {@code recordOutcome}) ne s'applique. <b>Pourquoi</b> : la régén de la
+   * <b>content update courante (R102)</b> vaut {@code REGEN_AMOUNT=39 965 650} (vraie donnée
+   * {@code stamina_values.tab}, cap dur 79 Md — scaling end-game). Dans {@code updateAndGetResource},
+   * STAMINA est dans la branche NON-capée : quand {@code stamina < cap}, un seul intervalle ajoute
+   * 39,96 M puis la boucle sort (dépasse le cap) → {@code getResource} renvoie la valeur BRUTE
+   * (~39,96 M). Le jeu utilise la valeur <b>effective = min(brut, getResourceCap)</b> à l'affichage/dépense
+   * (d'où le client à 120/120). On applique donc la MÊME règle du jeu avant de persister : pour un joueur
+   * neuf après régén, {@code min(39,96M, 120)=120} (plein — la régén est bien prise en compte, pas figée),
+   * puis le combat débite (120→114). Ancrer l'horloge à maintenant évite que {@code chargeUser} ne
+   * re-dépasse (elapsed=0 → pas de régén → débit depuis la valeur effective). Sans ça la stamina persistée
+   * serait corrompue à ~39,96 M dès le 2ᵉ combat. Valeurs 100% du jeu, rien d'inventé.
    */
-  private void anchorGeneratingResources(User user, IndividualUser iu) {
+  private void applyEffectiveResourceCap(User user, IndividualUser iu) {
     long now = com.perblue.heroes.util.TimeUtil.serverTimeNow();
     for (com.perblue.heroes.network.messages.ResourceType rt
         : com.perblue.heroes.network.messages.ResourceType.values()) {
       if (!com.perblue.heroes.game.logic.UserHelper.resourceGenerates(rt)) continue;
-      Object v = individualUserExtra.resources.get(rt);
-      long cur = v == null ? 0L : ((Number) v).longValue();
       long cap = com.perblue.heroes.game.logic.UserHelper.getResourceCap(rt, user);
+      long effective = Math.min(user.getResource(rt), cap);   // valeur EFFECTIVE (régén incluse, capée)
       iu.setLastResourceGenerationTime(rt, now);
-      user.setResource(rt, Math.min(cur, cap), "anchor");
+      user.setResource(rt, effective, "effective-cap");
     }
   }
 
