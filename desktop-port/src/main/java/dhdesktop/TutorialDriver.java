@@ -70,6 +70,10 @@ public final class TutorialDriver {
     private static final int[] PLAY_LEVEL = parseLevel(System.getProperty("dh.playlevel", "1,1"));
     private static int enterCooldown = 0;
     private static int combatCooldown = 0;   // cadence des taps sur la flèche « TAP TO CONTINUE » (combat)
+    // Boutons d'action du flux de combat à taper SANS pointeur (replay après défaite : le tuto n'émet plus
+    // de pointeur mais il faut relancer le combat). Acteurs du jeu, tapés par tutorialName.
+    private static final Set<String> ADVANCE_BUTTONS = new HashSet<>(java.util.Arrays.asList(
+        "CAMPAIGN_PREVIEW_FIGHT_BUTTON", "HERO_CHOOSER_FIGHT_BUTTON"));
     private static int[] parseLevel(String s) {
         try { String[] p = s.split(","); return new int[]{Integer.parseInt(p[0].trim()), Integer.parseInt(p[1].trim())}; }
         catch (Throwable t) { return new int[]{1, 1}; }
@@ -249,6 +253,17 @@ public final class TutorialDriver {
                         combatCooldown = 8;
                     } else combatCooldown--;
                     return true;   // géré ici (flèche de continuation) ; pas de tap central du lanceur
+                }
+                // BOUTON D'ACTION connu SANS pointeur : après une défaite/replay, le tuto n'émet plus de
+                // pointeur sur l'aperçu du niveau ni le choix des héros, mais il faut quand même taper le
+                // bouton FIGHT pour (re)lancer le combat. On tape donc l'acteur du jeu par son tutorialName
+                // au lieu de faire RETOUR (qui bouclait aperçu↔carte). L'équipe est mémorisée entre essais.
+                List<Actor> adv = new ArrayList<>();
+                collect(searchRoot, ADVANCE_BUTTONS, adv);
+                if (!adv.isEmpty()) {
+                    if (DEBUG) System.out.println("[tutodrive] " + screenName + " sans pointeur → tap bouton d'action "
+                        + adv.get(0).getTutorialName());
+                    return tapAll(adv, input, w, h);
                 }
                 if (!screenName.contains("MainScreen") && idleTicks >= IDLE_BACK_THRESHOLD) {
                     List<Actor> back = findByName(searchRoot, "BACK_BUTTON");
