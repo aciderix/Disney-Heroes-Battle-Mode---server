@@ -55,6 +55,14 @@ public final class TutorialDriver {
     // (ex. DHResourceButton du coffre) ne déclenchent pas sur un down+up instantané. 0 = tap 1-frame.
     private static final int TAP_HOLD = Integer.getInteger("dh.taphold", 0);
     private static int tapCooldown = 0;   // évite d'empiler les press-relâches (attendre la fin du précédent)
+    // SONDE DEV carte de campagne (dh.mapprobe) : sur CampaignScreen, NE PAS faire RETOUR ; hit-tester une
+    // grille autour du nœud de chapitre (acteur + listeners), le TAPER et journaliser la transition d'écran.
+    // But : découvrir empiriquement quel élément s'active pour entrer dans un chapitre (auto-pilote #17).
+    private static final boolean MAP_PROBE = System.getProperty("dh.mapprobe") != null
+            && !"0".equals(System.getProperty("dh.mapprobe"));
+    private static final String PROBE_ACTOR = System.getProperty("dh.probeactor", "CAMPAIGN_CHAPTER_ONE_NAME");
+    private static int probeTick = 0;
+    private static String probeLastScreen = "";
     // Le recorder DÉCIME : on pilote à chaque frame (fiable — certains boutons pulsés exigent des taps
     // rapprochés) mais on ne DUMP + capture que toutes les RECEVERY frames (étapes nettes, peu de fichiers).
     private static final int RECEVERY = Math.max(1, Integer.getInteger("dh.recevery", 20));
@@ -200,6 +208,12 @@ public final class TutorialDriver {
             Stage stg = root.getStage();
             if (stg != null && stg.getRoot() != null) searchRoot = stg.getRoot();
             String screenName = screen.getClass().getSimpleName();
+
+            // SONDE DEV : sur l'écran carte, prend la main (pas de RETOUR) pour cliquer le chapitre et observer.
+            if (MAP_PROBE && screenName.contains("Campaign") && stg != null) {
+                mapProbe(screenName, searchRoot, stg, input, w, h);
+                return true;   // handled : empêche le tap central du lanceur
+            }
 
             // Aucun pointeur de tuto : soit un dialogue « tap to continue » (le lanceur tape au centre), soit
             // le tuto attend qu'on SORTE d'un sous-écran de nous-mêmes (ex. post-équip sur HeroDetailScreen :
@@ -363,6 +377,76 @@ public final class TutorialDriver {
             if (deep != null) return deep;
         }
         return null;
+    }
+
+    /**
+     * SONDE DEV (dh.mapprobe) : sur l'écran carte, journalise l'état et hit-teste une grille autour du
+     * nœud de chapitre pour révéler l'acteur réellement interactif (+ ses listeners) et le déclencheur
+     * d'entrée dans un chapitre. Tape ensuite le centre du nœud et observe la transition d'écran. Aucune
+     * modif du jeu : lecture de la scène (Stage.hit / getListeners) + tap, comme un joueur.
+     */
+    private static void mapProbe(String screenName, Group searchRoot, Stage st, DhInput input, int w, int h) {
+        if (!screenName.equals(probeLastScreen)) {
+            System.out.println("[mapprobe] ===> ÉCRAN = " + screenName);
+            probeLastScreen = screenName;
+        }
+        if (++probeTick % 25 != 0) return;   // toutes les ~25 frames (laisse l'anim « SCANNING » avancer)
+
+        boolean scanning = labelContains(searchRoot, "SCANNING");
+        List<Actor> nodes = findByName(searchRoot, PROBE_ACTOR);
+        if (nodes.isEmpty()) {
+            System.out.println("[mapprobe] " + PROBE_ACTOR + " ABSENT (scanning=" + scanning + ")");
+            return;
+        }
+        Actor node = nodes.get(0);
+        Vector2 c = node.localToStageCoordinates(new Vector2(node.getWidth() / 2f, node.getHeight() / 2f));
+        System.out.println("[mapprobe] " + PROBE_ACTOR + " @stage(" + (int) c.x + "," + (int) c.y
+            + ") scanning=" + scanning + " — hit-test grille (acteur ← ancêtre-avec-listener) :");
+        Set<String> seen = new HashSet<>();
+        for (int dy = -60; dy <= 60; dy += 30) {
+            for (int dx = -100; dx <= 100; dx += 50) {
+                Actor hit = st.hit(c.x + dx, c.y + dy, true);
+                Actor clickable = nearestWithListener(hit);
+                String d = describe(hit) + "  |  clickable=" + (clickable == null ? "(aucun)"
+                    : clickable.getClass().getSimpleName()
+                      + (clickable.getTutorialName() != null ? "[tut=" + clickable.getTutorialName() + "]" : "")
+                      + " listeners=" + listenerTypes(clickable));
+                if (seen.add(d)) System.out.println("[mapprobe]    (" + dx + "," + dy + ") → " + d);
+            }
+        }
+        int sx = Math.round(c.x / st.getWidth() * w), sy = Math.round(h - c.y / st.getHeight() * h);
+        System.out.println("[mapprobe] TAP centre chapitre @screen(" + sx + "," + sy + ") — observe l'écran suivant");
+        if (TAP_HOLD > 0) { if (tapCooldown <= 0) { input.tapHold(sx, sy, TAP_HOLD); tapCooldown = TAP_HOLD + 3; } }
+        else input.tap(sx, sy);
+        if (tapCooldown > 0) tapCooldown--;
+    }
+
+    /** Vrai si un DFLabel sous {@code root} contient {@code sub} dans son texte (réflexion getText). */
+    private static boolean labelContains(Actor root, String sub) {
+        try {
+            java.lang.reflect.Method m = root.getClass().getMethod("getText");
+            Object t = m.invoke(root);
+            if (t != null && t.toString().toUpperCase().contains(sub)) return true;
+        } catch (Throwable ignore) {}
+        if (root instanceof Group)
+            for (Actor c : ((Group) root).getChildren()) if (labelContains(c, sub)) return true;
+        return false;
+    }
+
+    /** Remonte de {@code a} vers ses ancêtres et renvoie le 1er acteur portant ≥1 listener (= interactif). */
+    private static Actor nearestWithListener(Actor a) {
+        for (Actor p = a; p != null; p = p.getParent())
+            if (p.getListeners() != null && p.getListeners().size > 0) return p;
+        return null;
+    }
+
+    /** Noms des classes de listeners d'un acteur (pour identifier ClickListener / gesture / input). */
+    private static String listenerTypes(Actor a) {
+        if (a == null) return "[]";
+        StringBuilder sb = new StringBuilder("[");
+        for (com.badlogic.gdx.scenes.scene2d.EventListener l : a.getListeners())
+            sb.append(l.getClass().getSimpleName()).append(',');
+        return sb.append(']').toString();
     }
 
     /** Décrit un acteur touché : classe + tutorialName + chaîne d'ancêtres (tutorialName / classe). */

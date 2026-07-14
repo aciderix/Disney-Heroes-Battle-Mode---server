@@ -76,6 +76,7 @@ echo "[online] client (ServerType.LIVE -> 127.0.0.1:$HTTP_PORT) ..."
 DH_SERVER="127.0.0.1:$HTTP_PORT" DH_TIMEOUT="${DH_TIMEOUT:-90}" DH_FRAMES="${DH_FRAMES-120}" \
     DH_AUTOTAP="${DH_AUTOTAP:-}" DH_AUTOFIGHT="${DH_AUTOFIGHT:-}" \
     DH_TUTODBG="${DH_TUTODBG:-}" DH_FPS="${DH_FPS:-}" DH_SHOTEVERY="${DH_SHOTEVERY:-}" DH_TUTOREC="${DH_TUTOREC:-}" DH_TAPHOLD="${DH_TAPHOLD:-}" \
+    DH_MAPPROBE="${DH_MAPPROBE:-}" DH_PROBEACTOR="${DH_PROBEACTOR:-}" \
     DH_SHOT="${DH_SHOT:-build/online.ppm}" ./run-desktop.sh || true
 
 echo "=== log serveur de jeu (TCP) ==="; tail -15 /tmp/dh_game.log 2>/dev/null
