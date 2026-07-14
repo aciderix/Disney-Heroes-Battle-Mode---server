@@ -123,7 +123,12 @@ public final class DesktopLauncher {
         // D'ORIGINE du jeu (appel de son API publique setAutoAttack) quand on est dans un écran de
         // combat → les héros combattent seuls (l'IA lance les compétences). AUCUNE modif du jeu, AUCUN
         // effet en prod (le joueur lance sans ce drapeau) ni côté serveur. Sert à tester le jeu headless.
-        boolean autofight = Boolean.getBoolean("dh.autofight");
+        // NB : Boolean.getBoolean n'accepte QUE "true" → "dh.autofight=1" le laissait à false (AUTO jamais
+        // activé → héros passifs, skills seulement sur tap manuel → défaite). On accepte toute valeur non
+        // "0"/"false" (cohérent avec dh.autotap/dh.tutodrive.debug).
+        String autofightProp = System.getProperty("dh.autofight");
+        boolean autofight = autofightProp != null && !"0".equals(autofightProp)
+            && !"false".equalsIgnoreCase(autofightProp);
         // Mesure FPS : moyenne glissante toutes les N frames (dh.fps=N, 0=off), avec l'écran courant
         // → permet de relever les FPS EN COMBAT (screen=CoreAttackScreen/…).
         int fpsWindow = Integer.getInteger("dh.fps", 0);
