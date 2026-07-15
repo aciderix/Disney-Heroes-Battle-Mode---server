@@ -1,18 +1,80 @@
-# 1. On vide le fichier
-> master_list.txt
+import os, sys, requests, zipfile, shutil
 
-# 2. Ajout des Assets (en 15 lots pour faire 15 ZIPs d'environ 240 Mo)
-strings bundles.data | grep -o '"LocalPath":"[^"]*"' | cut -d'"' -f4 | awk '{print "ASSET|" $0}' >> master_list.txt
+# CONFIGURATION
+IA_IDENTIFIER = "looney-tunes-wom-v65-full-assets" # NOUVELLE URL SUR IA
+CDN_BASE = "https://cdn.pepedev.com/bundles/23565/android/"
+USER_AGENT = "UnityPlayer/6000.0.68f1 (UnityWebRequest/1.0, libcurl/8.10.1-DEV)"
 
-# 3. Ajout du Static Content (1 ZIP dédié)
-echo "DATA|https://cdn.pepedev.com/static-content/11440/android/ftue/game_content/tutorial/tutorial.data|data/tutorial.data" >> master_list.txt
-echo "DATA|https://cdn.pepedev.com/static-content/11559/android/skills/game_content/character_skills/character_skills.data|data/character_skills.data" >> master_list.txt
-echo "DATA|https://cdn.pepedev.com/static-content/11559/android/stats/game_content/character_stats/character_stats.data|data/character_stats.data" >> master_list.txt
+def download_file(url, local_path):
+    os.makedirs(os.path.dirname(local_path), exist_ok=True)
+    try:
+        r = requests.get(url, headers={"User-Agent": USER_AGENT}, timeout=30)
+        if r.status_code == 200:
+            with open(local_path, 'wb') as f:
+                with open(local_path, 'wb') as f: f.write(r.content)
+            return True
+    except: pass
+    return False
 
-# 4. Ajout des Langues (1 ZIP dédié)
-langues=("af" "am" "ar" "as" "az" "be" "bg" "bn" "bs" "ca" "cs" "da" "de" "el" "en" "en-AU" "en-CA" "en-GB" "en-IN" "en-XC" "es" "es-419" "es-ES" "es-US" "et" "eu" "fa" "fi" "fr" "fr-CA" "gl" "gu" "hi" "hr" "hu" "hy" "id" "in" "is" "it" "iw" "ja" "ka" "kk" "km" "kn" "ko" "ky" "lo" "lt" "lv" "mk" "ml" "mn" "mr" "ms" "my" "nb" "ne" "nl" "or" "pa" "pl" "pt" "pt-BR" "pt-PT" "ro" "ru" "si" "sk" "sl" "sq" "sr" "sr-Latn" "sv" "sw" "ta" "te" "th" "tl" "tr" "uk" "ur" "uz" "vi" "zh" "zh-CN" "zh-HK" "zh-MO" "zh-TW" "zu")
-for l in "${langues[@]}"; do
-    code="${l/-/_}"
-    echo "LANG|https://cdn.pepedev.com/localization/106475/${code}.tgz|localization/${code}.tgz" >> master_list.txt
-    echo "LANG|https://cdn.pepedev.com/localization/106520/${code}_liveops.tgz|localization/${code}_liveops.tgz" >> master_list.txt
-done
+if __name__ == "__main__":
+    batch_idx = int(sys.argv[1])
+    num_batches = 15 # Nombre de ZIPs pour les assets
+    
+    with open("master_list.txt", "r") as f:
+        lines = f.read().splitlines()
+    
+    # Ségrégation
+    asset_lines = [l for l in lines if l.startswith("ASSET|")]
+    data_lines = [l for l in lines if l.startswith("DATA|")]
+    lang_lines = [l for l in lines if l.startswith("LANG|")]
+
+    to_download = []
+    zip_name = ""
+
+    if batch_idx < num_batches: # Batch Assets
+        chunk_size = len(asset_lines) // num_batches
+        start = batch_idx * chunk_size
+        end = start + chunk_size if batch_idx < num_batches - 1 else len(asset_lines)
+        zip_name = f"assets_part{batch_idx}.zip"
+        for l in asset_lines[start:end]:
+            path = l.split("|")[1]
+            to_download.append((CDN_BASE + path, path))
+    elif batch_idx == 15: # Batch Langues
+        zip_name = "localizations.zip"
+        for l in lang_lines:
+            _, url, path = l.split("|")
+            to_download.append((url, path))
+    elif batch_idx == 16: # Batch Data
+        zip_name = "game_data_configs.zip"
+        for l in data_lines:
+            _, url, path = l.split("|")
+            to_download.append((url, path))
+
+    # Phase Téléchargement
+    print(f"Création de {zip_name}...")
+    tmp_dir = f"tmp_{batch_idx}"
+    for url, path in to_download:
+        download_file(url, os.path.join(tmp_dir, path))
+
+    # Phase Zipping
+    with zipfile.ZipFile(zip_name, 'w', zipfile.ZIP_DEFLATED) as z:
+        for root, _, files in os.walk(tmp_dir):
+            for file in files:
+                z.write(os.path.join(root, file), os.path.relpath(os.path.join(root, file), tmp_dir))
+
+    # Phase Upload IA
+    access = os.getenv("IA_ACCESS_KEY")
+    secret = os.getenv("IA_SECRET_KEY")
+    ia_url = f"https://s3.us.archive.org/{IA_IDENTIFIER}/{zip_name}"
+    
+    headers = {
+        "Authorization": f"LOW {access}:{secret}",
+        "x-archive-meta-mediatype": "software",
+        "x-archive-meta-collection": "opensource_software",
+        "x-archive-meta-title": "Looney Tunes World of Mayhem v65 Assets",
+        "x-archive-keep-old-version": "0"
+    }
+
+    with open(zip_name, 'rb') as f:
+        up = requests.put(ia_url, data=f, headers=headers)
+        print(f"Upload {zip_name}: {up.status_code}")
