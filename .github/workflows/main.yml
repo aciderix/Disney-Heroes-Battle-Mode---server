@@ -1,0 +1,26 @@
+name: Full ZIP Upload to IA
+
+on:
+  workflow_dispatch:
+
+jobs:
+  upload:
+    name: "ZIP Batch ${{ matrix.batch }}"
+    runs-on: ubuntu-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        # 0-14: Assets, 15: Langues, 16: Configs
+        batch: [0, 1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15, 16]
+
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+      - run: pip install requests
+      - name: Run Upload
+        env:
+          IA_ACCESS_KEY: ${{ secrets.IA_ACCESS_KEY }}
+          IA_SECRET_KEY: ${{ secrets.IA_SECRET_KEY }}
+        run: python3 upload_batch.py ${{ matrix.batch }}
