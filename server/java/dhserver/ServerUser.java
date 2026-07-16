@@ -274,15 +274,19 @@ public final class ServerUser {
     CampaignLevel level = CampaignLevel.of(mode, m.chapter, m.level);
 
     // Loot d'OBJETS : le combat est joué CÔTÉ CLIENT (client-autoritatif, comme outcome/stars), qui ROULE
-    // le loot pendant le combat et l'envoie dans le message. recordOutcome N'EN ROULE PAS (vérifié : lootEarned
-    // vide en entrée → vide en sortie) : il APPLIQUE (giveLoot → RewardHelper.giveRewards → addItem) la liste
-    // reçue. Il faut donc passer m.lootEarned (List<RewardDrop>) + m.memoryChanges (List<UserLootMemoryChange>)
-    // du client, SINON les objets ramassés ne sont jamais crédités (individualUserExtra.items, auto-persisté).
+    // le loot pendant le combat et l'envoie dans m.lootEarned (List<RewardDrop>). recordOutcome N'EN ROULE PAS
+    // (vérifié : lootEarned vide → 0 objet) : il APPLIQUE la liste reçue (giveLoot → RewardHelper.giveRewards →
+    // IndividualUser.addItem → individualUserExtra.items, AUTO-PERSISTÉ). On passe donc m.lootEarned en 1ᵉʳ
+    // paramètre List (= le loot À DONNER). Le 2ᵉ paramètre List est un DELTA de RewardDrop (déjà-affiché) que
+    // giveLoot passe à removeDelta ; il DOIT rester vide/RewardDrop — y mettre m.memoryChanges
+    // (List<UserLootMemoryChange>) fait planter removeDelta (ClassCastException). On laisse donc ce delta VIDE
+    // → tout m.lootEarned est crédité. PARTIEL (SHIMS) : m.memoryChanges (mémoire de loot) non appliqué + seed
+    // client (Action SET_SEED) non appliquée → le serveur ne re-roule pas, il fait confiance au loot client.
     java.util.List lootEarned = m.lootEarned != null ? m.lootEarned : new java.util.ArrayList<>();
-    java.util.List memoryChanges = m.memoryChanges != null ? m.memoryChanges : new java.util.ArrayList<>();
+    java.util.List shownDelta = new java.util.ArrayList<>();
     // base : attackers/defenders = Collection de AttackLineupSummary, outcome + stars remplis par le client.
     CampaignHelper.recordOutcome(user, user, level, m.base.outcome, m.base.stars, m.stagesCleared,
-        lootEarned, memoryChanges, m.base.attackers, m.base.defenders, SpecialEventSnapshot.NONE);
+        lootEarned, shownDelta, m.base.attackers, m.base.defenders, SpecialEventSnapshot.NONE);
 
     resyncHeroes(user);   // héros (XP/état) → wire ; stamina/or sont dans this.extra (auto).
     resyncCampaign(iu);   // progression campagne (statuts de niveau) → wire (hors this.extra, comme les héros).

@@ -66,6 +66,7 @@ public final class LootPersistTest {
       m.base = b;
       m.lootEarned = new ArrayList(Arrays.asList(drop));
       m.memoryChanges = new ArrayList();
+      try { m.memoryChanges.add(new UserLootMemoryChange()); } catch (Throwable ignore) {}  // mirror client (ne doit PAS planter)
       su.recordCampaignAttack(m);
 
       int afterFight = itemAmount(su, item);
