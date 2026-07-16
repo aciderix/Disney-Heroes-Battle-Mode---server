@@ -6,6 +6,16 @@
 > des fichiers et un historique **court**. L'historique **détaillé** est dans
 > [`JOURNAL.md`](JOURNAL.md). **Maintenir ce fichier à jour en permanence.**
 
+Dernière mise à jour : **2026-07-16 (soir)** — **PIPELINE COMPLET VALIDÉ EN JEU (nouveau joueur → 1-1 GAGNÉ)**.
+Run complet nouveau joueur : intro → coffre GOLD (Frozone) → **entrée campagne → choix des héros → 1-1 GAGNÉ
+→ `CampaignAttack` → `recordOutcome` persisté**. Serveur (framed jar) **0 fatal** sur tout le run. **Fix pilote
+`selectHeroesIfNeeded`** : sur `CampaignHeroChooserScreen`, sélectionne les héros via l'API du jeu
+`unitSelected` (sinon TEAM POWER=0 → « select at least one hero » → aucun combat). **Persistance vérifiée
+(DB live, après 6× 1-1 WIN)** : STAMINA stored=122/**eff=120 (AUCUN 39M, écran ET DB)**, **GOLD=2040** (loot
+campagne cumulé), **1-1=3★ totalWins=6, 1-2 débloqué=true** — tout persiste. **Reste** : navigation pilote
+POST-VICTOIRE (rejoue 1-1 au lieu d'aller en 1-2 : revient sur l'aperçu et re-tape FIGHT au lieu de retourner
+à la carte ; la logique `nextPlayableLevel`/déblocage serveur est correcte — non bloquant serveur).
+
 Dernière mise à jour : **2026-07-16** — **Enquête « crash addHeroEXP » close + stabilité JVM du serveur**.
 (1) Le **crash `addHeroEXP`** (`ClientErrorCodeException: ERROR []`) **NE se reproduit plus** = artefact d'un
 état compilé pré-fix. (2) Le vrai incident intermittent était un **crash JVM SIGABRT** (`Illegal class file …

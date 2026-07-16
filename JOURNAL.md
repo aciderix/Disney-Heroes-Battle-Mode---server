@@ -7,6 +7,54 @@
 
 ---
 
+## 2026-07-16 (soir) — PIPELINE COMPLET VALIDÉ EN JEU (nouveau joueur → 1-1 GAGNÉ) + sélection des héros (pilote)
+
+### Résumé
+Run complet **nouveau joueur** (DB + prefs wipés, assets en cache) : intro → coffre GOLD (Frozone, 3 héros)
+→ FAST_FORWARD → AUTO_FIGHT → SKILL_USE → **entrée campagne → choix des héros → 1-1 GAGNÉ → `CampaignAttack`
+→ `recordOutcome` persisté**. Le serveur (framed jar, sans `-Xverify:none`) est resté **stable, 0 fatal JVM**
+sur tout le run — le fix reframe validé de bout en bout en conditions réelles.
+
+### Fix pilote : sélection des héros sur l'écran de choix
+Le pilote atteignait `CampaignHeroChooserScreen` (« CHOOSE YOUR HEROES! ») mais **tapait FIGHT sans
+sélectionner d'équipe** (TEAM POWER=0 → popup « select at least one hero » → aucun combat). Correctif
+(technique **capturer→cliquer→monitorer→câbler**) : `selectHeroesIfNeeded` sélectionne les héros dispo via
+l'API du jeu qu'un tap de portrait déclenche — **`HeroChooserScreen.unitSelected(UnitData, provider, x, y)`**
+(cœur `HeroChooserHelper.selectUnitPressed` ; provider/coords inutilisés hors SURGE, vérifié au bytecode).
+N'ajoute que les héros pas déjà dans l'équipe (`unitSelected` TOGGLE) et sélectionnables (`canSelectUnit`).
+Vérifié EN JEU : `[tutodrive] CampaignHeroChooserScreen → héros sélectionnés via unitSelected → équipe prête
+pour FIGHT`, puis `CampaignAttack NORMAL 1-1 WIN`.
+
+### Persistance vérifiée sur la DB live (après 6× 1-1 WIN) — TOUT persiste, AUCUN 39M
+Probe `server/data/dh-server.db` après le run :
+- **STAMINA stored=122 / effective=120** ✅ — **aucun 39M même après 6 combats** (réponse à la question user :
+  120 à l'écran — bouton FIGHT coût 6 — ET 120 en DB, au first launch). Le 122 stored (>cap) est le même
+  artefact bénin R102, clampé à 120 à l'affichage/dépense.
+- **GOLD = 2040** ✅ (6× ~340 = loot de campagne cumulé et persisté).
+- **1-1 = 3★, totalWins=6** ✅ ; **1-2 débloqué = true** ✅ (déblocage persisté) ; `getLatestCompletedLevel=1-1`.
+- **teamXP/teamLevel** cohérents (niv.1).
+⇒ Pipeline **entrée / choix héros / skills (AUTO) / vagues / loot-gold / récompenses / XP / conso énergie /
+progression / déblocage niveau suivant** : **tout validé et persisté**.
+
+### Reste : navigation pilote POST-VICTOIRE (rejoue 1-1 au lieu d'aller en 1-2)
+Le pilote n'a fait qu'**une** entrée carte (`normalOrEliteNodeSelected(1-1)`) mais **6 combats** : après chaque
+victoire, le client revient sur l'**aperçu/choix de 1-1** (pas la carte) et le pilote **re-tape FIGHT** →
+rejoue 1-1. Il ne **retourne pas à la carte** pour que `nextPlayableLevel` sélectionne 1-2 (pourtant
+débloqué). **La logique d'enchaînement est correcte** (server : 1-2 unlocked ; `nextPlayableLevel` renvoie
+1-2 si complété+débloqué — prouvé `CampaignPersistTest`) — c'est une **navigation pilote** à ajouter
+(revenir à la carte après victoire au lieu de rejouer le même niveau). NON bloquant pour le serveur.
+
+### Run resume « coincé tôt » (élucidé)
+Un run *resume* (300s) avait repris DANS le tuto (progression persistée seulement à HERO_FILTERS), rejoué
+intro+coffres, atteint HERO_FILTERS puis s'était mis en **veille** (captures + pings keepalive) sans franchir
+l'étape avant timeout. Pas une boucle de reconnexion (mauvaise lecture : `dh_game.log` écrasé par le run
+suivant). Le run *fresh* (du début) atteint la campagne de façon fiable.
+
+### Fichiers
+`desktop-port/src/main/java/dhdesktop/TutorialDriver.java` (`selectHeroesIfNeeded`). Aucune modif jeu/serveur.
+
+---
+
 ## 2026-07-16 — Enquête « crash addHeroEXP » : RÉSOLU (artefact pré-fix) + vraie cause = SIGABRT oop-map JVM → reframe game.jar (serveur)
 
 ### Résumé
