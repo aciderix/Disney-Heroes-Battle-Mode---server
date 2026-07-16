@@ -1,5 +1,8 @@
 import org.objectweb.asm.ClassReader;
+import org.objectweb.asm.ClassVisitor;
 import org.objectweb.asm.ClassWriter;
+import org.objectweb.asm.MethodVisitor;
+import org.objectweb.asm.Opcodes;
 
 import java.io.*;
 import java.util.*;
@@ -70,7 +73,26 @@ public class ReframeJar {
                     return commonSuper(a, b);
                 }
             };
-            cr.accept(cw, ClassReader.SKIP_FRAMES);
+            // Normalisation non-sémantique (§1) du flag `itf` des INVOKESTATIC. dex2jar émet parfois un
+            // INVOKESTATIC vers une méthode STATIQUE d'INTERFACE encodé en Methodref au lieu d'InterfaceMethodref
+            // (ex. les lambdas R8 `$r8$lambda$…` d'interfaces comme FXHandle) → la JVM lève
+            // IncompatibleClassChangeError (« must be InterfaceMethodref constant ») à la résolution du lien.
+            // Règle JVMS : pour INVOKESTATIC, itf DOIT valoir « l'owner est une interface ». On NE touche PAS
+            // INVOKESPECIAL (les appels de méthode par défaut de super-interface ont des contraintes de « super
+            // interface directe » qu'un simple flip d'itf casserait → VerifyError).
+            ClassVisitor fix = new ClassVisitor(Opcodes.ASM9, cw) {
+                @Override public MethodVisitor visitMethod(int a, String n, String d, String s, String[] ex) {
+                    MethodVisitor mv = super.visitMethod(a, n, d, s, ex);
+                    return mv == null ? null : new MethodVisitor(Opcodes.ASM9, mv) {
+                        @Override public void visitMethodInsn(int op, String owner, String mn, String md, boolean itf) {
+                            if (op == Opcodes.INVOKESTATIC)
+                                itf = owner.charAt(0) != '[' && isInterface(owner);
+                            super.visitMethodInsn(op, owner, mn, md, itf);
+                        }
+                    };
+                }
+            };
+            cr.accept(fix, ClassReader.SKIP_FRAMES);
             return cw.toByteArray();
         } catch (Throwable t) {
             return null; // repli : on garde l'original

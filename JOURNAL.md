@@ -7,6 +7,43 @@
 
 ---
 
+## 2026-07-16 (nuit 3 bis) — Opt.2 PROUVÉE : le vrai HeadlessCombat tourne headless via unidbg (ORACLE établi) + fix bytecode itf
+
+### Résumé
+Spike Opt.2 (#27) **concluant** : le **vrai `HeadlessCombat` du jeu** tourne **headless dans le client**
+(`desktop-port` : GL Xvfb/llvmpipe + vrai `GameMain` + unidbg + assets) jusqu'à `DONE` et produit une **issue
+autoritative**. C'est l'**oracle** pour certifier l'Opt.3. Lourdeur mesurée : **~9 s/combat** (unidbg-dominé).
+
+### Ce qui a été fait
+- **`CombatSpikeDriver`** (DEV, `-Ddh.combatspike`, off par défaut) : après boot+login, construit un
+  `HeadlessCombat` de campagne (héros du user en `CoreAttackScreen$CombatUnitData` + `CampaignAttackScreen.
+  createStageDefenders`), boucle `work()` jusqu'à `DONE`, imprime issue + timing. Câblé dans `DesktopLauncher`
+  (hook après `game.render()`), flags forwardés par `run-desktop.sh`/`run-online.sh` (`DH_COMBATSPIKE*`).
+- **Fix bytecode `itf` (ReframeJar)** : le 1ᵉʳ run a buté sur `IncompatibleClassChangeError: FXHandle.
+  $r8$lambda$…() must be InterfaceMethodref constant`. Cause : dex2jar encode un `INVOKESTATIC` vers une méthode
+  statique d'**interface** en `Methodref` au lieu d'`InterfaceMethodref`. `ReframeJar` corrige désormais
+  `itf = isInterface(owner)` pour les `INVOKESTATIC` (non-sémantique §1). ⚠️ **Pas** pour `INVOKESPECIAL` (un
+  1ᵉʳ essai trop large a cassé les défauts de super-interface indirecte → `VerifyError` sur
+  `PegasusSkill3.onRampageStartAnimationEnd` ; restreint à INVOKESTATIC). Régénère `game-framed.jar` (serveur)
+  ET `game-logic-framed.jar` (client).
+
+### Résultats (mesures)
+- **1-1, 3 héros progressés (snapshot loot-1to5) vs 3 vagues** → `state=DONE ticks=973 → WIN` (attackersLeft=
+  true, defendersLeft=false). Le vrai moteur (skills/IA/keyframes) tourne headless.
+- **Déterminisme** : 3 runs → **ticks=973 identiques** (graines 123456789 ×2 et 999). Sim bit-déterministe
+  (temps réel varie 8,9–9,5 s = variance wall-clock, pas de sim). ⇒ **qualité oracle**.
+- **Lourdeur** : ctor ~5-7 ms + `work()` ~9 s (973 ticks × 25 ms = ~24 s de combat in-game émulés). Dominé par
+  unidbg spine (keyframes). **Trop lent pour du synchrone, OK pour de l'anti-triche async.**
+- **Limite du cas de test** : stomp trivial → **seed-insensible** (même issue/ticks pour graines différentes,
+  tout one-shot). La certification #28 devra utiliser des combats **serrés** (RNG discriminant).
+
+### Fichiers
+`tools/reframe/src/ReframeJar.java` (normalisation itf), `desktop-port/src/main/java/dhdesktop/
+CombatSpikeDriver.java` (nouveau), `.../DesktopLauncher.java` (hook), `desktop-port/run-desktop.sh` +
+`run-online.sh` (flags `DH_COMBATSPIKE*`). Docs : SERVER_PLAN §D (résultats+lourdeur), SHIMS (fix itf).
+
+---
+
 ## 2026-07-16 (nuit 3) — #24 RE-SIM COMBAT : investigation à fond → combat KEYFRAME-DRIVEN → plan « oracle-certification »
 
 ### Résumé

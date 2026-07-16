@@ -133,6 +133,13 @@ public final class DesktopLauncher {
         // → permet de relever les FPS EN COMBAT (screen=CoreAttackScreen/…).
         int fpsWindow = Integer.getInteger("dh.fps", 0);
         double fpsWindowStart = glfwGetTime();
+        // DEV (off par défaut) : spike Opt.2 (#27) — exécuter le vrai HeadlessCombat du jeu dans ce client
+        // headless (unidbg+assets) pour mesurer sa lourdeur + servir d'ORACLE. dh.combatspike.exit=1 => quitte
+        // après la mesure. Aucun effet en prod ni côté serveur.
+        String combatSpikeProp = System.getProperty("dh.combatspike");
+        boolean combatSpike = combatSpikeProp != null && !"0".equals(combatSpikeProp)
+            && !"false".equalsIgnoreCase(combatSpikeProp);
+        boolean combatSpikeExit = "1".equals(System.getProperty("dh.combatspike.exit"));
         while (!glfwWindowShouldClose(win) && (maxFrames == 0 || frames < maxFrames)) {
             double now = glfwGetTime();
             graphics.deltaTime = (float) (now - last);
@@ -155,6 +162,12 @@ public final class DesktopLauncher {
             input.drain();          // input synthétique (pilotage) sur le thread render
             app.drainRunnables();   // Gdx.app.postRunnable
             game.render();
+            // DEV : spike Opt.2 — dès que le user a des héros (post-login), exécute UNE fois le vrai
+            // HeadlessCombat et mesure (bloque le thread render le temps de la sim = attendu pour la mesure).
+            if (combatSpike && frames > 200 && CombatSpikeDriver.tryRunOnce(game) && combatSpikeExit) {
+                System.out.println("[combatspike] terminé → fermeture (dh.combatspike.exit=1)");
+                break;
+            }
             glfwSwapBuffers(win);
             glfwPollEvents();
             frames++;

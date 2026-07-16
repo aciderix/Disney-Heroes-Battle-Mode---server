@@ -20,8 +20,14 @@ headless unidbg** déjà fonctionnel du `desktop-port`) comme **ORACLE** + mesur
 une **Opt.3** plus légère (timelines via runtime **spine Java** `spine-libgdx-perblue.jar`) contre l'oracle
 (RNG/HP-tick/timing, matrice large) — jamais shippée non certifiée. Sinon garder l'Opt.2. **Opt.1** (loot
 autoritatif #25, pure logique) reste faisable et cible la surface de triche. Détail : `docs/SERVER_PLAN.md` §D +
-JOURNAL 2026-07-16 nuit 3. **Prochain pas** : hook lanceur `dh.combatspike` (boot+login → `HeadlessCombat`
-campagne → `work()` jusqu'à `DONE` → outcome/stars + timing).
+JOURNAL 2026-07-16 nuit 3. **✅ OPT.2 PROUVÉE & MESURÉE (oracle établi)** : hook lanceur DEV `dh.combatspike`
+(`CombatSpikeDriver`) → le **vrai `HeadlessCombat` tourne headless dans le client** (GL+unidbg+assets) jusqu'à
+`DONE` : **1-1 → `ticks=973` WIN, déterministe** (ticks identiques 3 runs = qualité oracle), **lourdeur ~9 s
+wall-clock/combat** (unidbg spine dominant → trop lent pour synchrone, OK pour anti-triche **async**). A exigé un
+**fix bytecode** : `ReframeJar` normalise l'`itf` des `INVOKESTATIC` d'interface (FXHandle `$r8$lambda`, dex2jar
+Methodref→InterfaceMethodref ; PAS les INVOKESPECIAL — VerifyED super-interface indirecte). **Prochain** : #28
+(certifier une Opt.3 spine-Java contre cet oracle, matrice de combats **serrés** car le stomp 1-1 est
+seed-insensible).
 
 Dernière mise à jour : **2026-07-16 (nuit 2)** — **LOOT D'OBJETS crédité & persisté EN JEU ✅**. Question user (« objets ramassés dispo à l'équipement ? ») → bug : `recordCampaignAttack` jetait `m.lootEarned` (loot roulé CLIENT, combat client-autoritatif) → inventaire vide. Corrigé : passer `m.lootEarned` (1ᵉʳ param List = loot à donner ; le 2ᵉ param est un DELTA RewardDrop laissé VIDE — y mettre `m.memoryChanges` plante `removeDelta` en ClassCastException → cascade CAMPAIGN_LEVEL_LOCKED). **Confirmé EN JEU** : 0 crash, CampaignAttack 1-1→1-5 persistés, **inventaire = 11 types d'objets** (SUNNY_SIDE/CLEVER_FOX/ACE_OF_SPADES gear + EXP_*/HEARTY_BREAKFAST/SUGAR_RUSH/RAID_TICKET conso) dans `individualUserExtra.items` (= écran héros/équip). Test `server/smoke/LootPersistTest`. PARTIEL : memoryChanges + graine SET_SEED non appliqués (confiance loot client). **Suivi des PARTIELs à résoudre** (mémoire de loot, lastWinTime, SET_SEED, re-sim combat/loot authoritatif, PatchStats) → `docs/SERVER_PLAN.md` §Partiels + tâches #21–#26.
 

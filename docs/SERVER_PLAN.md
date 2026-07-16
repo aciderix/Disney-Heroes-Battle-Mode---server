@@ -222,8 +222,23 @@ team-level, tout persisté & testé) mais porte des **PARTIELs** (cf. SHIMS). An
   - **Scoping Opt.2 (fait)** : réutilise le **client headless déjà fonctionnel** du `desktop-port` (GL
     Xvfb/llvmpipe + **vrai `new GameMain(device)`** → `getAssetManager()`/`getRenderContext()` peuplés +
     unidbg cspine/cparticle + assets extraits présents dont `common.treeb`). `HeadlessCombat` est conçu pour ce
-    contexte. Faisabilité **HAUTE**. **Prochain pas** : hook lanceur (`dh.combatspike`) qui, après boot+login,
-    construit un `HeadlessCombat` de campagne, déroule `work()` jusqu'à `DONE`, imprime outcome/stars + timing.
+    contexte. Faisabilité **HAUTE**.
+  - **✅ OPT.2 PROUVÉE & MESURÉE (2026-07-16 nuit 3)** — hook lanceur DEV `dh.combatspike` (`CombatSpikeDriver`)
+    : après boot+login, construit un `HeadlessCombat` de campagne (héros du user en `CombatUnitData` +
+    `createStageDefenders`), déroule `work()` jusqu'à `DONE`, imprime issue + timing. **Résultat (1-1, 3 héros
+    progressés vs 3 vagues)** : `state=DONE ticks=973 → WIN` (attackers survivent, defenders éliminés) — **le
+    vrai moteur de combat du jeu tourne headless via unidbg**. **Déterministe** : même setup → **ticks=973
+    identiques** (qualité oracle). **Lourdeur** : **~9 s wall-clock/combat** (ctor ~5-7 ms + `work()` ~9 s,
+    dominé par l'émulation unidbg spine des keyframes ; 973 ticks × 25 ms = ~24 s de combat in-game). A exigé un
+    **fix de normalisation bytecode** (`ReframeJar` `itf` des `INVOKESTATIC` d'interface — FXHandle, cf. SHIMS).
+  - **Interprétation lourdeur** : ~9 s/combat = **trop lent pour une validation SYNCHRONE** (le joueur
+    n'attend pas 9 s) mais **acceptable en ASYNC** (valider les combats en tâche de fond, échantillonner,
+    flag/rollback des tricheurs). ⇒ l'Opt.2 seule suffit pour l'**anti-triche asynchrone** ; l'Opt.3 (si
+    certifiée) rendrait la validation **synchrone** viable. **Oracle établi** — prêt pour #28.
+  - **Note certification #28** : le stomp trivial 1-1 (héros surpuissants vs WHITE niv.1) est **seed-insensible**
+    (ticks=973 pour graines 123456789 ET 999 : tout one-shot, RNG sans effet macro). La matrice de certification
+    de l'Opt.3 devra inclure des combats **serrés** (où le RNG change l'issue/timing) pour distinguer une Opt.3
+    fidèle d'une divergente.
 
 ### E. [ ] Re-ROLL serveur du loot (autoritatif) — GROS, dépend de C — chantier §3
 - **Quoi** : au lieu d'appliquer `m.lootEarned` (client), le serveur **roule le loot lui-même** avec la
