@@ -308,18 +308,26 @@ hub où l'auto-tap cale :
    « VIEW/OPEN/OK » ; sinon bouton par nom) — **jamais une coordonnée devinée**, toujours l'acteur/API du jeu.
 4. Recompiler (`gradle -q compileJava`), relancer (reprise rapide via A).
 
-**B-bis. SONDE « cliquer + monitorer ce qui s'active » (`dh.mapprobe`) — OUTIL DE DIAGNOSTIC À GARDER.**
-Quand un écran n'a **aucun acteur `[CLICK]`** exploitable (ex. carte de campagne = scène **g2d**
-`CityMapDisplay`, pas du scene2d ; `getPointers()` vide headless), on ne devine pas : on **agit comme un
-vrai doigt ET on observe la réaction**. `TutorialDriver.mapProbe` (activé `DH_MAPPROBE=1`) : suspend le
-RETOUR, **hit-teste une grille** autour de la cible (acteur touché + **1er ancêtre porteur de listener** +
-**types de listeners** via `getListeners()`), **tape** le point, puis **journalise la transition d'écran**.
-C'est comme ça qu'on a élucidé l'entrée en chapitre : le tap n'atteint aucun bouton scene2d → le clic est
-géré par `CityMapScreen` (caméra `MapCamera2D` → `CityMapDisplay.getHitCampaignLevel(x,y)` →
-`CampaignLevelID` → `onCampaignLevelTapped(id)`). **Généralisable** : dès qu'on ne sait pas *quel élément
-activer* sur un écran, brancher cette sonde (cliquer + monitorer listeners + transition) révèle la vraie
-mécanique du jeu, puis on câble le pilote sur **l'API du jeu** trouvée (ici `onCampaignLevelTapped`, pas une
-coordonnée). Voir JOURNAL 2026-07-14.
+**B-bis. ⭐ TECHNIQUE DE DÉBLOCAGE UNIVERSELLE — « capturer → cliquer au bon endroit → monitorer ce que
+le clic déclenche → câbler dans le pipeline ». À APPLIQUER DÈS QU'ON BLOQUE SUR UN ÉCRAN.**
+C'est **LA** méthode quand on ne sait pas quel élément actionner (surtout si l'écran n'a **aucun acteur
+`[CLICK]`** scene2d exploitable — ex. carte de campagne = scène **g2d** `CityMapDisplay`, `getPointers()`
+vide headless). On ne **devine jamais** une coordonnée : on agit **comme un vrai doigt** et on **observe la
+réaction du jeu**. Les 4 étapes :
+1. **CAPTURER l'écran** (`DH_SHOT` → `.ppm`→`.png`) et **REGARDER** où un vrai joueur cliquerait (source de
+   vérité visuelle).
+2. **CLIQUER manuellement à cet endroit** (hit-test) et **MONITORER ce que le clic déclenche** : l'acteur
+   effectivement touché, le **1er ancêtre porteur de listener**, les **types de listeners** (`getListeners()`),
+   la **méthode/API du jeu** appelée, et la **transition d'écran** qui en résulte. Sonde intégrée
+   `TutorialDriver.mapProbe` (activée `DH_MAPPROBE=1`) : suspend le RETOUR, hit-teste une grille autour de la
+   cible, tape, journalise l'acteur+listeners+transition.
+3. **IDENTIFIER l'API du jeu** révélée (pas la coordonnée). Ex. carte campagne : le tap n'atteint aucun
+   bouton scene2d → géré par `CityMapScreen` (caméra `MapCamera2D` → `CityMapDisplay.getHitCampaignLevel(x,y)`
+   → `CampaignLevelID` → `onCampaignLevelTapped(id)` → `normalOrEliteNodeSelected`).
+4. **CÂBLER cette API dans le pipeline** (pilote DEV appelle l'API du jeu trouvée ; **jamais** une coordonnée
+   devinée), recompiler, relancer (reprise rapide via A).
+**Généralisable à tout écran bloquant** (hub, popups, mini-jeux, cartes custom…). Voir JOURNAL 2026-07-14
+(entrée en chapitre élucidée exactement ainsi).
 
 **C. Comportement du pilote** (`TutorialDriver.driveOnce`, ordre) : (1) popup ouverte + pointeur tuto DEDANS
 → taper dedans ; (2) popup d'**affichage de récompense** (`*Result*`/`*Reward*` : `ChestResultsWindow`) →
