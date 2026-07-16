@@ -281,6 +281,12 @@ public final class ServerUser {
 
     resyncHeroes(user);   // héros (XP/état) → wire ; stamina/or sont dans this.extra (auto).
     resyncCampaign(iu);   // progression campagne (statuts de niveau) → wire (hors this.extra, comme les héros).
+    // Niveau d'équipe : User.teamLevel est un CHAMP de User (hors this.extra) — getUser le lit depuis
+    // userInfo.basicInfo.teamLevel, mais setTeamLevel (montée de niveau via giveTeamXP) ne l'écrit QUE sur
+    // l'objet User. Sans re-sync vers le wire, le niveau reste BLOQUÉ à 1 : l'équipe « remonte 1→2 » à chaque
+    // palier d'XP (18) et ré-accorde STAMINA_GAIN_ON_LEVEL (+20) EN BOUCLE (au lieu de progresser vers le
+    // palier suivant). Même schéma que resyncHeroes/resyncCampaign (§6 persistance complète).
+    userInfo.basicInfo.teamLevel = user.getTeamLevel();
   }
 
   /**

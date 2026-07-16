@@ -36,6 +36,28 @@ Probe `server/data/dh-server.db` après le run :
 ⇒ Pipeline **entrée / choix héros / skills (AUTO) / vagues / loot-gold / récompenses / XP / conso énergie /
 progression / déblocage niveau suivant** : **tout validé et persisté**.
 
+### BUG PERSISTANCE trouvé & corrigé : NIVEAU D'ÉQUIPE (révélé par la question stamina de l'utilisateur)
+L'utilisateur a tiqué : « stamina 122/120 (au-dessus de 120) et 6 combats sans consommation ? ». Investigation
+(`StamTrace`, 6× 1-1 sur joueur neuf) : la stamina EST consommée (−6/combat : 120→114→108…) MAIS **remonte
+tous les 3 combats** à 122 (stored) / 120 (effective), corrélé à `TEAM_XP` qui reset 12→0. `team_levels.tab` :
+niv.1→2 = **18 XP** (=3×6), montée = **+20 stamina** (`STAMINA_GAIN_ON_LEVEL`) ⇒ 122 = 102 (après −6) + 20.
+MAIS `getTeamLevel()` restait **1** même après reload → **le niveau d'équipe ne montait/persistait pas**.
+**Cause** : `User.teamLevel` est un **champ de `User`** (pas dans `this.extra`) ; `getUser` le lit depuis
+`userInfo.basicInfo.teamLevel`, mais `setTeamLevel` (appelé à la montée par `giveTeamXP`) n'écrit QUE le
+champ `User`. Sans re-sync, le wire garde 1 → l'équipe « re-monte 1→2 » à chaque palier de 18 XP et
+**ré-accorde +20 stamina EN BOUCLE** (d'où la stamina qui ne descend jamais — le symptôme repéré par l'user).
+**Correctif** (même schéma que resyncHeroes/resyncCampaign, §6) : `recordCampaignAttack` fait
+`userInfo.basicInfo.teamLevel = user.getTeamLevel()`. Vérifié `StamTrace` (le niveau monte 1→2 au 3ᵉ combat
+et **RESTE** à 2 ; teamXP progresse ensuite vers 25 = seuil 2→3 ; plus de refill +20 ; stamina se consomme
+vraiment : …114→108→102) + **`server/smoke/TeamLevelPersistTest`** (niv.2 après 18 XP, survit au reload
+SQLite). Régression `Resource/CampaignAttack/CampaignPersist` toujours verte.
+
+### Réponse à « 122/120 et 6 combats sans consommation ? »
+OUI la stamina est consommée (−6/combat). Le « 122>120 » = bonus `STAMINA_GAIN_ON_LEVEL=20` du jeu à la
+montée de niveau d'équipe (stored peut dépasser le cap d'affichage 120 → clampé `min(122,120)=120`, même
+artefact bénin R102). Le « pas de consommation apparente sur 6 combats » = le **bug ci-dessus** (re-level en
+boucle refillant +20 tous les 3 combats) — désormais corrigé : la stamina descend réellement.
+
 ### Reste : navigation pilote POST-VICTOIRE (rejoue 1-1 au lieu d'aller en 1-2)
 Le pilote n'a fait qu'**une** entrée carte (`normalOrEliteNodeSelected(1-1)`) mais **6 combats** : après chaque
 victoire, le client revient sur l'**aperçu/choix de 1-1** (pas la carte) et le pilote **re-tape FIGHT** →
