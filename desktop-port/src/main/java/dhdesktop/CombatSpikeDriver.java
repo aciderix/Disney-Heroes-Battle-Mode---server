@@ -72,6 +72,7 @@ public final class CombatSpikeDriver {
             HeadlessCombat.IHeadlessEvents ev = new HeadlessCombat.IHeadlessEvents() {
                 @Override public void onDefenderUnitDeath(Unit x) {}
             };
+            com.perblue.heroes.cspine.Native.resetProfile();   // phase 0 Opt.3 : mesurer la surface cspine du COMBAT
             long t0 = System.nanoTime();
             HeadlessCombat hc = new HeadlessCombat(HeroLineupType.DEFAULT, rng, attackers, defenders, mode, ev);
             long tCtor = System.nanoTime();
@@ -82,6 +83,7 @@ public final class CombatSpikeDriver {
                 ticks++;
             }
             long t1 = System.nanoTime();
+            System.out.print(com.perblue.heroes.cspine.Native.reportProfile());
 
             Scene scene = hc.getScene();
             boolean win = scene != null && scene.isAttackersLeft() && !scene.isDefendersLeft();

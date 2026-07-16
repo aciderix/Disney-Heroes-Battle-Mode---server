@@ -7,6 +7,46 @@
 
 ---
 
+## 2026-07-16 (nuit 3 quater) — Opt.3 Phase 0 : surface cspine EXACTE du combat headless mesurée (profilage)
+
+### Résumé
+Instrumentation DEV du shim `cspine.Native` (`-Ddh.cspineprofile`, compteur par méthode ; reset/report autour du
+combat dans `CombatSpikeDriver`). Run du spike Opt.2 → **surface cspine EXACTE que le combat headless exerce**.
+Résultat : **~22 méthodes** (animation/skeleton/os), **0 rendu**, mais **les positions d'os SONT lues**.
+
+### Mesures (1-1, 3 héros vs 3 vagues, 973 ticks, 9 unités) — 37 méthodes appelées
+**Hot path (par tick) :** `AnimationState_nextEvent` 8611 (polling events, VIDE car .skel sans event → trivial),
+`getCurrentAnimationTime` 8008, **`Skeleton_getBoneTransform` 4376** (~4.5/tick — **positions d'os monde LUES**),
+`getCurrentAnimationID` 4299, `AnimationState_apply` 4091, `Skeleton_updateWorldTransform` 4013, `Skeleton_update`
++ `AnimationState_update` 4004 chacun. **Setup/occasionnel :** `getAnimationID` 445, `getBoneID` 410,
+`setToSetupPose` 96, `setAnimation` 87, `setColor`/`setTintBlack`/`setSlotEyeState` 47/38/36 (cosmétique),
+`setMix` 36, `setSkin` 36, `Atlas_getTexture` 24, `getBoneTransforms` 15, create/dispose ×9 (9 unités),
+`getAnimationDurations`/`getSlot/Anim/Bone/SkinNames`/`create` ×8 (skeletons uniques).
+
+### Findings décisifs
+1. **0 appel `getVertices*`** → le combat headless **NE REND RIEN** → toutes les méthodes de rendu (getVertices,
+   setColor/tintBlack) → **no-op** en Opt.3. ✅
+2. **`getBoneTransform` massif (4376)** → l'inconnu de la Phase 0 est **tranché : OUI le combat lit les positions
+   d'os monde** → le backend Java-spine doit **appliquer l'anim + `updateWorldTransform` + exposer `Bone.getWorldX/
+   Y/rotation`** (fourni nativement par spine-libgdx-perblue).
+3. **`setMix` 36** → mixing/crossfade d'animations configuré → **à certifier** (timing).
+4. **`nextEvent` 8611 mais 0 event dans les .skel** → poll toujours vide → implémentation triviale (retourne
+   « rien »). Les keyframes de combat viennent du prefab (déjà établi nuit 3 ter).
+
+### Conséquence pour l'Opt.3 (chantier CADRÉ)
+Surface à implémenter en Java-spine ≈ **22 méthodes** : `SkeletonData_{create,dispose,getAnimation{Durations,ID,
+Names},getBone{ID,Names},get{Slot,Skin}Names}`, `Skeleton_{create,dispose,update,updateWorldTransform,
+setToSetupPose,setSkin,getBoneTransform(s)}`, `AnimationState{,Data}_{create,dispose,update,apply,setAnimation,
+clearTracks,getCurrentAnimation{ID,Time},setMix,nextEvent}`. Toutes en **délégation directe au runtime Java**
+(pas les 47 de cspine, PAS de rendu). Risques de fidélité à certifier vs oracle : valeurs de `getBoneTransform`
+(monde) + timing `setMix`. Gain attendu : le hot-path (~29 appels unidbg/tick, ~9 s) → JVM natif (~ns) → <100 ms.
+
+### Fichiers
+`desktop-port/src/main/java/com/perblue/heroes/cspine/Native.java` (profilage DEV gated), `.../CombatSpikeDriver.java`
+(reset/report), `run-desktop.sh`/`run-online.sh` (`DH_CSPINEPROFILE`). Docs : SERVER_PLAN §D.
+
+---
+
 ## 2026-07-16 (nuit 3 ter) — Opt.3 TEST : données de timing ACCESSIBLES en Java pur (spine-libgdx-perblue) → faisable, verdict
 
 ### Résumé

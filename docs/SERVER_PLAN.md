@@ -252,6 +252,16 @@ team-level, tout persisté & testé) mais porte des **PARTIELs** (cf. SHIMS). An
   - **⭐ RECO DE CHOIX** : **Opt.2 async MAINTENANT** (brancher l'oracle sur `recordCampaignAttack` en validation
     de fond → autorité anti-triche immédiate, ~9 s/combat hors ligne) ; **Opt.3 ensuite** (upgrade perf
     certifiable, fondation + oracle en place). Opt.3 d'abord seulement si le synchrone temps-réel est requis.
+  - **✅ OPT.3 PHASE 0 (2026-07-16 nuit 3 quater) — surface cspine EXACTE du combat mesurée** (profilage DEV
+    `-Ddh.cspineprofile` du shim `cspine.Native`, reset/report autour du combat). 37 méthodes appelées ;
+    **hot-path/tick** : `nextEvent` 8611 (poll VIDE, .skel sans event → trivial), `getCurrentAnimationTime` 8008,
+    **`getBoneTransform` 4376 (~4.5/tick)**, `getCurrentAnimationID` 4299, `apply` 4091, `updateWorldTransform`
+    4013, `update`×2 4004. **Findings** : (1) **0 `getVertices*`** → combat ne rend rien → **rendu = no-op**.
+    (2) **`getBoneTransform` massif** → l'inconnu est tranché : **OUI, positions d'os monde lues** → backend
+    Java-spine doit **appliquer l'anim + updateWorldTransform + Bone.getWorldX/Y/rotation** (fourni nativement).
+    (3) `setMix` 36 → mixing configuré → à certifier. **⇒ Opt.3 = ~22 méthodes** (SkeletonData/Skeleton/
+    AnimationState/AnimationStateData) en **délégation directe au runtime Java** (pas les 47 de cspine, pas de
+    rendu). Chantier **cadré**. Gain : ~29 appels unidbg/tick (~9 s) → JVM natif → <100 ms.
 
 ### E. [ ] Re-ROLL serveur du loot (autoritatif) — GROS, dépend de C — chantier §3
 - **Quoi** : au lieu d'appliquer `m.lootEarned` (client), le serveur **roule le loot lui-même** avec la

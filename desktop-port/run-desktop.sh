@@ -128,6 +128,7 @@ JOPTS="$JOPTS -Ddh.spinelib=$(cd .. && pwd)/native/reference/libspine-native.so"
 [ -n "${DH_COMBATSPIKE_CH:-}" ] && JOPTS="$JOPTS -Ddh.combatspike.ch=$DH_COMBATSPIKE_CH"
 [ -n "${DH_COMBATSPIKE_LV:-}" ] && JOPTS="$JOPTS -Ddh.combatspike.lv=$DH_COMBATSPIKE_LV"
 [ -n "${DH_COMBATSPIKE_SEED:-}" ] && JOPTS="$JOPTS -Ddh.combatspike.seed=$DH_COMBATSPIKE_SEED"
+[ -n "${DH_CSPINEPROFILE:-}" ] && JOPTS="$JOPTS -Ddh.cspineprofile=$DH_CSPINEPROFILE"
 
 echo "[desktop] lancement (GameMain via backend LWJGL3 maison) ..."
 set +e
