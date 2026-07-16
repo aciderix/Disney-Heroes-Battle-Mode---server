@@ -254,6 +254,10 @@ public final class TutorialDriver {
                     } else combatCooldown--;
                     return true;   // géré ici (flèche de continuation) ; pas de tap central du lanceur
                 }
+                // CHOIX DES HÉROS : sur un écran de choix (CampaignHeroChooserScreen…), si l'équipe est vide
+                // et qu'aucun pointeur tuto ne guide la sélection, on SÉLECTIONNE les héros dispo via l'API du
+                // jeu (unitSelected) AVANT de taper FIGHT — sinon TEAM POWER=0 et « select at least one hero ».
+                if (screenName.contains("HeroChooser") && selectHeroesIfNeeded(screen)) return true;
                 // BOUTON D'ACTION connu SANS pointeur : après une défaite/replay, le tuto n'émet plus de
                 // pointeur sur l'aperçu du niveau ni le choix des héros, mais il faut quand même taper le
                 // bouton FIGHT pour (re)lancer le combat. On tape donc l'acteur du jeu par son tutorialName
@@ -491,6 +495,51 @@ public final class TutorialDriver {
             return true;
         } catch (Throwable t) {
             if (DEBUG) System.out.println("[tutodrive] enterCampaignLevel échec: " + t);
+            return false;
+        }
+    }
+
+    /**
+     * Sur un écran de CHOIX DES HÉROS (CampaignHeroChooserScreen…), sélectionne les héros disponibles via
+     * l'API du jeu qu'un tap de portrait déclenche : {@code HeroChooserScreen.unitSelected(UnitData, provider,
+     * x, y)} (cœur = {@code HeroChooserHelper.selectUnitPressed} ; pour la campagne le {@code provider}/coords
+     * ne sont PAS utilisés — vérifié au bytecode : seul SURGE les lit → null/0 sûrs). Sans ça, TEAM POWER=0
+     * et FIGHT affiche « select at least one hero » → aucun {@code CampaignAttack} envoyé. On n'ajoute QUE les
+     * héros pas déjà dans l'équipe ({@code unitSelected} TOGGLE) et sélectionnables ({@code canSelectUnit} =
+     * false quand l'équipe est pleine), donc l'appel se stabilise. Appelé seulement quand AUCUN pointeur tuto
+     * n'est actif (sinon on suit le pointeur — fidélité au guidage du tuto). Renvoie true si au moins un héros
+     * a été ajouté ce frame (on cède la main ; FIGHT est tapé aux frames suivants, équipe non vide).
+     */
+    private static boolean selectHeroesIfNeeded(Object screen) {
+        try {
+            Class<?> unitC = Class.forName("com.perblue.heroes.game.objects.UnitData");
+            Class<?> dataC = Class.forName("com.perblue.heroes.ui.herochooser.HeroChooserData");
+            Class<?> provC = Class.forName("com.perblue.heroes.game.logic.CollectionHelper$CollectionLevelProvider");
+            Class<?> helperC = Class.forName("com.perblue.heroes.ui.herochooser.HeroChooserHelper");
+            java.util.List<?> avail = (java.util.List<?>) screen.getClass().getMethod("getAvailableHeroes").invoke(screen);
+            if (avail == null || avail.isEmpty()) return false;
+            // champ protégé 'data' de HeroChooserScreen — parcourt les superclasses.
+            Object data = null;
+            for (Class<?> c = screen.getClass(); c != null && data == null; c = c.getSuperclass()) {
+                try { java.lang.reflect.Field f = c.getDeclaredField("data"); f.setAccessible(true); data = f.get(screen); }
+                catch (NoSuchFieldException ignore) {}
+            }
+            if (data == null) return false;
+            java.lang.reflect.Method isIn = helperC.getMethod("isUnitInSelectedLineup", dataC, unitC);
+            java.lang.reflect.Method canSelect = screen.getClass().getMethod("canSelectUnit", unitC);
+            java.lang.reflect.Method unitSelected = screen.getClass().getMethod("unitSelected", unitC, provC, float.class, float.class);
+            boolean selectedAny = false;
+            for (Object unit : avail) {
+                if ((Boolean) isIn.invoke(null, data, unit)) continue;      // déjà dans l'équipe (ne pas re-toggle)
+                if (!(Boolean) canSelect.invoke(screen, unit)) continue;    // équipe pleine / non sélectionnable
+                unitSelected.invoke(screen, unit, null, 0f, 0f);            // = tap du portrait (API du jeu)
+                selectedAny = true;
+            }
+            if (selectedAny) System.out.println("[tutodrive] " + screen.getClass().getSimpleName()
+                + " → héros sélectionnés via unitSelected (API du jeu) → équipe prête pour FIGHT");
+            return selectedAny;
+        } catch (Throwable t) {
+            if (DEBUG) System.out.println("[tutodrive] selectHeroesIfNeeded échec: " + t);
             return false;
         }
     }
