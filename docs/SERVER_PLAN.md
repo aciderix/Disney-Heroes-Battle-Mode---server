@@ -170,6 +170,25 @@ team-level, tout persisté & testé) mais porte des **PARTIELs** (cf. SHIMS). An
   du niveau via `CampaignStats`), instancier `HeadlessCombat` avec `new Random(combatSeed)`, dérouler
   jusqu'au bout, extraire outcome/stars → **remplacer** ceux du client (ou rejeter si divergence).
 - **Effort** : substantiel (mapping lineups + events + boucle de sim). Faisable 100% avec le code d'origine.
+- **SPIKE DE FAISABILITÉ (2026-07-16) — recette établie, briques confirmées :**
+  - **`State`** : `INITAL_SETUP → PRE_COMBAT_SETUP → COMBAT → FINAL_COUNTDOWN → POST_COMBAT → CLEAN_UP → DONE`.
+    Boucle `work()` jusqu'à l'état voulu ; l'issue est décidée dès **`POST_COMBAT`** (les `LineupSummary` sont
+    remplis).
+  - **Attaquants** : `Array<CombatUnitData>` via `new CoreAttackScreen$CombatUnitData(UnitData)` sur les héros
+    du user (constructeur simple, headless-friendly).
+  - **Défenseurs** : `CampaignStats.getStageEnemies(type, ch, lv, stage)` → `List<CampaignUnitInfo>` par stage
+    (1-1 = **3 stages** : 1/3/1 ennemis ; `getEnemyLevel/Rarity/Stars` = 1/WHITE/1). `CampaignUnitInfo{getType,
+    getRealGear, isBoss, getPatchLevel…}` → construire un `Unit`/`UnitData` ennemi (niveau/rareté/étoiles
+    appliqués) → `CombatUnitData`. Assembler `Array<Array<CombatUnitData>>` (une sous-Array par stage/vague).
+  - **`IHeadlessEvents`** : 1 seule méthode `onDefenderUnitDeath(Unit)` → stub vide.
+  - **Issue/étoiles** : lire `getAttackerLineupSummaries()`/`getDefenderLineupSummaries()` (AttackLineupSummary)
+    à `POST_COMBAT`, comparer à `m.base.outcome`/`stars`.
+  - ⚠️ **OBSTACLE headless** : `work()` en phase **CLEAN_UP** touche **libGDX** (`Skin.dispose()`,
+    `GameMain.getSoundManager().clear()`, scene2d `Group.clear()`) → le shim `DH.app` n'a ni soundManager ni
+    skin → NPE. **Stratégies** : (a) **s'arrêter à `POST_COMBAT`** (issue déjà décidée, on ne déroule PAS le
+    cleanup) — préféré ; ou (b) étoffer le shim (soundManager/skin no-op). À valider par un run headless réel
+    de `work()` (le vrai inconnu restant : le moteur de combat — skills, timers — tourne-t-il jusqu'à
+    POST_COMBAT sans autre dépendance libGDX ?). Le reste de la recette est confirmé.
 
 ### E. [ ] Re-ROLL serveur du loot (autoritatif) — GROS, dépend de C — chantier §3
 - **Quoi** : au lieu d'appliquer `m.lootEarned` (client), le serveur **roule le loot lui-même** avec la
