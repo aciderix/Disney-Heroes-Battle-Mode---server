@@ -70,6 +70,7 @@ public final class TutorialDriver {
     private static final int[] PLAY_LEVEL = parseLevel(System.getProperty("dh.playlevel", "1,1"));
     private static int enterCooldown = 0;
     private static int combatCooldown = 0;   // cadence des taps sur la flèche « TAP TO CONTINUE » (combat)
+    private static boolean justFoughtCampaign = false;   // vrai après un combat → revenir à la carte (enchaîner)
     // Boutons d'action du flux de combat à taper SANS pointeur (replay après défaite : le tuto n'émet plus
     // de pointeur mais il faut relancer le combat). Acteurs du jeu, tapés par tutorialName.
     private static final Set<String> ADVANCE_BUTTONS = new HashSet<>(java.util.Arrays.asList(
@@ -247,12 +248,27 @@ public final class TutorialDriver {
                 // vague se ferme en tapant la FLÈCHE (droite-centre) → vague suivante. On tape donc cette zone
                 // périodiquement (inoffensif en combat actif = ciel vide) ; l'auto-combat joue les vagues.
                 if (screenName.contains("AttackScreen")) {
+                    justFoughtCampaign = true;   // on est EN combat → au retour, revenir à la carte (enchaîner)
                     if (combatCooldown <= 0) {
                         int ax = Math.round(w * 0.93f), ay = Math.round(h * 0.5f);
                         if (TAP_HOLD > 0) input.tapHold(ax, ay, TAP_HOLD); else input.tap(ax, ay);
                         combatCooldown = 8;
                     } else combatCooldown--;
                     return true;   // géré ici (flèche de continuation) ; pas de tap central du lanceur
+                }
+                // POST-VICTOIRE — ENCHAÎNER : après un combat, le client revient sur l'aperçu/choix du MÊME
+                // niveau ; sans intervention le pilote re-taperait FIGHT (rejoue le même niveau). On revient
+                // plutôt à la CARTE (BACK) une fois : sur CampaignScreen, enterCampaignLevel prendra
+                // nextPlayableLevel = niveau débloqué SUIVANT (1-1→1-2→…). Le déblocage est autoritatif serveur.
+                if (justFoughtCampaign
+                        && (screenName.contains("CampaignPreview") || screenName.contains("HeroChooser"))) {
+                    List<Actor> back = findByName(searchRoot, "BACK_BUTTON");
+                    if (!back.isEmpty()) {
+                        justFoughtCampaign = false;
+                        if (DEBUG) System.out.println("[tutodrive] " + screenName
+                            + " post-victoire → RETOUR carte pour enchaîner le niveau suivant");
+                        return tapAll(back, input, w, h);
+                    }
                 }
                 // CHOIX DES HÉROS : sur un écran de choix (CampaignHeroChooserScreen…), si l'équipe est vide
                 // et qu'aucun pointeur tuto ne guide la sélection, on SÉLECTIONNE les héros dispo via l'API du
@@ -489,6 +505,7 @@ public final class TutorialDriver {
             if (m == null) { if (DEBUG) System.out.println("[tutodrive] normalOrEliteNodeSelected introuvable"); return false; }
             m.setAccessible(true);
             m.invoke(screen, id);
+            justFoughtCampaign = false;   // entrée FRAÎCHE d'un niveau → on va combattre (pas un retour post-victoire)
             System.out.println("[tutodrive] CampaignScreen → normalOrEliteNodeSelected(" + lvl[0] + "-"
                 + lvl[1] + ") [API du jeu → CampaignPreviewScreen]");
             enterCooldown = 90;   // ~90 frames avant un éventuel nouvel essai (laisse ouvrir l'aperçu du niveau)
