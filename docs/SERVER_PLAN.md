@@ -183,11 +183,12 @@ team-level, tout persisté & testé) mais porte des **PARTIELs** (cf. SHIMS). An
   n'héberge pas d'évènements. « Résoudre » = **construire un système d'hébergement d'évènements**
   (configuration + snapshots temporels) — une feature à part entière, hors périmètre actuel.
 
-### G. [ ] Fragilité headless `PatchStats` (talent orphelin EVIL_QUEEN) — cf. SHIMS
-- **Quoi** : le recompute complet de puissance (`getPower`) headless propage l'`IllegalArgumentException`
-  de `PREDICTIVE_FORTIFICATION` (toléré en jeu). **Impact gameplay nul**. **Fix durable** : forcer le
-  chargement TOLÉRANT des stats patchées à l'init serveur (ou peupler `statDataTxt` sans la ligne orpheline),
-  pour un `getPower` headless fiable.
+### G. [x] ✅ NON-BLOQUANT — `PatchStats` (talent orphelin EVIL_QUEEN) — investigué (cf. SHIMS)
+- **Résolu (investigation 2026-07-16)** : le chargement PARESSEUX naturel des stats patchées EST tolérant
+  (le jeu attrape la ligne orpheline via `onStatError`). Vérifié fiable : `getPower` 16/16 (FROZONE+RALPH),
+  `PowerLoop` 3/3, équip → puissance 72→87. ⚠️ NE PAS forcer via `Class.forName(PatchStats)` (contre-productif,
+  poison le `<clinit>`). **Rien à corriger** dans le flux serveur normal ; la « fragilité » initiale était un
+  artefact de probe.
 
 **Reco d'ordre** : A + B tout de suite (complétion §6, triviaux, testables). Puis C→D→E comme **chantier
 « serveur pleinement autoritatif »** (passage de « confiance client » à « validation serveur », §3). F/G au
