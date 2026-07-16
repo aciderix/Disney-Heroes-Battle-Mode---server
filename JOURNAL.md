@@ -7,6 +7,51 @@
 
 ---
 
+## 2026-07-16 (nuit 3 ter) — Opt.3 TEST : données de timing ACCESSIBLES en Java pur (spine-libgdx-perblue) → faisable, verdict
+
+### Résumé
+Test de faisabilité de l'Opt.3 (timelines d'animation via runtime **Java spine** au lieu d'unidbg). **Résultat
+POSITIF sur la data-reachability** : le `spine-libgdx-perblue.jar` (runtime Java `com.esotericsoftware.spine`)
+**lit les `.skel` du jeu** et en extrait les animations + durées, **sans unidbg ni GL**. ⇒ fondation de l'Opt.3
+existante. Reste un **coût de câblage** (backer le natif cspine par le Java-spine) à certifier contre l'oracle.
+
+### Ce qui a été testé (probe `SpineProbe`, scratchpad)
+- `SkeletonBinary.readSkeletonData(FileHandle)` sur `ralph/elastigirl/frozone.skel` → **parse complet** :
+  ralph **12** anims (attack 1.0s, hit 0.633s, skill1 1.833s, skill2/3 1.367s…), elastigirl **14**, frozone **10**,
+  avec **durées**. AttachmentLoader stub (attachments vides — pas besoin des textures pour le timing), FileHandle
+  direct (sans Gdx.files).
+- **Conflit de libGDX résolu (probe)** : `spine-libgdx-perblue` veut `DataInput.readString()` (absent : le
+  `DataInput` de `game(-logic).jar` est un **stub 215 o**) ET `Array.add→boolean` (libGDX **PerBlue**). Or
+  gdx-1.9.7 a readString mais `Array.add→void`. Même package, classes différentes → on prend le `DataInput`
+  complet de gdx-1.9.7 (prioritaire) + le reste de `game-logic-framed` (Array→boolean). (= le sujet de la
+  tâche #3 « DataInput.readString », shadow retiré au passage à unidbg.)
+
+### Découverte structurante
+- **Les `.skel` n'ont AUCUN event spine** (`eventDatas=0` pour les 3 héros). Les **keyframes de combat**
+  (déclenchement dégâts/hit/projectile) NE sont donc PAS des events spine, mais des **composants du prefab de
+  scène** (`.treeb` : `HitKeyframeData`/`ProjectileKeyframeData`), authored à part. Ces prefabs sont **aussi
+  chargeables en Java** (PrefabLoader du jeu, données pures, sans GL/unidbg).
+- **`AnimationElement`** (classe concrète) encapsule le **natif cspine** (`nativeSkel`/`nativeAS`, ctor
+  `(NativeSkeleton, NativeAnimationState)`) pour la playback (`setAnimation`/`getAnimationLength` = horloge +
+  durées), MAIS ses **keyframes sont une `HashMap` settable** (`setKeyframes`, source = prefab). Le combat ne
+  semble pas lire de **positions d'os** (0 `findBone` dans `simulation/`).
+
+### Verdict Opt.3
+- **Data reachable en Java pur : OUI** (durées via .skel/Java-spine + keyframes via prefab/PrefabLoader).
+- **Câblage** : pour retirer unidbg, backer la **sous-surface cspine du combat** (`NativeSkeleton`/
+  `NativeAnimationState` : durées + horloge d'animation ; pas de rendu/vertices/os apparemment) par le
+  Java-spine. **Réimplémentation bornée** (précédent : le projet avait des shadows cspine Java avant unidbg),
+  **à CERTIFIER contre l'oracle Opt.2** (même spine 3.6 sur les mêmes .skel → forte proba de match, non garanti).
+- **Gain** : supprime l'émulation ARM du combat → ~9 s → probablement <100 ms → **validation synchrone viable**.
+- **Reco** : **Opt.2 async MAINTENANT** (autorité immédiate : brancher l'oracle sur `recordCampaignAttack` en
+  validation de fond, ~9 s/combat hors ligne) ; **Opt.3 ensuite** comme upgrade perf certifiable (fondation +
+  oracle déjà en place). Choisir Opt.3 en priorité seulement si le synchrone temps-réel est requis d'emblée.
+
+### Fichiers
+Probe `scratchpad/SpineProbe.java` (throwaway). Docs : SERVER_PLAN §D, MEMORY. Aucune modif jeu/serveur.
+
+---
+
 ## 2026-07-16 (nuit 3 bis) — Opt.2 PROUVÉE : le vrai HeadlessCombat tourne headless via unidbg (ORACLE établi) + fix bytecode itf
 
 ### Résumé

@@ -239,6 +239,19 @@ team-level, tout persisté & testé) mais porte des **PARTIELs** (cf. SHIMS). An
     (ticks=973 pour graines 123456789 ET 999 : tout one-shot, RNG sans effet macro). La matrice de certification
     de l'Opt.3 devra inclure des combats **serrés** (où le RNG change l'issue/timing) pour distinguer une Opt.3
     fidèle d'une divergente.
+  - **✅ TEST OPT.3 (2026-07-16 nuit 3 ter) — data-reachability POSITIVE.** Le runtime **Java spine**
+    (`spine-libgdx-perblue.jar`) **lit les `.skel` du jeu sans unidbg/GL** (probe `SpineProbe`) : ralph 12 anims
+    / elastigirl 14 / frozone 10, avec **durées**. **Mais 0 event spine dans les `.skel`** → les keyframes de
+    combat (dégâts/hit/projectile) viennent des **prefabs `.treeb`** (`HitKeyframeData`…), eux aussi Java-loadables
+    (PrefabLoader, données pures). `AnimationElement` (classe concrète) encapsule le natif cspine (playback +
+    durées) mais ses **keyframes = HashMap settable** (prefab). Combat ne lit pas d'os (0 `findBone`). **Verdict** :
+    Opt.3 **faisable** — câblage = backer la sous-surface cspine du combat (durées + horloge) par le Java-spine
+    (réimpl. bornée, précédent = shadows cspine d'avant unidbg), **à certifier contre l'oracle Opt.2**. Gain :
+    ~9 s → probablement <100 ms (plus d'émulation ARM) → **synchrone viable**. Conflit libGDX du probe : `DataInput`
+    complet (readString) de gdx-1.9.7 + `Array` (add→boolean) de PerBlue (cf. tâche #3).
+  - **⭐ RECO DE CHOIX** : **Opt.2 async MAINTENANT** (brancher l'oracle sur `recordCampaignAttack` en validation
+    de fond → autorité anti-triche immédiate, ~9 s/combat hors ligne) ; **Opt.3 ensuite** (upgrade perf
+    certifiable, fondation + oracle en place). Opt.3 d'abord seulement si le synchrone temps-réel est requis.
 
 ### E. [ ] Re-ROLL serveur du loot (autoritatif) — GROS, dépend de C — chantier §3
 - **Quoi** : au lieu d'appliquer `m.lootEarned` (client), le serveur **roule le loot lui-même** avec la
