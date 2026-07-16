@@ -7,6 +7,51 @@
 
 ---
 
+## 2026-07-16 (nuit 3) — #24 RE-SIM COMBAT : investigation à fond → combat KEYFRAME-DRIVEN → plan « oracle-certification »
+
+### Résumé
+Investigation approfondie de #24 (re-simulation serveur du combat pour outcome/stars **autoritatifs**). Conclusion
+ferme : **`HeadlessCombat` n'est pas « pure logique »** et **le combat de DH est piloté par les keyframes
+d'animation** → une sim serveur SANS données d'animation n'est pas fidèle. Décision user : approche
+**oracle-certification** (mesurer l'Opt.2 unidbg comme oracle, puis certifier une Opt.3 plus légère contre lui).
+
+### Chaîne de preuves (désassemblage + probes headless)
+1. **`HeadlessCombat` = simulateur in-process du CLIENT** (utilisé par les écrans invasion/surge/hero-chooser
+   pour **prévoir** l'issue via `startQuickCombat`). Son **ctor** bâtit un `RepresentationManager` →
+   `initCommonVFX()` charge `world/common/common.treeb` via `RPGAssetManager`, dont le ctor fait
+   `new Texture(Pixmap)` (**upload GL → exige un contexte GL**) et enregistre les loaders **natifs**
+   (`NativeAtlasLoader`/`NativeSkeletonDataLoader`/`NativeParticlePoolLoader` = cspine/cparticle **unidbg**).
+   `work()` pilote `loadScene(LOAD_ONLY)`/`startScene()` → charge+anime les représentations.
+2. **Voie logique-only explorée** (piloter `Scene` directement) : le jeu a un mode headless
+   `BuildOptions.TOOL_MODE=COMBAT_AUTOMATOR` → `RenderContext2D.getEnvSpacingInfo()`=`AUTOMATOR_BOUNDS` (pas de
+   renderContext) ; renderer no-op du jeu `HeadlessSceneRenderer.INSTANCE` (méthodes vides). **Le SETUP tourne
+   headless sans GL** : `new Scene(random,true)` + `CombatSetupHelper.createUnits/initPositions/
+   initializeAIAndSkills` → unités créées (1-1 : 3 vs 1), `fixedTimestep=25ms`. `Scene.update` ne touche ni
+   rendu ni représentation ; `Unit` a **0** ref `getRepresentation()`.
+3. **MAIS `scene.update` enregistre des `AnimationKeyframeListener` sur l'`AnimationElement` de chaque unité**
+   (`getAnimationElement()` null headless → NPE). C'est **le mécanisme par lequel les effets d'ability
+   (dégâts/projectiles) se déclenchent à des frames précises**. Sans `AnimationElement` (créé par le
+   `RepresentationManager` depuis les `.skel`), les unités **n'infligeraient jamais de dégâts**. Les entrées
+   walk-in exigent aussi un `entranceKey` posé par le repManager (durées d'anim=0 sans `AnimationElement`).
+   ⇒ **combat = keyframe/animation-driven → pure logique NON fidèle.**
+
+### Options + principes (cf. SERVER_PLAN §D)
+- **Opt.1** loot autoritatif (#25, pure logique prouvée) + garde-fous, combat = PARTIEL client documenté (§2 OK).
+- **Opt.2** worker combat via **unidbg** (données-spine, sans rendu pixel) = **§3 complet + §4** (vrai code+data),
+  mais lourd. Le plus fidèle à nos principes pour l'autorité totale.
+- **Opt.3** timelines via runtime **spine Java** (`spine-libgdx-perblue.jar`) = plus léger, **conforme seulement
+  si prouvé bit-fidèle au natif** (sinon rustine §4/§4bis).
+
+### Décision (user) — oracle-certification (patron du rebuild natif)
+Mesurer/monter l'**Opt.2 comme ORACLE** (elle réutilise le **client headless déjà fonctionnel** du
+`desktop-port` : GL Xvfb/llvmpipe + vrai `GameMain` → assetManager/renderContext peuplés + unidbg + assets), puis
+**certifier l'Opt.3 contre elle** (RNG/HP-tick/timing sur matrice large). Jamais shipper l'Opt.3 non certifiée.
+**Prochain pas** : hook lanceur `dh.combatspike` (après boot+login → `HeadlessCombat` de campagne → `work()`
+jusqu'à `DONE` → outcome/stars + timing). Aucune modif jeu/serveur committée dans cette phase d'investigation
+(exploration en scratchpad). Fichiers docs : `docs/SERVER_PLAN.md` §D, MEMORY.
+
+---
+
 ## 2026-07-16 (soir) — PIPELINE COMPLET VALIDÉ EN JEU (nouveau joueur → 1-1 GAGNÉ) + sélection des héros (pilote)
 
 ### Résumé

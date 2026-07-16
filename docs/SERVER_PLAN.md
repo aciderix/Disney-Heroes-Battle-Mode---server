@@ -159,36 +159,71 @@ team-level, tout persisté & testé) mais porte des **PARTIELs** (cf. SHIMS). An
 - **Fait (2026-07-16)** : handler `SET_SEED` dans `applyCommand` → `pendingSeeds` (EnumMap RandomSeedType→Long,
   état session) + accesseur `getPendingSeed(type)`. Vérifié `server/smoke/SeedTest`. Prêt à alimenter D/E.
 
-### D. [ ] Re-SIMULATION serveur du combat (`outcome`/`stars` autoritatifs) — GROS, chantier §3
+### D. [~] Re-SIMULATION serveur du combat (`outcome`/`stars` autoritatifs) — INVESTIGUÉ À FOND (2026-07-16)
 - **Quoi** : aujourd'hui `outcome`/`stars` = ceux du **client** (client-autoritatif). Le VRAI serveur
   autoritatif (PRINCIPLES §3, anti-triche) **rejoue le combat** avec la graine COMBAT et compare.
-- **Outil du jeu** : `com.perblue.heroes.simulation.headless.HeadlessCombat(HeroLineupType, **java.util.
-  Random**, Array<CombatUnitData> attaquants, Array<Array<CombatUnitData>> défenseurs, GameMode,
-  IHeadlessEvents)` — **le simulateur headless du jeu lui-même** (celui du « quick fight »), qui prend une
-  `Random` seedée. Logique pure (pas de rendu/unidbg).
-- **Fix** : construire les `CombatUnitData` depuis les lineups du `CampaignAttack` (héros du user + ennemis
-  du niveau via `CampaignStats`), instancier `HeadlessCombat` avec `new Random(combatSeed)`, dérouler
-  jusqu'au bout, extraire outcome/stars → **remplacer** ceux du client (ou rejeter si divergence).
-- **Effort** : substantiel (mapping lineups + events + boucle de sim). Faisable 100% avec le code d'origine.
-- **SPIKE DE FAISABILITÉ (2026-07-16) — recette établie, briques confirmées :**
-  - **`State`** : `INITAL_SETUP → PRE_COMBAT_SETUP → COMBAT → FINAL_COUNTDOWN → POST_COMBAT → CLEAN_UP → DONE`.
-    Boucle `work()` jusqu'à l'état voulu ; l'issue est décidée dès **`POST_COMBAT`** (les `LineupSummary` sont
-    remplis).
-  - **Attaquants** : `Array<CombatUnitData>` via `new CoreAttackScreen$CombatUnitData(UnitData)` sur les héros
-    du user (constructeur simple, headless-friendly).
-  - **Défenseurs** : `CampaignStats.getStageEnemies(type, ch, lv, stage)` → `List<CampaignUnitInfo>` par stage
-    (1-1 = **3 stages** : 1/3/1 ennemis ; `getEnemyLevel/Rarity/Stars` = 1/WHITE/1). `CampaignUnitInfo{getType,
-    getRealGear, isBoss, getPatchLevel…}` → construire un `Unit`/`UnitData` ennemi (niveau/rareté/étoiles
-    appliqués) → `CombatUnitData`. Assembler `Array<Array<CombatUnitData>>` (une sous-Array par stage/vague).
-  - **`IHeadlessEvents`** : 1 seule méthode `onDefenderUnitDeath(Unit)` → stub vide.
-  - **Issue/étoiles** : lire `getAttackerLineupSummaries()`/`getDefenderLineupSummaries()` (AttackLineupSummary)
-    à `POST_COMBAT`, comparer à `m.base.outcome`/`stars`.
-  - ⚠️ **OBSTACLE headless** : `work()` en phase **CLEAN_UP** touche **libGDX** (`Skin.dispose()`,
-    `GameMain.getSoundManager().clear()`, scene2d `Group.clear()`) → le shim `DH.app` n'a ni soundManager ni
-    skin → NPE. **Stratégies** : (a) **s'arrêter à `POST_COMBAT`** (issue déjà décidée, on ne déroule PAS le
-    cleanup) — préféré ; ou (b) étoffer le shim (soundManager/skin no-op). À valider par un run headless réel
-    de `work()` (le vrai inconnu restant : le moteur de combat — skills, timers — tourne-t-il jusqu'à
-    POST_COMBAT sans autre dépendance libGDX ?). Le reste de la recette est confirmé.
+- **Outil du jeu** : `com.perblue.heroes.simulation.headless.HeadlessCombat(HeroLineupType, java.util.Random,
+  Array<CombatUnitData> attaquants, Array<Array<CombatUnitData>> défenseurs, GameMode, IHeadlessEvents)`.
+- **Recette de construction (confirmée)** : attaquants = `new CoreAttackScreen$CombatUnitData(UnitData)` sur
+  les héros du user ; défenseurs = `CampaignAttackScreen.createStageDefenders(type, ch, lv, Random, false,
+  SpecialEventSnapshot.NONE, IGuildPerkProvider, CampaignLoot)` (corps **pure logique** :
+  `CampaignStats.getStageEnemies` + `CombatHelper.createEnemyUnitData`) ; loot via
+  `CampaignLootHelper.getLoot(...)` (**tourne headless sans GL**) ; `IHeadlessEvents` = 1 méthode
+  `onDefenderUnitDeath(Unit)`. State machine `work()` : `INITAL_SETUP → PRE_COMBAT_SETUP → COMBAT →
+  FINAL_COUNTDOWN → POST_COMBAT → CLEAN_UP → DONE` ; issue lue via `getScene()`/`getCreatedAttackerUnits()`/
+  `getStageDefenderUnits()`. `HeadlessCombat` est **le simulateur que le JEU utilise lui-même** pour
+  **prévoir** l'issue (écrans invasion/surge/hero-chooser « ce combat est-il gagnable ? », via
+  `startQuickCombat`).
+
+- **⛔ CONCLUSION CLÉ (investigation approfondie 2026-07-16) — `HeadlessCombat` N'EST PAS « pure logique ».**
+  Son **constructeur** bâtit un `RepresentationManager` → `initCommonVFX()` charge l'asset de scène
+  `world/common/common.treeb` via `RPGAssetManager`, dont le **ctor fait `new Texture(Pixmap)` (upload GL →
+  exige un contexte GL)** et enregistre les loaders **natifs** `NativeAtlasLoader`/`NativeSkeletonDataLoader`/
+  `NativeParticlePoolLoader` (voie cspine/cparticle **unidbg**). `work()` pilote `loadScene(LOAD_ONLY)` +
+  `startScene()` → **charge et anime les représentations** (spine/atlas). Bref : « headless » = sans fenêtre,
+  **pas** sans la couche assets/scène/spine — c'est le simulateur **in-process du CLIENT** (réutilise l'asset
+  manager GL + spine natif déjà initialisés).
+
+- **Voie LOGIQUE-ONLY explorée (piloter `Scene` directement, sans `RepresentationManager`)** — résultat :
+  - ✅ Le jeu a un mode headless : `BuildOptions.TOOL_MODE = ToolType.COMBAT_AUTOMATOR` → `RenderContext2D.
+    getEnvSpacingInfo()` renvoie la constante `AUTOMATOR_BOUNDS` (plus de renderContext) ; renderer no-op du
+    jeu `HeadlessSceneRenderer.INSTANCE` (méthodes vides). Le **setup** tourne headless : `new Scene(random,
+    true)` + `CombatSetupHelper.createUnits/initPositions/initializeAIAndSkills` → unités créées (1-1 : 3 vs 1),
+    `fixedTimestep=25ms`. `Scene.update` ne touche NI rendu NI représentation ; `Unit` a **0** ref à
+    `getRepresentation()`.
+  - ❌ **MAIS le combat est PILOTÉ PAR LES KEYFRAMES D'ANIMATION** : `scene.update` enregistre des
+    `AnimationKeyframeListener` sur l'`AnimationElement` de **chaque unité** — c'est **le mécanisme par lequel
+    les effets d'ability (dégâts, projectiles) se déclenchent à des frames précises**. Sans `AnimationElement`
+    (créé uniquement par le `RepresentationManager` à partir des données skeleton chargées) → **NPE**, et même
+    stubbé, les unités **n'infligeraient jamais de dégâts** (pas de keyframe → pas d'effet). (Les entrées
+    walk-in exigent aussi un `entranceKey` posé par le repManager ; durées d'anim = 0 sans `AnimationElement`.)
+  - ⇒ **Une sim pure-logique (SANS données d'animation) n'est PAS fidèle.** Le serveur a besoin des **données
+    d'animation skeleton** (timelines + events des `.skel`), lues via le **spine natif (cspine → unidbg)** — ce
+    n'est pas du rendu de pixels, mais c'est la **couche de données d'animation**.
+
+- **Options d'autorité combat (analyse principes) :**
+  - **Opt.1 — Loot autoritatif (#25/§E) + garde-fous.** Serveur roule le vrai loot (pure logique, prouvée) +
+    vérifs (pas de WIN sur niveau verrouillé, bornes récompenses) ; combat outcome reste **PARTIEL client
+    documenté** (§2 l'autorise). Faisable, fidèle, cible la surface de triche la plus exploitable. §3 partiel.
+  - **Opt.2 — Worker combat + données-spine (unidbg).** Exécute le **vrai `HeadlessCombat`** avec la couche
+    données d'animation (unidbg) **sans rendu pixel**. **§3 complet + §4 respecté** (vrai code+données). Lourd
+    (unidbg lent), grosse archi. **Le plus fidèle à nos principes** pour l'autorité complète.
+  - **Opt.3 — Skeleton via runtime Java (`spine-libgdx-perblue.jar`, déjà présent).** Fournir timelines+events
+    sans unidbg → plus léger. **N'est conforme (§4/§4bis) QUE si prouvé bit-fidèle au spine natif** — sinon
+    rustine (timings inventés divergents). Incertain (le jeu utilise le natif).
+
+- **⭐ DÉCISION (user, 2026-07-16) — approche « oracle-certification » (patron du rebuild natif, §4) :**
+  1. **Mesurer l'Opt.2** (lourdeur ms/combat, RAM) et **en faire l'ORACLE** (vérité terrain seed→outcome/
+     stars + traces fines). Si l'Opt.2 est assez légère → prod directe, Opt.3 inutile.
+  2. **Construire l'Opt.3** et rejouer les MÊMES combats/graines.
+  3. **Comparer finement à l'oracle** (séquence RNG, HP/tick, timing des events de dégâts) sur une **matrice
+     large** (héros/niveaux/graines). Match total → Opt.3 **certifiée fidèle** ; divergence → on voit où, on
+     corrige ou on garde l'Opt.2. **Jamais shipper l'Opt.3 non certifiée.**
+  - **Scoping Opt.2 (fait)** : réutilise le **client headless déjà fonctionnel** du `desktop-port` (GL
+    Xvfb/llvmpipe + **vrai `new GameMain(device)`** → `getAssetManager()`/`getRenderContext()` peuplés +
+    unidbg cspine/cparticle + assets extraits présents dont `common.treeb`). `HeadlessCombat` est conçu pour ce
+    contexte. Faisabilité **HAUTE**. **Prochain pas** : hook lanceur (`dh.combatspike`) qui, après boot+login,
+    construit un `HeadlessCombat` de campagne, déroule `work()` jusqu'à `DONE`, imprime outcome/stars + timing.
 
 ### E. [ ] Re-ROLL serveur du loot (autoritatif) — GROS, dépend de C — chantier §3
 - **Quoi** : au lieu d'appliquer `m.lootEarned` (client), le serveur **roule le loot lui-même** avec la
@@ -209,9 +244,11 @@ team-level, tout persisté & testé) mais porte des **PARTIELs** (cf. SHIMS). An
   poison le `<clinit>`). **Rien à corriger** dans le flux serveur normal ; la « fragilité » initiale était un
   artefact de probe.
 
-**Reco d'ordre** : A + B tout de suite (complétion §6, triviaux, testables). Puis C→D→E comme **chantier
-« serveur pleinement autoritatif »** (passage de « confiance client » à « validation serveur », §3). F/G au
-besoin. Aucun de ces points n'est bloqué par une limite technique — tout réutilise `game.jar`.
+**Reco d'ordre (mise à jour 2026-07-16)** : A+B+C ✅ faits. **D** = investigué à fond : combat = keyframe-driven
+→ nécessite la couche données-spine (unidbg), voie logique-only écartée. Plan retenu = **oracle-certification**
+(mesurer Opt.2/unidbg comme oracle, puis certifier Opt.3/spine-Java contre lui ; sinon garder Opt.2). **E**
+(loot autoritatif = Opt.1) reste faisable en pure logique et cible la principale surface de triche. F/G au
+besoin. Rien n'est bloqué par une limite technique — tout réutilise `game.jar`/unidbg déjà en place.
 
 ## Outils de DEV (jamais actifs en prod ; aucune modif du jeu ni du serveur)
 Drapeaux du **lanceur** (`desktop-port`), **off par défaut** — en prod le joueur lance sans, jeu normal :

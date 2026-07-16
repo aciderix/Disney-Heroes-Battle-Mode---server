@@ -6,6 +6,23 @@
 > des fichiers et un historique **court**. L'historique **détaillé** est dans
 > [`JOURNAL.md`](JOURNAL.md). **Maintenir ce fichier à jour en permanence.**
 
+Dernière mise à jour : **2026-07-16 (nuit 3)** — **#24 RE-SIM COMBAT : investigué à fond → plan « oracle-certification »**.
+Conclusion ferme : **`HeadlessCombat` n'est PAS pure logique** (son ctor bâtit un `RepresentationManager` →
+`RPGAssetManager` dont le ctor exige un **contexte GL** + loaders **natifs** cspine/cparticle unidbg) et **le
+combat de DH est piloté par les KEYFRAMES d'animation** (`scene.update` pose des `AnimationKeyframeListener` sur
+l'`AnimationElement` de chaque unité = mécanisme de déclenchement des dégâts/projectiles). Sans données
+d'animation skeleton (`.skel` via spine natif), les unités n'infligent jamais de dégâts → **une sim serveur pure
+logique n'est PAS fidèle**. Le SETUP, lui, tourne headless (mode `BuildOptions.TOOL_MODE=COMBAT_AUTOMATOR` →
+`AUTOMATOR_BOUNDS` ; renderer no-op du jeu `HeadlessSceneRenderer.INSTANCE` ; `CombatSetupHelper.createUnits/
+initPositions/initializeAIAndSkills` OK ; `fixedTimestep=25ms`). **Décision (user)** : approche
+**oracle-certification** (patron du rebuild natif §4) — monter l'**Opt.2** (vrai `HeadlessCombat` via le **client
+headless unidbg** déjà fonctionnel du `desktop-port`) comme **ORACLE** + mesurer sa lourdeur, puis **certifier**
+une **Opt.3** plus légère (timelines via runtime **spine Java** `spine-libgdx-perblue.jar`) contre l'oracle
+(RNG/HP-tick/timing, matrice large) — jamais shippée non certifiée. Sinon garder l'Opt.2. **Opt.1** (loot
+autoritatif #25, pure logique) reste faisable et cible la surface de triche. Détail : `docs/SERVER_PLAN.md` §D +
+JOURNAL 2026-07-16 nuit 3. **Prochain pas** : hook lanceur `dh.combatspike` (boot+login → `HeadlessCombat`
+campagne → `work()` jusqu'à `DONE` → outcome/stars + timing).
+
 Dernière mise à jour : **2026-07-16 (nuit 2)** — **LOOT D'OBJETS crédité & persisté EN JEU ✅**. Question user (« objets ramassés dispo à l'équipement ? ») → bug : `recordCampaignAttack` jetait `m.lootEarned` (loot roulé CLIENT, combat client-autoritatif) → inventaire vide. Corrigé : passer `m.lootEarned` (1ᵉʳ param List = loot à donner ; le 2ᵉ param est un DELTA RewardDrop laissé VIDE — y mettre `m.memoryChanges` plante `removeDelta` en ClassCastException → cascade CAMPAIGN_LEVEL_LOCKED). **Confirmé EN JEU** : 0 crash, CampaignAttack 1-1→1-5 persistés, **inventaire = 11 types d'objets** (SUNNY_SIDE/CLEVER_FOX/ACE_OF_SPADES gear + EXP_*/HEARTY_BREAKFAST/SUGAR_RUSH/RAID_TICKET conso) dans `individualUserExtra.items` (= écran héros/équip). Test `server/smoke/LootPersistTest`. PARTIEL : memoryChanges + graine SET_SEED non appliqués (confiance loot client). **Suivi des PARTIELs à résoudre** (mémoire de loot, lastWinTime, SET_SEED, re-sim combat/loot authoritatif, PatchStats) → `docs/SERVER_PLAN.md` §Partiels + tâches #21–#26.
 
 Dernière mise à jour : **2026-07-16 (nuit)** — **ENCHAÎNEMENT CAMPAGNE 1-1→1-5 EN JEU ✅**. Run fresh nouveau
