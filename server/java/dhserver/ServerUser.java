@@ -280,8 +280,9 @@ public final class ServerUser {
     // paramètre List (= le loot À DONNER). Le 2ᵉ paramètre List est un DELTA de RewardDrop (déjà-affiché) que
     // giveLoot passe à removeDelta ; il DOIT rester vide/RewardDrop — y mettre m.memoryChanges
     // (List<UserLootMemoryChange>) fait planter removeDelta (ClassCastException). On laisse donc ce delta VIDE
-    // → tout m.lootEarned est crédité. PARTIEL (SHIMS) : m.memoryChanges (mémoire de loot) non appliqué + seed
-    // client (Action SET_SEED) non appliquée → le serveur ne re-roule pas, il fait confiance au loot client.
+    // → tout m.lootEarned est crédité. PARTIEL (SHIMS) : seed client (Action SET_SEED) non appliquée → le
+    // serveur ne re-roule pas, il fait confiance au loot client. La mémoire de loot (m.memoryChanges) EST
+    // appliquée plus bas (auto-persistée), voir applyLootMemory.
     java.util.List lootEarned = m.lootEarned != null ? m.lootEarned : new java.util.ArrayList<>();
     java.util.List shownDelta = new java.util.ArrayList<>();
     // base : attackers/defenders = Collection de AttackLineupSummary, outcome + stars remplis par le client.
@@ -290,6 +291,7 @@ public final class ServerUser {
 
     resyncHeroes(user);   // héros (XP/état) → wire ; stamina/or sont dans this.extra (auto).
     resyncCampaign(iu);   // progression campagne (statuts de niveau) → wire (hors this.extra, comme les héros).
+    applyLootMemory(m);   // mémoire de loot (pitié) → individualUserExtra.lootMemory (auto-persistée).
     // Niveau d'équipe : User.teamLevel est un CHAMP de User (hors this.extra) — getUser le lit depuis
     // userInfo.basicInfo.teamLevel, mais setTeamLevel (montée de niveau via giveTeamXP) ne l'écrit QUE sur
     // l'objet User. Sans re-sync vers le wire, le niveau reste BLOQUÉ à 1 : l'équipe « remonte 1→2 » à chaque
@@ -331,7 +333,7 @@ public final class ServerUser {
    * chargement) ; {@code recordOutcome} les mute EN MÉMOIRE mais n'écrit PAS la liste wire → sans ce
    * re-sync, étoiles/complétion sont perdues au round-trip (1-2 ne se débloque jamais). On reconstruit
    * {@code individualUserExtra.levelStatuses} depuis {@code iu.getCampaignLevels()} (champs mappés 1:1 ;
-   * {@code lastWinTime} sans getter public → laissé à 0, non requis pour le déblocage). Même schéma que
+   * {@code lastWinTime} lu par réflexion — cf. {@code readLastWinTime}). Même schéma que
    * {@code resyncHeroes} (état gardé hors {@code this.extra}). Ensemble fermé, validé par round-trip.
    */
   @SuppressWarnings("unchecked")
@@ -351,9 +353,47 @@ public final class ServerUser {
       w.totalAttempts = c.getTotalAttempts();
       w.totalWins = c.getTotalWins();
       w.winsAtCurrentStars = c.getWinsAtCurrentStars();
+      w.lastWinTime = readLastWinTime(c);   // pas de getter public → lecture réflexion du champ privé (§6 complet)
       out.add(w);
     }
     individualUserExtra.levelStatuses = out;
+  }
+
+  /**
+   * Lit {@code ClientCampaignLevelStatus.lastWinTime} (champ privé {@code long}, setter public mais PAS de
+   * getter) par réflexion, pour compléter la re-synchro campagne (§6 persistance complète). En cas d'échec
+   * (obfuscation/refonte), renvoie 0 — non requis pour le déblocage, dégradation sûre.
+   */
+  private static long readLastWinTime(com.perblue.heroes.game.objects.ClientCampaignLevelStatus c) {
+    try {
+      java.lang.reflect.Field f = com.perblue.heroes.game.objects.ClientCampaignLevelStatus.class
+          .getDeclaredField("lastWinTime");
+      f.setAccessible(true);
+      return f.getLong(c);
+    } catch (Throwable t) {
+      return 0L;
+    }
+  }
+
+  /**
+   * Applique la MÉMOIRE DE LOOT (« pitié » : drop garanti après N essais). Le combat client roule le loot et
+   * met à jour la loot memory, puis envoie les deltas dans {@code CampaignAttack.memoryChanges}
+   * ({@code List<UserLootMemoryChange>{itemType, startingMemory, endingMemory}}). On écrit l'état final dans
+   * {@code individualUserExtra.lootMemory} ({@code Map<ItemType, Float>}, dans {@code this.extra} → AUTO-persisté).
+   * <b>NB</b> : ces changements NE doivent PAS être passés à {@code recordOutcome} (son 2ᵉ paramètre List est
+   * un delta de {@code RewardDrop} → {@code removeDelta} lèverait {@code ClassCastException}) — on les applique
+   * À PART ici. Sans re-roll serveur (cf. SERVER_PLAN §Partiels D/E), on fait confiance à la mémoire client
+   * (cohérent avec le combat client-autoritatif).
+   */
+  @SuppressWarnings("unchecked")
+  private void applyLootMemory(CampaignAttack m) {
+    if (m.memoryChanges == null || m.memoryChanges.isEmpty()) return;
+    if (individualUserExtra.lootMemory == null) individualUserExtra.lootMemory = new java.util.HashMap();
+    for (Object o : m.memoryChanges) {
+      com.perblue.heroes.network.messages.UserLootMemoryChange ch =
+          (com.perblue.heroes.network.messages.UserLootMemoryChange) o;
+      if (ch.itemType != null) individualUserExtra.lootMemory.put(ch.itemType, ch.endingMemory);
+    }
   }
 
   /**

@@ -65,8 +65,12 @@ public final class LootPersistTest {
       b.attackers = new ArrayList(Arrays.asList(lu)); b.defenders = new ArrayList();
       m.base = b;
       m.lootEarned = new ArrayList(Arrays.asList(drop));
+      // Mémoire de loot (pitié) : le client envoie l'état final de la loot memory par objet.
+      ItemType memItem = ItemType.SUGAR_RUSH; float memEnd = 0.5f;
       m.memoryChanges = new ArrayList();
-      try { m.memoryChanges.add(new UserLootMemoryChange()); } catch (Throwable ignore) {}  // mirror client (ne doit PAS planter)
+      UserLootMemoryChange mc = new UserLootMemoryChange();
+      mc.itemType = memItem; mc.startingMemory = 0f; mc.endingMemory = memEnd;
+      m.memoryChanges.add(mc);
       su.recordCampaignAttack(m);
 
       int afterFight = itemAmount(su, item);
@@ -74,8 +78,11 @@ public final class LootPersistTest {
 
       ServerUser re = store.loadOrCreate(1L, 1);
       int afterReload = itemAmount(re, item);
+      // mémoire de loot après reload
+      java.util.Map lm = re.bootData().individualUserExtra.lootMemory;
+      Object memReload = lm == null ? null : lm.get(memItem);
       System.out.println("[loot] " + item + " : neuf=" + before + " après combat=" + afterFight
-          + " après reload SQLite=" + afterReload);
+          + " après reload SQLite=" + afterReload + " | lootMemory[" + memItem + "]=" + memReload);
 
       if (afterFight < 2)
         throw new AssertionError("loot d'objet NON crédité (" + item + "=" + afterFight
@@ -83,9 +90,13 @@ public final class LootPersistTest {
       if (afterReload < 2)
         throw new AssertionError("loot d'objet NON persisté (" + item + "=" + afterReload
             + " après reload) — items non sauvés");
+      if (!(memReload instanceof Number) || Math.abs(((Number) memReload).floatValue() - memEnd) > 1e-4)
+        throw new AssertionError("mémoire de loot NON persistée (lootMemory[" + memItem + "]=" + memReload
+            + ", attendu " + memEnd + ") — m.memoryChanges non appliqué");
 
       System.out.println("LOOT PERSIST TEST OK (" + item + " x" + afterReload
-          + " crédité en combat ET survit au round-trip SQLite — dispo à l'équipement)");
+          + " crédité + mémoire de loot " + memItem + "=" + memReload
+          + " — survit au round-trip SQLite, dispo à l'équipement)");
     }
   }
 }

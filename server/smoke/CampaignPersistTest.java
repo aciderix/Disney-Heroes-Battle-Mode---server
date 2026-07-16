@@ -60,8 +60,14 @@ public final class CampaignPersistTest {
       boolean unlocked12 = CampaignHelper.isLevelUnlocked(u, CampaignType.NORMAL, 1, 2);
       long gold = u.getResource(ResourceType.GOLD);
       long stamina = u.getResource(ResourceType.STAMINA);
+      // lastWinTime : lu directement sur le wire rechargé (pas de getter sur ICampaignLevelStatus).
+      long lastWin = 0;
+      for (Object o : re.bootData().individualUserExtra.levelStatuses) {
+        CampaignLevelStatus w = (CampaignLevelStatus) o;
+        if (w.campaignType == CampaignType.NORMAL && w.chapter == 1 && w.level == 1) lastWin = w.lastWinTime;
+      }
       System.out.println("[persist] APRÈS reload : 1-1 stars=" + stars + " 1-2_unlocked=" + unlocked12
-          + " gold=" + gold + " stamina=" + stamina);
+          + " gold=" + gold + " stamina=" + stamina + " lastWinTime=" + lastWin);
 
       if (stars < 1)
         throw new AssertionError("progression 1-1 NON persistée (stars=" + stars + ") — levelStatuses non re-syncé");
@@ -71,9 +77,11 @@ public final class CampaignPersistTest {
         throw new AssertionError("or non persisté (gold=" + gold + ")");
       if (stamina < 0 || stamina > 1000)
         throw new AssertionError("stamina aberrante après combat+reload : " + stamina);
+      if (lastWin <= 0)
+        throw new AssertionError("lastWinTime NON persisté (=" + lastWin + ") — resyncCampaign/readLastWinTime KO");
 
       System.out.println("CAMPAIGN PERSIST TEST OK (1-1 à " + stars + "★ persisté, 1-2 débloqué, or="
-          + gold + ", stamina=" + stamina + " — progression survit au round-trip SQLite)");
+          + gold + ", stamina=" + stamina + ", lastWinTime=" + lastWin + " — progression survit au round-trip SQLite)");
     }
   }
 }

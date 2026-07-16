@@ -130,7 +130,7 @@ Le handler `recordCampaignAttack` est **RÉEL au cœur** (recordOutcome : énerg
 team-level, tout persisté & testé) mais porte des **PARTIELs** (cf. SHIMS). Analyse de résolubilité —
 **tout est résoluble avec le code du jeu, rien d'inventé** (§4). Ordonné par effort croissant :
 
-### A. [ ] Mémoire de loot (« pitié ») — `m.memoryChanges` — TRIVIAL, à faire
+### A. [x] ✅ Mémoire de loot (« pitié ») — `m.memoryChanges` — TRIVIAL, à faire
 - **Quoi** : le combat client roule le loot et met à jour la **loot memory** (compteur par objet → drop
   garanti après N essais). Le client envoie les deltas dans `CampaignAttack.memoryChanges`
   (`List<UserLootMemoryChange>`). Le serveur les **ignore** actuellement.
@@ -143,7 +143,7 @@ team-level, tout persisté & testé) mais porte des **PARTIELs** (cf. SHIMS). An
 - **Test** : étendre `LootPersistTest` — envoyer un `UserLootMemoryChange{item, endingMemory=0.5}`, vérifier
   `lootMemory[item]=0.5` après reload SQLite.
 
-### B. [ ] `lastWinTime` de la progression campagne — FACILE, à faire
+### B. [x] ✅ `lastWinTime` de la progression campagne — FACILE, à faire
 - **Quoi** : `resyncCampaign` mappe tous les champs de `ClientCampaignLevelStatus` vers le wire SAUF
   `lastWinTime` (pas de getter public, seulement un setter). Impact faible (métadonnée d'affichage), mais
   c'est une complétion §6.
