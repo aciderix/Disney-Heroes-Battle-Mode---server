@@ -58,6 +58,18 @@ montée de niveau d'équipe (stored peut dépasser le cap d'affichage 120 → cl
 artefact bénin R102). Le « pas de consommation apparente sur 6 combats » = le **bug ci-dessus** (re-level en
 boucle refillant +20 tous les 3 combats) — désormais corrigé : la stamina descend réellement.
 
+### BUG trouvé & corrigé : LOOT D'OBJETS de campagne non crédité (question user « objets équipables ? »)
+L'utilisateur a demandé si les objets ramassés en combat sont persistés et dispo à l'équipement. Investigation :
+inventaire (`individualUserExtra.items`) VIDE après 5 victoires (`InvProbe`), même EN MÉMOIRE (`LootProbe`) →
+pas un souci de persistance, `recordOutcome` ne crédite RIEN. Cause : le combat est CLIENT-autoritatif → le
+client ROULE le loot pendant le combat et l'envoie dans `CampaignAttack.lootEarned` (List<RewardDrop>) +
+`memoryChanges`. `recordOutcome` **n'en roule pas** (vérifié `LootRoll` : lootEarned vide en entrée → vide en
+sortie) : il **applique** la liste reçue (`giveLoot → RewardHelper.giveRewards → addItem` → items, auto-persisté).
+`recordCampaignAttack` passait des listes **vides** → objets jamais crédités. **Correctif** : passer
+`m.lootEarned`/`m.memoryChanges`. Vérifié `LootApply` (RewardDrop → getItemAmount 0→1) + `server/smoke/
+LootPersistTest` (BADGE_OF_FRIENDSHIP x2 crédité en combat ET survit au round-trip SQLite → dispo à
+l'équipement). Régression (Resource/CampaignAttack/CampaignPersist/TeamLevelPersist) verte.
+
 ### ENCHAÎNEMENT 1-1→1-5 EN JEU ✅ (nav post-victoire + fenêtre d'équipement)
 D'abord le pilote rejouait 1-1 (une seule entrée carte, 6 combats) : après victoire il revenait sur
 l'aperçu du MÊME niveau et re-tapait FIGHT au lieu de retourner à la carte. **Fix nav post-victoire** : flag
