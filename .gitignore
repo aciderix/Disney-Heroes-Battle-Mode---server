@@ -35,6 +35,7 @@ __pycache__/
 /desktop-port/hs_err_pid*.log
 /desktop-port/replay_pid*.log
 libs/game-logic-framed.jar
+libs/game-framed.jar
 libs/spine-libgdx-perblue.jar
 
 # Données runtime du serveur (base SQLite régénérable)

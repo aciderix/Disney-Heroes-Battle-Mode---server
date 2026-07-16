@@ -7,6 +7,59 @@
 
 ---
 
+## 2026-07-16 — Enquête « crash addHeroEXP » : RÉSOLU (artefact pré-fix) + vraie cause = SIGABRT oop-map JVM → reframe game.jar (serveur)
+
+### Résumé
+Reprise de l'enquête « crash `addHeroEXP` » (demande user « investigue ça et corrige »). Trois conclusions
+fermes, toutes vérifiées :
+1. **Le crash `addHeroEXP` (`ClientErrorCodeException: ERROR []`) NE se reproduit PLUS** — c'était un
+   **artefact d'un état compilé pré-fix** (ChargeTest tournait contre une ancienne compilation). Sur la DB de
+   chaînage courante, recompilée, `ChargeTest`/`ChainProbe`/`DiscTest` passent tous.
+2. **Le VRAI incident intermittent était un crash JVM** (SIGABRT, pas une exception de jeu) :
+   `fatal error: Illegal class file … in method getDefaultStats` dans `GenerateOopMap::error_work`
+   pendant un **GC** (G1 root scan). Cause : le bytecode **dex2jar** de `game.jar` n'a pas de
+   `StackMapTable` → sous `-Xverify:none` la JVM infère les oop-maps au GC via l'ancien
+   `generateOopMap.cpp`, qui **plante** sur certains motifs (`ConstantStats.getDefaultStats`, perks de guilde).
+   **Non déterministe** (dépend du timing GC) : ~1 run/8 en test. **Le serveur AUTORITATIF y était exposé
+   aussi** (`run-online.sh:67` tournait `-Xverify:none`), pas seulement les smoke tests.
+3. **La stamina « 39,96 M » N'EST PAS un bug** (hypothèse user « timestamp mal enregistré » **réfutée**).
+
+### Fix durable : reframe game.jar → game-framed.jar (comme le client), retrait de -Xverify:none
+`tools/reframe/ReframeJar` (ASM 9.7, `COMPUTE_FRAMES`) réécrit les **64 196** classes de `game.jar` avec des
+frames valides → la JVM utilise le vérificateur rapide par table (plus de `generateOopMap`) et on **retire
+`-Xverify:none`**. Appliqué à **`desktop-port/run-online.sh` (serveur)** ET **`server/smoke/run.sh`** :
+reframe à la demande vers `libs/game-framed.jar` (gitignoré/régénérable, comme `game-logic-framed.jar` côté
+client), classpath serveur basculé dessus, `-Xverify:none` retiré, `-XX:TieredStopAtLevel=1` conservé
+(prudence C2). **Sémantique inchangée** (métadonnées de vérif). Vérifié :
+- **`ChargeTest` 15/15 sans abort** sous vérification par défaut (vs abort intermittent avant).
+- **Boot serveur OK** (framed jar, vérif par défaut) : process en écoute, port ouvert, **0 fatal**
+  (aucun `VerifyError`/`Illegal class`/`GenerateOopMap`).
+- **Régression identique** : `ResourceTest`, `CampaignAttackTest`, `CampaignPersistTest` verts (framed jar).
+- Smoke `run.sh` : `CodecRoundTrip`/`MessageRoundTrip` OK ; `HandshakeRoundTrip` **retiré** (obsolète, ancien
+  ctor `LoginServer` — SHIMS TODO #4).
+
+### Stamina 39,96 M — cause RÉELLE établie (pas un bug), timestamp CORRECT
+Mesures directes (probes) sur la DB de chaînage :
+- **STORED stamina = 114** (correct), `lastResourceGenerationTime(STAMINA)` **correctement sauvé** (≈31 min
+  avant `serverTimeNow`). ⇒ **hypothèse « timestamp mal enregistré » réfutée**.
+- `getResourceCap(STAMINA)=**120**` (cap DÉPENSABLE), content update **R102**, `getRegenAmount=39 965 650`,
+  `getHardCap=79,46 Md`, intervalle 6 min. Un joueur **neuf** lit **120** (aucun temps écoulé).
+- Le « 39,96 M » n'apparaît QUE quand `stamina<cap` **et** ≥1 intervalle écoulé : `updateAndGetResource`
+  (branche NON-capée pour STAMINA) ajoute **un** tick de 39,96 M puis sort → `getResource`=brut. Le jeu
+  affiche/dépense la valeur **effective = `min(getResource, cap)` = 120**. **Fidèle R102 end-game** : un tick
+  d'inactivité (6 min) = recharge pleine.
+- `ChainProbe` (3 combats enchaînés) : **effective toujours ≤120** (120→114→120→114), **gold chaîne**
+  340→680→1088→1632, **aucun crash de logique**. Le fix `applyEffectiveResourceCap` (commit 8f84ef5) applique
+  la MÊME règle du jeu (`min(getResource, cap)`) → DB propre, dépense visible. **PAS de « figer »**
+  (recalcule via `getResource`, régén incluse).
+
+### Fichiers
+`desktop-port/run-online.sh` (reframe + retrait `-Xverify:none`), `server/smoke/run.sh` (framed jar auto +
+retrait Handshake obsolète), `.gitignore` (`libs/game-framed.jar`), `docs/SHIMS.md` (row reframe),
+`MEMORY.md`. Aucune modif de logique de jeu ni de serveur (le handler campagne du commit 8f84ef5 est inchangé).
+
+---
+
 ## 2026-07-13 (soir) — EQUIP_ITEM VÉRIFIÉ IN-GAME (wire) + enregistreur pas-à-pas + fixes pilote
 
 ### Résumé

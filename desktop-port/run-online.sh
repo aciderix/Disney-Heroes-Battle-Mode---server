@@ -26,9 +26,28 @@ MVN="https://repo1.maven.org/maven2"
 [ -f "$ROOT/libs/joda-time.jar" ] || curl -fsSL -o "$ROOT/libs/joda-time.jar" \
     "$MVN/joda-time/joda-time/2.12.2/joda-time-2.12.2.jar"
 
+# --- Reframe (StackMapTable) de game.jar → game-framed.jar (comme le client, cf. run-desktop.sh) ---
+# Le bytecode dex2jar de game.jar n'a pas de StackMapTable ; sous -Xverify:none la JVM calcule
+# paresseusement les oop-maps (generateOopMap.cpp) et PLANTE par intermittence pendant un GC qui
+# scanne certaines méthodes (« Illegal class file ... in method getDefaultStats », SIGABRT non
+# déterministe — observé sur les stats/perks de guilde). On réécrit game.jar avec COMPUTE_FRAMES
+# (frames valides) → vérificateur rapide par table, plus de generateOopMap, et on RETIRE -Xverify:none.
+# Régénéré à la demande (non committé), comme game-logic-framed.jar côté client. Sémantique inchangée.
+ASM="$HOME/.m2/repository/org/ow2/asm/asm/9.7/asm-9.7.jar"
+[ -f "$ASM" ] || { ASM="build/asm-9.7.jar"; [ -f "$ASM" ] || { mkdir -p build; curl -fsSL -o "$ASM" "$MVN/org/ow2/asm/asm/9.7/asm-9.7.jar"; }; }
+REFRAME_CLS="$ROOT/tools/reframe/classes"
+[ -f "$REFRAME_CLS/ReframeJar.class" ] || { mkdir -p "$REFRAME_CLS"; javac -cp "$ASM" -d "$REFRAME_CLS" "$ROOT/tools/reframe/src/ReframeJar.java"; }
+FRAMED="$ROOT/libs/game-framed.jar"
+if [ ! -f "$FRAMED" ] || [ "$ROOT/libs/game.jar" -nt "$FRAMED" ]; then
+  echo "[online] reframe de game.jar (COMPUTE_FRAMES, ~15s) ..."
+  java -cp "$REFRAME_CLS:$ASM:$ROOT/libs/game.jar" ReframeJar "$ROOT/libs/game.jar" "$FRAMED" 2>&1 | grep -v 'Picked up' || true
+fi
+# Classpath serveur : game-framed.jar (frames valides) À LA PLACE de game.jar → plus de -Xverify:none.
+CPF="$FRAMED:$ROOT/libs/commons-logging.jar:$ROOT/libs/sqlite-jdbc.jar:$ROOT/libs/slf4j-api.jar:$ROOT/libs/joda-time.jar"
+
 # Compile le serveur de jeu (server/java) si besoin.
 SRVOUT="build/server-classes"; mkdir -p "$SRVOUT"
-javac -cp "$CP" -d "$SRVOUT" $(find "$ROOT/server/java" -name '*.java') 2>&1 | grep -v 'Picked up' || true
+javac -cp "$CPF" -d "$SRVOUT" $(find "$ROOT/server/java" -name '*.java') 2>&1 | grep -v 'Picked up' || true
 
 cleanup() { for p in "$CONTENT_PID" "$GAME_PID"; do [ -n "$p" ] && kill "$p" 2>/dev/null || true; done; }
 trap cleanup EXIT
@@ -64,9 +83,11 @@ python3 "$ROOT/server/content_server.py" --port "$HTTP_PORT" --rewrite-host "127
 CONTENT_PID=$!
 
 echo "[online] serveur de jeu TCP :$GAME_PORT ..."
-java -Xverify:none -XX:TieredStopAtLevel=1 -Ddh.db="$ROOT/server/data/dh-server.db" \
+# game-framed.jar a des StackMapTable valides → plus de -Xverify:none (plus de SIGABRT oop-map).
+# On garde -XX:TieredStopAtLevel=1 (C1 seul) par prudence sur le bytecode dex2jar (le C2 avait planté).
+java -XX:TieredStopAtLevel=1 -Ddh.db="$ROOT/server/data/dh-server.db" \
      -Ddh.stats="$ROOT/game-data/stats" \
-     -cp "$CP:$SRVOUT" dhserver.LoginServer "$GAME_PORT" >/tmp/dh_game.log 2>&1 &
+     -cp "$CPF:$SRVOUT" dhserver.LoginServer "$GAME_PORT" >/tmp/dh_game.log 2>&1 &
 GAME_PID=$!
 sleep 2
 

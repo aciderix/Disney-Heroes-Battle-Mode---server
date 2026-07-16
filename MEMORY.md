@@ -6,6 +6,21 @@
 > des fichiers et un historique **court**. L'historique **détaillé** est dans
 > [`JOURNAL.md`](JOURNAL.md). **Maintenir ce fichier à jour en permanence.**
 
+Dernière mise à jour : **2026-07-16** — **Enquête « crash addHeroEXP » close + stabilité JVM du serveur**.
+(1) Le **crash `addHeroEXP`** (`ClientErrorCodeException: ERROR []`) **NE se reproduit plus** = artefact d'un
+état compilé pré-fix. (2) Le vrai incident intermittent était un **crash JVM SIGABRT** (`Illegal class file …
+in method getDefaultStats`, `generateOopMap.cpp`, pendant un GC) : le bytecode dex2jar de `game.jar` sans
+`StackMapTable` sous `-Xverify:none` fait planter l'inférence oop-map au GC (~1/8), **exposant le serveur
+autoritatif aussi**. **Fix durable** : reframe `game.jar`→`game-framed.jar` (ASM `COMPUTE_FRAMES`, 64 196
+classes, comme le client) + **retrait `-Xverify:none`** dans `run-online.sh` (serveur) et `server/smoke/run.sh`.
+Vérifié : `ChargeTest` **15/15 sans abort**, boot serveur 0 fatal, régression (`Resource/CampaignAttack/
+CampaignPersist`) identique. (3) **Stamina « 39,96 M » = fidèle R102, PAS un bug** : STORED=114 + timestamp
+**correctement sauvé** (hypothèse « timestamp mal enregistré » **réfutée**) ; `getResourceCap(STAMINA)=120`
+(cap dépensable) ; le brut 39,96 M = un tick de régén R102 non-capé, **affiché `min(brut,120)=120`**.
+`ChainProbe` : effective toujours ≤120 (120→114→120→114), gold chaîne 340→680→1088→1632, 0 crash logique.
+Le fix `applyEffectiveResourceCap` applique la règle du jeu `min(getResource,cap)` (pas de « figer »).
+**Prochain** : run complet tuto→campagne (enchaînement + persistance loots) puis autres écrans.
+
 Dernière mise à jour : **2026-07-14 (soir)** — **COMBAT DE CAMPAGNE JOUÉ & GAGNÉ EN JEU + progression
 PERSISTÉE**. Le pilote DEV entre dans le niveau (`CampaignScreen.normalOrEliteNodeSelected(1-1)` — la
 carte est une scène g2d `CityMapDisplay`, pas du scene2d ; découvert via la sonde `dh.mapprobe`),
@@ -18,11 +33,12 @@ maintenant vers `individualUserExtra.levelStatuses` (`resyncCampaign`, comme les
 débloque jamais. Vérifié `server/smoke/CampaignPersistTest` : après save+reload → **1-1 à 3★, 1-2 DÉBLOQUÉ**.
 **Deux bugs corrigés (2026-07-14 nuit)** : (1) **chaînage niveaux** — le pilote entre désormais au **prochain
 niveau débloqué** (`nextPlayableLevel` via `getLatestCompletedLevel`/`isLevelUnlocked`) → enchaîne 1-1→1-2→…
-(override `dh.playlevel`). (2) **stamina 39,96 M** — cause : `updateAndGetResource` gonfle la stamina sur un
-état RECHARGÉ headless (≠ compte neuf ; `getGenerationAmount` racine, à corriger un jour) → au 2ᵉ combat la
-stamina persistée était corrompue. Contournement `anchorGeneratingResources` (fige les ressources capées +
-horloge=maintenant AVANT le débit) → 114→108 correct. Vérifié `ChargeTest`. PARTIEL documenté (SHIMS).
-Prochain : run complet pour vérifier l'enchaînement 1-1→1-2, la persistance des loots, puis autres écrans.
+(override `dh.playlevel`). (2) **stamina 39,96 M** — cause RÉELLE (établie 2026-07-16) : content update
+**R102**, `getRegenAmount=39 965 650`, STAMINA dans la branche NON-capée de `updateAndGetResource` → un tick
+de régén renvoie le brut 39,96 M, que le jeu affiche/dépense en **effective `min(getResource, cap=120)`=120**
+(fidèle end-game, PAS un bug ; STORED=114 et timestamp corrects). Fix `applyEffectiveResourceCap` (commit
+8f84ef5, remplace l'ancien `anchorGeneratingResources`) applique cette règle du jeu AVANT le débit → 120→114.
+Vérifié `ChargeTest`/`ChainProbe`.
 
 Dernière mise à jour : **2026-07-14** — **PIPELINE DE COMBAT DE CAMPAGNE (serveur) ✅ VÉRIFIÉ**. Le
 combat tourne côté CLIENT (unidbg spine) ; le client construit `CampaignAttack{base(attackers,outcome,
