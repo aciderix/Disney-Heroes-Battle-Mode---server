@@ -178,6 +178,20 @@ public final class TutorialDriver {
                 if (top instanceof Actor) collect((Actor) top, targets, inTop);
                 if (!inTop.isEmpty()) return tapAll(inTop, input, w, h);
 
+                // (a-bis) Fenêtre de FLUX (CraftingWindow = UI d'équipement/craft) : ce n'est PAS un résidu à
+                //     fermer — c'est l'écran où l'action se fait. Le tuto (étape équipement) pointe le SLOT
+                //     derrière (HERO_GEAR_SLOT_SIX), pas encore le bouton de la fenêtre → sans ce cas, (b) la
+                //     fermerait, le slot se re-taperait, elle se rouvrirait… boucle infinie (observé). On tape
+                //     donc son bouton EQUIP (l'action attendue, API du jeu par nom de tuto) au lieu de fermer.
+                if (top instanceof Actor && cls.contains("Crafting")) {
+                    List<Actor> eq = findByName((Actor) top, "CRAFTING_WINDOW_EQUIP_BUTTON");
+                    if (eq.isEmpty()) collectTextButtons((Actor) top, eq);
+                    if (!eq.isEmpty()) {
+                        if (DEBUG) System.out.println("[tutodrive] " + cls + " → tap EQUIP (fenêtre de flux, pas un résidu)");
+                        return tapAll(eq, input, w, h);
+                    }
+                }
+
                 // (b) Le tuto pointe AILLEURS (écran de base ou fenêtre inférieure) : la modale du dessus
                 //     n'est PAS la cible courante → c'est un RÉSIDU qui COUVRE la cible (ex. « CRATE READY »
                 //     empilée par-dessus l'onglet GEAR). On la FERME via l'API du jeu (BaseModalWindow.hide()
