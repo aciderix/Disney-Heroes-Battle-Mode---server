@@ -119,6 +119,8 @@ Le serveur **exécute le code du jeu** (PRINCIPLES §3 « lire & exécuter »). 
      franchit la frontière équipement et atteint le **hub principal propre** (nouveau joueur), tuto suivant
      `HERO_FILTERS` en attente (capture `desktop-port/build/herofilters.png`).
 
+| **`PatchStats` / talent orphelin `PREDICTIVE_FORTIFICATION` (EVIL_QUEEN)** | ⚠️ **PARTIEL headless** | `patched_heroes_talent_assignments.tab` (ligne 160, EVIL_QUEEN) référence le talent `PREDICTIVE_FORTIFICATION`, **absent de l'enum `PatchTalent` du 12.1.0** (61 constantes). En jeu c'est **toléré** (`RowGeneralStats.parseStats` attrape → `onStatError` LOGue + saute la ligne ; cf. PROTOCOL §6). MAIS le **recompute complet de puissance** headless (`IHero.getPower` → `UnitStatsMath.getStats` → `addPatchedHeroesBonuses` → `PatchStats.<clinit>`) déclenché tardivement (après un équipement, invalidation du cache) **propage** l'`IllegalArgumentException` (fragilité de tolérance non-déterministe, comme `GuildStats`). **Impact : NUL sur le gameplay** (le client calcule la puissance en jeu ; le serveur n'affiche pas la puissance). **Contournement de vérif** : on démontre l'amélioration via `UnitStatsMath.getStats(hero, CONFIG_CURRENT_NORMAL_GEAR_ONLY)` (stats gear normal, sans bonus patchés) → fiable. On n'utilise pas EVIL_QUEEN. **TODO durable** : forcer le chargement tolérant des stats patchées à l'init (ou corriger la ligne orpheline via un stat-sync serveur), pour un `getPower` headless fiable. |
+
 ## Couche plateforme desktop (`dhbackend/`, lanceur)
 
 | Élément | Statut | Détail / risque |
