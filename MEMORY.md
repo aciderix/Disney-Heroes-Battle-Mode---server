@@ -6,6 +6,16 @@
 > des fichiers et un historique **court**. L'historique **détaillé** est dans
 > [`JOURNAL.md`](JOURNAL.md). **Maintenir ce fichier à jour en permanence.**
 
+Dernière mise à jour : **2026-07-16 (nuit)** — **ENCHAÎNEMENT CAMPAGNE 1-1→1-5 EN JEU ✅**. Run fresh nouveau
+joueur (3 fixes pilote cumulés : sélection héros + fenêtre équipement + nav post-victoire) : le pilote enchaîne
+`normalOrEliteNodeSelected(1-1)→RETOUR carte→(1-2)→(1-3)→(1-4)→RETOUR→(1-5)` → **5× `CampaignAttack WIN`
+persistés**. **État DB** : teamLevel=**2**, 1-1..1-5 à **3★**, 1-6 débloqué, gold=**2316**, stamina
+stored=108/eff=108 (**consommée correctement** — plus de refill en boucle depuis le fix team-level). Serveur
+**0 fatal**. Fixes : (1) nav post-victoire (flag `justFoughtCampaign` → RETOUR carte après combat →
+`nextPlayableLevel`) ; (2) étape équipement (CraftingWindow = fenêtre de FLUX → taper EQUIP, pas fermer) ;
+(3) [serveur] persistance team-level (`userInfo.basicInfo.teamLevel = user.getTeamLevel()` — révélé par la
+remarque user « stamina 122/120 sans consommation »). **Pipeline campagne complet validé & persisté en jeu.**
+
 Dernière mise à jour : **2026-07-16 (soir)** — **PIPELINE COMPLET VALIDÉ EN JEU (nouveau joueur → 1-1 GAGNÉ)**.
 Run complet nouveau joueur : intro → coffre GOLD (Frozone) → **entrée campagne → choix des héros → 1-1 GAGNÉ
 → `CampaignAttack` → `recordOutcome` persisté**. Serveur (framed jar) **0 fatal** sur tout le run. **Fix pilote

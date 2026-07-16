@@ -58,13 +58,20 @@ montée de niveau d'équipe (stored peut dépasser le cap d'affichage 120 → cl
 artefact bénin R102). Le « pas de consommation apparente sur 6 combats » = le **bug ci-dessus** (re-level en
 boucle refillant +20 tous les 3 combats) — désormais corrigé : la stamina descend réellement.
 
-### Reste : navigation pilote POST-VICTOIRE (rejoue 1-1 au lieu d'aller en 1-2)
-Le pilote n'a fait qu'**une** entrée carte (`normalOrEliteNodeSelected(1-1)`) mais **6 combats** : après chaque
-victoire, le client revient sur l'**aperçu/choix de 1-1** (pas la carte) et le pilote **re-tape FIGHT** →
-rejoue 1-1. Il ne **retourne pas à la carte** pour que `nextPlayableLevel` sélectionne 1-2 (pourtant
-débloqué). **La logique d'enchaînement est correcte** (server : 1-2 unlocked ; `nextPlayableLevel` renvoie
-1-2 si complété+débloqué — prouvé `CampaignPersistTest`) — c'est une **navigation pilote** à ajouter
-(revenir à la carte après victoire au lieu de rejouer le même niveau). NON bloquant pour le serveur.
+### ENCHAÎNEMENT 1-1→1-5 EN JEU ✅ (nav post-victoire + fenêtre d'équipement)
+D'abord le pilote rejouait 1-1 (une seule entrée carte, 6 combats) : après victoire il revenait sur
+l'aperçu du MÊME niveau et re-tapait FIGHT au lieu de retourner à la carte. **Fix nav post-victoire** : flag
+`justFoughtCampaign` posé en combat → au retour sur CampaignPreview/HeroChooser, RETOUR (BACK) à la carte →
+`enterCampaignLevel` prend `nextPlayableLevel` = niveau débloqué suivant (remis à false à chaque entrée
+fraîche pour ne pas sortir du 1ᵉʳ choix après le combat d'intro). **Fix étape équipement** : le pilote bouclait
+sur `HeroDetailScreen` (~7000 frames) en FERMANT la `CraftingWindow` (prise pour un résidu ; cible tuto =
+HERO_GEAR_SLOT_SIX derrière) → cas (a-bis) : une CraftingWindow est une **fenêtre de FLUX** → taper son bouton
+EQUIP (`CRAFTING_WINDOW_EQUIP_BUTTON`) au lieu de fermer. **Résultat EN JEU** (run fresh, 3 fixes cumulés) :
+`CampaignAttack NORMAL 1-1,1-2,1-3,1-4,1-5 WIN` — le pilote enchaîne
+`normalOrEliteNodeSelected(1-1)→RETOUR→(1-2)→(1-3)→(1-4)→RETOUR→(1-5)→(1-6)`. **État persisté** (DB) :
+teamLevel=**2**, 1-1..1-5 à **3★**, 1-6 débloqué, gold=**2316**, stamina stored=108/eff=108 (consommée
+correctement — plus de refill en boucle grâce au fix team-level), serveur **0 fatal**. Pipeline complet
+(entrée/choix héros/skills/vagues/loot/récompenses/XP/énergie/progression/**enchaînement**) validé en jeu.
 
 ### Run resume « coincé tôt » (élucidé)
 Un run *resume* (300s) avait repris DANS le tuto (progression persistée seulement à HERO_FILTERS), rejoué
