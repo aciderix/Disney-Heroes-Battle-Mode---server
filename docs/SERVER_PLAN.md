@@ -124,6 +124,75 @@ pour garantir que **chaque objet déréférencé est non-null** — pas de « mi
    navigation stable, fidèle aux captures d'origine.
 7. [ ] **Multi-serveur / passerelle** (liste, mot de passe optionnel) — cf. ARCHITECTURE.md.
 
+## Partiels du combat de campagne à résoudre — SUIVI (recordCampaignAttack)
+
+Le handler `recordCampaignAttack` est **RÉEL au cœur** (recordOutcome : énergie/or/XP/loot/progression/
+team-level, tout persisté & testé) mais porte des **PARTIELs** (cf. SHIMS). Analyse de résolubilité —
+**tout est résoluble avec le code du jeu, rien d'inventé** (§4). Ordonné par effort croissant :
+
+### A. [ ] Mémoire de loot (« pitié ») — `m.memoryChanges` — TRIVIAL, à faire
+- **Quoi** : le combat client roule le loot et met à jour la **loot memory** (compteur par objet → drop
+  garanti après N essais). Le client envoie les deltas dans `CampaignAttack.memoryChanges`
+  (`List<UserLootMemoryChange>`). Le serveur les **ignore** actuellement.
+- **Où ça vit** : `individualUserExtra.lootMemory` = `Map<ItemType, Float>` (**auto-persistée**, dans
+  `this.extra`). `UserLootMemoryChange` = `{itemType, startingMemory, endingMemory}`.
+- **Fix** : après `recordOutcome`, boucler `m.memoryChanges` → `individualUserExtra.lootMemory.put(itemType,
+  endingMemory)`. ~10 lignes, **même schéma que `resyncCampaign`/team-level**. Aucun re-roll requis (le drop
+  arrive déjà via `m.lootEarned`). ⚠️ NB : ne PAS mettre `memoryChanges` en 2ᵉ param List de `recordOutcome`
+  (delta RewardDrop → ClassCastException, cf. SHIMS) — l'appliquer À PART après recordOutcome.
+- **Test** : étendre `LootPersistTest` — envoyer un `UserLootMemoryChange{item, endingMemory=0.5}`, vérifier
+  `lootMemory[item]=0.5` après reload SQLite.
+
+### B. [ ] `lastWinTime` de la progression campagne — FACILE, à faire
+- **Quoi** : `resyncCampaign` mappe tous les champs de `ClientCampaignLevelStatus` vers le wire SAUF
+  `lastWinTime` (pas de getter public, seulement un setter). Impact faible (métadonnée d'affichage), mais
+  c'est une complétion §6.
+- **Fix** : lire la valeur en mémoire (réflexion sur le champ privé de `ClientCampaignLevelStatus`, ou la
+  capturer au moment du `recordOutcome`), puis l'écrire dans le wire `CampaignLevelStatus.lastWinTime` dans
+  `resyncCampaign`.
+
+### C. [ ] Graine RNG — `Action SET_SEED` (TYPE=COMBAT / TYPE=LOOT) — ACTIVATEUR
+- **Quoi** : avant chaque combat le client envoie `Action{SET_SEED, extra={ID=<graine long>, TYPE=COMBAT|
+  LOOT}}` — **la graine RNG** qu'il a utilisée. Le serveur la logue « non appliquée (PARTIEL) ».
+- **But** : ces messages existent **précisément pour que le serveur reproduise/valide** le combat (D) et le
+  loot (E) de façon déterministe. Seul, appliquer la graine ne fait rien de visible.
+- **Fix** : handler `SET_SEED` dans `applyAction` → stocker les 2 graines (COMBAT, LOOT) sur la session/le
+  contexte du user, pour alimenter D et E.
+
+### D. [ ] Re-SIMULATION serveur du combat (`outcome`/`stars` autoritatifs) — GROS, chantier §3
+- **Quoi** : aujourd'hui `outcome`/`stars` = ceux du **client** (client-autoritatif). Le VRAI serveur
+  autoritatif (PRINCIPLES §3, anti-triche) **rejoue le combat** avec la graine COMBAT et compare.
+- **Outil du jeu** : `com.perblue.heroes.simulation.headless.HeadlessCombat(HeroLineupType, **java.util.
+  Random**, Array<CombatUnitData> attaquants, Array<Array<CombatUnitData>> défenseurs, GameMode,
+  IHeadlessEvents)` — **le simulateur headless du jeu lui-même** (celui du « quick fight »), qui prend une
+  `Random` seedée. Logique pure (pas de rendu/unidbg).
+- **Fix** : construire les `CombatUnitData` depuis les lineups du `CampaignAttack` (héros du user + ennemis
+  du niveau via `CampaignStats`), instancier `HeadlessCombat` avec `new Random(combatSeed)`, dérouler
+  jusqu'au bout, extraire outcome/stars → **remplacer** ceux du client (ou rejeter si divergence).
+- **Effort** : substantiel (mapping lineups + events + boucle de sim). Faisable 100% avec le code d'origine.
+
+### E. [ ] Re-ROLL serveur du loot (autoritatif) — GROS, dépend de C — chantier §3
+- **Quoi** : au lieu d'appliquer `m.lootEarned` (client), le serveur **roule le loot lui-même** avec la
+  graine LOOT + les drop tables de campagne → doit reproduire exactement le tirage client (déterministe).
+- **Outil du jeu** : `CampaignLootHelper` + les tables de drop de campagne + `new Random(lootSeed)`.
+- **Fix** : rouler côté serveur, comparer à `m.lootEarned` (validation), créditer le résultat serveur.
+- **Effort** : substantiel. Combiné à D → serveur **pleinement autoritatif** sur le combat de campagne.
+
+### F. [ ] Bonus d'évènements — `SpecialEventSnapshot.NONE` — FEATURE (pas un bug)
+- **Quoi** : `NONE` = aucun bonus d'évènement live. C'est la valeur **correcte** pour un serveur qui
+  n'héberge pas d'évènements. « Résoudre » = **construire un système d'hébergement d'évènements**
+  (configuration + snapshots temporels) — une feature à part entière, hors périmètre actuel.
+
+### G. [ ] Fragilité headless `PatchStats` (talent orphelin EVIL_QUEEN) — cf. SHIMS
+- **Quoi** : le recompute complet de puissance (`getPower`) headless propage l'`IllegalArgumentException`
+  de `PREDICTIVE_FORTIFICATION` (toléré en jeu). **Impact gameplay nul**. **Fix durable** : forcer le
+  chargement TOLÉRANT des stats patchées à l'init serveur (ou peupler `statDataTxt` sans la ligne orpheline),
+  pour un `getPower` headless fiable.
+
+**Reco d'ordre** : A + B tout de suite (complétion §6, triviaux, testables). Puis C→D→E comme **chantier
+« serveur pleinement autoritatif »** (passage de « confiance client » à « validation serveur », §3). F/G au
+besoin. Aucun de ces points n'est bloqué par une limite technique — tout réutilise `game.jar`.
+
 ## Outils de DEV (jamais actifs en prod ; aucune modif du jeu ni du serveur)
 Drapeaux du **lanceur** (`desktop-port`), **off par défaut** — en prod le joueur lance sans, jeu normal :
 - `dh.autotap=N` : tap périodique (dialogues « tap to continue »).
