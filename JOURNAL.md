@@ -66,9 +66,16 @@ client ROULE le loot pendant le combat et l'envoie dans `CampaignAttack.lootEarn
 `memoryChanges`. `recordOutcome` **n'en roule pas** (vérifié `LootRoll` : lootEarned vide en entrée → vide en
 sortie) : il **applique** la liste reçue (`giveLoot → RewardHelper.giveRewards → addItem` → items, auto-persisté).
 `recordCampaignAttack` passait des listes **vides** → objets jamais crédités. **Correctif** : passer
-`m.lootEarned`/`m.memoryChanges`. Vérifié `LootApply` (RewardDrop → getItemAmount 0→1) + `server/smoke/
-LootPersistTest` (BADGE_OF_FRIENDSHIP x2 crédité en combat ET survit au round-trip SQLite → dispo à
-l'équipement). Régression (Resource/CampaignAttack/CampaignPersist/TeamLevelPersist) verte.
+`m.lootEarned` comme **1ᵉʳ paramètre List** (le loot à donner). ⚠️ **Piège** : le **2ᵉ paramètre List** de
+`recordOutcome` est un **delta de RewardDrop** (déjà-affiché) que `giveLoot` passe à `removeDelta` → y mettre
+`m.memoryChanges` (`UserLootMemoryChange`) **plante** (`ClassCastException` dans `removeDelta`) au 1ᵉʳ
+`CampaignAttack`, qui n'est alors jamais enregistré → **cascade `CAMPAIGN_LEVEL_LOCKED`** sur tous les suivants
+(révélé par un run réel). On laisse donc ce delta **VIDE**. Vérifié `LootApply` (RewardDrop → getItemAmount
+0→1) + `server/smoke/LootPersistTest` (BADGE_OF_FRIENDSHIP x2 crédité, `m.memoryChanges` peuplé SANS planter,
+survit au round-trip SQLite → dispo à l'équipement). **PARTIEL** : `m.memoryChanges` (mémoire de loot/pity) +
+graine RNG client (`Action SET_SEED` TYPE=LOOT/COMBAT, loguée « non appliquée ») non appliqués → le serveur ne
+re-roule pas, il fait **confiance au loot client** (cohérent avec le combat client-autoritatif).
+Régression (Resource/CampaignAttack/CampaignPersist/TeamLevelPersist) verte.
 
 ### ENCHAÎNEMENT 1-1→1-5 EN JEU ✅ (nav post-victoire + fenêtre d'équipement)
 D'abord le pilote rejouait 1-1 (une seule entrée carte, 6 combats) : après victoire il revenait sur
