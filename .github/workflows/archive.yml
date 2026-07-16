@@ -1,0 +1,49 @@
+name: Archive Looney Tunes WOM to Internet Archive
+
+on:
+  workflow_dispatch:
+
+jobs:
+  archive-html:
+    name: "Wayback Machine Archival"
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Setup Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+
+      - name: Install dependencies
+        run: pip install requests
+
+      - name: Trigger Wayback Machine
+        env:
+          IA_ACCESS_KEY: ${{ secrets.IA_ACCESS_KEY }}
+          IA_SECRET_KEY: ${{ secrets.IA_SECRET_KEY }}
+        run: python3 archive_urls.py
+
+  upload-files:
+    name: "Upload XML to IA Item"
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Upload to IA
+        env:
+          IA_ACCESS_KEY: ${{ secrets.IA_ACCESS_KEY }}
+          IA_SECRET_KEY: ${{ secrets.IA_SECRET_KEY }}
+        run: |
+          # Création d'un ZIP contenant tous les sitemaps pour archivage backup
+          zip sitemaps_backup.zip *.xml
+          
+          # Upload via ton script adapté ou directement via curl
+          curl --request PUT --user "$IA_ACCESS_KEY:$IA_SECRET_KEY" \
+               --data-binary @sitemaps_backup.zip \
+               --header "x-archive-meta-mediatype:texts" \
+               --header "x-archive-meta-title:Looney Tunes World of Mayhem Sitemaps Backup" \
+               --header "x-archive-meta-collection:opensource_software" \
+               "https://s3.us.archive.org/looney-tunes-wom-sitemaps/sitemaps_backup.zip"
