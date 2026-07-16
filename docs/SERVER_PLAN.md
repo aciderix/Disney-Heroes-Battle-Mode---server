@@ -151,13 +151,13 @@ team-level, tout persisté & testé) mais porte des **PARTIELs** (cf. SHIMS). An
   capturer au moment du `recordOutcome`), puis l'écrire dans le wire `CampaignLevelStatus.lastWinTime` dans
   `resyncCampaign`.
 
-### C. [ ] Graine RNG — `Action SET_SEED` (TYPE=COMBAT / TYPE=LOOT) — ACTIVATEUR
+### C. [x] ✅ Graine RNG — `Action SET_SEED` (TYPE=COMBAT / TYPE=LOOT) — ACTIVATEUR
 - **Quoi** : avant chaque combat le client envoie `Action{SET_SEED, extra={ID=<graine long>, TYPE=COMBAT|
   LOOT}}` — **la graine RNG** qu'il a utilisée. Le serveur la logue « non appliquée (PARTIEL) ».
 - **But** : ces messages existent **précisément pour que le serveur reproduise/valide** le combat (D) et le
   loot (E) de façon déterministe. Seul, appliquer la graine ne fait rien de visible.
-- **Fix** : handler `SET_SEED` dans `applyAction` → stocker les 2 graines (COMBAT, LOOT) sur la session/le
-  contexte du user, pour alimenter D et E.
+- **Fait (2026-07-16)** : handler `SET_SEED` dans `applyCommand` → `pendingSeeds` (EnumMap RandomSeedType→Long,
+  état session) + accesseur `getPendingSeed(type)`. Vérifié `server/smoke/SeedTest`. Prêt à alimenter D/E.
 
 ### D. [ ] Re-SIMULATION serveur du combat (`outcome`/`stars` autoritatifs) — GROS, chantier §3
 - **Quoi** : aujourd'hui `outcome`/`stars` = ceux du **client** (client-autoritatif). Le VRAI serveur

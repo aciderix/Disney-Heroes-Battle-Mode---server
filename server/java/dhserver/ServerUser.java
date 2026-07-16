@@ -56,6 +56,12 @@ public final class ServerUser {
   private final UserExtra userExtra;
   private final IndividualUserExtra individualUserExtra;
 
+  // Graines RNG que le client annonce (Action SET_SEED) avant chaque combat, pour que le serveur puisse
+  // REPRODUIRE/valider le tirage (combat COMBAT, loot LOOT ; cf. SERVER_PLAN §Partiels C→E). État de SESSION
+  // (éphémère, non persisté) : consommé au CampaignAttack suivant. Cf. handler SET_SEED + getPendingSeed.
+  private final java.util.Map<com.perblue.heroes.network.messages.RandomSeedType, Long> pendingSeeds =
+      new java.util.EnumMap<>(com.perblue.heroes.network.messages.RandomSeedType.class);
+
   private ServerUser(long userID, int shardID,
                      UserInfo userInfo, UserExtra userExtra, IndividualUserExtra individualUserExtra) {
     this.userID = userID;
@@ -424,6 +430,14 @@ public final class ServerUser {
     return applied;
   }
 
+  /**
+   * Graine RNG annoncée par le client pour {@code type} (via {@code Action SET_SEED}), ou {@code null} si
+   * aucune n'a été reçue. Destinée à la re-simulation/re-roll autoritatif (SERVER_PLAN §Partiels D/E).
+   */
+  public Long getPendingSeed(com.perblue.heroes.network.messages.RandomSeedType type) {
+    return pendingSeeds.get(type);
+  }
+
   /** Aiguille une commande vers la logique cœur du jeu. Le nom est comparé en String (l'enum du jeu
    *  a des annotations dex2jar qui gênent un switch). Étendu au fur et à mesure des commandes du jeu. */
   private boolean applyCommand(Action m, User user) {
@@ -463,6 +477,26 @@ public final class ServerUser {
         if (t == null) { System.out.println("[action] VIEWED_CHESTS: pas de TIME dans l'extra"); return false; }
         user.setTime(com.perblue.heroes.network.messages.TimeType.LAST_CHESTS_VIEW_TIME,
             Long.parseLong((String) t));
+        return true;
+      }
+      case "SET_SEED": {
+        // Le client (combat client-autoritatif) annonce la GRAINE RNG qu'il a utilisée, AVANT le combat :
+        //   extra = { ID = <graine long, en String>, TYPE = <RandomSeedType, ex. COMBAT|LOOT>, REASON = … }.
+        // On la stocke en état de SESSION (éphémère) → le prochain CampaignAttack pourra REPRODUIRE le combat
+        // (HeadlessCombat, §Partiel D) et/ou le loot (drop tables, §Partiel E) de façon déterministe et
+        // AUTORITATIVE. Pour l'instant on ne fait que MÉMORISER (les re-rolls D/E sont des tâches à venir).
+        if (m.extra == null) return true;
+        Object idO = m.extra.get(com.perblue.heroes.network.messages.ActionExtraType.ID);
+        Object tyO = m.extra.get(com.perblue.heroes.network.messages.ActionExtraType.TYPE);
+        if (idO == null || tyO == null) { System.out.println("[action] SET_SEED: ID/TYPE manquant"); return true; }
+        try {
+          long seed = Long.parseLong(idO.toString());
+          com.perblue.heroes.network.messages.RandomSeedType ty =
+              com.perblue.heroes.network.messages.RandomSeedType.valueOf(tyO.toString());
+          pendingSeeds.put(ty, seed);
+        } catch (Throwable t) {
+          System.out.println("[action] SET_SEED: extra illisible (" + idO + "/" + tyO + ") : " + t);
+        }
         return true;
       }
       case "RECORD_SERVER_ROLL_FINISHED":
