@@ -290,22 +290,21 @@ public final class ServerUser {
     // serveur ne re-roule pas, il fait confiance au loot client. La mémoire de loot (m.memoryChanges) EST
     // appliquée plus bas (auto-persistée), voir applyLootMemory.
     java.util.List clientLoot = m.lootEarned != null ? m.lootEarned : new java.util.ArrayList<>();
-    // #25 — LOOT AUTORITAIRE. Le serveur ROULE lui-même le butin avec la graine LOOT du client (flux RNG
-    // SÉPARÉ du combat → AUCUNE simulation requise). Sur une VICTOIRE, on CRÉDITE le tirage SERVEUR (certifié
-    // reproduire EXACTEMENT le client — cf. server/smoke/LootAuthoritativeTest, 5/5 graines) AU LIEU de croire
-    // m.lootEarned → autoritaire, anti-triche, coût nul. Une divergence serveur↔client = SIGNAL DE TRICHE
-    // (loggé), mais on crédite TOUJOURS le serveur. Repli sur le loot client si (a) pas de graine LOOT connue
-    // (ex. rejeu sans SET_SEED) ou (b) résultat non-WIN (loot partiel dépendant de la progression du combat,
-    // hors périmètre pure-logique — documenté §2/§E).
+    // #25 — LOOT AUTORITAIRE (mode OMBRE — PAS ENCORE crédité). Le serveur ROULE le butin avec la graine LOOT
+    // (flux RNG séparé du combat) et le COMPARE au client, mais crédite ENCORE le loot CLIENT.
+    // POURQUOI PAS ENCORE AUTORITAIRE : en jeu réel multi-combat, le tirage serveur DIVERGE du client légitime
+    // (relevé au run frais 1-5 : les items EXP et la pitié divergent). Le loot dépend d'un ÉTAT ÉVOLUTIF que le
+    // serveur ne reproduit pas encore fidèlement : le POOL D'XP (`IUser.getExpLootPool`/`CampaignLoot.
+    // newExpLootPool`, non suivi/mis à jour côté serveur) et la MÉMOIRE DE LOOT (pitié) au moment du tirage. Le
+    // test 5/5 ne l'avait pas vu (état FRAIS identique des 2 côtés). Créditer un tirage divergent donnerait au
+    // joueur HONNÊTE un mauvais butin (régression §4bis) → tant que le serveur ne reproduit pas le client dans
+    // TOUS les cas légitimes, on garde le loot client et on LOGue la divergence (diagnostic). Bascule
+    // autoritative UNIQUEMENT une fois l'état (pool XP + mémoire) reproduit fidèlement (== client en jeu réel).
     java.util.List serverLoot = rollAuthoritativeLoot(user, iu, type, m);
-    boolean win = m.base != null && m.base.outcome == com.perblue.heroes.network.messages.CombatOutcome.WIN;
-    java.util.List lootEarned;
-    if (serverLoot != null && win) {
+    if (serverLoot != null && m.base != null
+        && m.base.outcome == com.perblue.heroes.network.messages.CombatOutcome.WIN)
       logLootValidation(serverLoot, clientLoot);
-      lootEarned = serverLoot;
-    } else {
-      lootEarned = clientLoot;
-    }
+    java.util.List lootEarned = clientLoot;
     java.util.List shownDelta = new java.util.ArrayList<>();
     // base : attackers/defenders = Collection de AttackLineupSummary, outcome + stars remplis par le client.
     CampaignHelper.recordOutcome(user, user, level, m.base.outcome, m.base.stars, m.stagesCleared,
@@ -368,8 +367,9 @@ public final class ServerUser {
   private void logLootValidation(java.util.List serverLoot, java.util.List clientLoot) {
     java.util.Map<String, Long> s = lootMultiset(serverLoot), c = lootMultiset(clientLoot);
     boolean match = s.equals(c);
-    System.out.println("[loot-authoritative] #25 : " + (match ? "OK (serveur==client) ✅"
-        : "DIVERGE — butin client falsifié, on crédite le serveur ❌") + "  serveur=" + s + "  client=" + c);
+    System.out.println("[loot-authoritative] #25 OMBRE : " + (match ? "OK (serveur==client) ✅"
+        : "DIVERGE (état pool XP/pitié non reproduit — on crédite le client) ⚠️")
+        + "  serveur=" + s + "  client=" + c);
   }
 
   @SuppressWarnings("rawtypes")
