@@ -6,6 +6,29 @@
 > des fichiers et un historique **court**. L'historique **détaillé** est dans
 > [`JOURNAL.md`](JOURNAL.md). **Maintenir ce fichier à jour en permanence.**
 
+Dernière mise à jour : **2026-07-17** — **#28 CERTIFICATION Opt.3 FAITE + perf desktop mesurée**. Le **harnais
+différentiel** (`CompareBackend` : le jeu boote sur unidbg=oracle=binaire PerBlue mobile, notre **spine-c recompilé
+natif** tourne en parallèle sur les MÊMES handles, on diffe chaque appel — mode `DH_SPINEBACKEND=compare`) a servi à
+**certifier automatiquement** le spine-c hôte (x86-64) contre le binaire ARM d'origine, sur un vrai combat (1-1, 973
+ticks, WIN). **Résultat** : **structure + événements d'animation identiques bit-à-bit** (`nextEvent` 0/8611,
+`setAnimation` 0/87, tous les noms/ids/durées 0 diff) ; **poses d'os fidèles à la précision flottante** (matrice
+1.8e-7, position 6.1e-5 — sub-pixel, bornées car recalculées à neuf chaque frame → pas d'accumulation). **3 vrais
+bugs de fidélité trouvés PAR le harnais et corrigés** dans `native/src/cspine_jni.c` : (1) **layout matrice transposé**
+→ ordre correct de l'oracle `[a, c, b, d, worldX, worldY]` (le split mat/pos du harnais a montré la signature b↔c) ;
+(2) **`nextEvent` non branché** → file d'événements spine-c implémentée (listener global + FIFO sur `rendererObject`,
+drain `_spEventQueue`, `out[0]=spEventType+1`, `out[1]=trackIndex` ; dispose AVANT free sinon use-after-free) ;
+(3) **`setAnimation`** renvoie un **compteur de trackEntry par animState** (1-based), pas l'animId. Restent : `getBoneID`
+(PerBlue réordonne les os en interne = artefact auto-cohérent, 0 impact) + `setSlotEyeState` (extension **cosmétique**
+PerBlue absente de spine-c vanilla). **PERF (chrono par backend, même mix d'appels)** : **unidbg (ARM émulé)=16900 ms
+vs JNI natif=337 ms → ~50× plus rapide** (~5,8 ms/frame unidbg vs ~0,12 ms/frame natif ; 50× conservateur car exclut
+`getVertices`). **VERDICT** : rendu/animation = **fidèle** (identique à l'œil, dérive flottante invisible) → desktop
+**jouable en production POUR LE RENDU** via le backend natif ; **autorité de combat reste sur unidbg côté serveur**
+(non bit-identique = §3 serveur autoritatif). **Bloquants restants avant desktop natif de prod** : (a) le **boot
+JNI-autonome** bute sur le handle-registry (contourné aujourd'hui par le mode compare, le jeu bootant sur unidbg) ;
+(b) `setSlotEyeState` (yeux) si on veut les expressions. Détail : JOURNAL 2026-07-17 + `docs/SERVER_PLAN.md`.
+Fichiers : `native/src/cspine_jni.c`, `desktop-port/src/main/java/dhbackend/spine/CompareBackend.java`,
+`dhdesktop/CombatSpikeDriver.java` (`DH_COMBATSPIKE`). Commits `a0dc9de` (certif) + `312b8c7` (perf).
+
 Dernière mise à jour : **2026-07-16 (nuit 3)** — **#24 RE-SIM COMBAT : investigué à fond → plan « oracle-certification »**.
 Conclusion ferme : **`HeadlessCombat` n'est PAS pure logique** (son ctor bâtit un `RepresentationManager` →
 `RPGAssetManager` dont le ctor exige un **contexte GL** + loaders **natifs** cspine/cparticle unidbg) et **le
