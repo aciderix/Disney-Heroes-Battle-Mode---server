@@ -102,3 +102,25 @@ du contenu *futur*). **Aucune rustine nécessaire** : on sert réellement le bon
 Un hébergeur peut pré-télécharger les archives dans `assets-cache/` (non committé) pour
 servir le contenu sans dépendre d'archive.org (latence, disponibilité). Un outil de
 pré-fetch depuis `index.txt` sera ajouté (`tools/`).
+
+## Inventaire complet de l'archive live (2026-07-17) — `docs/live-archive-inventory.json.gz`
+
+Inventaire du **contenu** des 485 zips de `archive.org/download/disney-heroes-battle-mode-live-assets`
+(révisions **325-335**), scanné via les « view contents » (pas de téléchargement des 25 Go). Structure JSON :
+`archive_contents[] = {archive, file_count, contents[]}`. Chargement : `zcat docs/live-archive-inventory.json.gz`.
+
+**Catégories** : `FONT_CJK(_FALLBACK)`, `SOUND`, `TEXT(_<lang>)`, `UI_{INITIAL,DYNAMIC,BOOSTER_INITIAL,PARTICLES_INITIAL}`,
+`WORLD_{INITIAL_INTERNAL,ADDITIONAL}`. **Types de fichiers** (densités `ETC1/ETC2/PVRTC`) :
+`.np` (particules), `.atlas`+`.etc1/.etc2/.pvr` (textures), `.skel` (spine), `.sceneb`/`.unitb`/`.enventityb`/
+`.m2db`/`.boundsb`/`.bpm` (monde/unités), `.treeb` (prefabs = **HitKeyframeData**, keyframes de combat),
+`.properties` (strings localisées), fonts.
+
+### ⚠️ CONCLUSION CLÉ — pas de données de STATS dans l'archive
+**AUCUN `.tab`/`.tabb`/`.json`/`.bin`** dans les 485 zips (seul « Stats » = `Stats.properties` = **noms**
+localisés, pas les valeurs). Les **données d'équilibrage** (stats, `stamina_values.tab`, drop tables…) sont
+**bakées dans l'APK** + **hot-patchées par le stat-sync RÉSEAU** (`BootData.statDataTxt/statDataBin`, appliqué
+par `SyncStatDataClientHelper.updateStats` → `GeneralStats.updateStats`, qui écrase les `.tab`). **Ce trafic
+réseau n'est pas archivé** → les valeurs live corrigées (ex. la vraie régén de stamina, vs le `REGEN_AMOUNT`
+absurde de 39,96 M baké en R102) **ne sont PAS récupérables** depuis cette archive. Cf. investigation stamina
+(JOURNAL/MEMORY). L'archive reste une mine pour les **assets client** (particules `.np` → cparticle ; `.treeb`
+→ keyframes de combat ; skeletons ; monde), déjà téléchargés à l'exécution via `index.txt`.
