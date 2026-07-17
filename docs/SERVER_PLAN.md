@@ -263,9 +263,21 @@ team-level, tout persisté & testé) mais porte des **PARTIELs** (cf. SHIMS). An
     AnimationState/AnimationStateData) en **délégation directe au runtime Java** (pas les 47 de cspine, pas de
     rendu). Chantier **cadré**. Gain : ~29 appels unidbg/tick (~9 s) → JVM natif → <100 ms.
 
-### E. [x] ✅ Re-ROLL serveur du loot (autoritatif) — FAIT & CERTIFIÉ (2026-07-17)
+### E. [~] Re-ROLL serveur du loot (autoritatif) — ROLL FAIT, mode OMBRE (bascule reportée) (2026-07-17)
+- **⚠️ STATUT (honnête)** : le roll est **implémenté** et **certifié en état FRAIS** (`LootAuthoritativeTest`
+  5/5) MAIS **un run frais de bout en bout a révélé qu'en jeu réel multi-combat le tirage serveur DIVERGE du
+  client légitime** (relevé au 1-5 : items EXP + pitié). Cause : le loot dépend d'un **état ÉVOLUTIF** que le
+  serveur ne reproduit pas encore — **le POOL D'XP** (`IndividualUser.getExpLootPool`/`CampaignLoot.
+  newExpLootPool`) que le serveur **n'avance jamais** après un combat (le client, si), et la **MÉMOIRE DE LOOT**
+  (pitié) probablement **double-comptée** (`getLoot` la mute pendant le tirage, puis `applyLootMemory` réapplique
+  le delta client par-dessus). Le test 5/5 ne l'a pas vu (état FRAIS identique des 2 côtés). ⇒ **RÉVERTÉ en mode
+  OMBRE** : on crédite le loot CLIENT (fidèle) + on LOGue la divergence. **À finir avant bascule autoritative** :
+  (1) avancer `expLootPool = cl.newExpLootPool` et le persister à CHAQUE combat ; (2) rouler sur une COPIE isolée
+  du user (les mutations de `getLoot` ne doivent pas corrompre l'état persisté) ; (3) supprimer le double-compte
+  mémoire (roll utilise la mémoire pré-combat, puis UNE seule mise à jour). Objectif : serveur==client en **jeu
+  réel** (pas seulement frais), vérifié sur un run multi-combat.
 - **Quoi** : au lieu d'appliquer `m.lootEarned` (client), le serveur **roule le loot lui-même** avec la
-  graine LOOT + les drop tables de campagne → reproduit exactement le tirage client (déterministe).
+  graine LOOT + les drop tables de campagne → doit reproduire exactement le tirage client (déterministe).
 - **Fait clé (relevé au bytecode)** : le loot est un **flux RNG SÉPARÉ du combat** (`RandomSeedType.LOOT` ≠
   `COMBAT`) → **fonction déterministe de la SEULE graine LOOT, AUCUNE simulation de combat requise**. La
   séquence client exacte (`CampaignAttackScreen` 2ᵉ ctor) : `user.resetRandom(LOOT)` puis
