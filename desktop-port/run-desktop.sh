@@ -129,6 +129,24 @@ JOPTS="$JOPTS -Ddh.spinelib=$(cd .. && pwd)/native/reference/libspine-native.so"
 [ -n "${DH_COMBATSPIKE_LV:-}" ] && JOPTS="$JOPTS -Ddh.combatspike.lv=$DH_COMBATSPIKE_LV"
 [ -n "${DH_COMBATSPIKE_SEED:-}" ] && JOPTS="$JOPTS -Ddh.combatspike.seed=$DH_COMBATSPIKE_SEED"
 [ -n "${DH_CSPINEPROFILE:-}" ] && JOPTS="$JOPTS -Ddh.cspineprofile=$DH_CSPINEPROFILE"
+# DEV : backend spine Opt.3 (#28) — router l'animation du combat vers le runtime Java (spine-libgdx-perblue)
+# au lieu d'unidbg. Le runtime Java (SkeletonBinary) exige DataInput.readString(), absent du stub 215o de
+# game-logic (dex2jar) : on fait gagner le DataInput COMPLET de gdx-1.9.7 en le déposant dans le dir de classes
+# (PREMIER sur le CP → ombrage le stub). Superset correct → inoffensif pour le chemin unidbg par défaut.
+if [ "${DH_SPINEBACKEND:-}" = "java" ]; then
+  JOPTS="$JOPTS -Ddh.spinebackend=java"
+  # libGDX vient de game-logic.jar (PerBlue), STRIPPÉ par ProGuard : certaines classes utilitaires ont perdu
+  # des méthodes que spine-libgdx-perblue utilise (ex. DataInput.readString, IntSet.clear). Le gdx-1.9.7 COMPLET
+  # (cache gradle) les a → on dépose SES versions dans le dir de classes (PREMIER sur le CP), qui ombragent les
+  # stubs. On ne remplace QUE des classes STRIPPÉES (superset correct), JAMAIS une classe MODIFIÉE par PerBlue
+  # (ex. Array : add()->boolean au lieu de void ; l'ombrer casserait le jeu ET spine). Inoffensif pour unidbg.
+  GDXFULL=$(find "$HOME/.gradle" -name 'gdx-1.9.7.jar' -path '*com.badlogicgames.gdx*' 2>/dev/null | head -1)
+  if [ -n "$GDXFULL" ]; then
+    for K in DataInput IntSet; do
+      unzip -oq "$GDXFULL" "com/badlogic/gdx/utils/$K.class" -d "$BUILD/classes/java/main"
+    done
+  else echo "[desktop] WARN: gdx-1.9.7.jar (classes complètes) introuvable → backend java échouera"; fi
+fi
 
 echo "[desktop] lancement (GameMain via backend LWJGL3 maison) ..."
 set +e

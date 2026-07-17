@@ -47,6 +47,10 @@ dependencies {
     // ../libs/game.jar) : GameMain + com.perblue.* + core libGDX PerBlue. Utilisé au COMPILE
     // ET au runtime pour éviter le shadowing de nos classes LWJGL3 par le LWJGL2 du jeu.
     implementation files('../libs/game-logic.jar')
+
+    // Opt.3 (#28) : runtime Java spine (com.esotericsoftware.spine uniquement, aucune classe badlogic →
+    // pas de conflit) pour le backend d'animation JavaSpineBackend (alternative à unidbg pour le combat).
+    implementation files('../libs/spine-libgdx-perblue.jar')
 }
 
 application {

@@ -7,6 +7,54 @@
 
 ---
 
+## 2026-07-16 (nuit 4) — Opt.3 Phase 1 : backend Java-spine — le combat TOURNE (9× plus vite), certification en cours
+
+### Résumé
+`JavaSpineBackend` écrit (~22 méthodes cspine du combat via `spine-libgdx-perblue`, contrat répliqué du JNI),
+flag `-Ddh.spinebackend=java` route l'animation vers lui au lieu d'unidbg (atlas reste unidbg). **Le vrai
+`HeadlessCombat` tourne intégralement sur Java-spine** (`state=DONE`) et **~9× plus vite** (work ~0,9 s vs
+~9 s unidbg). La **certification contre l'oracle DÉTECTE des divergences** (rôle de l'oracle) : 2 bugs corrigés,
+≥1 résiduel (cadence d'animation). PAR DÉFAUT le backend reste unidbg (flag off) — aucune régression.
+
+### Obstacles franchis (build)
+- **Deps compile** : ajout `spine-libgdx-perblue.jar` (uniquement `com.esotericsoftware.spine`, aucun conflit gdx).
+  Casts explicites : l'`Array`/`IntMap` PerBlue (dex2jar) a des génériques ÉRASÉS → `.get()` renvoie `Object`.
+- **libGDX PerBlue STRIPPÉ par ProGuard** : `spine-libgdx-perblue` exige des méthodes retirées du `game-logic.jar`
+  (`DataInput.readString`, `IntSet.clear`). Fix : déposer les classes COMPLÈTES de gdx-1.9.7 (cache gradle) dans
+  le dir de classes (1ᵉʳ sur le CP → ombrage). **Uniquement des classes STRIPPÉES** (superset sûr), JAMAIS une
+  classe MODIFIÉE par PerBlue (ex. `Array.add→boolean`). Vérifié par diff de signatures (sous-ensemble).
+
+### Bugs de fidélité (trouvés par l'oracle)
+1. **`getBoneTransform` stride 6, pas 7.** Le JNI écrit 7 floats (toléré par unidbg sans bounds-check) mais le
+   jeu alloue/lit **6** (`NativeSkeleton.tmpTF=float[6]`, `getBoneTransforms` dimensionne `n*6`). En JVM strict le
+   7ᵉ déborde → AIOOBE. Corrigé : écrire `[worldX, worldY, worldRotationX, worldScaleX, worldScaleY, 0]`.
+   `getBoneTransforms` (pluriel, ShadowRenderable/ombres cosmétiques) : rendu défensif (garde de bornes ;
+   sémantique JNI = no-op quand `ids.length==nbOs`).
+2. **`getCurrentAnimationTime` = `animationTime` WRAPPÉ, pas `trackTime` brut.** Oracle : maxAnimTime **1.833 s**
+   (= durée pleine de skill1) = borné. Java avec `getTrackTime()` : **89.9 s** (accumule) → le jeu croit l'anim
+   au-delà de tous les keyframes → n'attaque plus qu'une fois → stagnation. `getAnimationTime()` reproduit le
+   borné natif (java → 1.733 s).
+
+### État certification (1-1, seed 123456789, snapshot loot-1to5)
+| | ticks | maxAnimTime | morts déf. | issue |
+|---|---|---|---|---|
+| **oracle unidbg** | 973 | 1.833 s | 5/5 | **WIN** (~8,5 s réel) |
+| **java (après fix 1+2)** | 3876 (cap) | 1.733 s | **3/5** | stagne → LOSS (~0,9 s réel) |
+
+⇒ Java **progresse** (3 kills, ~9× plus rapide) mais **tue ~15× plus lentement** → **divergence résiduelle de
+cadence** (les attaques/skills atterrissent moins souvent ; skill1 semble interrompue à 1.733 vs 1.833 → keyframe
+de dégâts tardif manqué). **Prochain pas certification** : diff **tick-par-tick** de la séquence
+`getCurrentAnimationID`/`Time` d'une unité entre java et unidbg pour localiser la 1ʳᵉ divergence (mixing ? ordre
+update/apply ? bornes de wrap ?). Piste : comportement du **mixing** (`setMix`/crossfade) ou `getCurrentAnimationID`
+pendant un mix.
+
+### Fichiers
+`desktop-port/src/main/java/dhbackend/spine/JavaSpineBackend.java` (nouveau, backend), `.../cspine/Native.java`
+(routage flag + diag), `.../CombatSpikeDriver.java` (compteur morts), `build.gradle` (dep spine), `run-desktop.sh`
+(flag + shadow classes gdx), `run-online.sh` (forward `DH_SPINEBACKEND`). Docs : SERVER_PLAN §D.
+
+---
+
 ## 2026-07-16 (nuit 3 quater) — Opt.3 Phase 0 : surface cspine EXACTE du combat headless mesurée (profilage)
 
 ### Résumé

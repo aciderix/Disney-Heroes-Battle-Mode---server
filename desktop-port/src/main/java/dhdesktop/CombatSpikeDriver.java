@@ -69,8 +69,9 @@ public final class CombatSpikeDriver {
                     type, ch, lv, rng, false, SpecialEventSnapshot.NONE, u, loot);
             System.out.println("[combatspike] vagues défenseurs=" + defenders.size);
 
+            final int[] deaths = {0};
             HeadlessCombat.IHeadlessEvents ev = new HeadlessCombat.IHeadlessEvents() {
-                @Override public void onDefenderUnitDeath(Unit x) {}
+                @Override public void onDefenderUnitDeath(Unit x) { deaths[0]++; }
             };
             com.perblue.heroes.cspine.Native.resetProfile();   // phase 0 Opt.3 : mesurer la surface cspine du COMBAT
             long t0 = System.nanoTime();
@@ -89,6 +90,7 @@ public final class CombatSpikeDriver {
             boolean win = scene != null && scene.isAttackersLeft() && !scene.isDefendersLeft();
             System.out.printf("[combatspike] FIN state=%s ticks=%d | ctor=%.1f ms  work=%.1f ms  total=%.1f ms%n",
                     hc.getState(), ticks, (tCtor - t0) / 1e6, (t1 - tCtor) / 1e6, (t1 - t0) / 1e6);
+            System.out.println("[combatspike] morts défenseurs=" + deaths[0]);
             System.out.println("[combatspike] ISSUE : attackersLeft=" + (scene != null && scene.isAttackersLeft())
                     + " defendersLeft=" + (scene != null && scene.isDefendersLeft()) + " → "
                     + (win ? "WIN" : "LOSS/indéterminé"));
