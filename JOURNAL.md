@@ -275,6 +275,58 @@ Probe `scratchpad/SpineProbe.java` (throwaway). Docs : SERVER_PLAN §D, MEMORY. 
 
 ---
 
+## 2026-07-17 — #28 CERTIFICATION Opt.3 : spine-c recompilé certifié FIDÈLE contre l'oracle unidbg (verdict desktop)
+
+### Résumé — VERDICT
+Le harnais différentiel (`CompareBackend` : le jeu tourne sur unidbg=oracle=binaire PerBlue mobile, le JNI
+spine-c recompilé tourne **en parallèle** sur les **mêmes handles**, on diffe chaque appel) a servi à
+**certifier** notre spine-c hôte (x86-64) contre le binaire ARM d'origine, **automatiquement**, sur un vrai
+combat (NORMAL 1-1, 973 ticks, 5 morts, WIN — identique côté unidbg). Résultat après fermeture des écarts :
+
+| catégorie | méthodes | diffs | verdict |
+|---|---|---|---|
+| **structure** (noms/ids/durées/counts d'anims, os, slots, skins ; atlas) | getAnimation{ID,Names,Durations}, getBoneNames, getSlotNames, getSkinNames, setSkin, Atlas_* | **0** | **identique bit-à-bit** |
+| **événements d'animation** | nextEvent (8611 appels), setAnimation (87) | **0** | **identique bit-à-bit** |
+| **transforms d'os** | getBoneTransform (4376), getBoneTransforms (15) | ~818 | **dérive flottante seule** : matrice 1.8e-7, position 6.1e-5 (sub-pixel, bornée) |
+| ordre interne des os | getBoneID (410) | 410 | **artefact** : PerBlue réordonne les os en interne ; chaque backend est auto-cohérent (les transforms matchent une fois traduits par NOM) — aucun impact fonctionnel |
+| extension proprio | setSlotEyeState (36) | 36 | **seul vrai manque** : extension PerBlue (expression des yeux), absente de spine-c vanilla — **purement cosmétique** |
+
+### Bugs de fidélité RÉELS trouvés par le harnais (et corrigés)
+1. **Layout matrice transposé** (`getBoneTransform`) : le contrat `NativeSkeleton` = matrice affine monde
+   `[a, b, c, d, worldX, worldY]` (stride 6). Notre colle écrivait d'abord `[worldX,worldY,rot,sx,sy,0]` (faux),
+   corrigé en `[a,b,c,d,x,y]` — mais le split mat/pos du harnais a révélé `mat=2.00` (∈±1 → catastrophique) avec
+   un ulp de signe : signature d'une **transposition b↔c** (`b=-sin`, `c=+sin` → écart `2|sin|`, nul quand
+   `sin≈0`, position intacte). Ordre correct de l'oracle = **`[a, c, b, d, x, y]`**. Après fix : `mat` tombe à
+   **1.79e-7** (dérive flottante pure). *(Ces 2 bugs étaient invisibles sous unidbg — qui exécute le binaire
+   PerBlue, pas notre colle — d'où jamais vus avant le harnais.)*
+2. **`nextEvent` non branché** (renvoyait toujours `false`) → aucun callback `complete/end/start/…` → machines
+   d'état d'animation du jeu muettes en backend JNI autonome. Implémenté la **file d'événements spine-c** :
+   listener global sur `spAnimationState` (`rendererObject` porte une FIFO), empilée dans l'ordre de drain
+   interne de spine (`_spEventQueue`) pendant `apply/update`, dépilée par `nextEvent` → `out[0]=type PerBlue`
+   (`spEventType+1` : 1=start…6=event), `out[1]=trackIndex`. Certifié **0 diff / 8611 appels** (dont 423 events
+   réels). *(Piège : `dispose` doit appeler `spAnimationState_dispose` AVANT de libérer la FIFO — spine émet un
+   DISPOSE via le listener → use-after-free sinon, corrigé.)*
+3. **`setAnimation` mauvais retour** : le jeu fait `return natif + eventIDOffset`. Relevé contre l'oracle : le
+   natif renvoie un **compteur de trackEntry par animState** (1-based, ++ à chaque set/addAnimation), pas
+   l'animId ni le trackIndex. Implémenté (`EvQueue.seq`). Certifié **0 diff / 87**.
+
+### Verdict pour la décision « desktop dev-only vs production »
+- **Rendu / animation : FIDÈLE.** Structure et événements **identiques bit-à-bit** ; poses d'os fidèles à la
+  précision flottante (écart max **6e-5** sur des positions de l'ordre de la centaine = relatif ~1e-7, **borné**
+  car les transforms monde sont **recalculés à neuf chaque frame** depuis les keyframes — pas d'intégration, donc
+  **pas d'accumulation/chaos**). Sub-pixel → **invisible à l'écran**. ⇒ le spine-c recompilé est **jouable en
+  production pour le rendu** (reste : régler le blocage handle-registry du boot JNI autonome, + l'extension
+  cosmétique `setSlotEyeState` si on veut les expressions des yeux).
+- **Autorité de combat : reste sur unidbg (serveur).** La dérive flottante ARM↔x86 (même minime) rend le JNI
+  **non bit-identique** → un combat rejoué sur JNI pourrait diverger sur le long terme (sensibilité au chaos).
+  Donc la **validation autoritative** (#24) garde le binaire PerBlue via unidbg — ce qui **coïncide** avec le
+  principe §3 (serveur autoritatif) : c'est le serveur qui certifie, pas le client.
+- En clair : **desktop = production pour jouer/afficher** (fidèle à l'œil), **serveur = unidbg pour l'autorité**
+  (fidèle au bit). Les deux voies restent du **vrai code/données PerBlue** exécutés (§4), rien de réécrit (§2).
+
+Fichiers : `native/src/cspine_jni.c` (layout `[a,c,b,d,x,y]`, FIFO d'événements + `seq`), `desktop-port/src/
+main/java/dhbackend/spine/CompareBackend.java` (traduction d'os par nom, split diff matrice/position, rapport).
+
 ## 2026-07-16 (nuit 3 bis) — Opt.2 PROUVÉE : le vrai HeadlessCombat tourne headless via unidbg (ORACLE établi) + fix bytecode itf
 
 ### Résumé

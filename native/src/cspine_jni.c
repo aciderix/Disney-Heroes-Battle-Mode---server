@@ -206,15 +206,17 @@ JNIEXPORT jboolean JNICALL Java_com_perblue_heroes_cspine_Native_Skeleton_1setSk
 JNIEXPORT jboolean JNICALL Java_com_perblue_heroes_cspine_Native_Skeleton_1setSlotEyeState(JNIEnv* e, jclass c, jint h, jint slot, jint state) {
     (void)e; (void)c; (void)h; (void)slot; (void)state; return JNI_FALSE; /* extension PerBlue — à confirmer sur la lib ARM */
 }
-/* Contrat du jeu (NativeSkeleton) : STRIDE 6 floats/os [worldX, worldY, worldRotationX, worldScaleX,
-   worldScaleY, 0] (tmpTF=float[6], getBoneTransforms dimensionne count*6). Le 3ᵉ arg de getBoneTransforms
-   est le NOMBRE d'os (boucle 0..count), PAS un offset. (Avant : stride 7 + boucle idOff..len — toléré par
-   unidbg sans vérif de bornes, mais le vrai JNI déborde → AIOOBE. Corrigé pour matcher le binaire PerBlue.) */
+/* Contrat du jeu (NativeSkeleton) : STRIDE 6 floats/os = la MATRICE AFFINE monde de l'os
+   [a, b, c, d, worldX, worldY] (2x3 : rotation/échelle + translation), PAS [worldX,worldY,rot,sx,sy].
+   getBoneTransforms dimensionne count*6 ; son 3ᵉ arg est le NOMBRE d'os (boucle 0..count), PAS un offset.
+   (Corrigé pour matcher EXACTEMENT le binaire PerBlue — relevé par le harnais différentiel : unidbg écrivait
+   [a,b,c,d,x,y], notre glue écrivait [x,y,rot,sx,sy,0]. Les 2 bugs (layout + stride 7/boucle) étaient tolérés
+   sous unidbg — qui exécute le binaire PerBlue, pas notre glue — donc jamais vus avant.) */
 JNIEXPORT void JNICALL Java_com_perblue_heroes_cspine_Native_Skeleton_1getBoneTransform(JNIEnv* e, jclass c, jint h, jint boneId, jfloatArray out, jint off) {
     (void)c; spSkeleton* s = (spSkeleton*)ht_get(&t_skel, h);
     if (!s || boneId < 0 || boneId >= s->bonesCount) return;
     spBone* b = s->bones[boneId];
-    jfloat v[6] = { b->worldX, b->worldY, spBone_getWorldRotationX(b), spBone_getWorldScaleX(b), spBone_getWorldScaleY(b), 0 };
+    jfloat v[6] = { b->a, b->c, b->b, b->d, b->worldX, b->worldY };
     (*e)->SetFloatArrayRegion(e, out, off, 6, v);
 }
 JNIEXPORT void JNICALL Java_com_perblue_heroes_cspine_Native_Skeleton_1getBoneTransforms(JNIEnv* e, jclass c, jint h, jintArray ids, jint count, jfloatArray out, jint outOff) {
@@ -224,7 +226,7 @@ JNIEXPORT void JNICALL Java_com_perblue_heroes_cspine_Native_Skeleton_1getBoneTr
     for (jint i = 0; i < count; i++) {
         int bid = idp[i]; if (bid < 0 || bid >= s->bonesCount) continue;
         spBone* b = s->bones[bid];
-        jfloat v[6] = { b->worldX, b->worldY, spBone_getWorldRotationX(b), spBone_getWorldScaleX(b), spBone_getWorldScaleY(b), 0 };
+        jfloat v[6] = { b->a, b->c, b->b, b->d, b->worldX, b->worldY };
         (*e)->SetFloatArrayRegion(e, out, outOff + i*6, 6, v);
     }
     (*e)->ReleaseIntArrayElements(e, ids, idp, JNI_ABORT);
@@ -380,13 +382,44 @@ JNIEXPORT void JNICALL Java_com_perblue_heroes_cspine_Native_AnimationStateData_
         spAnimationStateData_setMix(asd, d->animations[fromA-1], d->animations[toA-1], dur);
 }
 
+/* ---- file d'événements par spAnimationState (contrat NativeAnimationState.eventPump : nextEvent(out) →
+   out[0] = type PerBlue (1=start, 2=interrupt, 3=end, 4=complete, 5=dispose, 6=event = spEventType+1),
+   out[1] = trackIndex ; renvoie true tant qu'un événement est dépilé). Le runtime spine-c appelle notre
+   listener PENDANT apply/update, dans son ordre de drain interne (_spEventQueue) → on empile dans cet
+   ordre exact, et le jeu dépile ensuite via eventPump. Sans ça, aucun callback complete/end/… → les
+   machines d'état d'animation du jeu ne tournent pas (backend JNI autonome). */
+typedef struct { int type, id; } EvItem;
+typedef struct { EvItem* buf; int head, tail, cap; int seq; } EvQueue;  /* seq = compteur de trackEntry par animState */
+static void evq_push(EvQueue* q, int type, int id) {
+    int count = q->cap ? (q->tail - q->head + q->cap) % q->cap : 0;
+    if (count + 1 >= q->cap) {                       /* grossit (gère aussi cap==0) ; garde 1 slot libre → full≠empty */
+        int nc = q->cap ? q->cap * 2 : 32;
+        EvItem* nb = (EvItem*)malloc(nc * sizeof(EvItem));
+        int k = 0; if (q->cap) for (int i = q->head; i != q->tail; i = (i+1)%q->cap) nb[k++] = q->buf[i];
+        free(q->buf); q->buf = nb; q->head = 0; q->tail = k; q->cap = nc;
+    }
+    q->buf[q->tail].type = type; q->buf[q->tail].id = id; q->tail = (q->tail + 1) % q->cap;
+}
+static int evq_pop(EvQueue* q, int* type, int* id) {
+    if (!q || q->head == q->tail) return 0;
+    *type = q->buf[q->head].type; *id = q->buf[q->head].id; q->head = (q->head + 1) % q->cap; return 1;
+}
+static void _dhAnimListener(spAnimationState* state, spEventType type, spTrackEntry* entry, spEvent* event) {
+    (void)event; EvQueue* q = (EvQueue*)state->rendererObject; if (!q) return;
+    evq_push(q, (int)type + 1, entry ? entry->trackIndex : 0);
+}
+
 /* =================================================================== AnimationState */
 JNIEXPORT jint JNICALL Java_com_perblue_heroes_cspine_Native_AnimationState_1create(JNIEnv* e, jclass c, jint asdHandle) {
     (void)e; (void)c; spAnimationStateData* asd = (spAnimationStateData*)ht_get(&t_asd, asdHandle); if (!asd) return 0;
-    spAnimationState* st = spAnimationState_create(asd); if (!st) return 0; return ht_add(&t_animState, st);
+    spAnimationState* st = spAnimationState_create(asd); if (!st) return 0;
+    EvQueue* q = (EvQueue*)calloc(1, sizeof(EvQueue)); st->rendererObject = q; st->listener = _dhAnimListener;
+    return ht_add(&t_animState, st);
 }
 JNIEXPORT void JNICALL Java_com_perblue_heroes_cspine_Native_AnimationState_1dispose(JNIEnv* e, jclass c, jint h) {
-    (void)e; (void)c; spAnimationState* st = (spAnimationState*)ht_take(&t_animState, h); if (st) spAnimationState_dispose(st);
+    (void)e; (void)c; spAnimationState* st = (spAnimationState*)ht_take(&t_animState, h);
+    /* dispose D'ABORD (spine émet un DISPOSE via le listener → la file doit être encore valide), PUIS libère. */
+    if (st) { EvQueue* q = (EvQueue*)st->rendererObject; spAnimationState_dispose(st); if (q) { free(q->buf); free(q); } }
 }
 JNIEXPORT void JNICALL Java_com_perblue_heroes_cspine_Native_AnimationState_1update(JNIEnv* e, jclass c, jint h, jfloat dt) {
     (void)e; (void)c; spAnimationState* st = (spAnimationState*)ht_get(&t_animState, h); if (st) spAnimationState_update(st, dt);
@@ -400,12 +433,17 @@ static spAnimation* animOf(spAnimationState* st, int id) {
     spSkeletonData* d = st->data->skeletonData; return (id>=1 && id<=d->animationsCount) ? d->animations[id-1] : 0;
 }
 JNIEXPORT jint JNICALL Java_com_perblue_heroes_cspine_Native_AnimationState_1setAnimation(JNIEnv* e, jclass c, jint h, jint track, jint animId, jboolean loop) {
+    /* Renvoie un COMPTEUR de trackEntry par animState (1-based, incrémenté à chaque set/addAnimation) : c'est
+       l'identifiant d'instance d'animation que le jeu combine à eventIDOffset (relevé contre l'oracle unidbg :
+       u=1,2,3… par animState, indépendant de l'animId et du track). */
     (void)e; (void)c; spAnimationState* st = (spAnimationState*)ht_get(&t_animState, h); if (!st) return -1;
-    spAnimation* a = animOf(st, animId); if (!a) return -1; spAnimationState_setAnimation(st, track, a, loop); return animId;
+    spAnimation* a = animOf(st, animId); if (!a) return -1; spAnimationState_setAnimation(st, track, a, loop);
+    EvQueue* q = (EvQueue*)st->rendererObject; return q ? ++q->seq : 0;
 }
 JNIEXPORT jint JNICALL Java_com_perblue_heroes_cspine_Native_AnimationState_1addAnimation(JNIEnv* e, jclass c, jint h, jint track, jint animId, jboolean loop, jfloat delay) {
     (void)e; (void)c; spAnimationState* st = (spAnimationState*)ht_get(&t_animState, h); if (!st) return -1;
-    spAnimation* a = animOf(st, animId); if (!a) return -1; spAnimationState_addAnimation(st, track, a, loop, delay); return animId;
+    spAnimation* a = animOf(st, animId); if (!a) return -1; spAnimationState_addAnimation(st, track, a, loop, delay);
+    EvQueue* q = (EvQueue*)st->rendererObject; return q ? ++q->seq : 0;
 }
 JNIEXPORT void JNICALL Java_com_perblue_heroes_cspine_Native_AnimationState_1clearTracks(JNIEnv* e, jclass c, jint h) {
     (void)e; (void)c; spAnimationState* st = (spAnimationState*)ht_get(&t_animState, h); if (st) spAnimationState_clearTracks(st);
@@ -422,5 +460,8 @@ JNIEXPORT jfloat JNICALL Java_com_perblue_heroes_cspine_Native_AnimationState_1g
     spTrackEntry* t = spAnimationState_getCurrent(st, track); return t ? t->trackTime : 0;
 }
 JNIEXPORT jboolean JNICALL Java_com_perblue_heroes_cspine_Native_AnimationState_1nextEvent(JNIEnv* e, jclass c, jint h, jintArray out) {
-    (void)e; (void)c; (void)h; (void)out; return JNI_FALSE; /* file d'événements — via listener spine-c, à brancher */
+    (void)c; spAnimationState* st = (spAnimationState*)ht_get(&t_animState, h); if (!st) return JNI_FALSE;
+    EvQueue* q = (EvQueue*)st->rendererObject; int type, id;
+    if (!evq_pop(q, &type, &id)) return JNI_FALSE;
+    jint v[2] = { type, id }; (*e)->SetIntArrayRegion(e, out, 0, 2, v); return JNI_TRUE;
 }
