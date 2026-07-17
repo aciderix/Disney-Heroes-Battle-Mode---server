@@ -209,10 +209,26 @@ public final class JavaSpineBackend {
         s.state.addAnimation(track, (Animation) s.anims.get(animId - 1), loop, delay); return animId;
     }
     public void AnimationState_clearTracks(int h) { St s = (St) states.get(h); if (s != null) s.state.clearTracks(); }
+    // DEV diag : histogramme par NOM d'animation courante (les IDs diffèrent par squelette → l'agrégat par ID
+    // est ambigu ; le nom est univoque). Rempli seulement si -Ddh.cspineprofile.
+    public static final java.util.concurrent.ConcurrentHashMap<String, java.util.concurrent.atomic.LongAdder> CUR_NAMES = new java.util.concurrent.ConcurrentHashMap<>();
+    private static final boolean PROF = System.getProperty("dh.cspineprofile") != null && !"0".equals(System.getProperty("dh.cspineprofile"));
+    public static String reportCurNames() {
+        StringBuilder b = new StringBuilder("[java-spine] anim courante par nom:\n");
+        CUR_NAMES.entrySet().stream().sorted((x, y) -> Long.compare(y.getValue().sum(), x.getValue().sum()))
+            .forEach(e -> b.append(String.format("  %-26s %d%n", e.getKey(), e.getValue().sum())));
+        return b.toString();
+    }
+
     public int AnimationState_getCurrentAnimationID(int h, int track) {   // 1-based ; 0 = aucune (JNI)
         St s = (St) states.get(h); if (s == null) return 0;
         AnimationState.TrackEntry t = s.state.getCurrent(track); if (t == null || t.getAnimation() == null) return 0;
+        // Une anim NON-BOUCLÉE terminée n'est plus "courante" (spine-c clear le track → getCurrent renvoie null →
+        // id 0 ; sinon le jeu croirait l'unité toujours dans l'anim finie et n'enchaînerait jamais l'action
+        // suivante = skill). Mesuré : l'oracle a une distribution d'anims étalée, pas bloquée sur "attack".
+        if (!t.getLoop() && t.isComplete()) return 0;
         Animation a = t.getAnimation();
+        if (PROF) CUR_NAMES.computeIfAbsent(a.getName(), k -> new java.util.concurrent.atomic.LongAdder()).increment();
         for (int i = 0; i < s.anims.size; i++) if (s.anims.get(i) == a) return i + 1;
         return 0;
     }

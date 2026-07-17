@@ -7,6 +7,42 @@
 
 ---
 
+## 2026-07-16 (nuit 4 bis) — Opt.3 certification : divergences d'ANIMATION diagnostiquées (dont 1 vérifiée sur source spine-c)
+
+### Résumé
+Débogage de la divergence de cadence (java stagne : 3/5 kills vs oracle 5/5). Méthode : instrumentation diff
+(maxAnimTime, setAnimId, histogramme d'anim courante par NOM, dump getBoneTransform) java vs oracle unidbg.
+**Positions d'os : cohérentes** (valeurs caractéristiques identiques). **Bug d'animation trouvé & VÉRIFIÉ sur la
+source spine-c**, mais ≥1 couche résiduelle subsiste → combat pas encore fidèle.
+
+### Diagnostics (java vs oracle unidbg, 1-1 seed 123456789)
+- **Histogramme d'anim courante par nom** : java bloqué en `attack`(14488)+`hit`(7170), **0 skill** ; oracle
+  étalé. ⇒ les unités attaquent mais n'enchaînent jamais les skills (pas d'énergie → dégâts lents).
+- **`getBoneTransform`** : java `[worldX,worldY,rot,sx,sy]` = mêmes valeurs caractéristiques que l'oracle →
+  positions d'os OK (pas la cause).
+
+### Bug VÉRIFIÉ sur source spine-c (`spine-c/src/spine/AnimationState.c:296-300`)
+`spAnimationState_update` **CLEAR le track** (`self->tracks[i] = 0`) quand « pas de next, `trackTime>=trackEnd`,
+pas de mixingFrom » → `getCurrent`→null→`getCurrentAnimID`=0. **spine-libgdx NE clear PAS** : l'entry non-bouclée
+TERMINÉE persiste → `getCurrent` la renvoie → le jeu croit l'unité toujours en `attack` → n'enchaîne jamais le
+skill (bloqué). **Fix partiel** : `getCurrentAnimationID` renvoie 0 si `!getLoop() && isComplete()` (mime le
+clear). Effet : distribution redevenue normale (attack 14488→288, walk/idle dominants). **MAIS** : (a) fix
+INCOMPLET (ne corrige que l'ID, pas `getCurrentAnimationTime`/`apply`/bones → incohérent avec un vrai clear qui
+remet en pose de repos) ; (b) le combat **stagne toujours** (3/5 kills) → ≥1 divergence de plus.
+
+### Bilan certification
+Le combat tourne (9× plus vite) et l'oracle a permis de trouver/vérifier des bugs réels (stride 6, getAnimationTime
+wrappé, clear de track spine-c). **La fidélité complète reste à atteindre** : c'est un chantier multi-bugs (la
+prochaine couche = probablement rendre le clear de track COMPLET — vraiment clear l'entry après update comme
+spine-c, pour que `apply`/bones/temps soient cohérents — puis re-diff). Le fix `isComplete` actuel est une
+**approximation NON entièrement vérifiée** (§4bis) → à compléter ou à valider strictement avant tout déploiement.
+
+### Fichiers
+`.../dhbackend/spine/JavaSpineBackend.java` (fix isComplete + histo noms), `.../cspine/Native.java` (diag
+histo/bt). Docs : JOURNAL. DEV-gated, backend unidbg par défaut → aucune régression.
+
+---
+
 ## 2026-07-16 (nuit 4) — Opt.3 Phase 1 : backend Java-spine — le combat TOURNE (9× plus vite), certification en cours
 
 ### Résumé

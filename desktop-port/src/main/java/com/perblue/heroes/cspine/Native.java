@@ -30,14 +30,19 @@ public class Native {
     private static void p(String m) {
         if (PROF) HITS.computeIfAbsent(m, k -> new java.util.concurrent.atomic.LongAdder()).increment();
     }
-    // Diag Opt.3 : le temps d'animation avance-t-il ? quelles animations sont jouées ?
+    // Diag Opt.3 : le temps d'animation avance-t-il ? quelles animations sont jouées/courantes ?
     static volatile float DIAG_maxAnimTime = 0;
     static volatile int DIAG_setAnimMin = Integer.MAX_VALUE, DIAG_setAnimMax = Integer.MIN_VALUE, DIAG_setAnimNeg = 0;
-    public static void resetProfile() { HITS.clear(); DIAG_maxAnimTime = 0; DIAG_setAnimMin = Integer.MAX_VALUE; DIAG_setAnimMax = Integer.MIN_VALUE; DIAG_setAnimNeg = 0; }
+    static final long[] DIAG_curIdHist = new long[32];   // histogramme des getCurrentAnimationID renvoyés
+    public static void resetProfile() { HITS.clear(); DIAG_maxAnimTime = 0; DIAG_setAnimMin = Integer.MAX_VALUE; DIAG_setAnimMax = Integer.MIN_VALUE; DIAG_setAnimNeg = 0; java.util.Arrays.fill(DIAG_curIdHist, 0); }
     public static String reportProfile() {
+        StringBuilder hist = new StringBuilder();
+        for (int i = 0; i < DIAG_curIdHist.length; i++) if (DIAG_curIdHist[i] > 0) hist.append(" id").append(i).append('=').append(DIAG_curIdHist[i]);
         StringBuilder b = new StringBuilder("[cspine-profile] backend=" + (JAVA ? "java" : "unidbg") + " "
                 + HITS.size() + " méthodes ; maxAnimTime=" + DIAG_maxAnimTime + "s setAnimId=["
-                + DIAG_setAnimMin + ".." + DIAG_setAnimMax + "] neg=" + DIAG_setAnimNeg + " :\n");
+                + DIAG_setAnimMin + ".." + DIAG_setAnimMax + "] neg=" + DIAG_setAnimNeg
+                + "\n[cspine-profile] curIdHist:" + hist + "\n");
+        if (JAVA) b.append(JavaSpineBackend.reportCurNames());
         HITS.entrySet().stream()
             .sorted((x, y) -> Long.compare(y.getValue().sum(), x.getValue().sum()))
             .forEach(e -> b.append(String.format("  %-42s %d%n", e.getKey(), e.getValue().sum())));
@@ -80,7 +85,8 @@ public class Native {
     static void Skeleton_setTintBlack(int handle, float r, float g, float b) { p("Skeleton_setTintBlack"); if (JAVA) JB.Skeleton_setTintBlack(handle, r, g, b); else UnidbgVM.get().skeletonSetTintBlack(handle, r, g, b); }
     static boolean Skeleton_setSkin(int handle, String name) { p("Skeleton_setSkin"); return JAVA ? JB.Skeleton_setSkin(handle, name) : UnidbgVM.get().skeletonSetSkin(handle, name); }
     static boolean Skeleton_setSlotEyeState(int handle, int slot, int state) { p("Skeleton_setSlotEyeState"); return JAVA ? JB.Skeleton_setSlotEyeState(handle, slot, state) : UnidbgVM.get().skeletonSetSlotEyeState(handle, slot, state); }
-    static void Skeleton_getBoneTransform(int handle, int boneId, float[] out, int off) { p("Skeleton_getBoneTransform"); if (JAVA) JB.Skeleton_getBoneTransform(handle, boneId, out, off); else UnidbgVM.get().skeletonGetBoneTransform(handle, boneId, out, off); }
+    static volatile int DIAG_btLogged = 0;
+    static void Skeleton_getBoneTransform(int handle, int boneId, float[] out, int off) { p("Skeleton_getBoneTransform"); if (JAVA) JB.Skeleton_getBoneTransform(handle, boneId, out, off); else UnidbgVM.get().skeletonGetBoneTransform(handle, boneId, out, off); if (PROF && DIAG_btLogged < 6) { DIAG_btLogged++; System.out.printf("[bt] skel=%d bone=%d -> x=%.3f y=%.3f rot=%.3f sx=%.3f sy=%.3f%n", handle, boneId, out[off], out[off+1], out[off+2], out[off+3], out[off+4]); } }
     static void Skeleton_getBoneTransforms(int handle, int[] boneIds, int idOff, float[] out, int outOff) { p("Skeleton_getBoneTransforms"); if (JAVA) JB.Skeleton_getBoneTransforms(handle, boneIds, idOff, out, outOff); else UnidbgVM.get().skeletonGetBoneTransforms(handle, boneIds, idOff, out, outOff); }
     static void Skeleton_setBoneTransform(int handle, int boneId, float x, float y, float rot, float sx, float sy, float shx, float shy) { p("Skeleton_setBoneTransform"); if (JAVA) JB.Skeleton_setBoneTransform(handle, boneId, x, y, rot, sx, sy, shx, shy); else UnidbgVM.get().skeletonSetBoneTransform(handle, boneId, x, y, rot, sx, sy, shx, shy); }
     static void Skeleton_getPosedBounds(int handle, float[] out) { p("Skeleton_getPosedBounds"); if (JAVA) JB.Skeleton_getPosedBounds(handle, out); else UnidbgVM.get().skeletonGetPosedBounds(handle, out); }
@@ -101,7 +107,7 @@ public class Native {
     static int AnimationState_setAnimation(int handle, int track, int animId, boolean loop) { p("AnimationState_setAnimation"); if (animId < DIAG_setAnimMin) DIAG_setAnimMin = animId; if (animId > DIAG_setAnimMax) DIAG_setAnimMax = animId; if (animId <= 0) DIAG_setAnimNeg++; return JAVA ? JB.AnimationState_setAnimation(handle, track, animId, loop) : UnidbgVM.get().animStateSetAnimation(handle, track, animId, loop); }
     static int AnimationState_addAnimation(int handle, int track, int animId, boolean loop, float delay) { p("AnimationState_addAnimation"); return JAVA ? JB.AnimationState_addAnimation(handle, track, animId, loop, delay) : UnidbgVM.get().animStateAddAnimation(handle, track, animId, loop, delay); }
     static void AnimationState_clearTracks(int handle) { p("AnimationState_clearTracks"); if (JAVA) JB.AnimationState_clearTracks(handle); else UnidbgVM.get().animStateClearTracks(handle); }
-    static int AnimationState_getCurrentAnimationID(int handle, int track) { p("AnimationState_getCurrentAnimationID"); return JAVA ? JB.AnimationState_getCurrentAnimationID(handle, track) : UnidbgVM.get().animStateGetCurrentAnimationID(handle, track); }
+    static int AnimationState_getCurrentAnimationID(int handle, int track) { p("AnimationState_getCurrentAnimationID"); int id = JAVA ? JB.AnimationState_getCurrentAnimationID(handle, track) : UnidbgVM.get().animStateGetCurrentAnimationID(handle, track); if (id >= 0 && id < DIAG_curIdHist.length) DIAG_curIdHist[id]++; return id; }
     static float AnimationState_getCurrentAnimationTime(int handle, int track) { p("AnimationState_getCurrentAnimationTime"); float t = JAVA ? JB.AnimationState_getCurrentAnimationTime(handle, track) : UnidbgVM.get().animStateGetCurrentAnimationTime(handle, track); if (t > DIAG_maxAnimTime) DIAG_maxAnimTime = t; return t; }
     static boolean AnimationState_nextEvent(int handle, int[] out) { p("AnimationState_nextEvent"); return JAVA ? JB.AnimationState_nextEvent(handle, out) : UnidbgVM.get().animStateNextEvent(handle, out); }
 }
