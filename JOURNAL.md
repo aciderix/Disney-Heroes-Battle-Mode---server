@@ -324,8 +324,23 @@ combat (NORMAL 1-1, 973 ticks, 5 morts, WIN — identique côté unidbg). Résul
 - En clair : **desktop = production pour jouer/afficher** (fidèle à l'œil), **serveur = unidbg pour l'autorité**
   (fidèle au bit). Les deux voies restent du **vrai code/données PerBlue** exécutés (§4), rien de réécrit (§2).
 
+### Perf (FPS) — pourquoi le backend décide de la fluidité
+Le harnais chronomètre les DEUX backends sur le **même mix d'appels** (fenêtre combat, hors `getVertices`) :
+**unidbg (ARM émulé) = 16 900 ms vs JNI (natif x86) = 337 ms → le natif est ~50× plus rapide.** Sur 2919 ticks
+(3 combats × 973) : ~**5,8 ms/frame** de travail squelettique côté unidbg vs ~**0,12 ms/frame** côté natif.
+- **Aujourd'hui (défaut = unidbg)** : ~5,8 ms/frame RIEN QUE pour l'animation squelettique, AVANT le meshing
+  (`getVertices`, aussi émulé, l'appel spine le plus lourd) et le GL → budget 60fps (16,6 ms) explosé en combat
+  → **saccadé (FPS à un chiffre / bas). C'est un outil de dev, pas jouable fluide.**
+- **Backend natif JNI (certifié)** : ~0,12 ms/frame → spine **n'est plus le goulot**, 60fps atteignable ; le
+  coût résiduel devient le GL (ici llvmpipe logiciel headless ; sur une vraie machine = GPU). Le 50× est
+  **conservateur** (exclut `getVertices`, où la pénalité d'émulation est encore plus forte).
+- **Bloquant restant avant de mesurer le FPS natif bout-en-bout** : le boot JNI-autonome bute sur le
+  handle-registry (aujourd'hui contourné par le mode compare, où le jeu boote sur unidbg). À lever pour un
+  desktop natif de production. Le ratio par-appel, lui, est **mesuré** (pas estimé).
+
 Fichiers : `native/src/cspine_jni.c` (layout `[a,c,b,d,x,y]`, FIFO d'événements + `seq`), `desktop-port/src/
-main/java/dhbackend/spine/CompareBackend.java` (traduction d'os par nom, split diff matrice/position, rapport).
+main/java/dhbackend/spine/CompareBackend.java` (traduction d'os par nom, split diff matrice/position, chrono
+par backend, rapport).
 
 ## 2026-07-16 (nuit 3 bis) — Opt.2 PROUVÉE : le vrai HeadlessCombat tourne headless via unidbg (ORACLE établi) + fix bytecode itf
 

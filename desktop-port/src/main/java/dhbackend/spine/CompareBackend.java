@@ -43,6 +43,10 @@ public final class CompareBackend {
         Integer j = m.get(uBoneId); return j == null ? -1 : j;
     }
 
+    // ---- chrono par backend (perf) : temps passé côté unidbg(émulé ARM) vs JNI(natif x86) sur le MÊME mix
+    //      d'appels du hot-path squelettique (update/apply/transforms/events). Actif seulement en fenêtre combat. ----
+    public final LongAdder uNanos = new LongAdder(), jNanos = new LongAdder();
+
     // ---- rapport de diffs ----
     static final class Stat { final LongAdder calls = new LongAdder(), diffs = new LongAdder(); volatile long maxUlp = 0; volatile double maxAbs = 0; volatile double maxAbsMat = 0; volatile double maxAbsPos = 0; volatile String firstEx; }
     private final ConcurrentHashMap<String, Stat> stats = new ConcurrentHashMap<>();
@@ -59,6 +63,10 @@ public final class CompareBackend {
                     e.getKey(), s.calls.sum(), s.diffs.sum(), s.maxAbs, split, s.maxUlp, s.firstEx == null ? "" : "  ex: " + s.firstEx)); });
         long tot = stats.values().stream().mapToLong(s -> s.diffs.sum()).sum();
         b.append("  ==> TOTAL DIFFS = ").append(tot).append(tot == 0 ? "  ✅ CERTIFIÉ IDENTIQUE" : "  ❌ divergences").append('\n');
+        double uMs = uNanos.sum() / 1e6, jMs = jNanos.sum() / 1e6;
+        b.append(String.format("  [perf] hot-path squelettique (update/apply/transforms/events, HORS getVertices) sur le MÊME mix :%n"
+                + "         unidbg(ARM émulé)=%.0f ms   JNI(natif x86)=%.1f ms   → natif ≈ %.0f× plus rapide%n",
+                uMs, jMs, jMs > 0 ? uMs / jMs : 0));
         return b.toString();
     }
 
@@ -112,33 +120,33 @@ public final class CompareBackend {
     // ================= Skeleton
     public int Skeleton_create(int d) { int u = UnidbgVM.get().skeletonCreate(d); int j = HostSpine.Skeleton_create(tr(d)); u2j.put(u, j); skel2data.put(u, d); return u; }
     public void Skeleton_dispose(int h) { UnidbgVM.get().skeletonDispose(h); HostSpine.Skeleton_dispose(tr(h)); u2j.remove(h); }
-    public void Skeleton_update(int h, float dt) { UnidbgVM.get().skeletonUpdate(h, dt); if (active) HostSpine.Skeleton_update(tr(h), dt); }
-    public void Skeleton_updateWorldTransform(int h) { UnidbgVM.get().skeletonUpdateWorldTransform(h); if (active) HostSpine.Skeleton_updateWorldTransform(tr(h)); }
+    public void Skeleton_update(int h, float dt) { long t0=System.nanoTime(); UnidbgVM.get().skeletonUpdate(h, dt); if (active) { long t1=System.nanoTime(); HostSpine.Skeleton_update(tr(h), dt); long t2=System.nanoTime(); uNanos.add(t1-t0); jNanos.add(t2-t1); } }
+    public void Skeleton_updateWorldTransform(int h) { long t0=System.nanoTime(); UnidbgVM.get().skeletonUpdateWorldTransform(h); if (active) { long t1=System.nanoTime(); HostSpine.Skeleton_updateWorldTransform(tr(h)); long t2=System.nanoTime(); uNanos.add(t1-t0); jNanos.add(t2-t1); } }
     public void Skeleton_setToSetupPose(int h) { UnidbgVM.get().skeletonSetToSetupPose(h); if (active) HostSpine.Skeleton_setToSetupPose(tr(h)); }
     public void Skeleton_setColor(int h, float r, float g, float b, float a) { UnidbgVM.get().skeletonSetColor(h, r, g, b, a); if (active) HostSpine.Skeleton_setColor(tr(h), r, g, b, a); }
     public void Skeleton_setTintBlack(int h, float r, float g, float b) { UnidbgVM.get().skeletonSetTintBlack(h, r, g, b); if (active) HostSpine.Skeleton_setTintBlack(tr(h), r, g, b); }
     public boolean Skeleton_setSkin(int h, String n) { boolean u = UnidbgVM.get().skeletonSetSkin(h, n); if (active) cb("Skeleton_setSkin", u, HostSpine.Skeleton_setSkin(tr(h), n)); return u; }
     public boolean Skeleton_setSlotEyeState(int h, int s, int st) { boolean u = UnidbgVM.get().skeletonSetSlotEyeState(h, s, st); if (active) cb("Skeleton_setSlotEyeState", u, HostSpine.Skeleton_setSlotEyeState(tr(h), s, st)); return u; }
     public void Skeleton_getBoneTransform(int h, int bid, float[] out, int off) {
-        UnidbgVM.get().skeletonGetBoneTransform(h, bid, out, off);
+        long t0=System.nanoTime(); UnidbgVM.get().skeletonGetBoneTransform(h, bid, out, off); long tU=System.nanoTime()-t0;
         if (!active) return;
         int jb = jBoneOf(h, bid);   // traduit l'index d'os unidbg → index JNI par NOM (PerBlue réordonne les os)
         Stat s = st("Skeleton_getBoneTransform"); s.calls.increment();
         if (jb < 0) { st("Skeleton_getBoneTransform.untranslated").calls.increment(); return; }  // os non traduisible (getBoneID pas appelé) → skip
-        float[] ju = new float[off + 6]; HostSpine.Skeleton_getBoneTransform(tr(h), jb, ju, off);
+        float[] ju = new float[off + 6]; long t2=System.nanoTime(); HostSpine.Skeleton_getBoneTransform(tr(h), jb, ju, off); uNanos.add(tU); jNanos.add(System.nanoTime()-t2);
         boolean d = false; long mu = 0; double ma = 0, mMat = 0, mPos = 0;
         // layout = matrice affine [a,b,c,d, worldX,worldY] : 0-3 = rotation/échelle (∈ ±1), 4-5 = translation (∈ ±centaines)
         for (int i = 0; i < 6; i++) { float a = out[off + i], c = ju[off + i]; if (Float.floatToRawIntBits(a) != Float.floatToRawIntBits(c)) { d = true; mu = Math.max(mu, ulp(a, c)); double ad = Math.abs((double) a - c); ma = Math.max(ma, ad); if (i < 4) mMat = Math.max(mMat, ad); else mPos = Math.max(mPos, ad); } }
         if (d) { s.diffs.increment(); if (mu > s.maxUlp) s.maxUlp = mu; if (ma > s.maxAbs) s.maxAbs = ma; if (mMat > s.maxAbsMat) s.maxAbsMat = mMat; if (mPos > s.maxAbsPos) s.maxAbsPos = mPos; if (s.firstEx == null) s.firstEx = "uBone=" + bid + " jBone=" + jb + " maxAbs=" + ma; }
     }
     public void Skeleton_getBoneTransforms(int h, int[] ids, int count, float[] out, int outOff) {
-        UnidbgVM.get().skeletonGetBoneTransforms(h, ids, count, out, outOff);
+        long t0=System.nanoTime(); UnidbgVM.get().skeletonGetBoneTransforms(h, ids, count, out, outOff); long tU=System.nanoTime()-t0;
         if (!active) return;
         Stat s = st("Skeleton_getBoneTransforms"); s.calls.increment();
         int[] jids = new int[ids.length]; boolean ok = true;
         for (int i = 0; i < count; i++) { int jb = jBoneOf(h, ids[i]); if (jb < 0) { ok = false; break; } jids[i] = jb; }
         if (!ok) { st("Skeleton_getBoneTransforms.untranslated").calls.increment(); return; }  // os non traduisible → skip
-        float[] ju = new float[out.length]; HostSpine.Skeleton_getBoneTransforms(tr(h), jids, count, ju, outOff);
+        float[] ju = new float[out.length]; long t2=System.nanoTime(); HostSpine.Skeleton_getBoneTransforms(tr(h), jids, count, ju, outOff); uNanos.add(tU); jNanos.add(System.nanoTime()-t2);
         boolean d = false; long mu = 0; double ma = 0, mMat = 0, mPos = 0;
         for (int i = 0; i < count * 6; i++) { float a = out[outOff + i], c = ju[outOff + i]; if (Float.floatToRawIntBits(a) != Float.floatToRawIntBits(c)) { d = true; mu = Math.max(mu, ulp(a, c)); double ad = Math.abs((double) a - c); ma = Math.max(ma, ad); if (i % 6 < 4) mMat = Math.max(mMat, ad); else mPos = Math.max(mPos, ad); } }
         if (d) { s.diffs.increment(); if (mu > s.maxUlp) s.maxUlp = mu; if (ma > s.maxAbs) s.maxAbs = ma; if (mMat > s.maxAbsMat) s.maxAbsMat = mMat; if (mPos > s.maxAbsPos) s.maxAbsPos = mPos; if (s.firstEx == null) s.firstEx = "maxAbs=" + ma; }
@@ -170,12 +178,12 @@ public final class CompareBackend {
     // ================= AnimationState
     public int AnimationState_create(int a) { int u = UnidbgVM.get().animStateCreate(a); int j = HostSpine.AnimationState_create(tr(a)); u2j.put(u, j); return u; }
     public void AnimationState_dispose(int h) { UnidbgVM.get().animStateDispose(h); HostSpine.AnimationState_dispose(tr(h)); u2j.remove(h); }
-    public void AnimationState_update(int h, float dt) { UnidbgVM.get().animStateUpdate(h, dt); if (active) HostSpine.AnimationState_update(tr(h), dt); }
-    public void AnimationState_apply(int h, int sk) { UnidbgVM.get().animStateApply(h, sk); if (active) HostSpine.AnimationState_apply(tr(h), tr(sk)); }
-    public int AnimationState_setAnimation(int h, int tr2, int id, boolean loop) { int u = UnidbgVM.get().animStateSetAnimation(h, tr2, id, loop); if (active) ci("AnimationState_setAnimation", u, HostSpine.AnimationState_setAnimation(tr(h), tr2, id, loop)); return u; }
+    public void AnimationState_update(int h, float dt) { long t0=System.nanoTime(); UnidbgVM.get().animStateUpdate(h, dt); if (active) { long t1=System.nanoTime(); HostSpine.AnimationState_update(tr(h), dt); long t2=System.nanoTime(); uNanos.add(t1-t0); jNanos.add(t2-t1); } }
+    public void AnimationState_apply(int h, int sk) { long t0=System.nanoTime(); UnidbgVM.get().animStateApply(h, sk); if (active) { long t1=System.nanoTime(); HostSpine.AnimationState_apply(tr(h), tr(sk)); long t2=System.nanoTime(); uNanos.add(t1-t0); jNanos.add(t2-t1); } }
+    public int AnimationState_setAnimation(int h, int tr2, int id, boolean loop) { long t0=System.nanoTime(); int u = UnidbgVM.get().animStateSetAnimation(h, tr2, id, loop); if (active) { long t1=System.nanoTime(); ci("AnimationState_setAnimation", u, HostSpine.AnimationState_setAnimation(tr(h), tr2, id, loop)); long t2=System.nanoTime(); uNanos.add(t1-t0); jNanos.add(t2-t1); } return u; }
     public int AnimationState_addAnimation(int h, int tr2, int id, boolean loop, float delay) { int u = UnidbgVM.get().animStateAddAnimation(h, tr2, id, loop, delay); if (active) ci("AnimationState_addAnimation", u, HostSpine.AnimationState_addAnimation(tr(h), tr2, id, loop, delay)); return u; }
     public void AnimationState_clearTracks(int h) { UnidbgVM.get().animStateClearTracks(h); if (active) HostSpine.AnimationState_clearTracks(tr(h)); }
     public int AnimationState_getCurrentAnimationID(int h, int tr2) { int u = UnidbgVM.get().animStateGetCurrentAnimationID(h, tr2); if (active) ci("AnimationState_getCurrentAnimationID", u, HostSpine.AnimationState_getCurrentAnimationID(tr(h), tr2)); return u; }
     public float AnimationState_getCurrentAnimationTime(int h, int tr2) { float u = UnidbgVM.get().animStateGetCurrentAnimationTime(h, tr2); if (active) cf("AnimationState_getCurrentAnimationTime", u, HostSpine.AnimationState_getCurrentAnimationTime(tr(h), tr2)); return u; }
-    public boolean AnimationState_nextEvent(int h, int[] out) { boolean u = UnidbgVM.get().animStateNextEvent(h, out); if (active) { int[] ju = new int[out.length]; cb("AnimationState_nextEvent", u, HostSpine.AnimationState_nextEvent(tr(h), ju)); } return u; }
+    public boolean AnimationState_nextEvent(int h, int[] out) { long t0=System.nanoTime(); boolean u = UnidbgVM.get().animStateNextEvent(h, out); if (active) { long t1=System.nanoTime(); int[] ju = new int[out.length]; boolean j = HostSpine.AnimationState_nextEvent(tr(h), ju); long t2=System.nanoTime(); uNanos.add(t1-t0); jNanos.add(t2-t1); cb("AnimationState_nextEvent", u, j); } return u; }
 }
