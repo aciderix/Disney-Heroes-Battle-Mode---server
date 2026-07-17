@@ -135,13 +135,13 @@ JOPTS="$JOPTS -Ddh.spinelib=$(cd .. && pwd)/native/reference/libspine-native.so"
 # au lieu d'unidbg. Le runtime Java (SkeletonBinary) exige DataInput.readString(), absent du stub 215o de
 # game-logic (dex2jar) : on fait gagner le DataInput COMPLET de gdx-1.9.7 en le déposant dans le dir de classes
 # (PREMIER sur le CP → ombrage le stub). Superset correct → inoffensif pour le chemin unidbg par défaut.
-if [ "${DH_SPINEBACKEND:-}" = "jni" ]; then
-  # Opt.3 « JNI natif » : le VRAI spine-c officiel 3.6 (colle cspine_jni.c d'origine) compilé HÔTE x86-64,
-  # appelé en JNI réel (pas d'émulation ARM). Fidélité par construction. La lib est renommée pour se lier à
-  # la classe HostSpine (rename mécanique des symboles JNI, logique C inchangée).
-  JOPTS="$JOPTS -Ddh.spinebackend=jni"
+if [ "${DH_SPINEBACKEND:-}" = "jni" ] || [ "${DH_SPINEBACKEND:-}" = "compare" ]; then
+  # jni : le VRAI spine-c officiel 3.6 (colle cspine_jni.c) compilé HÔTE x86-64, en JNI réel (pas d'émulation).
+  # compare : harnais différentiel — le jeu tourne sur unidbg (oracle), le JNI tourne en parallèle et on diffe.
+  # Les deux ont besoin de libhostspine64.so (classe HostSpine).
+  JOPTS="$JOPTS -Ddh.spinebackend=${DH_SPINEBACKEND}"
   HOSTLIB="$(cd .. && pwd)/native/build/libhostspine64.so"
-  [ -f "$HOSTLIB" ] || echo "[desktop] WARN: $HOSTLIB introuvable (build : native/build.sh + rename)"
+  [ -f "$HOSTLIB" ] || echo "[desktop] WARN: $HOSTLIB introuvable (build : native/build.sh puis native/build-hostspine.sh)"
   JOPTS="$JOPTS -Ddh.hostspine=$HOSTLIB"
 elif [ "${DH_SPINEBACKEND:-}" = "java" ]; then
   JOPTS="$JOPTS -Ddh.spinebackend=java"

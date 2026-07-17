@@ -206,21 +206,26 @@ JNIEXPORT jboolean JNICALL Java_com_perblue_heroes_cspine_Native_Skeleton_1setSk
 JNIEXPORT jboolean JNICALL Java_com_perblue_heroes_cspine_Native_Skeleton_1setSlotEyeState(JNIEnv* e, jclass c, jint h, jint slot, jint state) {
     (void)e; (void)c; (void)h; (void)slot; (void)state; return JNI_FALSE; /* extension PerBlue — à confirmer sur la lib ARM */
 }
+/* Contrat du jeu (NativeSkeleton) : STRIDE 6 floats/os [worldX, worldY, worldRotationX, worldScaleX,
+   worldScaleY, 0] (tmpTF=float[6], getBoneTransforms dimensionne count*6). Le 3ᵉ arg de getBoneTransforms
+   est le NOMBRE d'os (boucle 0..count), PAS un offset. (Avant : stride 7 + boucle idOff..len — toléré par
+   unidbg sans vérif de bornes, mais le vrai JNI déborde → AIOOBE. Corrigé pour matcher le binaire PerBlue.) */
 JNIEXPORT void JNICALL Java_com_perblue_heroes_cspine_Native_Skeleton_1getBoneTransform(JNIEnv* e, jclass c, jint h, jint boneId, jfloatArray out, jint off) {
     (void)c; spSkeleton* s = (spSkeleton*)ht_get(&t_skel, h);
     if (!s || boneId < 0 || boneId >= s->bonesCount) return;
     spBone* b = s->bones[boneId];
-    jfloat v[7] = { b->worldX, b->worldY, spBone_getWorldRotationX(b), spBone_getWorldScaleX(b), spBone_getWorldScaleY(b), 0, 0 };
-    (*e)->SetFloatArrayRegion(e, out, off, 7, v);
+    jfloat v[6] = { b->worldX, b->worldY, spBone_getWorldRotationX(b), spBone_getWorldScaleX(b), spBone_getWorldScaleY(b), 0 };
+    (*e)->SetFloatArrayRegion(e, out, off, 6, v);
 }
-JNIEXPORT void JNICALL Java_com_perblue_heroes_cspine_Native_Skeleton_1getBoneTransforms(JNIEnv* e, jclass c, jint h, jintArray ids, jint idOff, jfloatArray out, jint outOff) {
+JNIEXPORT void JNICALL Java_com_perblue_heroes_cspine_Native_Skeleton_1getBoneTransforms(JNIEnv* e, jclass c, jint h, jintArray ids, jint count, jfloatArray out, jint outOff) {
     (void)c; spSkeleton* s = (spSkeleton*)ht_get(&t_skel, h); if (!s) return;
-    jsize n = (*e)->GetArrayLength(e, ids); jint* idp = (*e)->GetIntArrayElements(e, ids, 0);
-    for (jsize i = idOff; i < n; i++) {
+    jsize len = (*e)->GetArrayLength(e, ids); jint* idp = (*e)->GetIntArrayElements(e, ids, 0);
+    if (count > len) count = len;
+    for (jint i = 0; i < count; i++) {
         int bid = idp[i]; if (bid < 0 || bid >= s->bonesCount) continue;
         spBone* b = s->bones[bid];
-        jfloat v[7] = { b->worldX, b->worldY, spBone_getWorldRotationX(b), spBone_getWorldScaleX(b), spBone_getWorldScaleY(b), 0, 0 };
-        (*e)->SetFloatArrayRegion(e, out, outOff + (jint)(i-idOff)*7, 7, v);
+        jfloat v[6] = { b->worldX, b->worldY, spBone_getWorldRotationX(b), spBone_getWorldScaleX(b), spBone_getWorldScaleY(b), 0 };
+        (*e)->SetFloatArrayRegion(e, out, outOff + i*6, 6, v);
     }
     (*e)->ReleaseIntArrayElements(e, ids, idp, JNI_ABORT);
 }

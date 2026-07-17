@@ -64,6 +64,7 @@ public final class CombatSpikeDriver {
         // OPT.2 : N combats enchaînés (identiques, re-seed) pour mesurer le RÉGIME ÉTABLI (VM chaude + assets en
         // cache) — c'est le coût réel d'un serveur qui valide beaucoup de combats, pas le 1er à froid.
         int nRuns = Integer.getInteger("dh.combatspike.n", 1);
+        dhbackend.spine.CompareBackend.INSTANCE.active = true;   // en mode compare : ne diffe QUE le combat (boot exclu)
         try {
             for (int run = 1; run <= nRuns; run++) {
                 Random rng = new Random(seed);
@@ -88,9 +89,12 @@ public final class CombatSpikeDriver {
                         run, nRuns, hc.getState(), ticks, deaths[0], (win ? "WIN" : "LOSS"),
                         (tCtor - t0) / 1e6, (t1 - tCtor) / 1e6, (t1 - t0) / 1e6);
             }
+            System.out.print(com.perblue.heroes.cspine.Native.reportProfile());   // inclut le rapport compare
         } catch (Throwable t) {
             System.out.println("[combatspike] EXCEPTION: " + t);
             t.printStackTrace();
+        } finally {
+            dhbackend.spine.CompareBackend.INSTANCE.active = false;
         }
         return true;
     }

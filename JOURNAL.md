@@ -1,5 +1,34 @@
 # JOURNAL — journal détaillé des modifications
 
+## 2026-07-17 (ter) — Harnais différentiel de certification (compare) : bâti, tourne, 1er rapport
+
+### Outil
+`CompareBackend` (`-Ddh.spinebackend=compare`) : pour CHAQUE appel cspine, exécute unidbg (ORACLE = binaire ARM
+PerBlue = mobile) ET le JNI natif (spine-c recompilé x86, HostSpine) en parallèle, avec table de correspondance
+de handles (u2j), et DIFFE automatiquement. Le jeu utilise les résultats unidbg (boote normalement → contourne le
+blocage handle du JNI). Gate `active` : ne compare QUE le combat (boot = unidbg seul, rapide). Rapport auto :
+diffs/méthode + distance ULP (arrondi FP ARM↔x86 vs écart de logique). Reproductible (régression).
+
+### Bug RÉEL trouvé (par le harnais) + corrigé
+`cspine_jni.c` `getBoneTransform(s)` : stride 7 + boucle `idOff..len` → le vrai JNI **borne** et throw AIOOBE
+(unidbg tolérait). Corrigé : stride 6 + boucle `0..count` (contrat du jeu, = binaire PerBlue). C'est un bug de
+NOTRE glue (tâche #5), latent sous unidbg. Rebuild via `native/build-hostspine.sh`.
+
+### 1er rapport (1-1, seed 123456789) — À AFFINER
+TOTAL 5343 diffs. Mais **incohérence interne** : `getBoneNames`=0 diff (listes d'os IDENTIQUES) alors que
+`getBoneID`=410 diffs (u=71 j=70). Si les noms sont identiques et ordonnés pareil, getBoneID devrait matcher →
+une partie des diffs = **artefacts du harnais** (état non propagé au skeleton JNI : ex. position monde de l'unité
+non appliquée côté JNI → getBoneTransform diverge en masse ; ou mapping de handle imparfait sur certains appels).
+`setAnimation` u=1 j=12 = différence de sémantique de RETOUR de notre glue (retourne animId) vs PerBlue (autre).
+`nextEvent` u=true j=false = PerBlue FIRE des events, notre stub non. `getAnimationID/durations/names/BoneNames`
+= 0 diff ✅ (structure de base identique).
+
+### Lecture
+Le harnais fonctionne et donne des données riches, mais nécessite **1 passe d'affinage** (propager tout l'état au
+JNI, corriger le mapping, aligner les sémantiques de retour de la glue) avant de pouvoir conclure « 100% fidèle ou
+non ». Signal préliminaire : la structure de base (noms/ids d'anim, durées, noms d'os) MATCHE ; les écarts
+restants sont soit des artefacts du harnais, soit de vraies différences (events, retours) à isoler.
+
 > Journal **détaillé** relié à l'historique court de [`MEMORY.md`](MEMORY.md#7-état-courant--prochaines-étapes).
 > But : permettre à n'importe quel agent de **retrouver facilement n'importe quelle
 > information** (décision, découverte, commande, fichier). Mis à jour **à chaque étape**.
