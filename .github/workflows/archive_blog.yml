@@ -1,7 +1,7 @@
-name: Archive Looney Tunes Blog to Wayback Machine
+name: Archive Looney Tunes Blog
 
 on:
-  workflow_dispatch: # Lancement manuel uniquement
+  workflow_dispatch:
 
 jobs:
   wayback:
@@ -9,6 +9,14 @@ jobs:
     steps:
       - name: Checkout
         uses: actions/checkout@v4
+
+      - name: Restore Progress
+        uses: actions/cache@v4
+        with:
+          path: processed_urls.txt
+          key: archive-progress-${{ github.run_id }}
+          restore-keys: |
+            archive-progress-
 
       - name: Setup Python
         uses: actions/setup-python@v5
@@ -23,3 +31,11 @@ jobs:
           IA_ACCESS_KEY: ${{ secrets.IA_ACCESS_KEY }}
           IA_SECRET_KEY: ${{ secrets.IA_SECRET_KEY }}
         run: python3 archive_script.py
+
+      # Sauvegarde le fichier de progression même si le job échoue ou est annulé
+      - name: Save Progress
+        if: always()
+        uses: actions/cache/save@v4
+        with:
+          path: processed_urls.txt
+          key: archive-progress-${{ github.run_id }}
