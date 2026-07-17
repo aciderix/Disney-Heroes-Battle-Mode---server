@@ -1,5 +1,57 @@
 # JOURNAL — journal détaillé des modifications
 
+## 2026-07-17 (quater) — #25 LOOT AUTORITAIRE : le serveur roule le butin, certifié == client, SANS simuler le combat
+
+### Décision (user) & principe
+« Rendre autoritaire tout ce qui ne demande pas de simuler le combat. » Décomposition du combat de campagne :
+**seuls `outcome`/`stars` exigent une simulation** ; le loot, l'XP, l'or, l'énergie sont **déterministes** une
+fois ces valeurs connues. L'XP/or/énergie sont **déjà** autoritaires (`recordOutcome`). Restait le **loot** :
+le serveur faisait confiance à `m.lootEarned` (client). #25 le rend autoritaire.
+
+### Fait établi (relevé au bytecode)
+Le loot est un **flux RNG SÉPARÉ du combat** : `CampaignAttackScreen` (2ᵉ ctor) fait `user.resetRandom(LOOT)`
+puis `user.resetRandom(COMBAT)` — deux graines distinctes (`RandomSeedType.LOOT` ≠ `COMBAT`). Le combat consomme
+le flux COMBAT ; le loot consomme le flux LOOT. Donc **le butin est une fonction déterministe de la SEULE graine
+LOOT**, indépendante du déroulé du combat. Séquence client exacte :
+```
+user.resetRandom(LOOT) ;
+CampaignLootHelper.getLoot(user, campaignType, 0, chapter, level, NONE, guildPerks /*GuildInfoPerkProvider*/, true)
+  → CampaignLoot.combinedLoot   // List<RewardDrop> = butin d'une victoire complète
+```
+`getCampaignAttack` ne fait que **recopier** cette liste dans `m.lootEarned` (elle ne roule rien). Le mécanisme
+RNG : `IndividualUser.getRandom(type)` = `InstrumentedRandom.newRandom(getSeed(type), logMode)` ; `getSeed` lit
+`individualUserExtra.storedSeeds` (ou `SeedHelper.getDefaultSeed` par défaut). Le client annonce sa graine au
+serveur via `Action{SET_SEED, TYPE=LOOT, ID=<seed>}` (capturée en #23, `getPendingSeed`).
+
+### Implémentation (`ServerUser`)
+- `rollAuthoritativeLoot(user, iu, type, m)` : `iu.setSeed(LOOT, pendingSeed)` + `user.resetRandom(LOOT)` +
+  l'appel `getLoot(...)` EXACT ci-dessus → `combinedLoot`. `null` si pas de graine.
+- `recordCampaignAttack` : sur **VICTOIRE**, `lootEarned = serverLoot` (crédite le tirage SERVEUR) ; sinon repli
+  sur le loot client (pas de graine, ou non-WIN = loot partiel dépendant de la progression, hors pure-logique).
+  `logLootValidation` LOGue serveur↔client (divergence = **signal anti-triche** ; on crédite le serveur quand même).
+- `computeAuthoritativeLoot(m)` : wrapper public (test + bascule).
+
+### Prérequis résolu — `BuildOptions.SERVER_TYPE = ServerType.NONE`
+1er run : `NullPointerException … getNetworkProvider().sendMessage(...)`. Cause : `InstrumentedRandom` (via
+`resetRandom`/`getRandom`) **envoie** les `RandomEvent` client→serveur pour l'anti-triche — sauf si
+`SERVER_TYPE == NONE` (commutateur **offline du jeu**). Headless, `getNetworkProvider()` est null → NPE. Correctif
+fidèle : poser `SERVER_TYPE = NONE` dans `ServerContext.init` (chemin offline **prévu par PerBlue**). N'affecte
+**que l'envoi d'événements**, PAS les valeurs RNG (même graine → même séquence) — cf. SHIMS.
+
+### Certification (`server/smoke/LootAuthoritativeTest`) — patron oracle
+Réf CLIENT (séquence bytecode exacte) vs SERVEUR (via `Action SET_SEED` + `computeAuthoritativeLoot`), multiset
+(item/ressource → quantité), sur 5 graines : **5/5 MATCH**, **5 butins distincts** (sensible à la graine → le
+test discrimine). Ex. graine 999 → `{ACE_OF_SPADES×0, CLEVER_FOX×1, EXP_VIAL×1, HEARTY_BREAKFAST×1, RAID_TICKET×1,
+SUGAR_RUSH×1}` serveur==client. Régression **OK** : `CampaignAttack/LootPersist/CampaignPersist/Resource/Seed/
+TeamLevel/Equip/ViewedChests` (les tests sans graine LOOT retombent sur le loot client, inchangés).
+
+### Verdict
+Le serveur est **AUTORITAIRE sur le loot** (la principale surface de triche : objets/or) **pour un coût nul,
+sans re-simuler le combat**. Combiné à l'XP/or/énergie déjà autoritaires : **tout ce qui a de la valeur est
+autoritaire**. Ne reste client que `outcome`/`stars` (§D) — qui, eux, exigent une re-sim (unidbg, échantillonnable).
+Fichiers : `server/java/dhserver/{ServerUser,ServerContext}.java`, `server/smoke/LootAuthoritativeTest.java`,
+`docs/{SERVER_PLAN,SHIMS}.md`.
+
 ## 2026-07-17 (ter) — Harnais différentiel de certification (compare) : bâti, tourne, 1er rapport
 
 ### Outil

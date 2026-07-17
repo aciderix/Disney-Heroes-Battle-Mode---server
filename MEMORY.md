@@ -6,6 +6,20 @@
 > des fichiers et un historique **court**. L'historique **détaillé** est dans
 > [`JOURNAL.md`](JOURNAL.md). **Maintenir ce fichier à jour en permanence.**
 
+Dernière mise à jour : **2026-07-17 (soir)** — **#25 LOOT AUTORITAIRE FAIT & CERTIFIÉ**. Le serveur **roule
+lui-même le butin** avec la graine LOOT du client (flux RNG **SÉPARÉ du combat** → fonction déterministe de la
+seule graine, **AUCUNE simulation requise**), reproduisant la séquence client EXACTE relevée au bytecode
+(`CampaignAttackScreen` : `user.resetRandom(LOOT)` ; `CampaignLootHelper.getLoot(user, type, 0, chapter, level,
+NONE, guildPerks, true).combinedLoot`). Sur une VICTOIRE, `ServerUser.recordCampaignAttack` CRÉDITE le tirage
+SERVEUR (au lieu de `m.lootEarned`) → **autoritaire/anti-triche** ; divergence = signal de triche loggé ; repli
+client si pas de graine ou non-WIN. **Certifié** `server/smoke/LootAuthoritativeTest` : **5/5 graines
+serveur==client** (5 butins distincts). Prérequis : `BuildOptions.SERVER_TYPE=NONE` dans `ServerContext.init`
+(commutateur HEADLESS du jeu qui coupe l'instrumentation RNG client→serveur, sinon NPE `getNetworkProvider()` ;
+n'affecte QUE l'envoi, pas les valeurs RNG). Régression OK (8 smoke tests). **⇒ le serveur est AUTORITAIRE sur
+tout ce qui a de la valeur (loot/or/XP/progression) SANS simuler le combat** ; ne reste client que `outcome`/
+`stars` (§D, nécessitent une re-sim échantillonnable). Fichiers : `server/java/dhserver/{ServerUser,ServerContext}
+.java`, `server/smoke/LootAuthoritativeTest.java`. SERVER_PLAN §E ✅.
+
 Dernière mise à jour : **2026-07-17** — **#28 CERTIFICATION Opt.3 FAITE + perf desktop mesurée**. Le **harnais
 différentiel** (`CompareBackend` : le jeu boote sur unidbg=oracle=binaire PerBlue mobile, notre **spine-c recompilé
 natif** tourne en parallèle sur les MÊMES handles, on diffe chaque appel — mode `DH_SPINEBACKEND=compare`) a servi à

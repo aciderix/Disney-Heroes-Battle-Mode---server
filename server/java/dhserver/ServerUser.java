@@ -289,7 +289,23 @@ public final class ServerUser {
     // → tout m.lootEarned est crédité. PARTIEL (SHIMS) : seed client (Action SET_SEED) non appliquée → le
     // serveur ne re-roule pas, il fait confiance au loot client. La mémoire de loot (m.memoryChanges) EST
     // appliquée plus bas (auto-persistée), voir applyLootMemory.
-    java.util.List lootEarned = m.lootEarned != null ? m.lootEarned : new java.util.ArrayList<>();
+    java.util.List clientLoot = m.lootEarned != null ? m.lootEarned : new java.util.ArrayList<>();
+    // #25 — LOOT AUTORITAIRE. Le serveur ROULE lui-même le butin avec la graine LOOT du client (flux RNG
+    // SÉPARÉ du combat → AUCUNE simulation requise). Sur une VICTOIRE, on CRÉDITE le tirage SERVEUR (certifié
+    // reproduire EXACTEMENT le client — cf. server/smoke/LootAuthoritativeTest, 5/5 graines) AU LIEU de croire
+    // m.lootEarned → autoritaire, anti-triche, coût nul. Une divergence serveur↔client = SIGNAL DE TRICHE
+    // (loggé), mais on crédite TOUJOURS le serveur. Repli sur le loot client si (a) pas de graine LOOT connue
+    // (ex. rejeu sans SET_SEED) ou (b) résultat non-WIN (loot partiel dépendant de la progression du combat,
+    // hors périmètre pure-logique — documenté §2/§E).
+    java.util.List serverLoot = rollAuthoritativeLoot(user, iu, type, m);
+    boolean win = m.base != null && m.base.outcome == com.perblue.heroes.network.messages.CombatOutcome.WIN;
+    java.util.List lootEarned;
+    if (serverLoot != null && win) {
+      logLootValidation(serverLoot, clientLoot);
+      lootEarned = serverLoot;
+    } else {
+      lootEarned = clientLoot;
+    }
     java.util.List shownDelta = new java.util.ArrayList<>();
     // base : attackers/defenders = Collection de AttackLineupSummary, outcome + stars remplis par le client.
     CampaignHelper.recordOutcome(user, user, level, m.base.outcome, m.base.stars, m.stagesCleared,
@@ -304,6 +320,67 @@ public final class ServerUser {
     // palier d'XP (18) et ré-accorde STAMINA_GAIN_ON_LEVEL (+20) EN BOUCLE (au lieu de progresser vers le
     // palier suivant). Même schéma que resyncHeroes/resyncCampaign (§6 persistance complète).
     userInfo.basicInfo.teamLevel = user.getTeamLevel();
+  }
+
+  /**
+   * #25 — Loot AUTORITAIRE. Le serveur ROULE lui-même le butin avec la graine LOOT du client (capturée via
+   * {@code Action SET_SEED}, cf. #23), au lieu de faire confiance à {@code m.lootEarned}. Le loot est un flux
+   * RNG <b>SÉPARÉ du combat</b> ({@code RandomSeedType.LOOT} ≠ {@code COMBAT}) → fonction déterministe de la
+   * SEULE graine LOOT, <b>aucune simulation de combat requise</b>. Reproduit EXACTEMENT l'appel client
+   * (relevé au bytecode, {@code CampaignAttackScreen} 2ᵉ ctor) :
+   * <pre>user.resetRandom(LOOT) ; CampaignLootHelper.getLoot(user, type, 0, chapter, level, NONE, guildPerks, true)</pre>
+   * → {@code CampaignLoot.combinedLoot} = la liste de {@code RewardDrop} d'une VICTOIRE complète.
+   * @return la liste roulée serveur, ou {@code null} si aucune graine LOOT connue (→ on retombe sur le client).
+   */
+  @SuppressWarnings({"rawtypes", "unchecked"})
+  private java.util.List rollAuthoritativeLoot(User user, IndividualUser iu, CampaignType type, CampaignAttack m) {
+    Long lootSeed = getPendingSeed(com.perblue.heroes.network.messages.RandomSeedType.LOOT);
+    if (lootSeed == null) return null;   // pas de graine → confiance client (documenté), non bloquant
+    // Ancre la graine LOOT du client puis reseed le flux (getLoot consomme user.getRandom(LOOT) en interne).
+    iu.setSeed(com.perblue.heroes.network.messages.RandomSeedType.LOOT, lootSeed, "");
+    user.resetRandom(com.perblue.heroes.network.messages.RandomSeedType.LOOT);
+    // GuildInfoPerkProvider sur le GuildInfo du joueur (shim ServerContext ; vide = pas de bonus de perk de
+    // guilde, exact pour un joueur sans guilde). SpecialEventSnapshot.NONE (serveur sans évènement, cf. §F).
+    com.perblue.heroes.game.objects.GuildInfoPerkProvider perks =
+        new com.perblue.heroes.game.objects.GuildInfoPerkProvider(com.perblue.heroes.DH.app.getYourGuildInfo());
+    com.perblue.heroes.game.logic.CampaignLootHelper.CampaignLoot cl =
+        com.perblue.heroes.game.logic.CampaignLootHelper.getLoot(
+            user, type, 0, m.chapter, m.level, SpecialEventSnapshot.NONE, perks, true);
+    return cl == null ? null : cl.combinedLoot;
+  }
+
+  /** Expose le tirage de loot AUTORITAIRE (reconstruit user/iu depuis l'état courant). Utilisé par le test de
+   *  certification (comparer au loot client) et prêt pour la bascule autoritative. {@code null} si pas de graine. */
+  @SuppressWarnings("rawtypes")
+  public synchronized java.util.List computeAuthoritativeLoot(CampaignAttack m) {
+    ServerContext.init();
+    User user = ClientNetworkStateConverter.getUser(userInfo, userExtra, "loot-auth");
+    IndividualUser iu = ClientNetworkStateConverter.getIndividualUser(
+        individualUserExtra, userID, userInfo.diamonds, "loot-auth");
+    ServerContext.bind(user, iu);
+    CampaignType type = m.campaignType == null ? CampaignType.NORMAL : m.campaignType;
+    return rollAuthoritativeLoot(user, iu, type, m);
+  }
+
+  /** VALIDATION anti-triche : compare le loot roulé serveur (crédité) au loot annoncé par le client — multiset
+   *  (item/ressource → quantité). Un écart = butin client falsifié (le serveur crédite SON tirage de toute façon). */
+  @SuppressWarnings("rawtypes")
+  private void logLootValidation(java.util.List serverLoot, java.util.List clientLoot) {
+    java.util.Map<String, Long> s = lootMultiset(serverLoot), c = lootMultiset(clientLoot);
+    boolean match = s.equals(c);
+    System.out.println("[loot-authoritative] #25 : " + (match ? "OK (serveur==client) ✅"
+        : "DIVERGE — butin client falsifié, on crédite le serveur ❌") + "  serveur=" + s + "  client=" + c);
+  }
+
+  @SuppressWarnings("rawtypes")
+  private java.util.Map<String, Long> lootMultiset(java.util.List drops) {
+    java.util.Map<String, Long> map = new java.util.TreeMap<>();
+    if (drops == null) return map;
+    for (Object o : drops) {
+      com.perblue.heroes.network.messages.RewardDrop d = (com.perblue.heroes.network.messages.RewardDrop) o;
+      map.merge("I:" + d.itemType + "/R:" + d.resourceType, d.quantity, Long::sum);
+    }
+    return map;
   }
 
   /**

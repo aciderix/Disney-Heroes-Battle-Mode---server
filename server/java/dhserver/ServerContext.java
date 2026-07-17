@@ -44,6 +44,13 @@ public final class ServerContext {
       app = (GameMain) unsafe.getClass().getMethod("allocateInstance", Class.class)
           .invoke(unsafe, GameMain.class);
       Field appF = DH.class.getDeclaredField("app"); appF.setAccessible(true); appF.set(null, app);
+      // Mode HEADLESS/OFFLINE du jeu : SERVER_TYPE=NONE est le propre commutateur du jeu qui DÉSACTIVE
+      // l'instrumentation RNG client→serveur (InstrumentedRandom : resetRandom/getRandom testent
+      // `SERVER_TYPE == NONE` pour SAUTER l'envoi de RandomEvents). Sans ça, rouler un flux RNG (ex. le loot
+      // autoritaire #25 via user.getRandom(LOOT)) tente `getNetworkProvider().sendMessage(...)` → NPE headless.
+      // N'affecte QUE l'envoi d'événements, PAS les valeurs RNG (même graine → même séquence). Valeur du jeu,
+      // pas une rustine (c'est le chemin offline prévu par PerBlue).
+      com.perblue.heroes.BuildOptions.SERVER_TYPE = com.perblue.heroes.ServerType.NONE;
       userField = field(GameMain.class, "user");
       individualField = field(GameMain.class, "individualUser");
       guildInfoField = field(GameMain.class, "guildInfo");

@@ -263,12 +263,25 @@ team-level, tout persisté & testé) mais porte des **PARTIELs** (cf. SHIMS). An
     AnimationState/AnimationStateData) en **délégation directe au runtime Java** (pas les 47 de cspine, pas de
     rendu). Chantier **cadré**. Gain : ~29 appels unidbg/tick (~9 s) → JVM natif → <100 ms.
 
-### E. [ ] Re-ROLL serveur du loot (autoritatif) — GROS, dépend de C — chantier §3
+### E. [x] ✅ Re-ROLL serveur du loot (autoritatif) — FAIT & CERTIFIÉ (2026-07-17)
 - **Quoi** : au lieu d'appliquer `m.lootEarned` (client), le serveur **roule le loot lui-même** avec la
-  graine LOOT + les drop tables de campagne → doit reproduire exactement le tirage client (déterministe).
-- **Outil du jeu** : `CampaignLootHelper` + les tables de drop de campagne + `new Random(lootSeed)`.
-- **Fix** : rouler côté serveur, comparer à `m.lootEarned` (validation), créditer le résultat serveur.
-- **Effort** : substantiel. Combiné à D → serveur **pleinement autoritatif** sur le combat de campagne.
+  graine LOOT + les drop tables de campagne → reproduit exactement le tirage client (déterministe).
+- **Fait clé (relevé au bytecode)** : le loot est un **flux RNG SÉPARÉ du combat** (`RandomSeedType.LOOT` ≠
+  `COMBAT`) → **fonction déterministe de la SEULE graine LOOT, AUCUNE simulation de combat requise**. La
+  séquence client exacte (`CampaignAttackScreen` 2ᵉ ctor) : `user.resetRandom(LOOT)` puis
+  `CampaignLootHelper.getLoot(user, type, 0, chapter, level, NONE, guildPerks, true).combinedLoot`.
+- **Fait (`ServerUser.rollAuthoritativeLoot`/`recordCampaignAttack`)** : ancre la graine LOOT (`iu.setSeed` +
+  `getPendingSeed` de #C), roule `getLoot(...).combinedLoot`, et sur une **VICTOIRE** CRÉDITE le tirage
+  SERVEUR (au lieu de `m.lootEarned`). Divergence serveur↔client = **signal anti-triche** (loggé). Repli sur
+  le loot client si pas de graine ou résultat non-WIN (loot partiel = dépend de la progression, hors pure-logique).
+- **Prérequis résolu** : `BuildOptions.SERVER_TYPE = ServerType.NONE` dans `ServerContext.init` — commutateur
+  HEADLESS du jeu qui désactive l'instrumentation RNG client→serveur (sinon `getNetworkProvider().sendMessage`
+  → NPE headless). N'affecte QUE l'envoi d'événements, PAS les valeurs RNG (cf. SHIMS).
+- **Certifié** : `server/smoke/LootAuthoritativeTest` — **5/5 graines : le tirage serveur == le tirage client**
+  (5 butins distincts = sensible à la graine). Régression OK (`CampaignAttack/LootPersist/CampaignPersist/
+  Resource/Seed/TeamLevel/Equip/ViewedChests`).
+- **⇒ Serveur AUTORITAIRE sur le loot** (la principale surface de triche : objets/or) **sans re-simuler le
+  combat**. Reste PARTIEL (§D) : `outcome`/`stars` client (nécessitent, eux, une re-sim — échantillonnable).
 
 ### F. [ ] Bonus d'évènements — `SpecialEventSnapshot.NONE` — FEATURE (pas un bug)
 - **Quoi** : `NONE` = aucun bonus d'évènement live. C'est la valeur **correcte** pour un serveur qui
