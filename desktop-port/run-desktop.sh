@@ -133,7 +133,15 @@ JOPTS="$JOPTS -Ddh.spinelib=$(cd .. && pwd)/native/reference/libspine-native.so"
 # au lieu d'unidbg. Le runtime Java (SkeletonBinary) exige DataInput.readString(), absent du stub 215o de
 # game-logic (dex2jar) : on fait gagner le DataInput COMPLET de gdx-1.9.7 en le déposant dans le dir de classes
 # (PREMIER sur le CP → ombrage le stub). Superset correct → inoffensif pour le chemin unidbg par défaut.
-if [ "${DH_SPINEBACKEND:-}" = "java" ]; then
+if [ "${DH_SPINEBACKEND:-}" = "jni" ]; then
+  # Opt.3 « JNI natif » : le VRAI spine-c officiel 3.6 (colle cspine_jni.c d'origine) compilé HÔTE x86-64,
+  # appelé en JNI réel (pas d'émulation ARM). Fidélité par construction. La lib est renommée pour se lier à
+  # la classe HostSpine (rename mécanique des symboles JNI, logique C inchangée).
+  JOPTS="$JOPTS -Ddh.spinebackend=jni"
+  HOSTLIB="$(cd .. && pwd)/native/build/libhostspine64.so"
+  [ -f "$HOSTLIB" ] || echo "[desktop] WARN: $HOSTLIB introuvable (build : native/build.sh + rename)"
+  JOPTS="$JOPTS -Ddh.hostspine=$HOSTLIB"
+elif [ "${DH_SPINEBACKEND:-}" = "java" ]; then
   JOPTS="$JOPTS -Ddh.spinebackend=java"
   # libGDX vient de game-logic.jar (PerBlue), STRIPPÉ par ProGuard : certaines classes utilitaires ont perdu
   # des méthodes que spine-libgdx-perblue utilise (ex. DataInput.readString, IntSet.clear). Le gdx-1.9.7 COMPLET

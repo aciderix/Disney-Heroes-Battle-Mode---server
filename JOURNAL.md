@@ -7,6 +7,45 @@
 
 ---
 
+## 2026-07-17 — Opt.3 PIVOT « JNI natif » : le vrai spine-c compilé hôte (pas de réécriture) — bâti, bloqué au boot
+
+### Insight (question user : réécriture main vs fichiers du jeu ?)
+La délégation fidèle n'a PAS à être réécrite à la main : **la colle d'origine existe** = `native/src/cspine_jni.c`
+(écrite sur le VRAI spine-c officiel 3.6). ⇒ la « bonne » Opt.3 = **compiler spine-c + cspine_jni.c pour l'HÔTE
+x86-64 et l'appeler en JNI RÉEL** (« l'Opt.2 sans unidbg » : même code natif, sans émulation ARM). Fidélité PAR
+CONSTRUCTION (mixing/clear de track corrects d'office), rapide, **zéro patch à la main** → supersede le
+`JavaSpineBackend` (spine-libgdx divergent, patché main → dérive §4, abandonné).
+
+### Fait
+- `native/build/spine-native64.so` existait déjà (spine-c 3.6 + cspine_jni.c compilés x86-64, 65 symboles JNI).
+- Classe `dhbackend.jnispine.HostSpine` (déclarations `native`, sous-ensemble combat) + `libhostspine64.so`
+  (rename mécanique des symboles JNI `...cspine_Native_*` → `...HostSpine_*` + **unification des tables de
+  handles** en un espace global — script `native/build-hostspine.sh`). Routage 3-voies dans `cspine.Native`
+  (`-Ddh.spinebackend=jni|java|` défaut unidbg). Compile + charge en JNI réel. **Défaut = unidbg → 0 régression.**
+
+### Bloqué (intégration boot, pas fond)
+Au boot (chargement d'une particule UI `hero_chooser_add.np` → `hero_chooser.atlas@native`) :
+`[main]E/: Bad handle type: Wanted ATLAS but is actually NONE for handle 1` → `Dependency not found` (fatal).
+Le **registre de handles Java du jeu** rejette le schéma de handles de NOTRE `cspine_jni.c` (≠ binaire ARM de
+PerBlue). L'unification des tables (handles globalement uniques) n'a PAS suffi → le registre attend autre chose
+(à investiguer : comment le jeu enregistre le type d'un handle natif ; peut-être un appel natif spécifique, ou
+cparticle qui doit passer sur le même backend/espace). **C'est exactement le genre d'incompat que le projet a
+CONTOURNÉ en passant à unidbg** (faire tourner le VRAI binaire de PerBlue évite tout ça).
+
+### Synthèse stratégique (convergence)
+Les DEUX voies « rapides » (spine-libgdx Java ; spine-c recompilé natif) utilisent les **données** du jeu mais un
+**runtime ≠** de celui livré → nécessitent des **patchs de compat** (patch anim côté Java ; schéma de handles /
+banding getVertices côté natif recompilé) → dérive §4bis tant que non certifié bit-à-bit. La voie **pleinement
+fidèle par construction = Opt.2 (unidbg, binaire ARM d'origine)**, au prix de la lourdeur (~9 s). Le « JNI natif »
+reste la meilleure piste rapide SI on finit l'intégration boot (handles) + certification — sinon Opt.2 async est
+le choix conforme.
+
+### Fichiers
+`desktop-port/src/main/java/dhbackend/jnispine/HostSpine.java` (nouveau), `.../cspine/Native.java` (routage
+3-voies), `native/build-hostspine.sh` (nouveau, build reproductible), `run-desktop.sh` (flag jni). Docs : JOURNAL.
+
+---
+
 ## 2026-07-16 (nuit 4 bis) — Opt.3 certification : divergences d'ANIMATION diagnostiquées (dont 1 vérifiée sur source spine-c)
 
 ### Résumé
