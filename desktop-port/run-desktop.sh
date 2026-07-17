@@ -129,6 +129,7 @@ JOPTS="$JOPTS -Ddh.spinelib=$(cd .. && pwd)/native/reference/libspine-native.so"
 [ -n "${DH_COMBATSPIKE_LV:-}" ] && JOPTS="$JOPTS -Ddh.combatspike.lv=$DH_COMBATSPIKE_LV"
 [ -n "${DH_COMBATSPIKE_SEED:-}" ] && JOPTS="$JOPTS -Ddh.combatspike.seed=$DH_COMBATSPIKE_SEED"
 [ -n "${DH_CSPINEPROFILE:-}" ] && JOPTS="$JOPTS -Ddh.cspineprofile=$DH_CSPINEPROFILE"
+[ -n "${DH_DYNARMIC:-}" ] && JOPTS="$JOPTS -Ddh.dynarmic=$DH_DYNARMIC"
 # DEV : backend spine Opt.3 (#28) — router l'animation du combat vers le runtime Java (spine-libgdx-perblue)
 # au lieu d'unidbg. Le runtime Java (SkeletonBinary) exige DataInput.readString(), absent du stub 215o de
 # game-logic (dex2jar) : on fait gagner le DataInput COMPLET de gdx-1.9.7 en le déposant dans le dir de classes

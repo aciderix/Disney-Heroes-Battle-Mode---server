@@ -42,6 +42,8 @@ dependencies {
     // vers dhbackend.unidbg.UnidbgVM → le code d'origine tourne, zéro réécriture (cf. native/unidbg/).
     // unidbg embarque le binaire hôte unicorn dans ses jars → build autonome (rien à installer).
     implementation 'com.github.zhkl0228:unidbg-android:0.9.8'
+    // OPTIM (opt-in, -Ddh.dynarmic) : backend JIT ARM dynarmic (natif embarqué) — mêmes résultats, plus rapide.
+    implementation 'com.github.zhkl0228:unidbg-dynarmic:0.9.8'
 
     // Le jeu SANS org/lwjgl ni backends bundlés (produit par run-desktop.sh depuis
     // ../libs/game.jar) : GameMain + com.perblue.* + core libGDX PerBlue. Utilisé au COMPILE

@@ -49,7 +49,16 @@ public final class UnidbgVM {
         File lib = new File(libPath);
         if (!lib.exists()) throw new IllegalStateException("libspine-native.so introuvable: " + lib.getAbsolutePath());
 
-        emulator = AndroidEmulatorBuilder.for32Bit().setProcessName("dhspine").build();
+        // OPTIM (opt-in) : backend d'émulation dynarmic (JIT ARM) au lieu de l'interpréteur Unicorn par défaut.
+        // Exécute les MÊMES instructions ARM du VRAI binaire → résultats identiques (à certifier), mais bien plus
+        // rapide. Fallback Unicorn si une instruction n'est pas supportée (arg true). Activé par -Ddh.dynarmic.
+        AndroidEmulatorBuilder builder = AndroidEmulatorBuilder.for32Bit();
+        boolean dynarmic = System.getProperty("dh.dynarmic") != null && !"0".equals(System.getProperty("dh.dynarmic"));
+        if (dynarmic) {
+            builder.addBackendFactory(new com.github.unidbg.arm.backend.DynarmicFactory(true));
+            System.out.println("[unidbg] backend dynarmic (JIT ARM) activé");
+        }
+        emulator = builder.setProcessName("dhspine").build();
         Memory memory = emulator.getMemory();
         memory.setLibraryResolver(new AndroidResolver(23));
         vm = emulator.createDalvikVM();

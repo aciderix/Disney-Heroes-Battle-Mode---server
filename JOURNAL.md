@@ -7,6 +7,37 @@
 
 ---
 
+## 2026-07-17 (bis) — Optimisation Opt.2 : dynarmic (JIT ARM) testé → PAS un gain ; les vraies pistes sont architecturales
+
+### Contexte / malentendu levé
+Opt.2 = validation anti-triche **côté SERVEUR, en fond** (rejoue le combat pour vérifier l'issue). Ça **ne touche
+PAS** la fluidité du joueur (le vrai jeu mobile utilise le spine natif de l'appareil). Les ~9 s unidbg = coût
+serveur hors-ligne. « Optimiser » = débit serveur (combats/s), pas l'expérience en jeu.
+
+### dynarmic (JIT ARM) — testé, NON concluant
+Le backend `dynarmic` (JIT ARM, natif `linux_64/libdynarmic.so` embarqué dans unidbg-dynarmic-0.9.8) remplace
+l'interpréteur Unicorn : **mêmes instructions ARM → mêmes résultats** (fidélité OK), censé plus rapide. Ajouté en
+**opt-in** (`-Ddh.dynarmic`, off par défaut, `AndroidEmulatorBuilder.addBackendFactory(new DynarmicFactory(true))`).
+**Résultat** : le combat spike n'a PAS démarré en 250 s (le boot — rendu MainScreen via spine unidbg à chaque
+frame — est devenu PLUS LENT : ~200 frames jamais atteints). ⇒ pour le motif de spine (**beaucoup d'appels ARM
+COURTS** : getBoneTransform/apply/update), l'**overhead JIT/warmup ne se rentabilise pas** ; l'interpréteur
+Unicorn est plus efficace. **dynarmic n'est pas un gain ici.** Flag conservé (opt-in) pour ré-évaluation future,
+sans effet par défaut.
+
+### Les VRAIES optimisations sûres (fidélité intacte) = architecturales
+1. **Validation ASYNC/en fond** : ne pas bloquer sur les ~9 s ; valider hors du chemin de réponse.
+2. **VMs unidbg en PARALLÈLE** (une par cœur) → débit linéaire (chaque VM exécute le vrai binaire).
+3. **Échantillonner / cibler** les combats suspects plutôt que tout revalider.
+4. **Cache des assets chargés** (SkeletonData/atlas par unité) → amortit le setup spine entre combats.
+Ces leviers ne touchent PAS la sim (mêmes résultats), contrairement à un changement de runtime (JNI natif /
+spine-libgdx) qui, lui, doit être certifié.
+
+### Fichiers
+`desktop-port/src/main/java/dhbackend/unidbg/UnidbgVM.java` (flag dynarmic opt-in), `build.gradle` (dep
+unidbg-dynarmic), `run-desktop.sh`/`run-online.sh` (flag). Docs : JOURNAL.
+
+---
+
 ## 2026-07-17 — Opt.3 PIVOT « JNI natif » : le vrai spine-c compilé hôte (pas de réécriture) — bâti, bloqué au boot
 
 ### Insight (question user : réécriture main vs fichiers du jeu ?)
