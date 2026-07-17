@@ -6,6 +6,22 @@
 > des fichiers et un historique **court**. L'historique **détaillé** est dans
 > [`JOURNAL.md`](JOURNAL.md). **Maintenir ce fichier à jour en permanence.**
 
+Dernière mise à jour : **2026-07-17 (nuit)** — **RECON NAVIGATION DU HUB → `docs/HUB_NAV.md`** (+ vérif
+persistance de bout en bout OK, + #25 loot RÉVERTÉ en ombre). **Vérif e2e** : compte frais → campagne 1-1→1-6
+en autopilote (client **unidbg**), **restart = état IDENTIQUE** (teamLevel/gold/stamina/héros/campagne 3★/
+inventaire préservés ; `DbInspect` = load à froid du BLOB SQLite le prouve). **#25 loot** : le run frais a
+révélé qu'en jeu réel le tirage serveur **diverge** du client (pool XP non suivi + pitié double-comptée) → **
+révérté en mode OMBRE** (crédite client = fidèle ; bascule autoritative reportée, cf. SERVER_PLAN §E). **Recon
+hub** (`docs/HUB_NAV.md`) : le hub = `MainScreen` (ville g2d, bâtiments = boutons) ; navigation centralisée
+`UINavHelper.navigateTo(Destination)` (~57 destinations) ; 2 surfaces = bâtiments `MainIconType`(23)→
+`getDestination` + menu ☰ `SideMenuIconData(...,Destination)` (`MenuIconType`={HEROES,ITEMS,QUESTS,MAILBOX,
+MEDALS,EVENTS}) ; accès gated par `canNavigateTo`/`Unlockable`. **Flèche de tuto** = `TutorialHelper.getPointers`
+→ tag d'acteur (le pilote la suit DÉJÀ). **Badges rouges "!"** = `DotTracker` (singleton) : `MAIN_RED_DOTS`/
+`MENU_RED_DOTS`/`MENU_DOT` (burger), chaque `Dot.showDot()` interrogeable = signal « action dispo » (hors tuto,
+plusieurs à la fois) — **le pilote NE l'utilise PAS encore** (opportunité d'autonomie post-tuto). **Prochain** :
+suivre le tuto (mène aux écrans suivants) + implémenter les handlers serveur au fur et à mesure (HeroList→Items→
+Quests). Outil ajouté : `server/smoke/DbInspect` (dump état persisté).
+
 Dernière mise à jour : **2026-07-17 (soir)** — **#25 LOOT AUTORITAIRE FAIT & CERTIFIÉ**. Le serveur **roule
 lui-même le butin** avec la graine LOOT du client (flux RNG **SÉPARÉ du combat** → fonction déterministe de la
 seule graine, **AUCUNE simulation requise**), reproduisant la séquence client EXACTE relevée au bytecode
@@ -301,6 +317,7 @@ docs/
   ASSETS.md               <- pipeline assets (index.txt + archive.org) + comment obtenir l'APK
   RECON.md                <- findings bruts de reconnaissance de l'APK
   SHIMS.md                <- registre substitutions + contraintes de chargement (-Xverify:none…)
+  HUB_NAV.md              <- recon navigation du hub (MainScreen/UINavHelper/DotTracker/flèche de tuto)
 game/
   disney-heroes-12.1.0.apk <- APK du jeu (committé, ~92 Mo) — évite le re-téléchargement
 tools/
