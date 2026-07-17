@@ -128,6 +128,7 @@ JOPTS="$JOPTS -Ddh.spinelib=$(cd .. && pwd)/native/reference/libspine-native.so"
 [ -n "${DH_COMBATSPIKE_CH:-}" ] && JOPTS="$JOPTS -Ddh.combatspike.ch=$DH_COMBATSPIKE_CH"
 [ -n "${DH_COMBATSPIKE_LV:-}" ] && JOPTS="$JOPTS -Ddh.combatspike.lv=$DH_COMBATSPIKE_LV"
 [ -n "${DH_COMBATSPIKE_SEED:-}" ] && JOPTS="$JOPTS -Ddh.combatspike.seed=$DH_COMBATSPIKE_SEED"
+[ -n "${DH_COMBATSPIKE_N:-}" ] && JOPTS="$JOPTS -Ddh.combatspike.n=$DH_COMBATSPIKE_N"
 [ -n "${DH_CSPINEPROFILE:-}" ] && JOPTS="$JOPTS -Ddh.cspineprofile=$DH_CSPINEPROFILE"
 [ -n "${DH_DYNARMIC:-}" ] && JOPTS="$JOPTS -Ddh.dynarmic=$DH_DYNARMIC"
 # DEV : backend spine Opt.3 (#28) — router l'animation du combat vers le runtime Java (spine-libgdx-perblue)

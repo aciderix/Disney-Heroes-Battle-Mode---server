@@ -61,39 +61,33 @@ public final class CombatSpikeDriver {
 
         System.out.println("[combatspike] OPT.2 — héros=" + attackers.size + " → NORMAL " + ch + "-" + lv
                 + " seed=" + seed + " (vrai HeadlessCombat dans le client headless unidbg)");
+        // OPT.2 : N combats enchaînés (identiques, re-seed) pour mesurer le RÉGIME ÉTABLI (VM chaude + assets en
+        // cache) — c'est le coût réel d'un serveur qui valide beaucoup de combats, pas le 1er à froid.
+        int nRuns = Integer.getInteger("dh.combatspike.n", 1);
         try {
-            Random rng = new Random(seed);
-            CampaignLootHelper.CampaignLoot loot =
-                    CampaignLootHelper.getLoot(u, type, ch, lv, 0, SpecialEventSnapshot.NONE, u, false);
-            Array defenders = CampaignAttackScreen.createStageDefenders(
-                    type, ch, lv, rng, false, SpecialEventSnapshot.NONE, u, loot);
-            System.out.println("[combatspike] vagues défenseurs=" + defenders.size);
+            for (int run = 1; run <= nRuns; run++) {
+                Random rng = new Random(seed);
+                CampaignLootHelper.CampaignLoot loot =
+                        CampaignLootHelper.getLoot(u, type, ch, lv, 0, SpecialEventSnapshot.NONE, u, false);
+                Array defenders = CampaignAttackScreen.createStageDefenders(
+                        type, ch, lv, rng, false, SpecialEventSnapshot.NONE, u, loot);
 
-            final int[] deaths = {0};
-            HeadlessCombat.IHeadlessEvents ev = new HeadlessCombat.IHeadlessEvents() {
-                @Override public void onDefenderUnitDeath(Unit x) { deaths[0]++; }
-            };
-            com.perblue.heroes.cspine.Native.resetProfile();   // phase 0 Opt.3 : mesurer la surface cspine du COMBAT
-            long t0 = System.nanoTime();
-            HeadlessCombat hc = new HeadlessCombat(HeroLineupType.DEFAULT, rng, attackers, defenders, mode, ev);
-            long tCtor = System.nanoTime();
-
-            int ticks = 0, cap = 200000;
-            while (!"DONE".equals(hc.getState().name()) && ticks < cap) {
-                hc.work();
-                ticks++;
+                final int[] deaths = {0};
+                HeadlessCombat.IHeadlessEvents ev = new HeadlessCombat.IHeadlessEvents() {
+                    @Override public void onDefenderUnitDeath(Unit x) { deaths[0]++; }
+                };
+                long t0 = System.nanoTime();
+                HeadlessCombat hc = new HeadlessCombat(HeroLineupType.DEFAULT, rng, attackers, defenders, mode, ev);
+                long tCtor = System.nanoTime();
+                int ticks = 0, cap = 200000;
+                while (!"DONE".equals(hc.getState().name()) && ticks < cap) { hc.work(); ticks++; }
+                long t1 = System.nanoTime();
+                Scene scene = hc.getScene();
+                boolean win = scene != null && scene.isAttackersLeft() && !scene.isDefendersLeft();
+                System.out.printf("[combatspike] run %d/%d : state=%s ticks=%d morts=%d %s | ctor=%.1f work=%.0f ms total=%.0f ms%n",
+                        run, nRuns, hc.getState(), ticks, deaths[0], (win ? "WIN" : "LOSS"),
+                        (tCtor - t0) / 1e6, (t1 - tCtor) / 1e6, (t1 - t0) / 1e6);
             }
-            long t1 = System.nanoTime();
-            System.out.print(com.perblue.heroes.cspine.Native.reportProfile());
-
-            Scene scene = hc.getScene();
-            boolean win = scene != null && scene.isAttackersLeft() && !scene.isDefendersLeft();
-            System.out.printf("[combatspike] FIN state=%s ticks=%d | ctor=%.1f ms  work=%.1f ms  total=%.1f ms%n",
-                    hc.getState(), ticks, (tCtor - t0) / 1e6, (t1 - tCtor) / 1e6, (t1 - t0) / 1e6);
-            System.out.println("[combatspike] morts défenseurs=" + deaths[0]);
-            System.out.println("[combatspike] ISSUE : attackersLeft=" + (scene != null && scene.isAttackersLeft())
-                    + " defendersLeft=" + (scene != null && scene.isDefendersLeft()) + " → "
-                    + (win ? "WIN" : "LOSS/indéterminé"));
         } catch (Throwable t) {
             System.out.println("[combatspike] EXCEPTION: " + t);
             t.printStackTrace();
