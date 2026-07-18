@@ -418,8 +418,11 @@ public final class TutorialDriver {
         // si absent, ouvrir d'abord le burger (BASE_MENU_BUTTON / SIDE_MENU). Le tap sur BASE_MENU_HERO_BUTTON
         // hors du hub (ex. CampaignPreviewScreen) ne navigue PAS → on ne le tente QUE sur MainScreen.
         if (screenName.contains("MainScreen")) {
+            // Le menu latéral est COLLAPSÉ par défaut : les icônes (BASE_MENU_HERO_BUTTON) sont HORS écran
+            // à droite (x≈1341 > 1280). On ne peut les taper que si le menu est OUVERT → si l'icône HÉROS est
+            // hors écran, taper d'abord le burger (BASE_MENU_BUTTON, à x≈1226, ON écran) pour dérouler.
             List<Actor> heroBtn = findByName(searchRoot, "BASE_MENU_HERO_BUTTON");
-            if (!heroBtn.isEmpty()) {
+            if (!heroBtn.isEmpty() && onStage(heroBtn.get(0))) {
                 if (DEBUG) System.out.println("[autoequip] MainScreen → menu HÉROS (BASE_MENU_HERO_BUTTON)");
                 return tapAll(heroBtn.subList(0, 1), input, w, h);
             }
@@ -439,6 +442,14 @@ public final class TutorialDriver {
             return tapAll(back.subList(0, 1), input, w, h);
         }
         return false;
+    }
+
+    /** Vrai si le centre de l'acteur tombe DANS les bornes du stage (donc réellement tapable à l'écran). */
+    private static boolean onStage(Actor a) {
+        Stage st = a.getStage();
+        if (st == null || a.getWidth() <= 0 || !a.isVisible()) return false;
+        Vector2 v = a.localToStageCoordinates(new Vector2(a.getWidth() / 2f, a.getHeight() / 2f));
+        return v.x >= 0 && v.x <= st.getWidth() && v.y >= 0 && v.y <= st.getHeight();
     }
 
     /** Acteurs dont la classe simple contient {@code s} (et de taille non nulle). */

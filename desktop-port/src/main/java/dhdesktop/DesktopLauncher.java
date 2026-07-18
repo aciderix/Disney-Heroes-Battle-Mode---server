@@ -115,6 +115,12 @@ public final class DesktopLauncher {
         int recCount = 0;
         boolean recTickPending = false;
         if (tutoRec) new java.io.File("build/rec").mkdirs();
+        // DEV : CLIC MANUEL (dh.clickfile=chemin) — méthode B-bis « je fais le clic moi-même ». Chaque frame,
+        // on lit le fichier ; chaque ligne "x,y" (pixels ÉCRAN, origine haut-gauche = comme la capture) injecte
+        // un tap via l'INPUT RÉEL du jeu (donc hit-test correct, contrairement à un clic X synthétique), puis on
+        // vide le fichier. Une capture build/manual.ppm est écrite en continu → on VOIT le résultat de chaque
+        // clic + on monitore le serveur. Off par défaut, aucun effet en prod.
+        String clickFile = System.getProperty("dh.clickfile");
         // Pilotage headless : dh.autotap=N injecte un tap au centre toutes les N frames (0 = off).
         // Sert à FAIRE AVANCER le tutoriel (dialogues « tap to continue ») sans utilisateur, pour
         // vérifier « tuto jouable de bout en bout » et observer ce que le client envoie ensuite.
@@ -159,6 +165,8 @@ public final class DesktopLauncher {
                 recTickPending = tutoRec && TutorialDriver.recCaptureRequested();
             }
             if (autofight && frames % 20 == 0) enableAutoCombat(game);  // DEV : bouton AUTO d'origine
+            // DEV : clic manuel injecté depuis dh.clickfile (voir déclaration).
+            if (clickFile != null && frames > 90) injectManualClicks(clickFile, input);
             input.drain();          // input synthétique (pilotage) sur le thread render
             app.drainRunnables();   // Gdx.app.postRunnable
             game.render();
@@ -173,6 +181,7 @@ public final class DesktopLauncher {
             frames++;
 
             if (shot != null && shotEvery > 0 && frames % shotEvery == 0) capture(W, H, shot);
+            if (clickFile != null && frames % 10 == 0) capture(W, H, "build/manual.ppm");   // vue continue
             if (recTickPending) { capture(W, H, String.format("build/rec/step_%03d.ppm", recCount++)); recTickPending = false; }
 
             if (fpsWindow > 0 && frames % fpsWindow == 0) {
@@ -200,6 +209,27 @@ public final class DesktopLauncher {
      * {@code setAutoAttack} de {@code CoreAttackScreen}). Réflexion → aucune dépendance de compilation,
      * aucune modif du jeu. No-op hors combat. Idempotent (n'appelle que si pas déjà en auto).
      */
+    /** DEV : lit dh.clickfile et injecte un tap par ligne "x,y" (pixels écran, origine haut-gauche),
+     *  puis VIDE le fichier. Passe par l'input RÉEL du jeu (hit-test correct). Off en prod. */
+    private static void injectManualClicks(String path, DhInput input) {
+        try {
+            java.io.File cf = new java.io.File(path);
+            if (!cf.isFile() || cf.length() == 0) return;
+            java.util.List<String> lines = java.nio.file.Files.readAllLines(cf.toPath());
+            try (java.io.PrintWriter pw = new java.io.PrintWriter(cf)) { /* truncate */ }
+            for (String ln : lines) {
+                ln = ln.trim();
+                if (ln.isEmpty() || ln.startsWith("#") || ln.equalsIgnoreCase("shot")) continue;
+                String[] xy = ln.split("[,;\\s]+");
+                if (xy.length >= 2) {
+                    int cx = Integer.parseInt(xy[0].trim()), cy = Integer.parseInt(xy[1].trim());
+                    System.out.println("[manualclick] tap (" + cx + "," + cy + ")");
+                    input.tap(cx, cy);
+                }
+            }
+        } catch (Throwable t) { System.out.println("[manualclick] err " + t); }
+    }
+
     private static boolean autoCombatLogged = false;
     private static void enableAutoCombat(GameMain game) {
         try {
