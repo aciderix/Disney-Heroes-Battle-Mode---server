@@ -9,6 +9,7 @@ import com.perblue.heroes.game.objects.User;
 import com.perblue.heroes.game.objects.IHero;
 import com.perblue.heroes.game.logic.HeroHelper;
 import com.perblue.heroes.network.messages.HeroEquipSlot;
+import com.perblue.heroes.network.messages.UnitType;
 import com.perblue.heroes.game.tutorial.TutorialHelper;
 import com.perblue.heroes.game.tutorial.TutorialPointerInfo;
 import dhbackend.DhInput;
@@ -91,17 +92,26 @@ public final class TutorialDriver {
             && !"0".equals(System.getProperty("dh.autoequip"))
             && !"false".equalsIgnoreCase(System.getProperty("dh.autoequip"));
     private static String equipDumpedScreen = "";
+    // Slots dont l'équip a ÉCHOUÉ en jeu (ErrorWindow) → à SAUTER pour éviter la boucle re-EQUIP→erreur.
+    // Clé "HERO:SLOT". lastEquip* = dernier slot tenté (pour l'attribuer à l'échec quand l'erreur surgit).
+    private static final Set<String> failedEquipSlots = new HashSet<>();
+    private static UnitType lastEquipHero = null;
+    private static HeroEquipSlot lastEquipSlot = null;
 
-    /** Au moins un héros possédé a-t-il un objet équipable (le « +equip vert ») ? Logique du jeu. */
+    /** Au moins un héros possédé a-t-il un objet équipable (le « +equip vert ») ET non-bloqué ? */
     private static boolean anyHeroNeedsEquip(User user) {
         return firstHeroNeedingEquip(user) != null;
     }
-    /** 1er héros possédé avec un objet équipable, sinon null. */
+    /** 1er héros possédé avec un objet équipable dont le slot n'est PAS déjà en échec, sinon null. */
     private static IHero firstHeroNeedingEquip(User user) {
         try {
             for (Object o : user.getHeroes()) {
                 IHero hh = (IHero) o;
-                if (HeroHelper.hasItemsToEquip(user, hh)) return hh;
+                if (!HeroHelper.hasItemsToEquip(user, hh)) continue;
+                HeroEquipSlot s = HeroHelper.getSlotThatCanEquip(user, hh);
+                // slot suivant déjà connu comme échouant (item manquant/non équipable) → héros bloqué, on saute.
+                if (s != null && failedEquipSlots.contains(hh.getType().name() + ":" + s.name())) continue;
+                return hh;
             }
         } catch (Throwable t) {}
         return null;
@@ -199,6 +209,22 @@ public final class TutorialDriver {
                 // (→ faux « tapé », blocage). On raisonne donc sur la fenêtre du dessus uniquement.
                 Object top = windows.get(windows.size() - 1);
                 String cls = top.getClass().getSimpleName();
+
+                // (a0) Fenêtre d'ERREUR (équip refusé : « can't equip / don't have ») dans la pile → la FERMER
+                //     et ABANDONNER l'équip courant (fermer la CraftingWindow) + mémoriser le (héros,slot)
+                //     échoué, sinon boucle re-EQUIP→erreur→re-EQUIP (observé). equipDrive sautera ce slot.
+                for (Object wnd : windows) {
+                    if (wnd.getClass().getSimpleName().toLowerCase().contains("error")) {
+                        if (lastEquipHero != null && lastEquipSlot != null)
+                            failedEquipSlots.add(lastEquipHero.name() + ":" + lastEquipSlot.name());
+                        try { wnd.getClass().getMethod("hide").invoke(wnd); } catch (Throwable ignore) {}
+                        for (Object w2 : windows) if (w2.getClass().getSimpleName().contains("Crafting"))
+                            try { w2.getClass().getMethod("hide").invoke(w2); } catch (Throwable ignore) {}
+                        if (DEBUG) System.out.println("[autoequip] équip REFUSÉ (ErrorWindow) slot=" + lastEquipSlot
+                            + " → fermé + slot marqué échoué");
+                        return true;
+                    }
+                }
 
                 // (a) Le tuto pointe DANS la fenêtre du dessus → taper le bouton désigné.
                 List<Actor> inTop = new ArrayList<>();
@@ -412,7 +438,9 @@ public final class TutorialDriver {
             if (slot != null) {
                 List<Actor> s = findByName(searchRoot, "HERO_GEAR_SLOT_ " + slot.name());
                 if (!s.isEmpty()) {
-                    if (DEBUG) System.out.println("[autoequip] tap slot HERO_GEAR_SLOT_ " + slot.name());
+                    lastEquipHero = hero.getType(); lastEquipSlot = slot;   // pour attribuer un éventuel échec
+                    if (DEBUG) System.out.println("[autoequip] tap slot HERO_GEAR_SLOT_ " + slot.name()
+                        + " (" + hero.getType() + ")");
                     return tapAll(s, input, w, h);
                 }
             }
