@@ -521,15 +521,27 @@ public final class ServerUser {
     String cmd = m.command == null ? "" : m.command.name();
     switch (cmd) {
       case "EQUIP_ITEM": {
-        // Équiper un objet d'équipement sur un héros — logique d'origine : HeroHelper.getSlotThatCanEquip
-        // (valide niveau/released/craft via la couche CONTENU, désormais chargée par ServerContext) puis
-        // HeroHelper.equipItem.
+        // Équiper un objet d'équipement sur un héros — logique d'origine (HeroHelper.equipItem).
+        // ⚠ SLOT = celui CHOISI PAR LE CLIENT (Action.extra[SLOT]) : le joueur a tapé un slot précis dans
+        // l'UI (ex. BADGE_OF_FRIENDSHIP → slot SIX). Se fier à getSlotThatCanEquip(user,hero) est FAUX quand
+        // PLUSIEURS slots sont équipables : il renvoie le PREMIER (ex. ONE) → equipItem tente d'y mettre un
+        // objet qui n'y va pas → ClientErrorCodeException WRONG_ITEM (bug observé en jeu : Frozone a d'autres
+        // gear dispo après les coffres → slot ONE renvoyé, mais le Badge va en SIX). On honore donc le SLOT
+        // du client ; getSlotThatCanEquip = repli seulement si le client n'a pas précisé (compat).
         com.perblue.heroes.game.objects.IHero hero = user.getHero(m.heroType);
         if (hero == null) { System.out.println("[action] EQUIP_ITEM: héros absent " + m.heroType); return false; }
-        com.perblue.heroes.network.messages.HeroEquipSlot slot =
-            com.perblue.heroes.game.logic.HeroHelper.getSlotThatCanEquip(user, hero);
+        com.perblue.heroes.network.messages.HeroEquipSlot slot = null;
+        Object slotO = m.extra == null ? null
+            : m.extra.get(com.perblue.heroes.network.messages.ActionExtraType.SLOT);
+        if (slotO instanceof com.perblue.heroes.network.messages.HeroEquipSlot)
+          slot = (com.perblue.heroes.network.messages.HeroEquipSlot) slotO;
+        else if (slotO != null)
+          try { slot = com.perblue.heroes.network.messages.HeroEquipSlot.valueOf(slotO.toString()); }
+          catch (IllegalArgumentException ignore) {}
+        if (slot == null) slot = com.perblue.heroes.game.logic.HeroHelper.getSlotThatCanEquip(user, hero);
         if (slot == null) { System.out.println("[action] EQUIP_ITEM: aucun slot équipable pour " + m.heroType); return false; }
         com.perblue.heroes.game.logic.HeroHelper.equipItem(m.heroType, m.itemType, slot, user);
+        System.out.println("[action] EQUIP_ITEM " + m.heroType + " " + m.itemType + " slot=" + slot + " (client)");
         return true;
       }
       case "EQUIP_REAL_GEAR": {

@@ -67,13 +67,21 @@ Le serveur **exécute le code du jeu** (PRINCIPLES §3 « lire & exécuter »). 
 
 5. **Handler `Action` (équiper/voir/promouvoir…) — `EQUIP_ITEM` ✅ VÉRIFIÉ ; autres commandes à ajouter.**
    *Où* : `ServerUser.applyAction`/`applyCommand` + `LoginServer` (branche `Action`).
-   **`EQUIP_ITEM` ✅ FONCTIONNEL & VÉRIFIÉ IN-GAME (wire)** : `HeroHelper.getSlotThatCanEquip` (valide
-   niveau/released/craft) puis `HeroHelper.equipItem(heroType, itemType, slot, user)` — **logique d'origine,
-   sans contournement**. **Vérifié** (a) `server/smoke/EquipTest` (round-trip wire) ET (b) **EN JEU** : le vrai
-   client émet `Action{EQUIP_ITEM, FROZONE, BADGE_OF_FRIENDSHIP, extra={SLOT=SIX}}` (séquence tuto enregistrée
-   `HERO_GEAR_SLOT_SIX`→`CRAFTING_WINDOW_EQUIP_BUTTON`), le serveur répond `action EQUIP_ITEM appliquée
-   [persisté]` et le tuto INTRO_FEATURES avance. NB : le client passe le slot dans `extra={SLOT=SIX}` (le
-   handler le recalcule via `getSlotThatCanEquip`, concordant ; préférer l'`extra` quand présent).
+   **`EQUIP_ITEM` ✅ FONCTIONNEL** : `HeroHelper.equipItem(heroType, itemType, slot, user)` — logique d'origine.
+   **⚠ CORRECTIF (2026-07-18, trouvé EN JEU au clic manuel) — utiliser le SLOT DU CLIENT, pas `getSlotThatCanEquip`.**
+   Le client émet `Action{EQUIP_ITEM, FROZONE, BADGE_OF_FRIENDSHIP, extra={SLOT=SIX}}` (le joueur a tapé le slot
+   SIX dans l'UI ; séquence `HERO_GEAR_SLOT_SIX`→`CRAFTING_WINDOW_EQUIP_BUTTON`). L'ancien handler **ignorait
+   `extra[SLOT]`** et devinait via `getSlotThatCanEquip(user,hero)` — qui renvoie le **PREMIER** slot équipable
+   (ex. `ONE`) quand **plusieurs** le sont (Frozone a d'autres gear après les coffres) → `equipItem` tentait le
+   Badge en slot ONE → **`ClientErrorCodeException: WRONG_ITEM`** → `EQUIP_ITEM non appliquée (PARTIEL)` : le
+   client équipe (Power 62→77) mais le serveur REFUSE → divergence perdue au reload. `EquipTest` ne l'avait pas
+   vu (compte neuf : `getSlotThatCanEquip`=SIX **coïncide**). Fix : lire `m.extra.get(ActionExtraType.SLOT)`
+   (enum ou String), repli `getSlotThatCanEquip` si absent. **Vérifié** : `server/smoke/EquipSlotTest` (DB réelle
+   du bug : `getSlotThatCanEquip`=ONE, mais `SLOT=SIX` honoré → Badge en slot SIX, persiste) + régression
+   `EquipTest`/`ResourceTest` verts. **⚠ 2ᵉ GAP restant (non corrigé)** : dans le flux réel, le serveur n'a
+   **pas** `BADGE_OF_FRIENDSHIP` en inventaire (→ `DONT_HAVE_ITEM` une fois le slot corrigé) — divergence de
+   **loot** (§E/#25 mode OMBRE : le loot de coffre/campagne du tuto n'est pas crédité à l'identique côté
+   serveur). L'équip complet en jeu exige de résoudre ce crédit de loot du Badge.
 
    - **Couche CONTENU (colonnes de release) ✅ RÉSOLU** : `ContentHelper` démarre **vide**
      (`ContentStats.getColumns()=0` → `getColumn(now)=DEFAULT` → `isItemReleased`=false pour TOUT → casse
