@@ -382,9 +382,9 @@ public final class TutorialDriver {
         IHero hero = firstHeroNeedingEquip(user);
         if (hero == null) return false;
 
-        // DUMP DEV (une fois par écran pertinent) : révèle les VRAIS tags (recon B-bis).
-        if (DEBUG && (screenName.contains("HeroList") || screenName.contains("HeroDetail"))
-                && !screenName.equals(equipDumpedScreen)) {
+        // DUMP DEV (une fois par écran, TOUS écrans pendant l'équip) : révèle les VRAIS tags/structure
+        // (recon B-bis : menu latéral, cartes HeroList, onglets/slots HeroDetail).
+        if (DEBUG && !screenName.equals(equipDumpedScreen)) {
             equipDumpedScreen = screenName;
             HeroEquipSlot sl = HeroHelper.getSlotThatCanEquip(user, hero);
             System.out.println("[autoequip] écran=" + screenName + " héros=" + hero.getType() + " slot=" + sl);
@@ -396,7 +396,6 @@ public final class TutorialDriver {
             HeroEquipSlot slot = HeroHelper.getSlotThatCanEquip(user, hero);
             if (slot != null) {
                 List<Actor> s = findByName(searchRoot, "HERO_GEAR_SLOT_" + slot);
-                if (s.isEmpty()) s = findByName(searchRoot, "HERO_GEAR_SLOT_" + slot.name());
                 if (!s.isEmpty()) {
                     if (DEBUG) System.out.println("[autoequip] tap slot HERO_GEAR_SLOT_" + slot);
                     return tapAll(s, input, w, h);
@@ -415,13 +414,26 @@ public final class TutorialDriver {
             }
             return false;
         }
-        // Ailleurs (hub/carte) : ouvrir le menu HÉROS ; sinon revenir vers le hub (BACK).
-        List<Actor> heroBtn = findByName(searchRoot, "BASE_MENU_HERO_BUTTON");
-        if (!heroBtn.isEmpty()) {
-            if (DEBUG) System.out.println("[autoequip] " + screenName + " → menu HÉROS (BASE_MENU_HERO_BUTTON)");
-            return tapAll(heroBtn.subList(0, 1), input, w, h);
+        // HUB (MainScreen) : ouvrir le menu HÉROS. BASE_MENU_HERO_BUTTON est dans le menu latéral (burger) →
+        // si absent, ouvrir d'abord le burger (BASE_MENU_BUTTON / SIDE_MENU). Le tap sur BASE_MENU_HERO_BUTTON
+        // hors du hub (ex. CampaignPreviewScreen) ne navigue PAS → on ne le tente QUE sur MainScreen.
+        if (screenName.contains("MainScreen")) {
+            List<Actor> heroBtn = findByName(searchRoot, "BASE_MENU_HERO_BUTTON");
+            if (!heroBtn.isEmpty()) {
+                if (DEBUG) System.out.println("[autoequip] MainScreen → menu HÉROS (BASE_MENU_HERO_BUTTON)");
+                return tapAll(heroBtn.subList(0, 1), input, w, h);
+            }
+            List<Actor> burger = findByName(searchRoot, "BASE_MENU_BUTTON");
+            if (burger.isEmpty()) burger = findByName(searchRoot, "SIDE_MENU");
+            if (!burger.isEmpty()) {
+                if (DEBUG) System.out.println("[autoequip] MainScreen → ouvrir le menu latéral (burger)");
+                return tapAll(burger.subList(0, 1), input, w, h);
+            }
+            return false;
         }
+        // Ailleurs (aperçu/chooser/carte) : revenir vers le hub (BACK) — le menu HÉROS n'y fonctionne pas.
         List<Actor> back = findByName(searchRoot, "BACK_BUTTON");
+        if (back.isEmpty()) back = findByName(searchRoot, "BACK_BUTTON_WRAP");
         if (!back.isEmpty()) {
             if (DEBUG) System.out.println("[autoequip] " + screenName + " → BACK (vers le hub pour équiper)");
             return tapAll(back.subList(0, 1), input, w, h);
