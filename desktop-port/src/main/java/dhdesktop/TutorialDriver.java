@@ -305,9 +305,12 @@ public final class TutorialDriver {
                     } else combatCooldown--;
                     return true;   // géré ici (flèche de continuation) ; pas de tap central du lanceur
                 }
-                // ÉQUIPEMENT en attente + AUCUNE flèche de tuto active : le pilote NAVIGUE vers l'équip (repli).
-                // Priorité au tuto : si une flèche est active, on ne passe pas ici (targets non vide → bloc plus bas).
-                if (needEquip && equipDrive(user, screenName, searchRoot, input, w, h)) return true;
+                // NB : la NAVIGATION d'équip est laissée au TUTO (ses flèches guident coffre→burger→HEROES→
+                // héros→+EQUIP→EQUIP, suivies par le bloc « cible désignée »). On ne FORCE PAS equipDrive ici :
+                // il entrait en conflit avec le pas courant du tuto (ex. sur ChestsScreen le tuto veut d'abord
+                // OUVRIR un coffre, mais equipDrive faisait BACK). Le rôle du pilote à l'équip = juste NE PAS
+                // foncer en campagne (gates needEquip ci-dessus/dessous) et suivre les pointeurs. equipDrive
+                // reste dispo comme repli de DERNIER recours (idle prolongé) — branché plus bas.
                 // POST-VICTOIRE — ENCHAÎNER : après un combat, le client revient sur l'aperçu/choix du MÊME
                 // niveau ; sans intervention le pilote re-taperait FIGHT (rejoue le même niveau). On revient
                 // plutôt à la CARTE (BACK) une fois : sur CampaignScreen, enterCampaignLevel prendra
@@ -339,6 +342,11 @@ public final class TutorialDriver {
                         + adv.get(0).getTutorialName());
                     return tapAll(adv, input, w, h);
                 }
+                // REPLI ÉQUIP (dernier recours) : équipement en attente + idle prolongé SANS pointeur de tuto
+                // → naviguer vers l'équip nous-mêmes (menu HÉROS → héros → +EQUIP). Ne fait rien tant que le
+                // tuto guide (pointeur actif → on ne passe pas dans ce bloc idle).
+                if (needEquip && idleTicks >= IDLE_BACK_THRESHOLD
+                        && equipDrive(user, screenName, searchRoot, input, w, h)) { idleTicks = 0; return true; }
                 if (!screenName.contains("MainScreen") && idleTicks >= IDLE_BACK_THRESHOLD) {
                     List<Actor> back = findByName(searchRoot, "BACK_BUTTON");
                     if (!back.isEmpty()) {
