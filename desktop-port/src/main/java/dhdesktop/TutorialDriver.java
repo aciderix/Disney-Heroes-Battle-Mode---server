@@ -6,6 +6,9 @@ import com.badlogic.gdx.scenes.scene2d.Group;
 import com.badlogic.gdx.scenes.scene2d.Stage;
 import com.perblue.heroes.GameMain;
 import com.perblue.heroes.game.objects.User;
+import com.perblue.heroes.game.objects.IHero;
+import com.perblue.heroes.game.logic.HeroHelper;
+import com.perblue.heroes.network.messages.HeroEquipSlot;
 import com.perblue.heroes.game.tutorial.TutorialHelper;
 import com.perblue.heroes.game.tutorial.TutorialPointerInfo;
 import dhbackend.DhInput;
@@ -78,6 +81,30 @@ public final class TutorialDriver {
     private static int[] parseLevel(String s) {
         try { String[] p = s.split(","); return new int[]{Integer.parseInt(p[0].trim()), Integer.parseInt(p[1].trim())}; }
         catch (Throwable t) { return new int[]{1, 1}; }
+    }
+    // AUTO-ÉQUIPEMENT (DEV, dh.autoequip) : à l'étape équip (OBLIGATOIRE dans le tuto — on ne peut pas
+    // avancer sans), le pilote doit ALLER ÉQUIPER au lieu de foncer en campagne. Avant ce correctif, le
+    // pilote entrait en campagne via l'API du jeu (normalOrEliteNodeSelected), COURT-CIRCUITANT le verrou
+    // d'équip du tuto (infidèle). Détection 100% LOGIQUE du jeu (HeroHelper.hasItemsToEquip = le « +equip
+    // vert »), action via l'UI du jeu (menu HÉROS → HeroDetail → slot GEAR → CraftingWindow → EQUIP).
+    private static final boolean AUTO_EQUIP = System.getProperty("dh.autoequip") != null
+            && !"0".equals(System.getProperty("dh.autoequip"))
+            && !"false".equalsIgnoreCase(System.getProperty("dh.autoequip"));
+    private static String equipDumpedScreen = "";
+
+    /** Au moins un héros possédé a-t-il un objet équipable (le « +equip vert ») ? Logique du jeu. */
+    private static boolean anyHeroNeedsEquip(User user) {
+        return firstHeroNeedingEquip(user) != null;
+    }
+    /** 1er héros possédé avec un objet équipable, sinon null. */
+    private static IHero firstHeroNeedingEquip(User user) {
+        try {
+            for (Object o : user.getHeroes()) {
+                IHero hh = (IHero) o;
+                if (HeroHelper.hasItemsToEquip(user, hh)) return hh;
+            }
+        } catch (Throwable t) {}
+        return null;
     }
     // Le recorder DÉCIME : on pilote à chaque frame (fiable — certains boutons pulsés exigent des taps
     // rapprochés) mais on ne DUMP + capture que toutes les RECEVERY frames (étapes nettes, peu de fichiers).
@@ -244,10 +271,17 @@ public final class TutorialDriver {
                 mapProbe(screenName, searchRoot, stg, input, w, h);
                 return true;   // handled : empêche le tap central du lanceur
             }
+            // ÉTAPE ÉQUIPEMENT (OBLIGATOIRE) : si un héros a un objet équipable, ALLER ÉQUIPER en PRIORITÉ
+            // (avant toute entrée en campagne). Le tuto verrouille la progression tant qu'on n'a pas équipé ;
+            // sans ça le pilote forçait la campagne via l'API et sautait cette étape (infidèle).
+            boolean needEquip = AUTO_EQUIP && anyHeroNeedsEquip(user);
+            if (needEquip && equipDrive(user, screenName, searchRoot, input, w, h)) return true;
+
             // ENTRÉE DE NIVEAU : sur la carte de campagne (scène g2d, aucun acteur cliquable, getPointers vide),
             // on déclenche la MÊME méthode du jeu que le vrai tap d'un nœud de niveau (onCampaignLevelTapped)
             // pour le niveau jouable → ouvre le choix des héros (le pilote gère ensuite le bouton FIGHT).
-            if (!MAP_PROBE && screenName.equals("CampaignScreen") && enterCampaignLevel(screen, user)) return true;
+            // Suspendu tant qu'un équipement est en attente (ne pas court-circuiter le verrou d'équip du tuto).
+            if (!MAP_PROBE && !needEquip && screenName.equals("CampaignScreen") && enterCampaignLevel(screen, user)) return true;
 
             // Aucun pointeur de tuto : soit un dialogue « tap to continue » (le lanceur tape au centre), soit
             // le tuto attend qu'on SORTE d'un sous-écran de nous-mêmes (ex. post-équip sur HeroDetailScreen :
@@ -336,6 +370,74 @@ public final class TutorialDriver {
         } catch (Throwable t) {
             return false;   // écran/étape sans pointeur exploitable → no-op
         }
+    }
+
+    /** Routine d'ÉQUIPEMENT autonome (DEV). Détection logique (HeroHelper), action via l'UI du jeu.
+     *  Étapes : (ailleurs) ouvrir le menu HÉROS → (HeroList) taper la carte du héros → (HeroDetail) taper
+     *  le slot {@code getSlotThatCanEquip} → CraftingWindow → EQUIP (géré par le bloc popup existant).
+     *  Ne touche JAMAIS un écran de combat (*AttackScreen). Renvoie true si une action a été injectée. */
+    private static boolean equipDrive(User user, String screenName, Group searchRoot,
+                                      DhInput input, int w, int h) {
+        if (screenName.contains("AttackScreen")) return false;   // ne pas interrompre un combat
+        IHero hero = firstHeroNeedingEquip(user);
+        if (hero == null) return false;
+
+        // DUMP DEV (une fois par écran pertinent) : révèle les VRAIS tags (recon B-bis).
+        if (DEBUG && (screenName.contains("HeroList") || screenName.contains("HeroDetail"))
+                && !screenName.equals(equipDumpedScreen)) {
+            equipDumpedScreen = screenName;
+            HeroEquipSlot sl = HeroHelper.getSlotThatCanEquip(user, hero);
+            System.out.println("[autoequip] écran=" + screenName + " héros=" + hero.getType() + " slot=" + sl);
+            dumpActionable(searchRoot, screenName);
+        }
+
+        // HeroDetail : taper le SLOT équipable → ouvre CraftingWindow (le bloc popup tape ensuite EQUIP).
+        if (screenName.contains("HeroDetail")) {
+            HeroEquipSlot slot = HeroHelper.getSlotThatCanEquip(user, hero);
+            if (slot != null) {
+                List<Actor> s = findByName(searchRoot, "HERO_GEAR_SLOT_" + slot);
+                if (s.isEmpty()) s = findByName(searchRoot, "HERO_GEAR_SLOT_" + slot.name());
+                if (!s.isEmpty()) {
+                    if (DEBUG) System.out.println("[autoequip] tap slot HERO_GEAR_SLOT_" + slot);
+                    return tapAll(s, input, w, h);
+                }
+            }
+            return false;   // slot introuvable (onglet GEAR pas actif ?) → le dump ci-dessus aide à câbler
+        }
+        // HeroList : taper la carte du héros à équiper (tag si présent, sinon 1re carte HeroListCard).
+        if (screenName.contains("HeroList")) {
+            List<Actor> card = findByName(searchRoot, "HERO_LIST_CARD_" + hero.getType());
+            if (card.isEmpty()) card = findByClass(searchRoot, "HeroListCard");
+            if (card.isEmpty()) card = findByClass(searchRoot, "HeroListDetailedCard");
+            if (!card.isEmpty()) {
+                if (DEBUG) System.out.println("[autoequip] tap carte héros " + hero.getType());
+                return tapAll(card.subList(0, 1), input, w, h);
+            }
+            return false;
+        }
+        // Ailleurs (hub/carte) : ouvrir le menu HÉROS ; sinon revenir vers le hub (BACK).
+        List<Actor> heroBtn = findByName(searchRoot, "BASE_MENU_HERO_BUTTON");
+        if (!heroBtn.isEmpty()) {
+            if (DEBUG) System.out.println("[autoequip] " + screenName + " → menu HÉROS (BASE_MENU_HERO_BUTTON)");
+            return tapAll(heroBtn.subList(0, 1), input, w, h);
+        }
+        List<Actor> back = findByName(searchRoot, "BACK_BUTTON");
+        if (!back.isEmpty()) {
+            if (DEBUG) System.out.println("[autoequip] " + screenName + " → BACK (vers le hub pour équiper)");
+            return tapAll(back.subList(0, 1), input, w, h);
+        }
+        return false;
+    }
+
+    /** Acteurs dont la classe simple contient {@code s} (et de taille non nulle). */
+    private static List<Actor> findByClass(Actor root, String s) {
+        List<Actor> out = new ArrayList<>();
+        findByClassRec(root, s, out);
+        return out;
+    }
+    private static void findByClassRec(Actor a, String s, List<Actor> out) {
+        if (a.getClass().getSimpleName().contains(s) && a.getWidth() > 0 && a.getHeight() > 0) out.add(a);
+        if (a instanceof Group) for (Actor c : ((Group) a).getChildren()) findByClassRec(c, s, out);
     }
 
     /** Collecte les boutons-texte cliquables (action principale : « VIEW/OPEN/OK/CONTINUE »…). */
