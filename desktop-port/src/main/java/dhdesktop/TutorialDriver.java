@@ -271,11 +271,12 @@ public final class TutorialDriver {
                 mapProbe(screenName, searchRoot, stg, input, w, h);
                 return true;   // handled : empêche le tap central du lanceur
             }
-            // ÉTAPE ÉQUIPEMENT (OBLIGATOIRE) : si un héros a un objet équipable, ALLER ÉQUIPER en PRIORITÉ
-            // (avant toute entrée en campagne). Le tuto verrouille la progression tant qu'on n'a pas équipé ;
-            // sans ça le pilote forçait la campagne via l'API et sautait cette étape (infidèle).
+            // ÉTAPE ÉQUIPEMENT (OBLIGATOIRE) : si un héros a un objet équipable, on NE FONCE PAS en campagne
+            // (le tuto verrouille la progression tant qu'on n'a pas équipé ; sans ça le pilote forçait la
+            // campagne via l'API et sautait cette étape). La navigation d'équip elle-même est laissée AU TUTO
+            // (ses flèches guident bâtiment→coffre→burger→HEROES→héros→+EQUIP→EQUIP, suivies plus bas par le
+            // bloc « cible désignée ») ; equipDrive n'intervient qu'en REPLI si aucune flèche n'est active.
             boolean needEquip = AUTO_EQUIP && anyHeroNeedsEquip(user);
-            if (needEquip && equipDrive(user, screenName, searchRoot, input, w, h)) return true;
 
             // ENTRÉE DE NIVEAU : sur la carte de campagne (scène g2d, aucun acteur cliquable, getPointers vide),
             // on déclenche la MÊME méthode du jeu que le vrai tap d'un nœud de niveau (onCampaignLevelTapped)
@@ -304,11 +305,15 @@ public final class TutorialDriver {
                     } else combatCooldown--;
                     return true;   // géré ici (flèche de continuation) ; pas de tap central du lanceur
                 }
+                // ÉQUIPEMENT en attente + AUCUNE flèche de tuto active : le pilote NAVIGUE vers l'équip (repli).
+                // Priorité au tuto : si une flèche est active, on ne passe pas ici (targets non vide → bloc plus bas).
+                if (needEquip && equipDrive(user, screenName, searchRoot, input, w, h)) return true;
                 // POST-VICTOIRE — ENCHAÎNER : après un combat, le client revient sur l'aperçu/choix du MÊME
                 // niveau ; sans intervention le pilote re-taperait FIGHT (rejoue le même niveau). On revient
                 // plutôt à la CARTE (BACK) une fois : sur CampaignScreen, enterCampaignLevel prendra
                 // nextPlayableLevel = niveau débloqué SUIVANT (1-1→1-2→…). Le déblocage est autoritatif serveur.
-                if (justFoughtCampaign
+                // Suspendu si un équipement est en attente (ne pas enchaîner la campagne avant d'équiper).
+                if (!needEquip && justFoughtCampaign
                         && (screenName.contains("CampaignPreview") || screenName.contains("HeroChooser"))) {
                     List<Actor> back = findByName(searchRoot, "BACK_BUTTON");
                     if (!back.isEmpty()) {
@@ -326,8 +331,9 @@ public final class TutorialDriver {
                 // pointeur sur l'aperçu du niveau ni le choix des héros, mais il faut quand même taper le
                 // bouton FIGHT pour (re)lancer le combat. On tape donc l'acteur du jeu par son tutorialName
                 // au lieu de faire RETOUR (qui bouclait aperçu↔carte). L'équipe est mémorisée entre essais.
+                // (suspendu si équipement en attente : ne pas relancer un combat avant d'équiper)
                 List<Actor> adv = new ArrayList<>();
-                collect(searchRoot, ADVANCE_BUTTONS, adv);
+                if (!needEquip) collect(searchRoot, ADVANCE_BUTTONS, adv);
                 if (!adv.isEmpty()) {
                     if (DEBUG) System.out.println("[tutodrive] " + screenName + " sans pointeur → tap bouton d'action "
                         + adv.get(0).getTutorialName());
