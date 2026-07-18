@@ -65,6 +65,22 @@ public final class StaminaCalcProbe {
         ? "=> DEBORDE le cap : un seul tick a ajoute le montant ENTIER (branche non-capee). C'est le \"39 M / 120\"."
         : "=> reste au cap (branche capee).");
 
+    // ==> AU-DESSUS DU CAP, EST-CE QUE CA CONTINUE DE MONTER ? (question utilisateur)
+    System.out.println();
+    System.out.println("=== Au-dessus du cap : ca continue de monter ? ===");
+    long t2 = user.getResource(ResourceType.STAMINA); // 2e lecture, encore + de temps ecoule
+    iu.setLastResourceGenerationTime(ResourceType.STAMINA, now - 24 * 3600_000L); // 24 h en arriere
+    long t3 = user.getResource(ResourceType.STAMINA); // 3e lecture, 24 h "ecoulees"
+    System.out.printf("1re lecture=%,d  2e lecture=%,d  3e lecture(+24h)=%,d%n", got, t2, t3);
+    System.out.println(got == t2 && t2 == t3
+        ? "=> NON : fige au 1er debordement. La boucle sort des que valeur >= cap (aucun tick de plus)."
+        : "=> continue de monter (inattendu)");
+    // Re-declenchement : SEULEMENT si on redescend SOUS le cap (depense).
+    iu.setResource(user, ResourceType.STAMINA, 50L, "probe");
+    iu.setLastResourceGenerationTime(ResourceType.STAMINA, TimeUtil.serverTimeNow() - 3600_000L);
+    long t4 = user.getResource(ResourceType.STAMINA);
+    System.out.printf("Apres depense a 50 (<120) + 1 tick : %,d  (re-deborde une fois)%n", t4);
+
     // Contre-preuve : le montant serait le meme a un niveau eleve (dependance = content release, pas niveau).
     System.out.println();
     System.out.println("=== Le montant par tick selon la content release (StaminaStats), pour reference ===");
