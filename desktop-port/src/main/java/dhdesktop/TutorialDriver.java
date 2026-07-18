@@ -409,16 +409,16 @@ public final class TutorialDriver {
             }
             return false;   // slot introuvable (onglet GEAR pas actif ?) → le dump ci-dessus aide à câbler
         }
-        // HeroList : taper la carte du héros à équiper (tag si présent, sinon 1re carte HeroListCard).
+        // HeroList : taper la carte du héros à équiper. Tag réel = "HERO_LIST"+heroType (ex.
+        // HERO_LISTELASTIGIRL), relevé au dump — PAS de findByClass (la 1re carte = un héros VERROUILLÉ
+        // « new hero to unlock », ex. HERO_LISTBENJAMIN_FRANKLIN_GATES → mauvais écran).
         if (screenName.contains("HeroList")) {
-            List<Actor> card = findByName(searchRoot, "HERO_LIST_CARD_" + hero.getType());
-            if (card.isEmpty()) card = findByClass(searchRoot, "HeroListCard");
-            if (card.isEmpty()) card = findByClass(searchRoot, "HeroListDetailedCard");
+            List<Actor> card = findByName(searchRoot, "HERO_LIST" + hero.getType().name());
             if (!card.isEmpty()) {
-                if (DEBUG) System.out.println("[autoequip] tap carte héros " + hero.getType());
+                if (DEBUG) System.out.println("[autoequip] tap carte héros HERO_LIST" + hero.getType().name());
                 return tapAll(card.subList(0, 1), input, w, h);
             }
-            return false;
+            return false;   // carte du héros pas (encore) visible → attendre/scroller (le tuto pointe déjà dessus)
         }
         // HUB (MainScreen) : ouvrir le menu HÉROS. BASE_MENU_HERO_BUTTON est dans le menu latéral (burger) →
         // si absent, ouvrir d'abord le burger (BASE_MENU_BUTTON / SIDE_MENU). Le tap sur BASE_MENU_HERO_BUTTON
