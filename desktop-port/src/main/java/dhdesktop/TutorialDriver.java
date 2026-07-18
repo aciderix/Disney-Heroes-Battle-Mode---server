@@ -406,16 +406,23 @@ public final class TutorialDriver {
         }
 
         // HeroDetail : taper le SLOT équipable → ouvre CraftingWindow (le bloc popup tape ensuite EQUIP).
+        // Tag réel relevé au dump : "HERO_GEAR_SLOT_ ONE" (avec une ESPACE avant le nom du slot).
         if (screenName.contains("HeroDetail")) {
             HeroEquipSlot slot = HeroHelper.getSlotThatCanEquip(user, hero);
             if (slot != null) {
-                List<Actor> s = findByName(searchRoot, "HERO_GEAR_SLOT_" + slot);
+                List<Actor> s = findByName(searchRoot, "HERO_GEAR_SLOT_ " + slot.name());
                 if (!s.isEmpty()) {
-                    if (DEBUG) System.out.println("[autoequip] tap slot HERO_GEAR_SLOT_" + slot);
+                    if (DEBUG) System.out.println("[autoequip] tap slot HERO_GEAR_SLOT_ " + slot.name());
                     return tapAll(s, input, w, h);
                 }
             }
-            return false;   // slot introuvable (onglet GEAR pas actif ?) → le dump ci-dessus aide à câbler
+            // slot introuvable → l'onglet GEAR/ITEMS n'est peut-être pas actif : l'activer d'abord.
+            List<Actor> gearTab = findByName(searchRoot, "HERO_SUMMARY_GEAR_TAB");
+            if (!gearTab.isEmpty()) {
+                if (DEBUG) System.out.println("[autoequip] HeroDetail → activer l'onglet GEAR (HERO_SUMMARY_GEAR_TAB)");
+                return tapAll(gearTab.subList(0, 1), input, w, h);
+            }
+            return false;
         }
         // HeroList : taper la carte du héros à équiper. Tag réel = "HERO_LIST"+heroType (ex.
         // HERO_LISTELASTIGIRL), relevé au dump — PAS de findByClass (la 1re carte = un héros VERROUILLÉ
