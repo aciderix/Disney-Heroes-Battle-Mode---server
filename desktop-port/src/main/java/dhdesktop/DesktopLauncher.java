@@ -166,7 +166,7 @@ public final class DesktopLauncher {
             }
             if (autofight && frames % 20 == 0) enableAutoCombat(game);  // DEV : bouton AUTO d'origine
             // DEV : clic manuel injecté depuis dh.clickfile (voir déclaration).
-            if (clickFile != null && frames > 90) injectManualClicks(clickFile, input, game);
+            if (clickFile != null && frames > 90) injectManualClicks(clickFile, input, game, W, H);
             input.drain();          // input synthétique (pilotage) sur le thread render
             app.drainRunnables();   // Gdx.app.postRunnable
             game.render();
@@ -209,9 +209,22 @@ public final class DesktopLauncher {
      * {@code setAutoAttack} de {@code CoreAttackScreen}). Réflexion → aucune dépendance de compilation,
      * aucune modif du jeu. No-op hors combat. Idempotent (n'appelle que si pas déjà en auto).
      */
-    /** DEV : lit dh.clickfile et injecte un tap par ligne "x,y" (pixels écran, origine haut-gauche),
-     *  puis VIDE le fichier. Passe par l'input RÉEL du jeu (hit-test correct). Off en prod. */
-    private static void injectManualClicks(String path, DhInput input, GameMain game) {
+    /** DEV : lit dh.clickfile et exécute chaque ligne, puis VIDE le fichier. Off en prod.
+     *  <p>Formats de ligne (méthode B-bis « je pilote moi-même », passe par l'input RÉEL du jeu) :
+     *  <ul>
+     *    <li><b>{@code x,y}</b> — tap aux pixels écran (origine haut-gauche = comme la capture) ; dump de la
+     *        cible touchée AVANT le tap (acteur/tag/listeners/écran) pour savoir quoi câbler.</li>
+     *    <li><b>{@code dump x,y}</b> — dump SANS taper (observer un point).</li>
+     *    <li><b>{@code drive}</b> — <b>SEMI-AUTO</b> : appelle {@link TutorialDriver#driveOnce} UNE fois → tape
+     *        la cible désignée par le tuto (bouton héros, flèche, « tap to continue » scene2d) via les API du
+     *        jeu. Sert quand mon clic manuel ne « prend » pas (cible non-devinable).</li>
+     *    <li><b>{@code auto}</b> — <b>SEMI-AUTO</b> : active l'AUTO-COMBAT d'origine ({@code setAutoAttack}) sur
+     *        l'écran de combat courant → les héros combattent seuls. À déclencher PENDANT un combat.</li>
+     *    <li><b>{@code center}</b> — tap central (W/2,H/2) via l'input réel → avance un « TAP TO CONTINUE » de
+     *        la scène de combat (input scène, non scene2d → un tap x,y ciblé ne suffit pas toujours).</li>
+     *  </ul>
+     *  Tout est de l'outillage DEV côté lanceur : aucune modif du jeu ni du serveur, rien en prod. */
+    private static void injectManualClicks(String path, DhInput input, GameMain game, int W, int H) {
         try {
             java.io.File cf = new java.io.File(path);
             if (!cf.isFile() || cf.length() == 0) return;
@@ -220,8 +233,26 @@ public final class DesktopLauncher {
             for (String ln : lines) {
                 ln = ln.trim();
                 if (ln.isEmpty() || ln.startsWith("#") || ln.equalsIgnoreCase("shot")) continue;
-                // Ligne "dump" (sans tap) : juste enregistrer l'écran+acteurs actionnables sous un point.
-                boolean dumpOnly = ln.toLowerCase().startsWith("dump");
+                String low = ln.toLowerCase();
+                // --- Commandes SEMI-AUTO (invoquer une fonction du pilote à la demande) ---
+                if (low.equals("drive")) {                       // avancer via la cible désignée du tuto
+                    boolean acted = TutorialDriver.driveOnce(game, input, W, H);
+                    System.out.println("[semiauto] drive → " + (acted ? "a tapé la cible du tuto"
+                        : "aucune cible (hadActiveTarget=" + TutorialDriver.hadActiveTarget() + ")"));
+                    continue;
+                }
+                if (low.equals("auto")) {                        // activer l'auto-combat d'origine
+                    System.out.println("[semiauto] auto → activation AUTO-COMBAT (setAutoAttack)");
+                    enableAutoCombat(game);
+                    continue;
+                }
+                if (low.equals("center") || low.equals("tapc")) {  // tap central (« TAP TO CONTINUE »)
+                    System.out.println("[semiauto] center → tap (" + (W / 2) + "," + (H / 2) + ")");
+                    input.tap(W / 2, H / 2);
+                    continue;
+                }
+                // --- Ligne "dump" (sans tap) : juste enregistrer l'écran+acteurs sous un point ---
+                boolean dumpOnly = low.startsWith("dump");
                 if (dumpOnly) ln = ln.substring(4).trim();
                 String[] xy = ln.split("[,;\\s]+");
                 if (xy.length >= 2) {

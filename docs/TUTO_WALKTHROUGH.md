@@ -80,7 +80,7 @@ nœuds n'ont pas de tag d'acteur scene2d ; le tap réel passe par `getHitCampaig
   alors que le **vrai tap** a bien touché EQUIP → serveur OK). La HeroFilterWindow, elle, est bien capturée.
   À améliorer : itérer toutes les couches/`Stage` (ou la fenêtre du dessus) pour le hit-test de dump.
 
-## 4. Méthode (réutilisable) — clic manuel + enregistrement
+## 4. Méthode (réutilisable) — clic manuel + enregistrement + SEMI-AUTO
 
 1. Lancer **sans** auto-pilote : `DH_CLICKFILE=/tmp/dh_clicks.txt ./run-online.sh` (capture continue
    `build/manual.ppm` toutes 10 frames). Reprise rapide via snapshot post-équip.
@@ -88,6 +88,22 @@ nœuds n'ont pas de tag d'acteur scene2d ; le tap réel passe par `getHitCampaig
 3. Écrire `x,y` (ou `dump x,y` pour observer sans taper) dans le clic-fichier → le jeu **dumpe** l'acteur
    touché (classe/tag/listeners) **puis tape** ; lire `[clicdump]` (client) + `/tmp/dh_game.log` (serveur).
 4. Répéter, enregistrer la chaîne (table §1). Câbler l'auto-pilote sur les tags relevés (§3).
+
+### 4bis. Commandes SEMI-AUTO du clic-fichier (2026-07-19) — invoquer une fonction du pilote à la demande
+
+Quand un clic manuel « ne prend pas » (cible non-devinable, ou input géré par la scène de combat et non
+scene2d), on écrit une **commande** (au lieu de `x,y`) dans le clic-fichier ; elle appelle **une** fonction du
+pilote pour cette frame, puis le fichier est vidé. Outillage **DEV côté lanceur** (aucune modif jeu/serveur) :
+
+| Ligne | Effet |
+|---|---|
+| `drive` | `TutorialDriver.driveOnce` **une fois** → tape la **cible désignée par le tuto** (bouton/flèche/ « tap to continue » scene2d) via les API du jeu. À utiliser quand mon clic ne trouve pas la cible. |
+| `auto` | active l'**AUTO-COMBAT d'origine** (`setAutoAttack`) sur l'écran de combat courant → les héros combattent seuls. À déclencher **pendant** un combat. |
+| `center` (alias `tapc`) | tap central `(W/2,H/2)` via l'input réel → **avance un « TAP TO CONTINUE »** de la scène de combat (input scène, non scene2d → un `x,y` ciblé ne suffit pas toujours). |
+
+⇒ Usage type d'un combat en semi-auto : entrer au combat par des `x,y` (FIGHT), puis `auto` (les héros
+jouent seuls), et `center` entre les vagues si « TAP TO CONTINUE » bloque. `drive` sert de repli générique
+« avance selon le tuto » sur les écrans de hub. (Log : `[semiauto] …`.)
 
 ## 5. Reste à observer (prochaines étapes du tuto)
 
