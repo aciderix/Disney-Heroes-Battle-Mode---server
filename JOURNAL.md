@@ -1,5 +1,45 @@
 # JOURNAL — journal détaillé des modifications
 
+## 2026-07-19 (c) — SIGN-IN multi-jour (j2/j3) vérifié + GAP diamants corrigé (resyncDiamonds)
+
+### Question (user) & vérification
+« Les deux sont-ils testés in-game ? À j2/j3 le joueur aura-t-il les récompenses correspondantes, bien
+créditées et disponibles ? L'ext headless (isNameLegalExt) impacte-t-il les vrais joueurs desktop/android ? »
+
+**Mécanique jour-par-jour (relevée au bytecode)** : `SigninHelper.getActiveRewardIndex` = fonction de
+`getMonthlySignins()` (nb de réclamations) et `getDailyChances("daily_signin")` ; `isClaimable` exige une
+chance quotidienne > 0 (une claim/jour) dans la fenêtre du mois. La chance quotidienne se **réinitialise
+LAZY** : `IndividualUser.getDailyChances` appelle `DailyActivityHelper.checkAndUpdateDailyValues` qui compare
+`serverTimeNow()` à `LAST_USER_DAILY_RESET` (`isSameUserDay`) et, à un nouveau jour, `resetDailyChances(key,
+max)` — le tout sur `individualUserExtra.dailyChances` (this.extra, persisté). Donc j2/j3 = logique du jeu
+automatique, pas de code serveur spécial.
+
+### Vérification multi-jour (server/smoke/SigninMultiDayTest)
+j1 : réclame le jour actif → GOLD (226 250 000) crédité. Simulation j2 : recul de `LAST_USER_DAILY_RESET` de
+2 jours → le reset lazy remet `daily_signin` à 1. j2 : jour actif AVANCE (0→1), réclamable, claim → DIAMONDS
+(50). `monthlySignins` 1→2. Tout persiste au round-trip wire.
+
+### VRAI GAP trouvé : crédit des DIAMANTS perdu au reload
+Au 1er jet, j2 donnait DIAMONDS 0→0 (récompense NON créditée). Cause (diagnostiquée) : les diamants vivent
+dans un **champ dédié `IndividualUser.diamonds`** (init depuis `userInfo.diamonds` au `getIndividualUser`,
+lu/écrit par `get/setResource(DIAMONDS)`) — **HORS `this.extra`**. `getResource(DIAMONDS)` lit bien ce champ
+(vérifié : param 777 → 777), mais `applyAction` ne re-syncait que les héros → le gain de diamants restait en
+mémoire et était **perdu au round-trip wire** (comme l'étaient team-level et le nom avant leurs resyncs).
+**Correctif** : `ServerUser.resyncDiamonds(user)` = `userInfo.diamonds = user.getResource(DIAMONDS)`, appelé
+après `applyAction`/`openChest`/`recordCampaignAttack`. Impact plus large que le sign-in : **tout** gain de
+diamants (loot, quêtes…) est désormais persisté. Après correctif : DIAMONDS 0→50, persiste. Régression 7/7
+(`Resource/Signin/SetName/SigninMultiDay/CampaignAttack/ChestWire/CampaignPersist`) verte.
+
+### Réponses aux 3 questions
+1. **In-game via le client complet** : NON encore — le tuto verrouille la navigation libre (`canNavigateTo=
+   false`) jusqu'à l'étape sign-in ; côté serveur tout est prouvé par tests. À confirmer en progressant le tuto.
+2. **j2/j3 crédités & disponibles** : OUI (mécanique du jeu + fix diamants), vérifié par test multi-jour.
+3. **Impact de `isNameLegalExt = s->true` sur les vrais joueurs** : AUCUN. Il est posé dans
+   `ServerContext.init` = **process JVM du SERVEUR uniquement** (dhserver, non chargé par le client). Le client
+   desktop/android garde SA propre vérif de police (`Gdx.app` présent côté client). Le serveur ne reçoit que
+   des noms déjà validés par le client (changeName local avant l'envoi) ; il en refait le CŒUR de légalité
+   (noms interdits, codepoints), seule la vérif POLICE (sans objet serveur) est omise.
+
 ## 2026-07-19 (b) — CHOOSE NAME (SetPlayerName) + pilote dh.gosignin (ouvrir SIGN IN)
 
 ### CHOOSE NAME — message + handler

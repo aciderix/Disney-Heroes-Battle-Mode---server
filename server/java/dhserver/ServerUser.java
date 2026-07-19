@@ -244,6 +244,7 @@ public final class ServerUser {
 
     // Re-synchronise les champs hors this.extra vers le wire (persistance complète).
     resyncHeroes(user);
+    resyncDiamonds(user);   // coffre payant → débit diamants (hors this.extra)
     individualUserExtra.chestUpgradeXP = iu.getChestUpgradeXP();
     return lr;
   }
@@ -435,6 +436,7 @@ public final class ServerUser {
         lootEarned, shownDelta, m.base.attackers, m.base.defenders, SpecialEventSnapshot.NONE);
 
     resyncHeroes(user);   // héros (XP/état) → wire ; stamina/or sont dans this.extra (auto).
+    resyncDiamonds(user); // diamants (champ dédié hors this.extra)
     resyncCampaign(iu);   // progression campagne (statuts de niveau) → wire (hors this.extra, comme les héros).
     applyLootMemory(m);   // mémoire de loot (pitié) → individualUserExtra.lootMemory (auto-persistée).
     // Niveau d'équipe : User.teamLevel est un CHAMP de User (hors this.extra) — getUser le lit depuis
@@ -636,7 +638,7 @@ public final class ServerUser {
       System.out.println("[action] " + m.command + " échec : " + t);
       return false;
     }
-    if (applied) resyncHeroes(user);
+    if (applied) { resyncHeroes(user); resyncDiamonds(user); }
     return applied;
   }
 
@@ -767,6 +769,18 @@ public final class ServerUser {
             + " item=" + m.itemType + ") — à ajouter (helper de logique du jeu)");
         return false;
     }
+  }
+
+  /**
+   * Re-sync des <b>diamants</b> vers le wire. Les diamants vivent dans un champ dédié
+   * {@code IndividualUser.diamonds} (initialisé depuis {@code userInfo.diamonds} au moment du
+   * {@code getIndividualUser}, lu/écrit par {@code get/setResource(DIAMONDS)}) — <b>HORS {@code this.extra}</b>,
+   * donc NON auto-persisté. Toute logique du jeu qui crédite/débite des diamants (récompense de sign-in,
+   * loot, achat) mute ce champ en mémoire ; sans re-sync le gain est perdu au round-trip wire. Même schéma
+   * que le niveau d'équipe / le nom. Vérifié `server/smoke/SigninMultiDayTest` (récompense DIAMONDS créditée).
+   */
+  private void resyncDiamonds(User user) {
+    userInfo.diamonds = user.getResource(com.perblue.heroes.network.messages.ResourceType.DIAMONDS);
   }
 
   /** Re-sync des héros (état hors {@code this.extra}) vers le wire — persistance complète. */

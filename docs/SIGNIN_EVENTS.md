@@ -91,6 +91,15 @@ Vérifié `server/smoke/SetNameTest` (nom appliqué + survit au round-trip wire)
 - ✅ `REFRESH_SPECIAL_EVENTS` : le serveur RÉPOND (`SpecialEventsRaw`, 0 évènement).
 - ✅ `SigninRewards` **construit + envoyé** (§3) → bâtiment SIGN IN alimenté.
 - ✅ Handler de **réclamation** (`CLAIM_SIGNIN_REWARD` / `_WITH_VIDEO`) → `SigninHelper.claim`.
+- ✅ **Progression MULTI-JOUR (j2/j3) vérifiée** (`server/smoke/SigninMultiDayTest`) : jour actif piloté par
+  `getMonthlySignins()` + chance quotidienne `getDailyChances("daily_signin")` (reset LAZY par le jeu,
+  `DailyActivityHelper.checkAndUpdateDailyValues`, à chaque lecture, sur `this.extra.dailyChances` persisté).
+  j1 → GOLD crédité, j2 (après reset quotidien) → DIAMONDS crédité, `monthlySignins` 1→2, tout persiste.
+- ✅ **Gap trouvé & corrigé — crédit des DIAMONDS** : les diamants vivent dans un champ dédié
+  `IndividualUser.diamonds` (initialisé depuis `userInfo.diamonds`, HORS `this.extra`) → non auto-persisté ;
+  une récompense en diamants (sign-in j1/j7/j16/j23…, mais aussi tout gain de diamants) était **perdue au
+  round-trip wire**. Corrigé par `ServerUser.resyncDiamonds` (`userInfo.diamonds = user.getResource(DIAMONDS)`,
+  appelé après action/coffre/campagne — même schéma que team-level/nom). Cf. SHIMS.
 - ✅ **CHOOSE NAME** (`SetPlayerName` → `UserHelper.changeName`, §5).
 - ✅ **Pilote DEV `dh.gosignin`** : ouvre le bâtiment SIGN IN au hub via `UINavHelper.navigateTo(SIGN_IN)` —
   **respecte le verrou de navigation du tuto** (`canNavigateTo=false` mid-tuto = comportement fidèle, non
