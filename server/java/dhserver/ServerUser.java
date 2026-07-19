@@ -234,6 +234,21 @@ public final class ServerUser {
     // ContestHelper.onItemEarn → getActiveContestsWithTask) fonctionne aussi grâce à cette couche.
     ChestHelper.updateChestCounters(user, type, count, m.usedItem, lr.wasFree, m.hasBulkBonus);
 
+    // CONSOMMER le coffre GRATUIT (fidélité — gap trouvé en jeu 2026-07-19 : « FREE NOW » restait dispo après
+    // ouverture). Le coffre gratuit est une ResourceType RÉGÉNÉRÉE (getFreeChestResource) ; l'ouvrir doit la
+    // décrémenter → le coffre passe en « Free in 23h » et régénère sur getTimeUntilNextFreeChest. Le jeu ne le
+    // fait PAS dans ChestHelper (client) : les 4 usages de getFreeChestResource y sont en LECTURE
+    // (hasFreeChest/getTimeUntilNextFreeChest/validateChestPurchase) → c'était une action SERVEUR-autoritative
+    // de PerBlue. On la reproduit via le setResource DU JEU (qui ré-ancre l'horloge de génération). Sans ça, la
+    // ressource reste à son cap → coffre gratuit « farmable » (hasFreeChest toujours vrai). Valeurs du jeu.
+    if (lr.wasFree) {
+      com.perblue.heroes.network.messages.ResourceType fr = ChestHelper.getFreeChestResource(type);
+      if (fr != null && fr != com.perblue.heroes.network.messages.ResourceType.DEFAULT) {
+        long cur = user.getResource(fr);
+        user.setResource(fr, Math.max(0, cur - count), "free chest consumed");
+      }
+    }
+
     if (m.roll != null) {                          // réponse de roll attendue par le client
       ServerRollResponse rr = new ServerRollResponse();
       rr.rollId = m.roll.rollId;
