@@ -30,6 +30,26 @@ en headless → rien à suivre).
 **Navigation** : `BACK_BUTTON` (name=`base/buttons/button_back`, tag `BACK_BUTTON`/`BACK_BUTTON_WRAP`) **dépile
 un écran à la fois** (HeroDetail→HeroList→SilverChestDetail→Chests→MainScreen). Burger = `BASE_MENU_BUTTON`.
 
+### Suite : CAMPAGNE → combat (relevé 2026-07-19, même run)
+
+| # | Écran | Cible cliquée (tag / name) | Classe | Réaction |
+|---|---|---|---|---|
+| 13 | MainScreen | **`MAIN_SCREEN_CAMPAIGN`** (name=CAMPAIGN) | MainScreenHitArea | → CampaignScreen « THE CITY » |
+| 14 | CampaignScreen (g2d) | **CHAPTER 1** (district, dans **`CityMapDisplay`**) | CityMapDisplay | → carte du chapitre « CH1: SUNRISE LINE » |
+| 15 | carte chapitre (g2d) | **nœud niveau 1** (ORIGIN STATION, dans `CityMapDisplay`) | CityMapDisplay | → CampaignPreviewScreen |
+| 16 | CampaignPreviewScreen | **`CAMPAIGN_PREVIEW_FIGHT_BUTTON`** (coût énergie) | DHResourceButton | → CampaignHeroChooserScreen |
+| 17 | CampaignHeroChooserScreen | **`HERO_CHOOSER_SOURCE_HERO0`** (dans `HERO_CHOOSER_LIST`) | PressableStack | héros sélectionné → **TEAM POWER 77** (= Frozone équipé) |
+| 18 | CampaignHeroChooserScreen | bouton **FIGHT** (arbre chooser) | Button | → CampaignAttackScreen (combat, spine unidbg) |
+| 19 | CampaignAttackScreen | **`FAST_FORWARD_BUTTON`** | Button | accélère le combat |
+| 20 | CampaignAttackScreen | **`AUTO_FIGHT_BUTTON`** | Button | auto-combat |
+| — | CampaignAttackScreen | « TAP TO CONTINUE » entre vagues | (scène combat, WidgetGroup) | **PAS un acteur scene2d** → tap capté par l'input de la scène de combat (comme l'intro) |
+
+**Notes campagne** : la carte du hub et du chapitre est **g2d** (`CityMapDisplay`, pas scene2d) → les districts/
+nœuds n'ont pas de tag d'acteur scene2d ; le tap réel passe par `getHitCampaignLevel`/`onCampaignLevelTapped`
+(cf. MEMORY §6ter, tâche #17). Le **combat rend via unidbg** (Frozone + ennemis spine OK), progresse par vagues
+(1/3→2/3→…), chaque transition = « TAP TO CONTINUE » (input scène, non scene2d — géré par le driver combat via
+`dh.autofight`). **TEAM POWER 77** au chooser confirme que **l'équip persiste et se répercute en combat**.
+
 ## 2. Client ↔ serveur — RIEN de cassé
 
 À chaque étape « à effet serveur », le protocole a fonctionné et **persisté** :
