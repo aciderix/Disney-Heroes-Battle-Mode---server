@@ -216,6 +216,21 @@ public final class ServerUser {
 
     ChestType type = m.chestType;
     int count = Math.max(1, m.count);
+
+    // ANTI-TRICHE (serveur autoritatif) : VALIDER l'achat AVANT d'accorder, avec la logique du jeu
+    // ChestHelper.validateChestPurchase (headless-safe : Unlockables + getResource). Elle LÈVE une
+    // ClientErrorCodeException si l'ouverture est illégitime : coffre gratuit HORS cooldown ET pas assez de
+    // monnaie (NOT_ENOUGH_GOLD/DIAMONDS), feature verrouillée (FEATURE_NOT_UNLOCKED), niveau d'équipe
+    // (TEAM_LEVEL_LOCK), objet requis absent (DONT_HAVE_ITEM), limite d'achats (CANT_BUY_THAT_MANY_CHESTS)…
+    // On laisse l'exception REMONTER → le LoginServer n'accorde/n'envoie RIEN (le tricheur n'a pas de coffre).
+    // C'est LE point d'enforcement du cooldown 24h : la dispo se calcule sur l'ÉTAT SERVEUR (ressource +
+    // horodatage de régénération persistés) avec l'HORLOGE DU SERVEUR (serverTimeNow = System.currentTimeMillis
+    // côté serveur, CLOCK_OFFSET=0 jamais synchronisé sur un appareil) → avancer l'heure du mobile ne contourne
+    // rien. Réplique l'appel canonique de SilverChestDetailScreen : (count, 0, usedItem, snapshot).
+    com.perblue.heroes.network.messages.ItemType usedItem =
+        (m.usedItem == null || m.usedItem == com.perblue.heroes.network.messages.ItemType.DEFAULT) ? null : m.usedItem;
+    ChestHelper.validateChestPurchase(user, type, count, 0, usedItem, SpecialEventSnapshot.NONE);
+
     DropTable dt = dropTable(type);
     ChestContext ctx = new ChestContext(user);
     ctx.setChestType(type);

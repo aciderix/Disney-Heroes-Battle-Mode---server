@@ -106,8 +106,17 @@ public final class LoginServer {
                     + " -> " + lr.heroesUnlocked.size() + " héros débloqué(s), joueur en possède "
                     + user.heroCount() + " [persisté]");
               } catch (Throwable t) {
-                System.out.println("[login]     ! openChest échec: " + t);
-                t.printStackTrace();
+                // ClientErrorCodeException (checkée, non déclarée throws par dex2jar) = REFUS anti-triche
+                // (validateChestPurchase) : ouverture illégitime (coffre gratuit hors cooldown & pas de monnaie,
+                // feature/team-level verrouillé, limite d'achats…). On N'ACCORDE RIEN, on ne persiste pas — pas
+                // une erreur serveur (un client légitime n'y arrive jamais). Autre throwable = vraie erreur.
+                if (t instanceof com.perblue.heroes.ClientErrorCodeException) {
+                  System.out.println("[login]     ⛔ BuyChests REFUSÉ (anti-triche) : " + t.getMessage()
+                      + " — aucun coffre accordé");
+                } else {
+                  System.out.println("[login]     ! openChest échec: " + t);
+                  t.printStackTrace();
+                }
               }
             } else if (m instanceof CampaignAttack) {
               // Combat de campagne : le client a joué le combat (client-side) et envoie l'issue
