@@ -178,35 +178,6 @@ public final class TutorialDriver {
             //    → la FERMER via l'API du jeu (BaseModalWindow.hide(), = bouton X / retour).
             List<?> windows = screenWindows(screen);
 
-            // NAVIGATION SIGN-IN (DEV, one-shot) : au hub sans popup, ouvrir le bâtiment SIGN IN via l'API du
-            // jeu → déclenche REFRESH_SPECIAL_EVENTS → le serveur répond les récompenses de sign-in.
-            if (GO_SIGNIN && !signinNavDone && screen.getClass().getSimpleName().contains("MainScreen")
-                    && (windows == null || windows.isEmpty())) {
-                try {
-                    com.perblue.heroes.ui.UINavHelper.Destination dest =
-                        com.perblue.heroes.ui.UINavHelper.Destination.SIGN_IN;
-                    // On RESPECTE le verrou du jeu : pendant le tuto, la navigation libre est bloquée
-                    // (mainScreenTutorialBlocked → « TUTORIAL_CANT_DO_THAT_YET »). Forcer serait une rustine
-                    // (PRINCIPLES §2). On n'ouvre le SIGN IN que lorsque le jeu l'autorise (tuto libéré) ; sinon
-                    // on réessaie plus tard (pas de one-shot consommé). Log throttlé.
-                    boolean can = com.perblue.heroes.ui.UINavHelper.canNavigateTo(dest, false);
-                    if (!can) {
-                        if (!"signin-blocked".equals(idleScreen)) {   // throttle : 1 log par transition
-                            System.out.println("[gosignin] navigation SIGN_IN bloquée par le tuto "
-                                + "(canNavigateTo=false) → on attend que le jeu l'autorise");
-                        }
-                    } else {
-                        System.out.println("[gosignin] hub libre → navigateTo(SIGN_IN)");
-                        com.perblue.heroes.ui.UINavHelper.navigateTo(dest, "dev", new String[0]);
-                        signinNavDone = true;
-                        return true;
-                    }
-                } catch (Throwable t) {
-                    System.out.println("[gosignin] navigateTo(SIGN_IN) échec: " + t);
-                    signinNavDone = true;  // ne pas boucler sur une vraie erreur
-                }
-            }
-
             if (DEBUG) {
                 StringBuilder wl = new StringBuilder();
                 if (windows != null) for (Object win : windows) wl.append(win.getClass().getSimpleName()).append(',');
@@ -330,6 +301,41 @@ public final class TutorialDriver {
             Stage stg = root.getStage();
             if (stg != null && stg.getRoot() != null) searchRoot = stg.getRoot();
             String screenName = screen.getClass().getSimpleName();
+
+            // SIGN-IN (DEV, dh.gosignin). Deux temps : (a) au hub, OUVRIR le bâtiment SIGN IN via l'API du jeu
+            // (déclenche REFRESH_SPECIAL_EVENTS → le serveur répond les récompenses) ; (b) sur SignInScreen,
+            // TAPER le bouton CLAIM (tag tutoriel « claim_button ») → CLAIM_SIGNIN_REWARD au serveur. On RESPECTE
+            // le verrou de navigation du tuto (canNavigateTo=false → on attend ; forcer serait une rustine §2).
+            if (GO_SIGNIN) {
+                if (screenName.contains("SignInScreen")) {
+                    List<Actor> claim = findByName(searchRoot, "claim_button");
+                    if (!claim.isEmpty() && tapAll(claim, input, w, h)) {
+                        System.out.println("[gosignin] SignInScreen → tap CLAIM (claim_button)");
+                        hadTarget = true;
+                        return true;   // handled : pas de RETOUR, on réclame
+                    }
+                    // pas de bouton claim (déjà réclamé aujourd'hui / rien à réclamer) → laisser le flux normal.
+                } else if (!signinNavDone && screenName.contains("MainScreen")
+                        && (windows == null || windows.isEmpty())) {
+                    try {
+                        com.perblue.heroes.ui.UINavHelper.Destination dest =
+                            com.perblue.heroes.ui.UINavHelper.Destination.SIGN_IN;
+                        if (!com.perblue.heroes.ui.UINavHelper.canNavigateTo(dest, false)) {
+                            if (!"signin-blocked".equals(idleScreen)) {
+                                System.out.println("[gosignin] SIGN_IN bloqué par le tuto (canNavigateTo=false) → j'attends");
+                            }
+                        } else {
+                            System.out.println("[gosignin] hub libre → navigateTo(SIGN_IN)");
+                            com.perblue.heroes.ui.UINavHelper.navigateTo(dest, "dev", new String[0]);
+                            signinNavDone = true;
+                            return true;
+                        }
+                    } catch (Throwable t) {
+                        System.out.println("[gosignin] navigateTo(SIGN_IN) échec: " + t);
+                        signinNavDone = true;
+                    }
+                }
+            }
 
             // SONDE DEV : sur l'écran carte, prend la main (pas de RETOUR) pour cliquer le chapitre et observer.
             if (MAP_PROBE && screenName.contains("Campaign") && stg != null) {
