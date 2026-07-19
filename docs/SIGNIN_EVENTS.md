@@ -95,6 +95,14 @@ Vérifié `server/smoke/SetNameTest` (nom appliqué + survit au round-trip wire)
   `getMonthlySignins()` + chance quotidienne `getDailyChances("daily_signin")` (reset LAZY par le jeu,
   `DailyActivityHelper.checkAndUpdateDailyValues`, à chaque lecture, sur `this.extra.dailyChances` persisté).
   j1 → GOLD crédité, j2 (après reset quotidien) → DIAMONDS crédité, `monthlySignins` 1→2, tout persiste.
+- ✅ **TOUS les types de récompense** (pas que GOLD/DIAMONDS) vérifiés (`server/smoke/SigninAllRewardsTest`) :
+  les 31 jours du mois = **15 types distincts** (RES: GOLD/DIAMONDS/GEAR_JUICE ; ITEM: EXP_COLOSSAL,
+  DOUBLE_CAMPAIGN_TEAM_XP/GOLD/HERO_XP, DOUBLE_ELITE/NORMAL_CAMPAIGN_DROPS, COSMETIC_CHEST_1X,
+  GURANTEE_COSMETIC_CHEST_1X, GOLD_CHEST_ROLL_X1/X10, RED_SKILL_CHEST_1X, BADGE_CHEST_1X) se donnent **sans
+  exception** via le chemin du jeu `RewardHelper.giveReward` (celui qu'emprunte `claim`) et sont crédités :
+  GOLD/GEAR_JUICE + 12 types d'objets dans `individualUserExtra.items` (this.extra, auto-persisté), DIAMONDS
+  via `resyncDiamonds`. NB : la réclamation jour-à-jour reste gatée par le CALENDRIER du jeu (`getRewards`
+  débloque 1 jour/jour réel) — c'est le comportement d'origine, pas un blocage serveur.
 - ✅ **Gap trouvé & corrigé — crédit des DIAMONDS** : les diamants vivent dans un champ dédié
   `IndividualUser.diamonds` (initialisé depuis `userInfo.diamonds`, HORS `this.extra`) → non auto-persisté ;
   une récompense en diamants (sign-in j1/j7/j16/j23…, mais aussi tout gain de diamants) était **perdue au
