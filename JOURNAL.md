@@ -1,5 +1,37 @@
 # JOURNAL — journal détaillé des modifications
 
+## 2026-07-19 (g5) — Prise de contrôle manuelle : 3 écrans confirmés EN JEU (CHOOSE NAME, SIGN IN claim, HERO_FILTERS)
+
+Depuis le save compte-neuf (au hub, autotap OFF + clickfile ON), pilotage manuel via `dh.clickfile` (tap par
+coordonnee + dump de l'acteur + captures), pour confirmer EN JEU au clic reel 3 ecrans a handlers deja batis
+mais non verifies au clic. Tous OK client<->serveur<->persistance :
+
+1. CHOOSE NAME : avatar hub -> PlayerProfileWindow (Team Level 2, Max TL 565, Account ID 1, Server (1) Number
+   One Dime, Client 12.1.0) -> crayon -> CHANGE NAME prompt -> bouton RANDOM (remplit "Baroness Dante", pas de
+   clavier headless) -> CHANGE NAME -> serveur `<== SetPlayerName` / `[setname] nom -> 'Baroness Dante'
+   applique [persiste]` -> affiche "BARONESS DANTE" au profil ET au hub.
+
+2. SIGN IN claim : batiment SIGN IN -> Action REFRESH_SPECIAL_EVENTS -> serveur `==> SpecialEventsRaw (31
+   jours de sign-in)` -> ecran DAILY SIGN-IN (valeurs exactes de signin_rewards.tab : j1 226,25M or, j2 50
+   diamants, j4 35305 gear juice...) -> tap jour 1 -> popup CLAIM -> `<== CLAIM_SIGNIN_REWARD {INDEX=0}` /
+   `[action] CLAIM_SIGNIN jour 0 -> GOLD 226 250 000 applique [persiste]` -> or hub 3476 -> 226,25 M
+   (DbInspect = 226 253 476, persiste).
+
+3. HERO_FILTERS (ou l'auto-pilote calait historiquement) : menu HEROES -> HeroListScreen (3 heros niv.2 W +
+   heros verrouille) -> bulle tuto "Hero Filters..." -> FILTER (tag FILTER_BUTTON) -> HERO FILTERS window
+   (categories GENERAL/EFFECTS/+-STATS/TALENTS, Sources Skills/Real Gear/Battle Badge/Patch Talents, Team...)
+   -> navigation categories + toggles -> acte HERO_FILTERS 1->4 = COMPLET (step=maxStep=4). Le blocage
+   historique (getPointers vide headless) est resolu par le controle manuel/semi-auto (commandes drive/center
+   du g3 fonctionnent : log [semiauto] center -> tap).
+
+Methode : capturer (manual.ppm -> png) -> regarder -> ecrire x,y (ou commande semi-auto) dans le clickfile ->
+tap via input reel (hit-test correct) + dump acteur -> lire serveur/clic. La limite connue du dumpClickTarget
+(modales sur une couche que le hit-test du stage principal manque) n'empeche pas le vrai tap (input reel).
+
+Checkpoint : server/data/dh-snapshot-manualtests-0719.db (nom + or 226M + HERO_FILTERS complet). Reste a
+explorer : ITEMS, QUESTS, MEDALS, MAILBOX, EVENTS, PROMOTE_HERO, UNLOCK_HERO (Vanellope), campagne > 1-7.
+
+
 ## 2026-07-19 (g2) — Coffres PAYANTS : débit DÉMONTRÉ end-to-end (bug 4ᵉ param) + correction « TL1 »
 
 ### Demande & découverte
