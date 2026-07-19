@@ -575,6 +575,56 @@ public final class TutorialDriver {
         if (a instanceof Group) for (Actor c : ((Group) a).getChildren()) collectTextButtons(c, out);
     }
 
+    /**
+     * DEV (clic manuel, méthode B-bis) : hit-teste l'acteur sous le point écran (cx,cy) et ENREGISTRE
+     * « ce que le clic active » — la CHAÎNE cible→ancêtres (classe / tag tutoriel / name / listeners / texte),
+     * l'écran courant et les fenêtres ouvertes. Aucune modif du jeu : pure lecture de la scène (Stage.hit /
+     * getListeners), comme un joueur. Appelé par {@code DesktopLauncher.injectManualClicks} avant le tap ;
+     * la TRANSITION (nouvel écran/fenêtre) apparaît dans la capture + le dump du clic SUIVANT.
+     */
+    public static void dumpClickTarget(GameMain game, int cx, int cy) {
+        try {
+            Object screen = game.getScreenManager().getScreen();
+            String screenName = screen == null ? "null" : screen.getClass().getSimpleName();
+            Stage st = null;
+            try {
+                Group root = (Group) screen.getClass().getMethod("getRootStack").invoke(screen);
+                if (root != null) st = root.getStage();
+            } catch (Throwable ignore) { /* pas de getRootStack → on tente via une fenêtre */ }
+            if (st == null) {
+                List<?> ws = screenWindows(screen);
+                if (ws != null) for (Object w : ws) if (w instanceof Actor && ((Actor) w).getStage() != null) { st = ((Actor) w).getStage(); break; }
+            }
+            StringBuilder wl = new StringBuilder();
+            List<?> ws = screenWindows(screen);
+            if (ws != null) for (Object w : ws) wl.append(w.getClass().getSimpleName()).append(',');
+            if (st == null) { System.out.println("[clicdump] écran=" + screenName + " fenêtres=[" + wl + "] (pas de stage)"); return; }
+            Vector2 sc = st.screenToStageCoordinates(new Vector2(cx, cy));
+            Actor hit = st.hit(sc.x, sc.y, true);
+            System.out.println("[clicdump] écran=" + screenName + " fenêtres=[" + wl + "] clic écran(" + cx + "," + cy
+                + ") → stage(" + (int) sc.x + "," + (int) sc.y + ")");
+            if (hit == null) { System.out.println("[clicdump]   (aucun acteur touché à ce point)"); return; }
+            int depth = 0;
+            for (Actor a = hit; a != null && depth < 8; a = a.getParent(), depth++) {
+                StringBuilder sb = new StringBuilder("[clicdump]   ")
+                    .append(depth == 0 ? "CIBLE   " : "ancetre" + depth + " ")
+                    .append(a.getClass().getSimpleName());
+                if (a.getTutorialName() != null) sb.append(" tut=").append(a.getTutorialName());
+                if (a.getName() != null) sb.append(" name=").append(a.getName());
+                java.util.List<String> ls = new java.util.ArrayList<>();
+                for (com.badlogic.gdx.scenes.scene2d.EventListener l : a.getListeners()) ls.add(l.getClass().getSimpleName());
+                if (!ls.isEmpty()) sb.append(" listeners=").append(ls);
+                if (a instanceof com.badlogic.gdx.scenes.scene2d.ui.Label) {
+                    CharSequence t = ((com.badlogic.gdx.scenes.scene2d.ui.Label) a).getText();
+                    if (t != null && t.length() > 0) sb.append(" text=\"").append(t).append('"');
+                }
+                boolean visible = a.isVisible() && a.getWidth() > 0;
+                if (!visible) sb.append(" [invisible/0]");
+                System.out.println(sb);
+            }
+        } catch (Throwable t) { System.out.println("[clicdump] err " + t); }
+    }
+
     /** DEV : liste les acteurs actionnables d'une fenêtre (bouton/label/tag tuto + position stage). */
     private static void dumpActionable(Actor window, String cls) {
         System.out.println("[tutodrive] --- acteurs actionnables de " + cls + " ---");

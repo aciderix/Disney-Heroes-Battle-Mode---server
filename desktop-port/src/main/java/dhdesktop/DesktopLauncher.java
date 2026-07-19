@@ -166,7 +166,7 @@ public final class DesktopLauncher {
             }
             if (autofight && frames % 20 == 0) enableAutoCombat(game);  // DEV : bouton AUTO d'origine
             // DEV : clic manuel injecté depuis dh.clickfile (voir déclaration).
-            if (clickFile != null && frames > 90) injectManualClicks(clickFile, input);
+            if (clickFile != null && frames > 90) injectManualClicks(clickFile, input, game);
             input.drain();          // input synthétique (pilotage) sur le thread render
             app.drainRunnables();   // Gdx.app.postRunnable
             game.render();
@@ -211,7 +211,7 @@ public final class DesktopLauncher {
      */
     /** DEV : lit dh.clickfile et injecte un tap par ligne "x,y" (pixels écran, origine haut-gauche),
      *  puis VIDE le fichier. Passe par l'input RÉEL du jeu (hit-test correct). Off en prod. */
-    private static void injectManualClicks(String path, DhInput input) {
+    private static void injectManualClicks(String path, DhInput input, GameMain game) {
         try {
             java.io.File cf = new java.io.File(path);
             if (!cf.isFile() || cf.length() == 0) return;
@@ -220,11 +220,19 @@ public final class DesktopLauncher {
             for (String ln : lines) {
                 ln = ln.trim();
                 if (ln.isEmpty() || ln.startsWith("#") || ln.equalsIgnoreCase("shot")) continue;
+                // Ligne "dump" (sans tap) : juste enregistrer l'écran+acteurs actionnables sous un point.
+                boolean dumpOnly = ln.toLowerCase().startsWith("dump");
+                if (dumpOnly) ln = ln.substring(4).trim();
                 String[] xy = ln.split("[,;\\s]+");
                 if (xy.length >= 2) {
                     int cx = Integer.parseInt(xy[0].trim()), cy = Integer.parseInt(xy[1].trim());
-                    System.out.println("[manualclick] tap (" + cx + "," + cy + ")");
-                    input.tap(cx, cy);
+                    // MÉTHODE B-bis : on ENREGISTRE ce que le clic va toucher (acteur+ancêtres+listeners+écran)
+                    // AVANT de taper → on sait ce que le clic active et quoi câbler dans l'auto-pilote.
+                    TutorialDriver.dumpClickTarget(game, cx, cy);
+                    if (!dumpOnly) {
+                        System.out.println("[manualclick] tap (" + cx + "," + cy + ")");
+                        input.tap(cx, cy);
+                    }
                 }
             }
         } catch (Throwable t) { System.out.println("[manualclick] err " + t); }
