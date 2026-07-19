@@ -153,6 +153,23 @@ public final class ServerUser {
     bd.userInfo = userInfo;
     bd.userExtra = userExtra;
     bd.individualUserExtra = individualUserExtra;
+    // BATTLE PASS V2 : le client pose DH.app.userBattlePassV2 depuis bd.battlePassV2Data. Un défaut
+    // `new BattlePassV2Data()` a `type = BattlePassType.DEFAULT` → l'écran QUESTS (QuestsScreen.showDot →
+    // BattlePassV2Helper.hasUnclaimedRewards → computeRewards) LÈVE « Battle Pass types other than 'Quest'
+    // haven't been implemented » (computeRewards ne gère QUE QUEST) → CRASH CLIENT au rendu (trouvé en jeu en
+    // ouvrant QUESTS). Le battle pass v2 = le type **QUEST** avec la saison active (contenu). On l'initialise
+    // avec la logique du jeu (`BattlePassV2Stats.getSeasonStartTime()` ; type QUEST). progress=0 pour un compte
+    // neuf (la progression s'accumule via les quêtes ; non persistée pour l'instant — champ hors userExtra).
+    // NB `BattlePassType` n'a que {DEFAULT, QUEST} → ce n'est PAS un décalage d'ère, juste un état non initialisé.
+    ServerContext.init();
+    com.perblue.heroes.network.messages.BattlePassV2Data bp =
+        new com.perblue.heroes.network.messages.BattlePassV2Data();
+    bp.type = com.perblue.heroes.network.messages.BattlePassType.QUEST;
+    bp.userID = userID;
+    try {
+      bp.startTime = com.perblue.heroes.game.data.battlepass.BattlePassV2Stats.getSeasonStartTime();
+    } catch (Throwable t) { System.out.println("[boot] battlePass startTime indispo: " + t); }
+    bd.battlePassV2Data = bp;
     return bd;
   }
 
