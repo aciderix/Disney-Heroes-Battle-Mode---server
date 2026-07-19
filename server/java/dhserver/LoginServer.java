@@ -126,18 +126,32 @@ public final class LoginServer {
                 t.printStackTrace();
               }
             } else if (m instanceof Action) {
-              // Commande générique du jeu (équiper, promouvoir, vendre…). On journalise le contenu exact
-              // ET on tente de l'appliquer via le dispatcher du jeu (best-effort — cf. ServerUser.applyAction
-              // / SHIMS : GuildStats headless PARTIEL). Fire-and-forget côté client (aucune réponse attendue).
+              // Commande générique du jeu (équiper, promouvoir, vendre…). La plupart sont fire-and-forget
+              // (le client applique de son côté) ; certaines sont des REQUÊTES attendant une réponse.
               Action act = (Action) m;
               System.out.println("[login] <== Action : command=" + act.command
                   + " hero=" + act.heroType + " item=" + act.itemType + " iD=" + act.iD
                   + " extra=" + (act.extra == null ? "{}" : act.extra));
-              boolean applied = user.applyAction(act);
-              if (applied) { try { store.save(user); } catch (Exception e) {
-                System.out.println("[login]     ! persistance échouée: " + e); } }
-              System.out.println("[login]     action " + act.command
-                  + (applied ? " appliquée [persisté]" : " non appliquée (PARTIEL)"));
+              // REFRESH_SPECIAL_EVENTS = REQUÊTE (pas fire-and-forget) : le client attend un SpecialEventsRaw
+              // (events + signinRewards). Sans réponse il RE-DEMANDE en boucle (observé 524×) et cale au
+              // SignInScreen. On répond avec l'état d'évènements du serveur — aucun évènement hébergé (§F du
+              // SERVER_PLAN) → liste vide, changed=false — pour débloquer le client (il appelle
+              // SpecialEventsHelper.setSpecialEvents sur la réponse).
+              if (act.command == com.perblue.heroes.network.messages.CommandType.REFRESH_SPECIAL_EVENTS) {
+                com.perblue.heroes.network.messages.SpecialEventsRaw raw =
+                    new com.perblue.heroes.network.messages.SpecialEventsRaw();
+                raw.changed = false;
+                raw.events = new java.util.ArrayList<>();
+                raw.setAsReplyTo(m);
+                c.send(raw);
+                System.out.println("[login]     ==> SpecialEventsRaw (reply, 0 évènement, changed=false)");
+              } else {
+                boolean applied = user.applyAction(act);
+                if (applied) { try { store.save(user); } catch (Exception e) {
+                  System.out.println("[login]     ! persistance échouée: " + e); } }
+                System.out.println("[login]     action " + act.command
+                    + (applied ? " appliquée [persisté]" : " non appliquée (PARTIEL)"));
+              }
             } else if (m instanceof Ping) {
               // Écho de latence/keepalive : le client mesure le RTT et surveille l'activité serveur.
               // Sans réponse, son chien de garde ferme la connexion (« Reconnecting… »).
