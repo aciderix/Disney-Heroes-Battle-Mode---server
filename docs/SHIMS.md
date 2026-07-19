@@ -53,13 +53,18 @@ Le serveur **exécute le code du jeu** (PRINCIPLES §3 « lire & exécuter »). 
    `RewardHelper.giveReward` → `ContestHelper.onItemEarn` → `getActiveContestsWithTask`. Vérifié : 3 coffres
    d'affilée (dont objet) sans NPE + `ChestWireTest` OK.
 
-2. **Coffres PAYANTS (débit de la monnaie, ex. diamants) — NON couvert.**
-   *Où* : `ServerUser.openChest` (`wasFree` ; pas de charge). *Pourquoi* : `IndividualUser.setResource`
-   pour `DIAMONDS` appelle `DH.app.getUserBattlePassV2().setProgress(...)` → NPE (champ `battlePassV2` du
-   shim non posé). **À faire** : étoffer le shim `DH.app` (poser un `IBattlePassV2Data` réel/minimal via
-   `getUserBattlePassV2`), puis charger le coût (`ChestHelper.getBasePurchaseCost` + `setResource`) et
-   remplir `LootResults.costs`. *Risque actuel* : ouvrir un coffre **payant** lèverait NPE (le tuto n'ouvre
-   que des coffres **gratuits** → non bloquant).
+2. **Coffres PAYANTS (débit de la monnaie) — ✅ TRAITÉ (2026-07-19).**
+   *Où* : `ServerUser.openChest`, branche `else` de `lr.wasFree`. **Débit** = `user.setResource(
+   ChestHelper.getPurchaseCurrency(type, NONE), getResource − ChestHelper.getPurchaseCost(user, type, count,
+   NONE))`. Monnaie **par coffre** (vérifié `ChestChargeTest`) : SILVER→**GOLD** (10000), GOLD→**DIAMONDS**
+   (288), SOUL→**DIAMONDS** (74), SOCIAL→**SOCIAL_BUCKS** (250). GOLD est dans `this.extra` (auto-persisté),
+   DIAMONDS via `resyncDiamonds`. **Le NPE `battlePassV2` de l'ancien TODO ne se produit PAS** : `setResource(
+   DIAMONDS)` fonctionne headless (vérifié `DiamTest`/`SigninMultiDayTest`). **Garde-fou** : le débit est
+   derrière `validateChestPurchase` (§enforcement anti-triche) → il ne s'exécute QUE pour une ouverture
+   PAYANTE **légitime** (solvable, feature débloquée, sous la limite d'achats). *NB* : **à team level 1 (tuto)
+   le jeu REFUSE toute ouverture payante** (limite d'achats / feature / monnaie) → le débit est un **safety-net
+   pour le jeu avancé**, non atteint dans le tuto (qui n'ouvre que du **gratuit**). Intégration end-to-end d'un
+   achat payant non exercée à TL1 (aucun n'y passe la validation) ; pièces (coût/monnaie/débit) certifiées.
 
 3. **Sérialisation `User→wire`** : couverte pour l'ouverture de coffre (héros + `chestUpgradeXP` resync ;
    le reste via `this.extra` partagé). **À étendre** au fur et à mesure des handlers : chaque nouveau

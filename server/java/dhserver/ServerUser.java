@@ -262,6 +262,20 @@ public final class ServerUser {
         long cur = user.getResource(fr);
         user.setResource(fr, Math.max(0, cur - count), "free chest consumed");
       }
+    } else {
+      // COFFRE PAYANT : DÉBITER la monnaie (fidélité + économie autoritative). validateChestPurchase (ci-dessus)
+      // a déjà confirmé la SOLVABILITÉ (sinon elle aurait levé). Monnaie + montant via la logique du jeu :
+      // getPurchaseCurrency (SILVER→GOLD, GOLD/SOUL→DIAMONDS…) + getPurchaseCost. Sans ça, un coffre PAYANT
+      // serait accordé GRATUITEMENT (le serveur ne débitait pas → la « charge » optimiste du client était
+      // perdue au reload, et le serveur autoritatif ne faisait pas payer). GOLD est dans this.extra (auto),
+      // DIAMONDS via resyncDiamonds (champ dédié). Valeurs du jeu, non inventées.
+      com.perblue.heroes.network.messages.ResourceType cur =
+          ChestHelper.getPurchaseCurrency(type, SpecialEventSnapshot.NONE);
+      int cost = ChestHelper.getPurchaseCost(user, type, count, SpecialEventSnapshot.NONE);
+      if (cur != null && cur != com.perblue.heroes.network.messages.ResourceType.DEFAULT && cost > 0) {
+        user.setResource(cur, Math.max(0, user.getResource(cur) - cost), "chest purchase");
+        System.out.println("[chest] coffre PAYANT " + type + " x" + count + " : -" + cost + " " + cur);
+      }
     }
 
     if (m.roll != null) {                          // réponse de roll attendue par le client
