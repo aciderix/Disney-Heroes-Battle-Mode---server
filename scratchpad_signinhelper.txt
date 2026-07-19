@@ -1,0 +1,648 @@
+public abstract class com.perblue.heroes.game.logic.SigninHelper {
+  private static final java.util.concurrent.atomic.AtomicReference DATA;
+
+  protected static final long END_TIME_FUDGE;
+
+  public static void $r8$lambda$aagWznco3Bn49DtisCUumIVplLM(com.perblue.heroes.ui.DHSkin, com.perblue.heroes.network.messages.RewardDrop);
+    Code:
+       0: aload_0
+       1: aload_1
+       2: invokestatic  #13                 // Method lambda$handleSigninResponse$1:(Lcom/perblue/heroes/ui/DHSkin;Lcom/perblue/heroes/network/messages/RewardDrop;)V
+       5: return
+
+  public static void $r8$lambda$it0bW84NF1LAiwwyCEtQQMjHva0(com.perblue.heroes.ui.DHSkin, com.perblue.heroes.network.messages.RewardDrop);
+    Code:
+       0: aload_0
+       1: aload_1
+       2: invokestatic  #18                 // Method lambda$handleSigninResponse$0:(Lcom/perblue/heroes/ui/DHSkin;Lcom/perblue/heroes/network/messages/RewardDrop;)V
+       5: return
+
+  static {};
+    Code:
+       0: getstatic     #26                 // Field java/util/concurrent/TimeUnit.MILLISECONDS:Ljava/util/concurrent/TimeUnit;
+       3: ldc2_w        #27                 // long 60l
+       6: getstatic     #31                 // Field java/util/concurrent/TimeUnit.SECONDS:Ljava/util/concurrent/TimeUnit;
+       9: invokevirtual #35                 // Method java/util/concurrent/TimeUnit.convert:(JLjava/util/concurrent/TimeUnit;)J
+      12: putstatic     #37                 // Field END_TIME_FUDGE:J
+      15: new           #39                 // class java/util/concurrent/atomic/AtomicReference
+      18: dup
+      19: invokespecial #42                 // Method java/util/concurrent/atomic/AtomicReference."<init>":()V
+      22: putstatic     #44                 // Field DATA:Ljava/util/concurrent/atomic/AtomicReference;
+      25: return
+
+  public com.perblue.heroes.game.logic.SigninHelper();
+    Code:
+       0: aload_0
+       1: invokespecial #45                 // Method java/lang/Object."<init>":()V
+       4: return
+
+  public static com.perblue.heroes.network.messages.RewardDrop claim(com.perblue.heroes.game.objects.IUser, int, boolean);
+    Code:
+       0: aload_0
+       1: invokestatic  #51                 // Method tryResetUserSignInCount:(Lcom/perblue/heroes/game/objects/IUser;)V
+       4: aload_0
+       5: iload_1
+       6: invokestatic  #55                 // Method isClaimable:(Lcom/perblue/heroes/game/objects/IUser;I)Z
+       9: ifeq          132
+      12: aload_0
+      13: invokestatic  #61                 // Method com/perblue/heroes/util/TimeUtil.getUserServerTime:(Lcom/perblue/heroes/game/objects/IUser;)J
+      16: lstore        4
+      18: aload_0
+      19: iload_1
+      20: invokestatic  #65                 // Method getReward:(Lcom/perblue/heroes/game/objects/IUser;I)Lcom/perblue/heroes/network/messages/RewardDrop;
+      23: astore        6
+      25: iload_2
+      26: ifeq          34
+      29: iconst_2
+      30: istore_3
+      31: goto          36
+      34: iconst_1
+      35: istore_3
+      36: aload_0
+      37: aload         6
+      39: getstatic     #71                 // Field com/perblue/heroes/game/logic/RewardSourceType.NORMAL:Lcom/perblue/heroes/game/logic/RewardSourceType;
+      42: iconst_1
+      43: anewarray     #73                 // class java/lang/String
+      46: dup
+      47: iconst_0
+      48: ldc           #75                 // String signin reward
+      50: aastore
+      51: invokestatic  #81                 // Method com/perblue/heroes/game/logic/RewardHelper.giveReward:(Lcom/perblue/heroes/game/objects/IUser;Lcom/perblue/heroes/network/messages/RewardDrop;Lcom/perblue/heroes/game/logic/RewardSourceType;[Ljava/lang/String;)Z
+      54: pop
+      55: iload_2
+      56: ifeq          78
+      59: aload_0
+      60: aload         6
+      62: getstatic     #84                 // Field com/perblue/heroes/game/logic/RewardSourceType.VIP:Lcom/perblue/heroes/game/logic/RewardSourceType;
+      65: iconst_1
+      66: anewarray     #73                 // class java/lang/String
+      69: dup
+      70: iconst_0
+      71: ldc           #86                 // String signin vip reward
+      73: aastore
+      74: invokestatic  #81                 // Method com/perblue/heroes/game/logic/RewardHelper.giveReward:(Lcom/perblue/heroes/game/objects/IUser;Lcom/perblue/heroes/network/messages/RewardDrop;Lcom/perblue/heroes/game/logic/RewardSourceType;[Ljava/lang/String;)Z
+      77: pop
+      78: aload_0
+      79: ldc           #88                 // String daily_signin
+      81: invokeinterface #94,  2           // InterfaceMethod com/perblue/heroes/game/objects/IUser.decDailyChances:(Ljava/lang/String;)V
+      86: aload_0
+      87: invokeinterface #97,  1           // InterfaceMethod com/perblue/heroes/game/objects/IUser.incMonthlySignins:()V
+      92: aload_0
+      93: iload_1
+      94: iload_3
+      95: invokeinterface #101,  3          // InterfaceMethod com/perblue/heroes/game/objects/IUser.setPreviousSigninMultiplierClaimed:(II)V
+     100: aload_0
+     101: lload         4
+     103: invokeinterface #105,  3          // InterfaceMethod com/perblue/heroes/game/objects/IUser.setLastSigninTime:(J)V
+     108: aload_0
+     109: getstatic     #111                // Field com/perblue/heroes/network/messages/TimeType.LAST_MONTHLY_SERVER_SIGNIN:Lcom/perblue/heroes/network/messages/TimeType;
+     112: invokestatic  #115                // Method com/perblue/heroes/util/TimeUtil.serverTimeNow:()J
+     115: invokeinterface #119,  4          // InterfaceMethod com/perblue/heroes/game/objects/IUser.setTime:(Lcom/perblue/heroes/network/messages/TimeType;J)V
+     120: aload_0
+     121: iload_1
+     122: invokestatic  #125                // Method com/perblue/heroes/game/logic/UserActivityTracker.onDailySignIn:(Lcom/perblue/heroes/game/objects/IUser;I)V
+     125: aload         6
+     127: iload_3
+     128: invokestatic  #129                // Method com/perblue/heroes/game/logic/RewardHelper.copyWithMultiplier:(Lcom/perblue/heroes/network/messages/RewardDrop;I)Lcom/perblue/heroes/network/messages/RewardDrop;
+     131: areturn
+     132: new           #131                // class com/perblue/heroes/ClientErrorCodeException
+     135: dup
+     136: getstatic     #137                // Field com/perblue/heroes/util/localization/ClientErrorCode.CANT_CLAIM_REWARD:Lcom/perblue/heroes/util/localization/ClientErrorCode;
+     139: iconst_0
+     140: anewarray     #73                 // class java/lang/String
+     143: invokespecial #140                // Method com/perblue/heroes/ClientErrorCodeException."<init>":(Lcom/perblue/heroes/util/localization/ClientErrorCode;[Ljava/lang/String;)V
+     146: athrow
+
+  public static int getActiveRewardIndex(com.perblue.heroes.game.objects.IUser);
+    Code:
+       0: aload_0
+       1: invokeinterface #146,  1          // InterfaceMethod com/perblue/heroes/game/objects/IUser.getMonthlySignins:()I
+       6: istore_2
+       7: iload_2
+       8: istore_1
+       9: aload_0
+      10: ldc           #88                 // String daily_signin
+      12: invokeinterface #150,  2          // InterfaceMethod com/perblue/heroes/game/objects/IUser.getDailyChances:(Ljava/lang/String;)I
+      17: ifne          24
+      20: iload_2
+      21: iconst_1
+      22: isub
+      23: istore_1
+      24: iload_1
+      25: istore_2
+      26: iload_1
+      27: aload_0
+      28: invokestatic  #154                // Method getRewards:(Lcom/perblue/heroes/game/objects/IUser;)Ljava/util/List;
+      31: invokeinterface #159,  1          // InterfaceMethod java/util/List.size:()I
+      36: if_icmplt     51
+      39: aload_0
+      40: invokestatic  #154                // Method getRewards:(Lcom/perblue/heroes/game/objects/IUser;)Ljava/util/List;
+      43: invokeinterface #159,  1          // InterfaceMethod java/util/List.size:()I
+      48: iconst_1
+      49: isub
+      50: istore_2
+      51: iload_2
+      52: ireturn
+
+  public static long getCurrentServerEndTime();
+    Code:
+       0: getstatic     #44                 // Field DATA:Ljava/util/concurrent/atomic/AtomicReference;
+       3: invokevirtual #164                // Method java/util/concurrent/atomic/AtomicReference.get:()Ljava/lang/Object;
+       6: checkcast     #166                // class com/perblue/heroes/network/messages/SigninRewards
+       9: astore_2
+      10: aload_2
+      11: ifnonnull     19
+      14: lconst_0
+      15: lstore_0
+      16: goto          27
+      19: aload_2
+      20: getfield      #170                // Field com/perblue/heroes/network/messages/SigninRewards.thisMonth:Lcom/perblue/heroes/network/messages/SigninReward;
+      23: getfield      #175                // Field com/perblue/heroes/network/messages/SigninReward.endTime:J
+      26: lstore_0
+      27: lload_0
+      28: lreturn
+
+  private static com.perblue.heroes.network.messages.SigninReward getCurrentSigninReward(com.perblue.heroes.game.objects.IUser);
+    Code:
+       0: getstatic     #44                 // Field DATA:Ljava/util/concurrent/atomic/AtomicReference;
+       3: invokevirtual #164                // Method java/util/concurrent/atomic/AtomicReference.get:()Ljava/lang/Object;
+       6: checkcast     #166                // class com/perblue/heroes/network/messages/SigninRewards
+       9: astore        4
+      11: aload         4
+      13: ifnonnull     24
+      16: new           #172                // class com/perblue/heroes/network/messages/SigninReward
+      19: dup
+      20: invokespecial #178                // Method com/perblue/heroes/network/messages/SigninReward."<init>":()V
+      23: areturn
+      24: aload_0
+      25: invokestatic  #61                 // Method com/perblue/heroes/util/TimeUtil.getUserServerTime:(Lcom/perblue/heroes/game/objects/IUser;)J
+      28: lstore_1
+      29: aload         4
+      31: getfield      #170                // Field com/perblue/heroes/network/messages/SigninRewards.thisMonth:Lcom/perblue/heroes/network/messages/SigninReward;
+      34: astore_3
+      35: lload_1
+      36: aload_3
+      37: getfield      #181                // Field com/perblue/heroes/network/messages/SigninReward.startTime:J
+      40: lcmp
+      41: ifge          50
+      44: aload         4
+      46: getfield      #184                // Field com/perblue/heroes/network/messages/SigninRewards.lastMonth:Lcom/perblue/heroes/network/messages/SigninReward;
+      49: areturn
+      50: aload_3
+      51: astore_0
+      52: lload_1
+      53: aload_3
+      54: getfield      #175                // Field com/perblue/heroes/network/messages/SigninReward.endTime:J
+      57: lcmp
+      58: ifle          67
+      61: aload         4
+      63: getfield      #187                // Field com/perblue/heroes/network/messages/SigninRewards.nextMonth:Lcom/perblue/heroes/network/messages/SigninReward;
+      66: astore_0
+      67: aload_0
+      68: areturn
+
+  public static int getDoubleRewardVIPLevel(int);
+    Code:
+       0: iload_0
+       1: iconst_5
+       2: idiv
+       3: istore_1
+       4: iload_0
+       5: iconst_5
+       6: irem
+       7: istore_0
+       8: iload_1
+       9: iconst_3
+      10: imul
+      11: istore_1
+      12: iload_0
+      13: ifeq          42
+      16: iload_0
+      17: iconst_2
+      18: if_icmpeq     35
+      21: iload_0
+      22: iconst_4
+      23: if_icmpeq     28
+      26: iconst_m1
+      27: ireturn
+      28: iload_1
+      29: iconst_3
+      30: iadd
+      31: istore_0
+      32: goto          46
+      35: iload_1
+      36: iconst_2
+      37: iadd
+      38: istore_0
+      39: goto          46
+      42: iload_1
+      43: iconst_1
+      44: iadd
+      45: istore_0
+      46: iload_0
+      47: bipush        15
+      49: invokestatic  #195                // Method java/lang/Math.min:(II)I
+      52: ireturn
+
+  public static com.perblue.heroes.network.messages.RewardDrop getReward(com.perblue.heroes.game.objects.IUser, int);
+    Code:
+       0: aload_0
+       1: invokestatic  #154                // Method getRewards:(Lcom/perblue/heroes/game/objects/IUser;)Ljava/util/List;
+       4: astore_0
+       5: iload_1
+       6: aload_0
+       7: invokeinterface #159,  1          // InterfaceMethod java/util/List.size:()I
+      12: if_icmpge     33
+      15: iload_1
+      16: ifge          22
+      19: goto          33
+      22: aload_0
+      23: iload_1
+      24: invokeinterface #198,  2          // InterfaceMethod java/util/List.get:(I)Ljava/lang/Object;
+      29: checkcast     #200                // class com/perblue/heroes/network/messages/RewardDrop
+      32: areturn
+      33: new           #200                // class com/perblue/heroes/network/messages/RewardDrop
+      36: dup
+      37: invokespecial #201                // Method com/perblue/heroes/network/messages/RewardDrop."<init>":()V
+      40: areturn
+
+  public static java.util.List getRewards(com.perblue.heroes.game.objects.IUser);
+    Code:
+       0: aload_0
+       1: invokeinterface #204,  1          // InterfaceMethod com/perblue/heroes/game/objects/IUser.getCreationTime:()J
+       6: aload_0
+       7: invokestatic  #206                // Method getCurrentSigninReward:(Lcom/perblue/heroes/game/objects/IUser;)Lcom/perblue/heroes/network/messages/SigninReward;
+      10: getfield      #181                // Field com/perblue/heroes/network/messages/SigninReward.startTime:J
+      13: lcmp
+      14: ifle          123
+      17: invokestatic  #212                // Method java/util/Calendar.getInstance:()Ljava/util/Calendar;
+      20: astore        5
+      22: aload         5
+      24: aload_0
+      25: invokeinterface #204,  1          // InterfaceMethod com/perblue/heroes/game/objects/IUser.getCreationTime:()J
+      30: invokevirtual #215                // Method java/util/Calendar.setTimeInMillis:(J)V
+      33: new           #217                // class java/util/ArrayList
+      36: dup
+      37: invokespecial #218                // Method java/util/ArrayList."<init>":()V
+      40: astore        4
+      42: aload_0
+      43: invokestatic  #206                // Method getCurrentSigninReward:(Lcom/perblue/heroes/game/objects/IUser;)Lcom/perblue/heroes/network/messages/SigninReward;
+      46: getfield      #222                // Field com/perblue/heroes/network/messages/SigninReward.rewards:Ljava/util/List;
+      49: invokeinterface #159,  1          // InterfaceMethod java/util/List.size:()I
+      54: istore_3
+      55: aload         5
+      57: iconst_5
+      58: invokevirtual #224                // Method java/util/Calendar.get:(I)I
+      61: istore_2
+      62: iconst_0
+      63: istore_1
+      64: iload_1
+      65: aload_0
+      66: invokestatic  #206                // Method getCurrentSigninReward:(Lcom/perblue/heroes/game/objects/IUser;)Lcom/perblue/heroes/network/messages/SigninReward;
+      69: getfield      #222                // Field com/perblue/heroes/network/messages/SigninReward.rewards:Ljava/util/List;
+      72: invokeinterface #159,  1          // InterfaceMethod java/util/List.size:()I
+      77: if_icmpge     120
+      80: iload_1
+      81: iload_3
+      82: iload_2
+      83: isub
+      84: if_icmple     90
+      87: goto          120
+      90: aload         4
+      92: aload_0
+      93: invokestatic  #206                // Method getCurrentSigninReward:(Lcom/perblue/heroes/game/objects/IUser;)Lcom/perblue/heroes/network/messages/SigninReward;
+      96: getfield      #222                // Field com/perblue/heroes/network/messages/SigninReward.rewards:Ljava/util/List;
+      99: iload_1
+     100: invokeinterface #198,  2          // InterfaceMethod java/util/List.get:(I)Ljava/lang/Object;
+     105: checkcast     #200                // class com/perblue/heroes/network/messages/RewardDrop
+     108: invokeinterface #228,  2          // InterfaceMethod java/util/List.add:(Ljava/lang/Object;)Z
+     113: pop
+     114: iinc          1, 1
+     117: goto          64
+     120: aload         4
+     122: areturn
+     123: aload_0
+     124: invokestatic  #206                // Method getCurrentSigninReward:(Lcom/perblue/heroes/game/objects/IUser;)Lcom/perblue/heroes/network/messages/SigninReward;
+     127: getfield      #222                // Field com/perblue/heroes/network/messages/SigninReward.rewards:Ljava/util/List;
+     130: areturn
+
+  public static void handleSigninResponse(com.perblue.heroes.ui.DHSkin, com.perblue.heroes.network.messages.RewardDrop, boolean);
+    Code:
+       0: getstatic     #236                // Field com/perblue/heroes/DH.app:Lcom/perblue/heroes/GameMain;
+       3: invokevirtual #242                // Method com/perblue/heroes/GameMain.getSoundManager:()Lcom/perblue/heroes/util/SoundManager;
+       6: ldc           #244                // String claim_button
+       8: invokevirtual #249                // Method com/perblue/heroes/util/SoundManager.playSound:(Ljava/lang/String;)V
+      11: aload_1
+      12: getfield      #253                // Field com/perblue/heroes/network/messages/RewardDrop.itemType:Lcom/perblue/heroes/network/messages/ItemType;
+      15: invokestatic  #259                // Method com/perblue/heroes/game/data/item/ItemStats.getCategory:(Lcom/perblue/heroes/network/messages/ItemType;)Lcom/perblue/heroes/game/data/item/ItemCategory;
+      18: getstatic     #265                // Field com/perblue/heroes/game/data/item/ItemCategory.HERO:Lcom/perblue/heroes/game/data/item/ItemCategory;
+      21: if_acmpne     126
+      24: aload_1
+      25: getfield      #253                // Field com/perblue/heroes/network/messages/RewardDrop.itemType:Lcom/perblue/heroes/network/messages/ItemType;
+      28: invokestatic  #269                // Method com/perblue/heroes/game/data/item/ItemStats.getUnitType:(Lcom/perblue/heroes/network/messages/ItemType;)Lcom/perblue/heroes/network/messages/UnitType;
+      31: astore        4
+      33: aload         4
+      35: getstatic     #275                // Field com/perblue/heroes/network/messages/UnitType.DEFAULT:Lcom/perblue/heroes/network/messages/UnitType;
+      38: if_acmpne     58
+      41: new           #277                // class com/perblue/heroes/game/logic/SigninHelper$$ExternalSyntheticLambda0
+      44: dup
+      45: aload_0
+      46: aload_1
+      47: invokespecial #279                // Method com/perblue/heroes/game/logic/SigninHelper$$ExternalSyntheticLambda0."<init>":(Lcom/perblue/heroes/ui/DHSkin;Lcom/perblue/heroes/network/messages/RewardDrop;)V
+      50: fconst_1
+      51: invokestatic  #285                // Method com/perblue/heroes/ui/UX.schedule:(Ljava/lang/Runnable;F)Laurelienribon/tweenengine/Tween;
+      54: pop
+      55: goto          140
+      58: iload_2
+      59: ifne          100
+      62: aload         4
+      64: invokestatic  #291                // Method com/perblue/heroes/game/data/unit/UnitStats.getStartingStars:(Lcom/perblue/heroes/network/messages/UnitType;)I
+      67: invokestatic  #296                // Method com/perblue/heroes/game/logic/HeroHelper.getSoulStoneConversion:(I)I
+      70: istore_3
+      71: getstatic     #302                // Field com/perblue/common/util/localization/BundleStrings$SignInUIStrings.HERO_TO_STONE_CONVERSION_FORMAT:Lcom/perblue/common/externalization/BundleString;
+      74: iconst_2
+      75: anewarray     #4                  // class java/lang/Object
+      78: dup
+      79: iconst_0
+      80: aload         4
+      82: invokestatic  #308                // Method com/perblue/heroes/util/DisplayStringUtil.getUnitString:(Lcom/perblue/heroes/network/messages/UnitType;)Ljava/lang/String;
+      85: aastore
+      86: dup
+      87: iconst_1
+      88: iload_3
+      89: invokestatic  #314                // Method java/lang/Integer.valueOf:(I)Ljava/lang/Integer;
+      92: aastore
+      93: invokevirtual #320                // Method com/perblue/common/externalization/BundleString.format:([Ljava/lang/Object;)Ljava/lang/String;
+      96: astore_0
+      97: goto          102
+     100: aconst_null
+     101: astore_0
+     102: getstatic     #236                // Field com/perblue/heroes/DH.app:Lcom/perblue/heroes/GameMain;
+     105: invokevirtual #324                // Method com/perblue/heroes/GameMain.getScreenManager:()Lcom/perblue/heroes/ScreenManager;
+     108: new           #326                // class com/perblue/heroes/ui/screens/HeroUnlockedScreen
+     111: dup
+     112: aload         4
+     114: aload_0
+     115: aconst_null
+     116: iconst_0
+     117: invokespecial #329                // Method com/perblue/heroes/ui/screens/HeroUnlockedScreen."<init>":(Lcom/perblue/heroes/network/messages/UnitType;Ljava/lang/String;Lcom/perblue/heroes/ui/windows/BaseModalWindow$HideListener;Z)V
+     120: invokevirtual #335                // Method com/perblue/heroes/ScreenManager.pushScreen:(Lcom/perblue/heroes/ui/screens/BaseScreen;)V
+     123: goto          140
+     126: new           #337                // class com/perblue/heroes/game/logic/SigninHelper$$ExternalSyntheticLambda1
+     129: dup
+     130: aload_0
+     131: aload_1
+     132: invokespecial #338                // Method com/perblue/heroes/game/logic/SigninHelper$$ExternalSyntheticLambda1."<init>":(Lcom/perblue/heroes/ui/DHSkin;Lcom/perblue/heroes/network/messages/RewardDrop;)V
+     135: fconst_1
+     136: invokestatic  #285                // Method com/perblue/heroes/ui/UX.schedule:(Ljava/lang/Runnable;F)Laurelienribon/tweenengine/Tween;
+     139: pop
+     140: getstatic     #236                // Field com/perblue/heroes/DH.app:Lcom/perblue/heroes/GameMain;
+     143: invokevirtual #341                // Method com/perblue/heroes/GameMain.updateUI:()V
+     146: return
+
+  public static boolean hasSigninHero(com.perblue.heroes.game.objects.IUser);
+    Code:
+       0: aload_0
+       1: invokestatic  #206                // Method getCurrentSigninReward:(Lcom/perblue/heroes/game/objects/IUser;)Lcom/perblue/heroes/network/messages/SigninReward;
+       4: getfield      #222                // Field com/perblue/heroes/network/messages/SigninReward.rewards:Ljava/util/List;
+       7: invokeinterface #347,  1          // InterfaceMethod java/util/List.iterator:()Ljava/util/Iterator;
+      12: astore_0
+      13: aload_0
+      14: invokeinterface #353,  1          // InterfaceMethod java/util/Iterator.hasNext:()Z
+      19: ifeq          45
+      22: aload_0
+      23: invokeinterface #356,  1          // InterfaceMethod java/util/Iterator.next:()Ljava/lang/Object;
+      28: checkcast     #200                // class com/perblue/heroes/network/messages/RewardDrop
+      31: getfield      #253                // Field com/perblue/heroes/network/messages/RewardDrop.itemType:Lcom/perblue/heroes/network/messages/ItemType;
+      34: invokestatic  #259                // Method com/perblue/heroes/game/data/item/ItemStats.getCategory:(Lcom/perblue/heroes/network/messages/ItemType;)Lcom/perblue/heroes/game/data/item/ItemCategory;
+      37: getstatic     #359                // Field com/perblue/heroes/game/data/item/ItemCategory.STONE:Lcom/perblue/heroes/game/data/item/ItemCategory;
+      40: if_acmpne     13
+      43: iconst_1
+      44: ireturn
+      45: iconst_0
+      46: ireturn
+
+  public static boolean isClaimable(com.perblue.heroes.game.objects.IUser, int);
+    Code:
+       0: aload_0
+       1: invokeinterface #146,  1          // InterfaceMethod com/perblue/heroes/game/objects/IUser.getMonthlySignins:()I
+       6: istore_2
+       7: aload_0
+       8: invokestatic  #206                // Method getCurrentSigninReward:(Lcom/perblue/heroes/game/objects/IUser;)Lcom/perblue/heroes/network/messages/SigninReward;
+      11: astore        8
+      13: aload_0
+      14: invokestatic  #115                // Method com/perblue/heroes/util/TimeUtil.serverTimeNow:()J
+      17: invokestatic  #362                // Method com/perblue/heroes/util/TimeUtil.getUserServerTime:(Lcom/perblue/heroes/game/objects/IUser;J)J
+      20: lstore_3
+      21: invokestatic  #367                // Method com/perblue/common/util/CodeLocationHelper.isOnServer:()Z
+      24: istore        5
+      26: iconst_0
+      27: istore        6
+      29: iconst_0
+      30: istore        7
+      32: iload         5
+      34: ifeq          59
+      37: lload_3
+      38: aload         8
+      40: getfield      #181                // Field com/perblue/heroes/network/messages/SigninReward.startTime:J
+      43: lcmp
+      44: iflt          57
+      47: lload_3
+      48: aload         8
+      50: getfield      #175                // Field com/perblue/heroes/network/messages/SigninReward.endTime:J
+      53: lcmp
+      54: iflt          94
+      57: iconst_0
+      58: ireturn
+      59: iload         6
+      61: istore        5
+      63: lload_3
+      64: aload         8
+      66: getfield      #181                // Field com/perblue/heroes/network/messages/SigninReward.startTime:J
+      69: lcmp
+      70: iflt          150
+      73: lload_3
+      74: aload         8
+      76: getfield      #175                // Field com/perblue/heroes/network/messages/SigninReward.endTime:J
+      79: getstatic     #37                 // Field END_TIME_FUDGE:J
+      82: lsub
+      83: lcmp
+      84: iflt          94
+      87: iload         6
+      89: istore        5
+      91: goto          150
+      94: iload_1
+      95: iload_2
+      96: if_icmpne     120
+      99: iload         7
+     101: istore        5
+     103: aload_0
+     104: ldc           #88                 // String daily_signin
+     106: invokeinterface #150,  2          // InterfaceMethod com/perblue/heroes/game/objects/IUser.getDailyChances:(Ljava/lang/String;)I
+     111: ifeq          117
+     114: iconst_1
+     115: istore        5
+     117: iload         5
+     119: ireturn
+     120: iload         6
+     122: istore        5
+     124: aload_0
+     125: iload_1
+     126: invokestatic  #370                // Method isVIPqualified:(Lcom/perblue/heroes/game/objects/IUser;I)Z
+     129: ifeq          150
+     132: iload         6
+     134: istore        5
+     136: aload_0
+     137: iload_1
+     138: invokeinterface #373,  2          // InterfaceMethod com/perblue/heroes/game/objects/IUser.getPreviousSigninMultiplierClaimed:(I)I
+     143: iconst_1
+     144: if_icmpne     150
+     147: iconst_1
+     148: istore        5
+     150: iload         5
+     152: ireturn
+
+  public static boolean isSignedIn(com.perblue.heroes.game.objects.IUser);
+    Code:
+       0: aload_0
+       1: aload_0
+       2: invokestatic  #376                // Method getActiveRewardIndex:(Lcom/perblue/heroes/game/objects/IUser;)I
+       5: invokestatic  #55                 // Method isClaimable:(Lcom/perblue/heroes/game/objects/IUser;I)Z
+       8: iconst_1
+       9: ixor
+      10: ireturn
+
+  public static boolean isVIPqualified(com.perblue.heroes.game.objects.IUser, int);
+    Code:
+       0: iload_1
+       1: invokestatic  #378                // Method getDoubleRewardVIPLevel:(I)I
+       4: istore_1
+       5: iload_1
+       6: ifle          24
+       9: aload_0
+      10: invokeinterface #381,  1          // InterfaceMethod com/perblue/heroes/game/objects/IUser.getVIPLevel:()I
+      15: iload_1
+      16: if_icmplt     24
+      19: iconst_1
+      20: istore_2
+      21: goto          26
+      24: iconst_0
+      25: istore_2
+      26: iload_2
+      27: ireturn
+
+  private static void lambda$handleSigninResponse$0(com.perblue.heroes.ui.DHSkin, com.perblue.heroes.network.messages.RewardDrop);
+    Code:
+       0: aload_0
+       1: aload_1
+       2: invokestatic  #387                // Method java/util/Collections.singleton:(Ljava/lang/Object;)Ljava/util/Set;
+       5: new           #389                // class com/badlogic/gdx/math/Vector2
+       8: dup
+       9: ldc_w         #390                // float 50.0f
+      12: invokestatic  #394                // Method com/perblue/heroes/ui/UX.pw:(F)F
+      15: ldc_w         #390                // float 50.0f
+      18: invokestatic  #397                // Method com/perblue/heroes/ui/UX.ph:(F)F
+      21: invokespecial #400                // Method com/badlogic/gdx/math/Vector2."<init>":(FF)V
+      24: iconst_1
+      25: invokestatic  #404                // Method com/perblue/heroes/ui/UX.showRewards:(Lcom/perblue/heroes/ui/DHSkin;Ljava/util/Collection;Lcom/badlogic/gdx/math/Vector2;Z)V
+      28: return
+
+  private static void lambda$handleSigninResponse$1(com.perblue.heroes.ui.DHSkin, com.perblue.heroes.network.messages.RewardDrop);
+    Code:
+       0: aload_0
+       1: aload_1
+       2: invokestatic  #387                // Method java/util/Collections.singleton:(Ljava/lang/Object;)Ljava/util/Set;
+       5: new           #389                // class com/badlogic/gdx/math/Vector2
+       8: dup
+       9: ldc_w         #390                // float 50.0f
+      12: invokestatic  #394                // Method com/perblue/heroes/ui/UX.pw:(F)F
+      15: ldc_w         #390                // float 50.0f
+      18: invokestatic  #397                // Method com/perblue/heroes/ui/UX.ph:(F)F
+      21: invokespecial #400                // Method com/badlogic/gdx/math/Vector2."<init>":(FF)V
+      24: iconst_1
+      25: invokestatic  #404                // Method com/perblue/heroes/ui/UX.showRewards:(Lcom/perblue/heroes/ui/DHSkin;Ljava/util/Collection;Lcom/badlogic/gdx/math/Vector2;Z)V
+      28: return
+
+  public static com.perblue.heroes.network.messages.RewardDrop retroClaimVIP(com.perblue.heroes.game.objects.IUser, int);
+    Code:
+       0: aload_0
+       1: iload_1
+       2: invokeinterface #373,  2          // InterfaceMethod com/perblue/heroes/game/objects/IUser.getPreviousSigninMultiplierClaimed:(I)I
+       7: iconst_1
+       8: if_icmpne     52
+      11: iload_1
+      12: invokestatic  #378                // Method getDoubleRewardVIPLevel:(I)I
+      15: iflt          52
+      18: aload_0
+      19: iload_1
+      20: invokestatic  #65                 // Method getReward:(Lcom/perblue/heroes/game/objects/IUser;I)Lcom/perblue/heroes/network/messages/RewardDrop;
+      23: astore_2
+      24: aload_0
+      25: aload_2
+      26: getstatic     #84                 // Field com/perblue/heroes/game/logic/RewardSourceType.VIP:Lcom/perblue/heroes/game/logic/RewardSourceType;
+      29: iconst_1
+      30: anewarray     #73                 // class java/lang/String
+      33: dup
+      34: iconst_0
+      35: ldc           #86                 // String signin vip reward
+      37: aastore
+      38: invokestatic  #81                 // Method com/perblue/heroes/game/logic/RewardHelper.giveReward:(Lcom/perblue/heroes/game/objects/IUser;Lcom/perblue/heroes/network/messages/RewardDrop;Lcom/perblue/heroes/game/logic/RewardSourceType;[Ljava/lang/String;)Z
+      41: pop
+      42: aload_0
+      43: iload_1
+      44: iconst_2
+      45: invokeinterface #101,  3          // InterfaceMethod com/perblue/heroes/game/objects/IUser.setPreviousSigninMultiplierClaimed:(II)V
+      50: aload_2
+      51: areturn
+      52: new           #131                // class com/perblue/heroes/ClientErrorCodeException
+      55: dup
+      56: getstatic     #137                // Field com/perblue/heroes/util/localization/ClientErrorCode.CANT_CLAIM_REWARD:Lcom/perblue/heroes/util/localization/ClientErrorCode;
+      59: iconst_0
+      60: anewarray     #73                 // class java/lang/String
+      63: invokespecial #140                // Method com/perblue/heroes/ClientErrorCodeException."<init>":(Lcom/perblue/heroes/util/localization/ClientErrorCode;[Ljava/lang/String;)V
+      66: athrow
+
+  public static void setData(com.perblue.heroes.network.messages.SigninRewards);
+    Code:
+       0: getstatic     #44                 // Field DATA:Ljava/util/concurrent/atomic/AtomicReference;
+       3: aload_0
+       4: invokevirtual #411                // Method java/util/concurrent/atomic/AtomicReference.set:(Ljava/lang/Object;)V
+       7: return
+
+  public static boolean showRedDot();
+    Code:
+       0: getstatic     #236                // Field com/perblue/heroes/DH.app:Lcom/perblue/heroes/GameMain;
+       3: invokevirtual #416                // Method com/perblue/heroes/GameMain.getYourUser:()Lcom/perblue/heroes/game/objects/User;
+       6: invokestatic  #418                // Method isSignedIn:(Lcom/perblue/heroes/game/objects/IUser;)Z
+       9: iconst_1
+      10: ixor
+      11: ireturn
+
+  public static void tryResetUserSignInCount(com.perblue.heroes.game.objects.IUser);
+    Code:
+       0: aload_0
+       1: invokeinterface #146,  1          // InterfaceMethod com/perblue/heroes/game/objects/IUser.getMonthlySignins:()I
+       6: ifne          10
+       9: return
+      10: aload_0
+      11: invokestatic  #206                // Method getCurrentSigninReward:(Lcom/perblue/heroes/game/objects/IUser;)Lcom/perblue/heroes/network/messages/SigninReward;
+      14: astore_1
+      15: aload_0
+      16: invokeinterface #421,  1          // InterfaceMethod com/perblue/heroes/game/objects/IUser.getLastSigninTime:()J
+      21: aload_1
+      22: getfield      #181                // Field com/perblue/heroes/network/messages/SigninReward.startTime:J
+      25: lcmp
+      26: iflt          47
+      29: aload_0
+      30: invokeinterface #146,  1          // InterfaceMethod com/perblue/heroes/game/objects/IUser.getMonthlySignins:()I
+      35: aload_1
+      36: getfield      #222                // Field com/perblue/heroes/network/messages/SigninReward.rewards:Ljava/util/List;
+      39: invokeinterface #159,  1          // InterfaceMethod java/util/List.size:()I
+      44: if_icmple     60
+      47: aload_0
+      48: iconst_0
+      49: invokeinterface #425,  2          // InterfaceMethod com/perblue/heroes/game/objects/IUser.setMonthlySignins:(I)V
+      54: aload_0
+      55: invokeinterface #428,  1          // InterfaceMethod com/perblue/heroes/game/objects/IUser.resetPreviousSigninMultipliersClaimed:()V
+      60: return
+}

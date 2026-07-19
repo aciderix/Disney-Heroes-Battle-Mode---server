@@ -249,6 +249,127 @@ public final class ServerUser {
   }
 
   /**
+   * Construit le message {@link com.perblue.heroes.network.messages.SigninRewards} attendu par le client
+   * (bâtiment SIGN IN / récompense de connexion quotidienne). <b>100 % code + données du jeu</b>
+   * (docs/PRINCIPLES.md §3/§4) : les récompenses ne sont PAS écrites à la main — elles sont <b>roulées</b>
+   * depuis la table de drop du jeu {@code SigninStats.REWARDS_TABLE} (fichier {@code signin_rewards.tab},
+   * extrait de l'APK), et le héros mensuel vient du calendrier de contenu ({@code content.<shard>.tab}).
+   *
+   * <p>Le client applique la réponse via {@code SigninHelper.setData(signinRewards)} puis lit tout depuis
+   * ce message ({@code getRewards}/{@code getActiveRewardIndex}/{@code isClaimable}/{@code claim}). Le champ
+   * {@code thisMonth.rewards} = la <b>liste des récompenses journalières du mois</b> (une {@code RewardDrop}
+   * par jour), obtenue en roulant le nœud {@code ROOT} de la table avec un
+   * {@code SigninStats.SigninContext(dayIndex, signinStart)} — la table est <b>riggée par index</b> (nœuds
+   * {@code V<version>_DAY_<i>}), donc déterministe (pas d'aléa). Envoyé dans
+   * {@code SpecialEventsRaw.signinRewards} (réponse à {@code Action{REFRESH_SPECIAL_EVENTS}}).
+   */
+  public synchronized com.perblue.heroes.network.messages.SigninRewards buildSigninRewards() {
+    ServerContext.init();
+    User user = ClientNetworkStateConverter.getUser(userInfo, userExtra, "signin");
+    IndividualUser iu = ClientNetworkStateConverter.getIndividualUser(
+        individualUserExtra, userID, userInfo.diamonds, "signin");
+    ServerContext.bind(user, iu);
+    return signinRewardsFor(user);
+  }
+
+  /**
+   * Construit {@code SigninRewards} pour un {@code user} DÉJÀ lié au contexte (DH.app). Utilisé par
+   * {@link #buildSigninRewards()} et par le handler de réclamation ({@code applyCommand CLAIM_SIGNIN_REWARD}),
+   * qui a besoin de poser {@code SigninHelper.setData(...)} avant d'appeler {@code SigninHelper.claim}.
+   */
+  private static com.perblue.heroes.network.messages.SigninRewards signinRewardsFor(User user) {
+    com.perblue.heroes.network.messages.SigninRewards out =
+        new com.perblue.heroes.network.messages.SigninRewards();
+    long now = com.perblue.heroes.util.TimeUtil.getUserServerTime(user);
+    // Bornes des trois mois (le client sélectionne thisMonth/lastMonth/nextMonth par comparaison de temps :
+    // cf. SigninHelper.getCurrentSigninReward). Calendar sur l'heure serveur du user.
+    java.util.Calendar cal = java.util.Calendar.getInstance();
+    cal.setTimeInMillis(now);
+    long thisStart = monthStart(cal, now);
+    long thisEnd = monthEnd(cal, now);
+    out.thisMonth = buildSigninMonth(user, thisStart, thisEnd);
+    out.lastMonth = buildSigninMonth(user, monthStart(cal, thisStart - 1L), monthEnd(cal, thisStart - 1L));
+    out.nextMonth = buildSigninMonth(user, monthStart(cal, thisEnd + 1L), monthEnd(cal, thisEnd + 1L));
+    out.signinHeroesRev = new java.util.HashMap<>();  // récence des héros de sign-in : vide (non affiché ici)
+    return out;
+  }
+
+  /** Premier instant du mois contenant {@code millis} (00:00:00.000). */
+  private static long monthStart(java.util.Calendar cal, long millis) {
+    cal.setTimeInMillis(millis);
+    cal.set(java.util.Calendar.DAY_OF_MONTH, 1);
+    cal.set(java.util.Calendar.HOUR_OF_DAY, 0);
+    cal.set(java.util.Calendar.MINUTE, 0);
+    cal.set(java.util.Calendar.SECOND, 0);
+    cal.set(java.util.Calendar.MILLISECOND, 0);
+    return cal.getTimeInMillis();
+  }
+
+  /** Dernier instant du mois contenant {@code millis} (23:59:59.999). */
+  private static long monthEnd(java.util.Calendar cal, long millis) {
+    cal.setTimeInMillis(millis);
+    cal.set(java.util.Calendar.DAY_OF_MONTH, cal.getActualMaximum(java.util.Calendar.DAY_OF_MONTH));
+    cal.set(java.util.Calendar.HOUR_OF_DAY, 23);
+    cal.set(java.util.Calendar.MINUTE, 59);
+    cal.set(java.util.Calendar.SECOND, 59);
+    cal.set(java.util.Calendar.MILLISECOND, 999);
+    return cal.getTimeInMillis();
+  }
+
+  /**
+   * Un {@code SigninReward} = les récompenses journalières d'UN mois : pour chaque jour {@code i}, on roule
+   * le nœud {@code ROOT} de {@code SigninStats.REWARDS_TABLE} avec un {@code SigninContext(i, signinStart)}
+   * (déterministe, riggé par index) → une {@code RewardDrop}. Le héros mensuel vient du calendrier de contenu.
+   */
+  @SuppressWarnings("unchecked")
+  private static com.perblue.heroes.network.messages.SigninReward buildSigninMonth(
+      User user, long start, long end) {
+    com.perblue.heroes.network.messages.SigninReward r =
+        new com.perblue.heroes.network.messages.SigninReward();
+    r.startTime = start;
+    r.endTime = end;
+    r.rewards = new java.util.ArrayList<>();
+    DropTable table = com.perblue.heroes.game.data.signin.SigninStats.REWARDS_TABLE.getTable();
+    DropConverter conv = new DropConverter(user);
+    // La table a un nœud par jour (V<ver>_DAY_0..DAY_N). On roule jusqu'à ce qu'un jour ne produise plus rien
+    // (nœud absent → la version a moins de jours) — borne de sécurité à 60 (un mois en compte ≤31).
+    for (int i = 0; i < 60; i++) {
+      java.util.List<com.perblue.heroes.network.messages.RewardDrop> dayDrops;
+      try {
+        // SigninContext(index, signinStart) — classe imbriquée PROTECTED (hors package) → réflexion.
+        // Les variables de la table (SignInVersion/SignInIndex/L) la castent pour lire index/signinStart.
+        Object ctx = newSigninContext(i, start);
+        List<?> drops = table.rollNode("ROOT", (com.perblue.common.droptable.DTContext) ctx, new Random());
+        dayDrops = conv.convert(drops);
+      } catch (Throwable t) {
+        break;  // nœud V<ver>_DAY_<i> inexistant → fin des jours de cette version
+      }
+      if (dayDrops == null || dayDrops.isEmpty()) break;
+      // Une RewardDrop par jour (le modèle du jeu indexe getReward(user,i) = rewards.get(i)).
+      r.rewards.add(dayDrops.get(0));
+    }
+    // Héros mensuel de sign-in (piloté par content.<shard>.tab, daté) — via le calendrier de contenu.
+    try {
+      r.signinHero = com.perblue.heroes.game.data.content.ContentHelper.getRawStats()
+          .getColumn(start).getCurrentMonthlySigninHero();
+    } catch (Throwable ignore) { /* pas de héros mensuel → laissé null (champ optionnel) */ }
+    return r;
+  }
+
+  /** Cache du constructeur {@code SigninStats$SigninContext(int, long)} (classe imbriquée protected). */
+  private static java.lang.reflect.Constructor<?> SIGNIN_CTX_CTOR;
+
+  /** Instancie un {@code SigninStats.SigninContext(index, signinStart)} par réflexion (protected hors package). */
+  private static Object newSigninContext(int index, long signinStart) throws Exception {
+    if (SIGNIN_CTX_CTOR == null) {
+      Class<?> c = Class.forName("com.perblue.heroes.game.data.signin.SigninStats$SigninContext");
+      SIGNIN_CTX_CTOR = c.getDeclaredConstructor(int.class, long.class);
+      SIGNIN_CTX_CTOR.setAccessible(true);
+    }
+    return SIGNIN_CTX_CTOR.newInstance(index, signinStart);
+  }
+
+  /**
    * Enregistre l'issue d'un combat de CAMPAGNE (docs/PRINCIPLES.md §3 : on EXÉCUTE la logique du jeu).
    * Le client joue le combat (client-side, spine unidbg), construit le {@link CampaignAttack} via
    * {@code ClientNetworkStateConverter.getCampaignAttack} (qui roule {@code CampaignHelper.recordOutcome}
@@ -563,6 +684,38 @@ public final class ServerUser {
         } catch (Throwable t) {
           System.out.println("[action] SET_SEED: extra illisible (" + idO + "/" + tyO + ") : " + t);
         }
+        return true;
+      }
+      case "CLAIM_SIGNIN_REWARD":
+      case "CLAIM_SIGNIN_WITH_VIDEO": {
+        // Réclamation d'une récompense de connexion quotidienne — logique d'origine EXACTE
+        // (SigninHelper.claim, code du jeu). Le client optimiste applique claim de son côté (doAction) et
+        // envoie Action{CLAIM_SIGNIN_REWARD, extra={INDEX=i}} ; le serveur AUTORITATIF ré-exécute la même
+        // logique. claim() lit ses données dans SigninHelper.DATA → on POSE d'abord les récompenses du mois
+        // (setData), construites depuis la table du jeu (signinRewardsFor). claim() : isClaimable →
+        // getReward(i) → RewardHelper.giveReward (donne l'objet, auto-persisté dans this.extra) +
+        // incMonthlySignins/decDailyChances(daily_signin)/setLastSigninTime/setTime. Le drapeau vidéo
+        // (CLAIM_SIGNIN_WITH_VIDEO) double la récompense (multiplicateur VIP), comme dans le jeu.
+        boolean withVideo = cmd.equals("CLAIM_SIGNIN_WITH_VIDEO");
+        com.perblue.heroes.game.logic.SigninHelper.setData(signinRewardsFor(user));
+        Object idxO = m.extra == null ? null
+            : m.extra.get(com.perblue.heroes.network.messages.ActionExtraType.INDEX);
+        int index;
+        try {
+          index = idxO == null
+              ? com.perblue.heroes.game.logic.SigninHelper.getActiveRewardIndex(user)  // défaut : jour actif
+              : Integer.parseInt(idxO.toString());
+        } catch (NumberFormatException e) {
+          System.out.println("[action] CLAIM_SIGNIN: INDEX illisible " + idxO); return false;
+        }
+        if (!com.perblue.heroes.game.logic.SigninHelper.isClaimable(user, index)) {
+          System.out.println("[action] CLAIM_SIGNIN: jour " + index + " non réclamable (déjà pris / futur)");
+          return false;
+        }
+        com.perblue.heroes.network.messages.RewardDrop d =
+            com.perblue.heroes.game.logic.SigninHelper.claim(user, index, withVideo);
+        System.out.println("[action] CLAIM_SIGNIN jour " + index + (withVideo ? " (vidéo x2)" : "")
+            + " → " + d);
         return true;
       }
       case "RECORD_SERVER_ROLL_FINISHED":

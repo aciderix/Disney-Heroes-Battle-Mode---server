@@ -1,5 +1,47 @@
 # JOURNAL — journal détaillé des modifications
 
+## 2026-07-19 — SIGN-IN (récompense de connexion quotidienne) : construction serveur + réclamation
+
+### Contexte & correction de cadrage
+En progressant le tuto post-équip, le client spammait `Action{REFRESH_SPECIAL_EVENTS}` (relevé 524×) et le
+bâtiment **SIGN IN** restait vide. J'avais initialement cadré ça comme une « feature admin » (définir les
+récompenses). **Correction (user) : c'en est pas une.** Les récompenses sont **définies par la donnée**
+(`game-data/stats/signin_rewards.tab`, extraite de l'APK = authentique PerBlue) et la réclamation est **du code du
+jeu** (`SigninHelper.claim`). Le serveur ne fait qu'**exécuter** (PRINCIPLES §3/§4). Le seul angle « admin » =
+éditer un `.tab`, commun à TOUT le jeu — rien de spécifique.
+
+### Modèle relevé au bytecode
+- `SpecialEventsRaw{changed, List events, SigninRewards signinRewards}` (champ confirmé).
+- `SigninRewards{thisMonth,nextMonth,lastMonth : SigninReward, Map signinHeroesRev}` ;
+  `SigninReward{startTime,endTime, List<RewardDrop> rewards, UnitType signinHero}`.
+- Table `SigninStats.REWARDS_TABLE : DropTableStats`, nœuds `ROOT → V<SignInVersion>_DAY_<index>`. Variables
+  (`SigninDTCode`) : `SignInVersion`=`ContentColumn(signinStart).getSigninVersion()`, `SignInIndex`=`ctx.index`,
+  **`L`=`ContentColumn(signinStart).getMaxTeamLevel()`** → quantités indexées sur l'ère de contenu (pas le joueur).
+- `SigninHelper` (client) lit tout dans `DATA` (posé par `setData`) : `getRewards`/`getReward(i)`/
+  `getActiveRewardIndex`/`isClaimable`/`claim(user,index,retro)` (donne l'objet + `incMonthlySignins`/
+  `decDailyChances("daily_signin")`/`setLastSigninTime`). Réclamation client = `Action{CLAIM_SIGNIN_REWARD,
+  extra={INDEX=i}}` (et `CLAIM_SIGNIN_WITH_VIDEO` pour le x2).
+
+### Implémentation (`ServerUser`, `LoginServer`)
+- `buildSigninRewards()` → `signinRewardsFor(user)` : construit thisMonth/lastMonth/nextMonth via
+  `buildSigninMonth(user, start, end)`. Bornes de mois = `Calendar` (premier/dernier instant) sur
+  `TimeUtil.getUserServerTime(user)`. `rewards` = pour chaque jour i, `REWARDS_TABLE.getTable().rollNode("ROOT",
+  SigninContext(i, start), Random)` → `DropConverter(user).convert(...)` → 1 `RewardDrop` ; boucle jusqu'à ce
+  qu'un jour ne produise plus rien (nœud absent = fin des jours de la version). `SigninContext(int,long)` =
+  classe imbriquée **protected** hors package → instanciée par **réflexion** (constructeur mis en cache).
+  `signinHero` = `ContentHelper.getRawStats().getColumn(start).getCurrentMonthlySigninHero()`.
+- `LoginServer` handler `REFRESH_SPECIAL_EVENTS` : `raw.signinRewards = user.buildSigninRewards()`.
+- `applyCommand` cases `CLAIM_SIGNIN_REWARD`/`CLAIM_SIGNIN_WITH_VIDEO` : `SigninHelper.setData(signinRewardsFor(
+  user))` (claim lit `DATA`), index depuis `extra[INDEX]` (défaut `getActiveRewardIndex`), garde `isClaimable`,
+  puis `SigninHelper.claim(user, index, withVideo)`. État auto-persisté dans `this.extra`.
+
+### Vérification
+`server/smoke/SigninTest` : `buildSigninRewards()` rend **31 jours** dont les valeurs matchent la `.tab` scalée à
+l'ère R102 (L=565) — jour 0 GOLD 226 250 000 (`(565*400000)+250000`), jour 1 50 DIAMONDS, jour 2 1563
+EXP_COLOSSAL, jour 3 GEAR_JUICE 35305 (`565*67-2550`), jour 4 DOUBLE_CAMPAIGN_TEAM_XP. Bornes last<this<next.
+Réclamation du jour actif → RewardDrop GOLD crédité. Régressions `ResourceTest`/`EquipTest`/`ViewedChestsTest`
+vertes. **Reste** : vérif EN JEU (le SIGN IN affiche/réclame réellement), puis CHOOSE NAME.
+
 ## 2026-07-17 (quater) — #25 LOOT AUTORITAIRE : le serveur roule le butin, certifié == client, SANS simuler le combat
 
 ### Décision (user) & principe

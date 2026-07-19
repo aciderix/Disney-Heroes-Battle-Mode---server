@@ -142,9 +142,20 @@ public final class LoginServer {
                     new com.perblue.heroes.network.messages.SpecialEventsRaw();
                 raw.changed = false;
                 raw.events = new java.util.ArrayList<>();
+                // Récompenses de connexion quotidienne (bâtiment SIGN IN) : construites depuis la table du
+                // jeu (signin_rewards.tab) — le client applique via SigninHelper.setData. Cf. ServerUser.
+                try {
+                  raw.signinRewards = user.buildSigninRewards();
+                } catch (Throwable t) {
+                  System.out.println("[login]     ! buildSigninRewards échec: " + t);
+                }
                 raw.setAsReplyTo(m);
                 c.send(raw);
-                System.out.println("[login]     ==> SpecialEventsRaw (reply, 0 évènement, changed=false)");
+                int nDays = raw.signinRewards == null || raw.signinRewards.thisMonth == null
+                    || raw.signinRewards.thisMonth.rewards == null ? 0
+                    : raw.signinRewards.thisMonth.rewards.size();
+                System.out.println("[login]     ==> SpecialEventsRaw (reply, 0 évènement, "
+                    + nDays + " jours de sign-in)");
               } else {
                 boolean applied = user.applyAction(act);
                 if (applied) { try { store.save(user); } catch (Exception e) {

@@ -1,87 +1,90 @@
-# SIGNIN & SPECIAL EVENTS — feature serveur/admin (recon 2026-07-19)
+# SIGN-IN & ÉVÈNEMENTS SPÉCIAUX — feature serveur (recon + implémentation 2026-07-19)
 
 Manque serveur trouvé **en progressant le tuto post-équip** (méthode « observer le protocole ») : le client
 envoie `Action{REFRESH_SPECIAL_EVENTS}` **en boucle** (relevé 524×) et le bâtiment **SIGN IN** (récompense de
-connexion quotidienne) reste vide. C'est une **REQUÊTE** attendant une réponse `SpecialEventsRaw` (évènements +
-récompenses de sign-in), **pas** un fire-and-forget. Tout est **du code + des données du jeu** (zéro invention),
-et c'est une **feature de configuration serveur** (un admin définit les évènements/récompenses). Voir
-[`SERVER_PLAN.md`](SERVER_PLAN.md) §F, [`PROTOCOL.md`](PROTOCOL.md).
+connexion quotidienne) restait vide. C'est une **REQUÊTE** attendant une réponse `SpecialEventsRaw` (évènements +
+récompenses de sign-in), **pas** un fire-and-forget. Tout est **du code + des données du jeu** (zéro invention).
+Voir [`SERVER_PLAN.md`](SERVER_PLAN.md) §F, [`PROTOCOL.md`](PROTOCOL.md).
+
+> **Note de cadrage (corrigée) : le sign-in N'EST PAS une « feature admin ».** Les récompenses sont **définies
+> par la donnée** (`game-data/stats/signin_rewards.tab`, extraite de l'APK = valeurs authentiques PerBlue) et la
+> logique de réclamation est **du code du jeu** (`SigninHelper.claim`). C'est donc une **feature de jeu standard**
+> que le serveur **exécute** (construire `SigninRewards` en roulant la `.tab`, puis appeler `claim`). Le seul
+> « angle admin » est trivial et **commun à tout le jeu** : un opérateur auto-hébergé peut éditer n'importe quel
+> `.tab` (couche donnée) — rien de spécifique au sign-in. Pas de console/feature d'administration à concevoir.
 
 ## 1. Le protocole (relevé au bytecode)
 
-- Client → serveur : `Action{command=REFRESH_SPECIAL_EVENTS}` (périodique + à l'ouverture d'écrans dépendants).
-- Serveur → client attendu : **`SpecialEventsRaw`** = `{ boolean changed, List<SpecialEventRaw> events,
-  SigninRewards signinRewards }`.
+- Client → serveur : `Action{command=REFRESH_SPECIAL_EVENTS}` (périodique + à l'ouverture d'écrans dépendants ;
+  `ClientActionHelper.refreshSpecialEvents`, appelé notamment par `SignInScreen`).
+- Serveur → client : **`SpecialEventsRaw`** = `{ boolean changed, List<SpecialEventRaw> events,
+  SigninRewards signinRewards }` (champ `signinRewards` confirmé au bytecode).
 - À la réception, le client applique :
   - `SpecialEventsHelper.setSpecialEvents(raw, user, shardID)` (les évènements) ;
-  - `SigninHelper.setData(signinRewards)` (le sign-in ; aussi via un message `SigninRewards` direct).
-- **Fait (2026-07-19)** : `LoginServer` répond désormais un `SpecialEventsRaw{changed=false, events=[]}` (aucun
-  évènement hébergé) → **stoppe le "non appliquée" en boucle**. **MANQUE RESTANT** : `signinRewards` **vide** →
-  l'écran SIGN IN n'a rien à afficher/réclamer. Il faut **construire un vrai `SigninRewards`**.
+  - `SigninHelper.setData(raw.signinRewards)` (le sign-in).
+- **Réclamation** : `ClientActionHelper.claimSignInReward(index)` → `Action{CLAIM_SIGNIN_REWARD, extra={INDEX=i}}`
+  (et `CLAIM_SIGNIN_WITH_VIDEO` pour le x2). Le client applique `claim` de son côté (optimiste) et envoie
+  l'Action ; le serveur AUTORITATIF ré-exécute la même logique.
 
 ## 2. Modèle de données du sign-in (100 % jeu)
 
 - **Récompenses définies par la donnée** : `game-data/stats/signin_rewards.tab` = une **DropTable**
-  (`SigninStats.REWARDS_TABLE : DropTableStats`). Nœuds : `ROOT → V<SignInVersion>_DAY_<index>`. Ex. (V1) :
-  `DAY_0=GOLD (fn niveau)`, `DAY_1=50 DIAMONDS`, `DAY_2=EXP_COLOSSAL`, `DAY_3=GEAR_JUICE (fn)`,
-  `DAY_4=DOUBLE_CAMPAIGN_TEAM_XP`, `DAY_5=COSMETIC_CHEST_1X`, … (~30 jours). Quantités **scalées par le niveau**
-  (`fn (L*…)`), donc **par joueur**.
+  (`SigninStats.REWARDS_TABLE : DropTableStats`). Nœuds : `ROOT → V<SignInVersion>_DAY_<index>`. Variables de la
+  table (`SigninStats.SigninDTCode`) : `SignInVersion` = `ContentColumn(signinStart).getSigninVersion()`,
+  `SignInIndex` = `SigninContext.index` (le jour), **`L` = `ContentColumn(signinStart).getMaxTeamLevel()`**
+  (⇒ quantités **indexées sur l'ère de contenu**, pas sur le joueur — cohérent avec le reste du daté, cf. la
+  stamina). Ex. (V1) : `DAY_0=GOLD fn (L*400000)+250000`, `DAY_1=50 DIAMONDS`, `DAY_2=1563 EXP_COLOSSAL`,
+  `DAY_3=GEAR_JUICE fn max((L*67)-2550,1)`, … jusqu'à `DAY_30` (31 nœuds).
 - **Messages** :
   - `SigninReward = { long startTime, long endTime, List<RewardDrop> rewards, UnitType signinHero }`
-    (les `rewards` = la **liste des récompenses journalières** du mois).
+    (`rewards` = la **liste des récompenses journalières** du mois, une `RewardDrop` par jour).
   - `SigninRewards = { SigninReward thisMonth, nextMonth, lastMonth; Map signinHeroesRev }`.
-- **Logique cliente** (`SigninHelper`, tout lit `DATA` = le `SigninRewards` reçu) :
-  - `setData(SigninRewards)` → stocke dans `DATA` (AtomicReference).
-  - `getRewards(user)` → liste effective (basée `thisMonth.rewards` + `getCreationTime`/Calendar).
-  - `getActiveRewardIndex(user)`, `isClaimable(user, i)`, `isSignedIn(user)`, `getCurrentServerEndTime()`
-    (= `thisMonth.endTime`), `hasSigninHero(user)`.
-  - **Réclamer** : `claim(user, index, retro) → RewardDrop` (donne la récompense du jour `index`).
-- **Héros mensuel de sign-in** : `ContentStats.ContentColumn.getCurrentMonthlySigninHero()` /
-  `getNextMonthlySigninHero()` (piloté par `content.1.tab`, daté).
+- **Logique cliente** (`SigninHelper`, tout lit `DATA` = le `SigninRewards` reçu via `setData`) :
+  - `getCurrentSigninReward(user)` : sélectionne `thisMonth`/`lastMonth`/`nextMonth` en comparant
+    `TimeUtil.getUserServerTime(user)` aux bornes `startTime`/`endTime`.
+  - `getRewards(user)` → sous-liste effective (jours écoulés) de `thisMonth.rewards`.
+  - `getReward(user, i)` = `getRewards(user).get(i)` ; `getActiveRewardIndex`, `isClaimable(user, i)`.
+  - **Réclamer** : `claim(user, index, retro) → RewardDrop` : `isClaimable` → `getReward(i)` →
+    `RewardHelper.giveReward` (donne l'objet) + `incMonthlySignins`/`decDailyChances("daily_signin")`/
+    `setLastSigninTime`/`setTime(LAST_MONTHLY_SERVER_SIGNIN)` (état joueur, **auto-persisté dans `this.extra`**).
+- **Héros mensuel** : `ContentColumn.getCurrentMonthlySigninHero()` (piloté par `content.<shard>.tab`, daté).
 
-## 3. Ce que le serveur doit faire (plan — pure logique du jeu)
+## 3. Implémentation serveur ✅ (2026-07-19)
 
-1. **Construire `SigninRewards`** pour le user (comme l'a fait le vrai serveur PerBlue) :
-   - `thisMonth.startTime/endTime` = bornes du **mois courant** (Calendar sur `TimeUtil.serverTimeNow`/
-     `getUserServerTime`) ; idem `lastMonth`/`nextMonth`.
-   - `thisMonth.rewards` = pour chaque jour `i` du mois, **rouler** `SigninStats.REWARDS_TABLE` au nœud
-     `V<version>_DAY_<i>` sur un `ChestContext`/`DropContext(user)` → `RewardDrop`. (Déterministe : la table
-     est riggée par index, pas aléatoire.) → `List<RewardDrop>`.
-   - `thisMonth.signinHero` = `ContentHelper.getCurrent(user).getCurrentMonthlySigninHero()`.
-   - `signinHeroesRev` = map héros→révision (depuis le contenu).
-2. **Envoyer** ce `SigninRewards` : soit dans `SpecialEventsRaw.signinRewards` (réponse à
-   `REFRESH_SPECIAL_EVENTS`), soit comme message `SigninRewards` direct au login (à confirmer côté client :
-   `lambda$setupPostClientInfoHandlers$31` gère un `SigninRewards` seul).
-3. **Handler de RÉCLAMATION** : quand le client réclame (message/Action à identifier — probablement un
-   `Action{CLAIM_SIGNIN}` ou un message dédié), exécuter `SigninHelper.claim(user, index, false)` (logique du
-   jeu : donne le `RewardDrop`, incrémente `getMonthlySignins`/`getDailyChances("daily_signin")`), persister,
-   répondre le `RewardDrop` (comme `openChest` répond `LootResults`).
-4. **État joueur** : le compteur de sign-in vit dans l'état user (`getMonthlySignins`,
-   `getDailyChances("daily_signin")`) → **auto-persisté** dans `this.extra` (comme la stamina).
+- **Construction** `ServerUser.buildSigninRewards()` → `signinRewardsFor(user)` :
+  - `thisMonth`/`lastMonth`/`nextMonth` = `buildSigninMonth(user, start, end)` avec les **bornes de mois**
+    calculées par `Calendar` sur `TimeUtil.getUserServerTime(user)` (premier/dernier instant du mois).
+  - `thisMonth.rewards` = pour chaque jour `i`, **rouler** `SigninStats.REWARDS_TABLE.getTable().rollNode("ROOT",
+    new SigninContext(i, start), rng)` → `DropConverter(user).convert(...)` → une `RewardDrop`. Boucle jusqu'à ce
+    qu'un jour ne produise plus rien (nœud absent → fin des jours de la version). **Déterministe** (table riggée
+    par index). `SigninContext` est instancié **par réflexion** (classe imbriquée `protected` hors package).
+  - `signinHero` = `ContentHelper.getRawStats().getColumn(start).getCurrentMonthlySigninHero()`.
+- **Envoi** : `LoginServer` (handler `REFRESH_SPECIAL_EVENTS`) pose `raw.signinRewards = user.buildSigninRewards()`.
+- **Réclamation** : `ServerUser.applyCommand` cases `CLAIM_SIGNIN_REWARD`/`CLAIM_SIGNIN_WITH_VIDEO` →
+  `SigninHelper.setData(signinRewardsFor(user))` (claim lit `DATA`) → `getActiveRewardIndex` (défaut) ou
+  `extra[INDEX]` → `isClaimable` → `SigninHelper.claim(user, index, withVideo)`. L'état (compteur de sign-in,
+  objet donné) persiste via `this.extra` (comme la stamina).
+- **Vérifié** : `server/smoke/SigninTest` — 31 jours roulés, valeurs = la `.tab` scalée à l'ère R102 (L=565 :
+  jour 0 GOLD 226 250 000, jour 1 50 DIAMONDS, jour 3 GEAR_JUICE 35305…), bornes cohérentes (last<this<next),
+  réclamation du jour actif crédite la récompense. Régressions `ResourceTest`/`EquipTest`/`ViewedChestsTest` OK.
 
-## 4. Angle « feature admin serveur » (config)
+## 4. Évènements spéciaux (`events`)
 
-C'est le point clé : **définir les récompenses = éditer `signin_rewards.tab`** (déjà extrait de l'APK = valeurs
-authentiques PerBlue). Un opérateur de serveur (auto-hébergement, §5 PRINCIPLES) peut :
-- **garder l'authentique** (la `.tab` du jeu) — comportement fidèle par défaut ;
-- **personnaliser** ses récompenses (éditer la `.tab` / une surcharge) sans toucher au code — même canal que
-  le reste de l'équilibrage (les `.tab` sont la couche de données).
-
-Idem pour les **ÉVÈNEMENTS** (`SpecialEventRaw` : deals, contests, bannières) : c'est une **couche de config
-serveur** (quels évènements sont actifs, quand). Aujourd'hui : aucun évènement hébergé (`events=[]`) = valeur
-correcte pour un serveur sans évènements (§F). Une vraie **console admin** (définir/planifier évènements +
-récompenses) serait la généralisation — hors périmètre immédiat, mais l'architecture (données `.tab` + logique
-du jeu) la rend naturelle.
+`SpecialEventRaw` (deals, contests, bannières) = une **couche de config serveur** (quels évènements sont actifs,
+quand). Aujourd'hui : aucun évènement hébergé (`events=[]`, `changed=false`) = valeur **correcte** pour un serveur
+sans évènement (cf. SERVER_PLAN §F). Un système d'hébergement d'évènements (planification + snapshots temporels)
+serait une feature à part entière, hors périmètre immédiat.
 
 ## 5. Autre manque vu sur la même capture
 
-- **« CHOOSE NAME »** (bas-gauche du hub) : étape d'onboarding — le joueur doit **choisir son nom**. Interaction
-  serveur à câbler (probablement un `Action`/message `SetName` → stocker dans `userInfo` → persister). À traiter
-  après le sign-in (même méthode : observer le message émis, exécuter la logique du jeu, persister).
+- **« CHOOSE NAME »** (bas-gauche du hub) : étape d'onboarding — le joueur choisit son nom. Interaction serveur à
+  câbler (probablement un `Action`/message `SetName` → stocker dans `userInfo` → persister). À traiter après le
+  sign-in (même méthode : observer le message émis, exécuter la logique du jeu, persister).
 
 ## 6. Statut
 
-- ✅ `REFRESH_SPECIAL_EVENTS` : le serveur RÉPOND (`SpecialEventsRaw`, 0 évènement) → plus de spam « non gérée ».
-- ⬜ `SigninRewards` : à **construire + envoyer** (§3) pour rendre le bâtiment SIGN IN fonctionnel.
-- ⬜ Handler de **réclamation** de sign-in.
+- ✅ `REFRESH_SPECIAL_EVENTS` : le serveur RÉPOND (`SpecialEventsRaw`, 0 évènement).
+- ✅ `SigninRewards` **construit + envoyé** (§3) → bâtiment SIGN IN alimenté.
+- ✅ Handler de **réclamation** (`CLAIM_SIGNIN_REWARD` / `_WITH_VIDEO`) → `SigninHelper.claim`.
+- ⬜ **Vérif EN JEU** (le SIGN IN affiche/réclame réellement — à confirmer au prochain run client).
 - ⬜ **CHOOSE NAME**.
