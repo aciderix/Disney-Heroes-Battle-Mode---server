@@ -92,6 +92,15 @@ public final class TutorialDriver {
             && !"0".equals(System.getProperty("dh.autoequip"))
             && !"false".equalsIgnoreCase(System.getProperty("dh.autoequip"));
     private static String equipDumpedScreen = "";
+    // NAVIGATION SIGN-IN (DEV, dh.gosignin) : une fois au hub, ouvrir le bâtiment SIGN IN via l'API du jeu
+    // (UINavHelper.navigateTo(Destination.SIGN_IN)) pour DÉCLENCHER le flux REFRESH_SPECIAL_EVENTS → le
+    // serveur répond SpecialEventsRaw{signinRewards} (récompenses de connexion, cf. docs/SIGNIN_EVENTS.md).
+    // Le client n'envoie ce refresh QUE si SpecialEventsHelper.userNeedsNewData=true OU si le SignInScreen
+    // s'ouvre (refreshSpecialEvents direct) — donc on force l'ouverture. One-shot (signinNavDone).
+    private static final boolean GO_SIGNIN = System.getProperty("dh.gosignin") != null
+            && !"0".equals(System.getProperty("dh.gosignin"))
+            && !"false".equalsIgnoreCase(System.getProperty("dh.gosignin"));
+    private static boolean signinNavDone = false;
     // Slots dont l'équip a ÉCHOUÉ en jeu (ErrorWindow) → à SAUTER pour éviter la boucle re-EQUIP→erreur.
     // Clé "HERO:SLOT". lastEquip* = dernier slot tenté (pour l'attribuer à l'échec quand l'erreur surgit).
     private static final Set<String> failedEquipSlots = new HashSet<>();
@@ -168,6 +177,36 @@ public final class TutorialDriver {
             //    n'est pas fermée. Si le tuto pointe DANS la popup → taper dedans ; sinon la popup bloque
             //    → la FERMER via l'API du jeu (BaseModalWindow.hide(), = bouton X / retour).
             List<?> windows = screenWindows(screen);
+
+            // NAVIGATION SIGN-IN (DEV, one-shot) : au hub sans popup, ouvrir le bâtiment SIGN IN via l'API du
+            // jeu → déclenche REFRESH_SPECIAL_EVENTS → le serveur répond les récompenses de sign-in.
+            if (GO_SIGNIN && !signinNavDone && screen.getClass().getSimpleName().contains("MainScreen")
+                    && (windows == null || windows.isEmpty())) {
+                try {
+                    com.perblue.heroes.ui.UINavHelper.Destination dest =
+                        com.perblue.heroes.ui.UINavHelper.Destination.SIGN_IN;
+                    // On RESPECTE le verrou du jeu : pendant le tuto, la navigation libre est bloquée
+                    // (mainScreenTutorialBlocked → « TUTORIAL_CANT_DO_THAT_YET »). Forcer serait une rustine
+                    // (PRINCIPLES §2). On n'ouvre le SIGN IN que lorsque le jeu l'autorise (tuto libéré) ; sinon
+                    // on réessaie plus tard (pas de one-shot consommé). Log throttlé.
+                    boolean can = com.perblue.heroes.ui.UINavHelper.canNavigateTo(dest, false);
+                    if (!can) {
+                        if (!"signin-blocked".equals(idleScreen)) {   // throttle : 1 log par transition
+                            System.out.println("[gosignin] navigation SIGN_IN bloquée par le tuto "
+                                + "(canNavigateTo=false) → on attend que le jeu l'autorise");
+                        }
+                    } else {
+                        System.out.println("[gosignin] hub libre → navigateTo(SIGN_IN)");
+                        com.perblue.heroes.ui.UINavHelper.navigateTo(dest, "dev", new String[0]);
+                        signinNavDone = true;
+                        return true;
+                    }
+                } catch (Throwable t) {
+                    System.out.println("[gosignin] navigateTo(SIGN_IN) échec: " + t);
+                    signinNavDone = true;  // ne pas boucler sur une vraie erreur
+                }
+            }
+
             if (DEBUG) {
                 StringBuilder wl = new StringBuilder();
                 if (windows != null) for (Object win : windows) wl.append(win.getClass().getSimpleName()).append(',');
