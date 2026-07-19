@@ -101,6 +101,7 @@ public final class TutorialDriver {
             && !"0".equals(System.getProperty("dh.gosignin"))
             && !"false".equalsIgnoreCase(System.getProperty("dh.gosignin"));
     private static boolean signinNavDone = false;
+    private static int signinWaitTicks = 0;   // frames d'attente du bouton CLAIM sur SignInScreen (borné)
     // Slots dont l'équip a ÉCHOUÉ en jeu (ErrorWindow) → à SAUTER pour éviter la boucle re-EQUIP→erreur.
     // Clé "HERO:SLOT". lastEquip* = dernier slot tenté (pour l'attribuer à l'échec quand l'erreur surgit).
     private static final Set<String> failedEquipSlots = new HashSet<>();
@@ -302,38 +303,44 @@ public final class TutorialDriver {
             if (stg != null && stg.getRoot() != null) searchRoot = stg.getRoot();
             String screenName = screen.getClass().getSimpleName();
 
-            // SIGN-IN (DEV, dh.gosignin). Deux temps : (a) au hub, OUVRIR le bâtiment SIGN IN via l'API du jeu
-            // (déclenche REFRESH_SPECIAL_EVENTS → le serveur répond les récompenses) ; (b) sur SignInScreen,
-            // TAPER le bouton CLAIM (tag tutoriel « claim_button ») → CLAIM_SIGNIN_REWARD au serveur. On RESPECTE
-            // le verrou de navigation du tuto (canNavigateTo=false → on attend ; forcer serait une rustine §2).
-            if (GO_SIGNIN) {
-                if (screenName.contains("SignInScreen")) {
-                    List<Actor> claim = findByName(searchRoot, "claim_button");
-                    if (!claim.isEmpty() && tapAll(claim, input, w, h)) {
-                        System.out.println("[gosignin] SignInScreen → tap CLAIM (claim_button)");
-                        hadTarget = true;
-                        return true;   // handled : pas de RETOUR, on réclame
-                    }
-                    // pas de bouton claim (déjà réclamé aujourd'hui / rien à réclamer) → laisser le flux normal.
-                } else if (!signinNavDone && screenName.contains("MainScreen")
-                        && (windows == null || windows.isEmpty())) {
-                    try {
-                        com.perblue.heroes.ui.UINavHelper.Destination dest =
-                            com.perblue.heroes.ui.UINavHelper.Destination.SIGN_IN;
-                        if (!com.perblue.heroes.ui.UINavHelper.canNavigateTo(dest, false)) {
-                            if (!"signin-blocked".equals(idleScreen)) {
-                                System.out.println("[gosignin] SIGN_IN bloqué par le tuto (canNavigateTo=false) → j'attends");
-                            }
-                        } else {
-                            System.out.println("[gosignin] hub libre → navigateTo(SIGN_IN)");
-                            com.perblue.heroes.ui.UINavHelper.navigateTo(dest, "dev", new String[0]);
-                            signinNavDone = true;
-                            return true;
+            // SIGN-IN (DEV, dh.gosignin). SignInScreen est un ÉCRAN (UIScreen, pushScreen) → screenName=
+            // "SignInScreen". (a) SUR cet écran : taper le bouton CLAIM (tag « claim_button ») →
+            // Action{CLAIM_SIGNIN_REWARD} ; on TIENT l'écran (pas de RETOUR) le temps que les données sign-in
+            // arrivent et peuplent le bouton (borné, sinon on laisse repartir). (b) Au hub : navigateTo(SIGN_IN).
+            if (GO_SIGNIN && screenName.contains("SignIn")) {
+                // Le bouton CLAIM est un DFTextButton (pas de tag tutoriel — « claim_button » est un nom de SON).
+                // On collecte les boutons-texte de l'écran et on tape (le CLAIM = bouton d'action principal).
+                List<Actor> btns = new ArrayList<>();
+                collectTextButtons(searchRoot, btns);
+                if (!btns.isEmpty() && tapAll(btns, input, w, h)) {
+                    System.out.println("[gosignin] SignInScreen → tap bouton d'action (CLAIM), " + btns.size() + " bouton(s)");
+                    hadTarget = true; signinWaitTicks = 0;
+                    return true;
+                }
+                // bouton pas encore présent (données sign-in en réception) → tenir l'écran quelques frames.
+                if (signinWaitTicks++ < 40) { hadTarget = true; return true; }
+                // au-delà : rien à réclamer (déjà pris aujourd'hui) → laisser le flux normal (RETOUR).
+            }
+            // NAVIGATION : au hub sans popup, OUVRIR le bâtiment SIGN IN (déclenche REFRESH_SPECIAL_EVENTS → le
+            // serveur répond). On RESPECTE le verrou de nav du tuto (canNavigateTo=false → on attend ; §2).
+            if (GO_SIGNIN && !signinNavDone && screenName.contains("MainScreen")
+                    && (windows == null || windows.isEmpty())) {
+                try {
+                    com.perblue.heroes.ui.UINavHelper.Destination dest =
+                        com.perblue.heroes.ui.UINavHelper.Destination.SIGN_IN;
+                    if (!com.perblue.heroes.ui.UINavHelper.canNavigateTo(dest, false)) {
+                        if (!"signin-blocked".equals(idleScreen)) {
+                            System.out.println("[gosignin] SIGN_IN bloqué par le tuto (canNavigateTo=false) → j'attends");
                         }
-                    } catch (Throwable t) {
-                        System.out.println("[gosignin] navigateTo(SIGN_IN) échec: " + t);
+                    } else {
+                        System.out.println("[gosignin] hub libre → navigateTo(SIGN_IN)");
+                        com.perblue.heroes.ui.UINavHelper.navigateTo(dest, "dev", new String[0]);
                         signinNavDone = true;
+                        return true;
                     }
+                } catch (Throwable t) {
+                    System.out.println("[gosignin] navigateTo(SIGN_IN) échec: " + t);
+                    signinNavDone = true;
                 }
             }
 
