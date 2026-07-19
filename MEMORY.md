@@ -6,6 +6,17 @@
 > des fichiers et un historique **court**. L'historique **détaillé** est dans
 > [`JOURNAL.md`](JOURNAL.md). **Maintenir ce fichier à jour en permanence.**
 
+> ## ⚠️ PROCÉDURE DE REPRISE APRÈS COMPRESSION (obligatoire, demandée par l'utilisateur)
+> **À CHAQUE compression de contexte / reprise, exécuter dans l'ordre AVANT de continuer :**
+> 1. **Relire en ENTIER** : `MEMORY.md` (ce fichier), les **derniers commits** (`git log --oneline -20`),
+>    les **dernières entrées** de `JOURNAL.md`, **`docs/SHIMS.md` en entier**, `docs/PROTOCOL.md`,
+>    `docs/PRINCIPLES.md`, `docs/SERVER_PLAN.md`, `docs/ARCHITECTURE.md` (+ `docs/TUTO_WALKTHROUGH.md`,
+>    `docs/SIGNIN_EVENTS.md`, `docs/HUB_NAV.md` selon le sujet en cours).
+> 2. **Énumérer les RÈGLES DE TRAVAIL** (elles sont et resteront **incontournables**), + les **astuces,
+>    méthodologies et commandes documentées** (cf. §6bis/6ter ci-dessous), pour les avoir en contexte.
+> 3. **Faire le point** sur l'état courant ET sur ce qui a été transmis lors de la compression, PUIS enchaîner.
+> Ne PAS sauter cette procédure : c'est la condition pour reprendre dans de bonnes conditions.
+
 Dernière mise à jour : **2026-07-19 (f)** — **ANTI-TRICHE coffres : validation serveur (validateChestPurchase) + réponse « cooldown 24h »**.
 Question user : « comment le décompte 24h est validé ? le joueur peut-il tricher en avançant l'heure du mobile ? ». **Réponse (mécanisme prouvé au bytecode)** : la dispo du coffre gratuit = une **ressource régénérée** ; le serveur stocke/persiste `lastResourceGenerationTime` et recalcule via `updateAndGetResource` avec **`TimeUtil.serverTimeNow()`**. Formule : `serverTimeNow() = System.currentTimeMillis() − CLOCK_OFFSET` ; **`CLOCK_OFFSET` n'est posé que côté CLIENT** (`initClock(serverTime, deviceTime)` au login+Ping) — **le serveur ne l'appelle jamais → `CLOCK_OFFSET=0` → `serverTimeNow` serveur = l'horloge réelle de la machine serveur**. ⇒ l'état autoritatif (ressource+horodatage) est calculé avec l'horloge du SERVEUR ; le mobile ne calibre que SON affichage (re-synchronisé à chaque Ping) → **avancer l'heure du mobile ne contourne rien**. **MAIS l'anti-triche ne tient que si le serveur REFUSE** : `openChest` **n'appelait pas** `validateChestPurchase` → **enforcement ajouté** : `ChestHelper.validateChestPurchase(user, type, count, 0, usedItem, NONE)` (appel canonique de `SilverChestDetailScreen` — 4ᵉ param `int B = 0`, ItemType=null ; headless-safe : `Unlockables`+`getResource`) AVANT d'accorder → **lève `ClientErrorCodeException`** (checkée, extends Exception, non déclarée throws par dex2jar → catchée via `Throwable`+instanceof) si illégitime → `LoginServer` n'accorde/n'envoie RIEN (« ⛔ REFUSÉ »). Vérifié `server/smoke/ChestValidateTest` : ouverture gratuite **légitime accordée**, 2ᵉ ouverture (hors cooldown, 0 monnaie) **REFUSÉE** (`NOT_ENOUGH_GOLD`), état sain ; **n'a pas cassé le tuto** (`EquipTest` ouvre GOLD+SILVER gratuits → équipe OK). Fichiers : `server/java/dhserver/{ServerUser,LoginServer}.java`, `server/smoke/ChestValidateTest.java`, `docs/SHIMS.md`.
 
