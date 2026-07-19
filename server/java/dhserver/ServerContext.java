@@ -44,6 +44,38 @@ public final class ServerContext {
       app = (GameMain) unsafe.getClass().getMethod("allocateInstance", Class.class)
           .invoke(unsafe, GameMain.class);
       Field appF = DH.class.getDeclaredField("app"); appF.setAccessible(true); appF.set(null, app);
+      // Accès natif (INative) : GameMain.getNativeAccess() est null sur le shim → NPE dès qu'un chemin du jeu
+      // appelle handleSilentException (son propre gestionnaire « exception attrapée & journalisée, on continue »).
+      // Ex. QuestHelper (getUnlockedAchievements/isReadyToComplete/completeQuest) attrape des exceptions internes
+      // et les remonte via DH.app.getNativeAccess().handleSilentException(t). Le vrai client a un INative (couche
+      // Android/unidbg) ; côté serveur on pose un INative NO-OP (proxy dynamique) : handleSilentException LOGue
+      // (visibilité), tout le reste renvoie le défaut (null/0/false). C'est de la COUCHE PLATEFORME (comme
+      // dhbackend/), PAS de la logique de jeu : on reproduit le chemin « silencieux/récupérable » d'origine
+      // (le jeu attrape et continue) sans le reporting crash, qui est client-only. Non-null → plus de NPE.
+      com.perblue.heroes.INative nativeShim = (com.perblue.heroes.INative) java.lang.reflect.Proxy.newProxyInstance(
+          com.perblue.heroes.INative.class.getClassLoader(),
+          new Class[]{com.perblue.heroes.INative.class},
+          (proxy, method, margs) -> {
+            if ("handleSilentException".equals(method.getName()) && margs != null && margs.length > 0
+                && margs[0] instanceof Throwable) {
+              System.out.println("[ctx] (INative.handleSilentException, silencieux/récupérable) "
+                  + margs[0].getClass().getSimpleName() + ": " + ((Throwable) margs[0]).getMessage());
+            }
+            Class<?> rt = method.getReturnType();
+            if (!rt.isPrimitive()) return null;
+            if (rt == boolean.class) return false;
+            if (rt == void.class) return null;
+            if (rt == long.class) return 0L; if (rt == int.class) return 0;
+            if (rt == float.class) return 0f; if (rt == double.class) return 0d;
+            if (rt == short.class) return (short) 0; if (rt == byte.class) return (byte) 0;
+            if (rt == char.class) return (char) 0;
+            return null;
+          });
+      // On pose le CHAMP directement (réflexion) et PAS via setNativeAccess() : le setter fait plus qu'assigner
+      // (il appelle nativeAccess.createPurchasingInterface().initializePreNetwork() → NPE avec un proxy no-op).
+      // On veut seulement que getNativeAccess() renvoie un non-null pour handleSilentException.
+      Field nativeF = field(GameMain.class, "nativeAccess");
+      nativeF.set(app, nativeShim);
       // Mode HEADLESS/OFFLINE du jeu : SERVER_TYPE=NONE est le propre commutateur du jeu qui DÉSACTIVE
       // l'instrumentation RNG client→serveur (InstrumentedRandom : resetRandom/getRandom testent
       // `SERVER_TYPE == NONE` pour SAUTER l'envoi de RandomEvents). Sans ça, rouler un flux RNG (ex. le loot
@@ -51,6 +83,10 @@ public final class ServerContext {
       // N'affecte QUE l'envoi d'événements, PAS les valeurs RNG (même graine → même séquence). Valeur du jeu,
       // pas une rustine (c'est le chemin offline prévu par PerBlue).
       com.perblue.heroes.BuildOptions.SERVER_TYPE = com.perblue.heroes.ServerType.NONE;
+      // NB : on NE pose PAS CodeLocationHelper.SERVER — le jeu initialise ContentHelper/stats en client-location
+      // (extension null en SERVER → NPE ShardStats.getStats). On reste en client-location ; les rares chemins
+      // client-only fragiles headless (ex. QuestStats.getAllQuestIDs = thread-check + copie gdx Array) sont
+      // ÉVITÉS (on n'appelle pas les API de DÉCOUVERTE d'UI ; on exécute les logiques ciblées par ID).
       userField = field(GameMain.class, "user");
       individualField = field(GameMain.class, "individualUser");
       guildInfoField = field(GameMain.class, "guildInfo");

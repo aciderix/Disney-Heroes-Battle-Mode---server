@@ -808,6 +808,43 @@ public final class ServerUser {
             + " → " + d);
         return true;
       }
+      case "COMPLETE_QUEST": {
+        // Réclamation d'une QUÊTE / ACHIEVEMENT — logique d'origine EXACTE (QuestHelper.completeQuest, code du
+        // jeu). Gap trouvé EN JEU (écran MEDALS → « THANKS! » envoie Action{COMPLETE_QUEST, extra={ID=<questID>}}
+        // pour chaque quête ; le serveur les DROPPAIT → récompenses (fragments de héros, diamants…) non créditées.
+        // Le client (ActionHelper.doAction) complète la quête localement et l'envoie ; le serveur AUTORITATIF
+        // ré-exécute la même logique. completeQuest(id, user) : isReadyToComplete (isUnlocked +
+        // QuestStats.getCompleteRequirement(id).isSatisfied contre l'ÉTAT SERVEUR — campagne/team-level/héros,
+        // tout persisté → anti-triche RÉEL : lève ClientErrorCodeException QUEST_REQUIREMENTS_NOT_SATISFIED si
+        // non mérité, attrapée par applyAction → refus) → RewardHelper.giveReward (donne l'objet/fragment/diamants)
+        // + setQuestCompletedCount/setQuestLastCompletedTime/removeQuestCounters + updateClientAchievement. Les
+        // récompenses hors this.extra (héros/diamants) sont re-synchronisées par applyAction (resyncHeroes/Diamonds).
+        Object qidO = m.extra == null ? null
+            : m.extra.get(com.perblue.heroes.network.messages.ActionExtraType.ID);
+        if (qidO == null) { System.out.println("[action] COMPLETE_QUEST: pas d'ID dans l'extra"); return false; }
+        int questID;
+        try { questID = Integer.parseInt(qidO.toString()); }
+        catch (NumberFormatException e) { System.out.println("[action] COMPLETE_QUEST: ID illisible " + qidO); return false; }
+        com.perblue.heroes.game.logic.QuestHelper.completeQuest(questID, user);   // lève si non mérité (anti-triche)
+        // PERSISTANCE de l'état de quête : IndividualUser copie completedQuests/questCompletionTimes/… depuis
+        // individualUserExtra au setExtra (IntIntMap gdx) → HORS this.extra → les mutations de completeQuest
+        // (setQuestCompletedCount/setQuestLastCompletedTime/setQuestStartedTime(0)/removeQuestCounters) sont
+        // perdues au round-trip wire sans re-sync (même schéma que diamants/héros). Sinon : au reload la quête
+        // réapparaît « à réclamer » → re-réclamation / duplication de récompense. On re-synchronise la SEULE
+        // quête complétée (les récompenses gold/items = this.extra auto ; diamants/héros = resync par applyAction).
+        com.perblue.heroes.game.objects.IndividualUser giu =
+            (com.perblue.heroes.game.objects.IndividualUser) user.getIndividual();
+        individualUserExtra.completedQuests.put(questID, giu.getQuestCompletionCount(questID));
+        individualUserExtra.questCompletionTimes.put(questID, giu.getQuestLastCompletedTime(questID));
+        individualUserExtra.questStartTimes.put(questID, giu.getQuestStartedTime(questID));
+        if (individualUserExtra.questCounters != null) {
+          final int qid = questID;
+          individualUserExtra.questCounters.removeIf(qc ->
+              ((com.perblue.heroes.network.messages.QuestCounterData) qc).questID == qid);
+        }
+        System.out.println("[action] COMPLETE_QUEST id=" + questID + " → récompense créditée + complétion persistée (logique du jeu)");
+        return true;
+      }
       case "RECORD_SERVER_ROLL_FINISHED":
         // NO-OP FIDÈLE (pas une rustine). Le code CLIENT du jeu ne mute AUCUN état pour cette
         // commande : ClientActionHelper.recordServerRollFinished ne fait que construire l'extra et
