@@ -20,9 +20,12 @@ mais non verifies au clic. Tous OK client<->serveur<->persistance :
 3. HERO_FILTERS (ou l'auto-pilote calait historiquement) : menu HEROES -> HeroListScreen (3 heros niv.2 W +
    heros verrouille) -> bulle tuto "Hero Filters..." -> FILTER (tag FILTER_BUTTON) -> HERO FILTERS window
    (categories GENERAL/EFFECTS/+-STATS/TALENTS, Sources Skills/Real Gear/Battle Badge/Patch Talents, Team...)
-   -> navigation categories + toggles -> acte HERO_FILTERS 1->4 = COMPLET (step=maxStep=4). Le blocage
-   historique (getPointers vide headless) est resolu par le controle manuel/semi-auto (commandes drive/center
-   du g3 fonctionnent : log [semiauto] center -> tap).
+   -> navigation categories -> acte HERO_FILTERS progresse step 1->4. Le blocage historique (getPointers vide
+   headless) est debloque par le controle manuel/semi-auto (commandes drive/center du g3 fonctionnent : log
+   [semiauto] center -> tap). ATTENTION (correction) : NON TERMINE. HeroFiltersActV1 a 11 etapes (jusqu'a
+   DONE) ; arret au step 4 (le tuto demandait encore de toggle un filtre, visible sur la capture). Mon "4/4
+   COMPLET" etait FAUX : mauvaise lecture du champ persiste maxStep (= plus haut step VU, ServerUser.java:169,
+   PAS le total de l'acte). L'ecran + le flux client<->serveur sont confirmes ; l'acte reste a finir.
 
 Methode : capturer (manual.ppm -> png) -> regarder -> ecrire x,y (ou commande semi-auto) dans le clickfile ->
 tap via input reel (hit-test correct) + dump acteur -> lire serveur/clic. La limite connue du dumpClickTarget
