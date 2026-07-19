@@ -17,6 +17,9 @@
 > 3. **Faire le point** sur l'état courant ET sur ce qui a été transmis lors de la compression, PUIS enchaîner.
 > Ne PAS sauter cette procédure : c'est la condition pour reprendre dans de bonnes conditions.
 
+Dernière mise à jour : **2026-07-19 (g4)** — **TUTO TERMINÉ EN JEU SUR COMPTE NEUF (autopilote) → campagne 1-7, tout persisté + fix méthodo snapshot WAL**.
+Demande user : « repartir d'un compte frais, commence en auto puis prends le contrôle ; ce save servira pour les tests ». Anciennes saves **archivées** (`server/data/archive-0719/`). Run frais (`DH_AUTOTAP=1 DH_AUTOFIGHT=1`, détaché) : l'autopilote a joué **tout le tuto de bout en bout** — **INTRO 51/51 ✅ + INTRO_FEATURES 29/29 ✅ (DONE)** — coffres GOLD+SILVER (roster **3 héros** Ralph+Elastigirl+Frozone), équip Badge Frozone slot SIX, **1ᵉʳ combat de campagne GAGNÉ** (`CampaignAttack NORMAL 1-1 WIN`), puis **enchaîné 1-2→1-7 (tous WIN)** + actes post-tuto (STORY, ACHIEVEMENTS, TEAM_LEVEL_UP, SKILL_USE, AUTO_FIGHT, FAST_FORWARD). **État persisté vérifié** (`DbInspect`, snapshot WAL-inclus) : **TL2, 3 héros niv.2, campagne 1-1→1-7 toutes 3★, gold 3476, 11 types d'objets, stamina 120/120**. **0 message serveur non géré / refusé** sur tout le run (les `NumberFormatException ""` = parse tolérant intrinsèque de `guild_perk_levels.tab`, non fatal). ⇒ **le serveur tient le flux complet nouveau-joueur → tuto → campagne, autoritatif + persisté, sur compte neuf.** **Checkpoints** : `server/data/dh-snapshot-{tuto-done? non,supprimé},campaign-1to5-0719,campaign-1to7-0719}.db` (+`-wal`+`-shm`). **FIX MÉTHODO** : DB en **WAL** → snapshot = copier `.db`+`.db-wal`+`.db-shm` (le `.db` seul est périmé ; bug vécu : snapshot lu à 2 héros/TL1). **Reste (prochain = « prendre le contrôle »)** : run **autotap OFF + clickfile/semi-auto ON** depuis le snapshot pour tester manuellement les écrans à handlers déjà bâtis mais non confirmés au clic en jeu : **SIGN IN claim**, **CHOOSE NAME**, **HERO_FILTERS**. Fichiers : `MEMORY.md`, `server/smoke/TutoState.java` (probe actes de tuto).
+
 Dernière mise à jour : **2026-07-19 (g3)** — **Pilote SEMI-AUTO : commandes clic-fichier `drive`/`auto`/`center`**.
 Demande user : rendre l'auto-pilote **semi-auto** (« pouvoir l'activer pendant le combat, utiliser une de ces fonctionnalités pour accéder à telle partie lorsque ça ne reçoit pas ton clic manuel »). Ajouté à `injectManualClicks` (`DesktopLauncher`, outillage DEV lanceur, aucune modif jeu/serveur) : au lieu d'un `x,y`, une **commande** appelle UNE fonction du pilote pour la frame — **`drive`** = `TutorialDriver.driveOnce` (tape la cible désignée du tuto), **`auto`** = auto-combat d'origine (`setAutoAttack`) à activer PENDANT un combat, **`center`**/`tapc` = tap central `(W/2,H/2)` pour avancer un « TAP TO CONTINUE » de la scène de combat (input scène, non scene2d → un `x,y` ne suffit pas toujours). Compile OK (`gradle compileJava`). Doc `docs/TUTO_WALKTHROUGH.md` §4bis. Fichiers : `desktop-port/src/main/java/dhdesktop/DesktopLauncher.java`, `docs/TUTO_WALKTHROUGH.md`.
 
@@ -441,8 +444,12 @@ dernières récupérées à la demande par `run-online.sh`). **Nouveau joueur** 
 **reprend au hub** (saute l'intro cinématique+combat) → **~20 s** jusqu'à la frontière au lieu de **~4 min**.
 Vérifié : reprise `LoadingScreen→MainScreen→ChestsScreen→SilverChestDetailScreen`, **0 rejeu de combat**.
 - Reset (`rm server/data/dh-server.db`) **uniquement** pour un vrai test « nouveau joueur ».
-- **Snapshot** aux points sûrs (`cp server/data/dh-server.db server/data/dh-<étape>.db`) pour restaurer
-  une frontière connue si le pilote corrompt l'état.
+- **Snapshot** aux points sûrs pour restaurer une frontière connue. ⚠️ **La DB est en WAL** (`UserStore`
+  fait `PRAGMA journal_mode=WAL`) → un `cp server/data/dh-server.db` **seul** capture un état **PÉRIMÉ**
+  (les écritures récentes sont dans `dh-server.db-wal`, pas encore dans le `.db`). **Copier les TROIS
+  fichiers** (`.db` + `.db-wal` + `.db-shm`) sous le même nom de snapshot, OU checkpointer d'abord. Vérifier
+  un snapshot avec `DbInspect <snapshot.db>` (il lit le WAL committé si les 3 fichiers sont présents). Bug
+  vécu 2026-07-19 : snapshot « tuto-done » lu à 2 héros/TL1 (état du boot) car seul le `.db` copié.
 
 **B. Boucle « capture → inspecter ce qui est cliquable → corriger le pilote ».** Pour franchir un écran de
 hub où l'auto-tap cale :
