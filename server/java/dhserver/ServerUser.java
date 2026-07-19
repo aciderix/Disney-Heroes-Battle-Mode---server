@@ -588,6 +588,41 @@ public final class ServerUser {
    * et non un flux « acheter un coffre » client). Chaque commande route vers son helper d'origine ;
    * on n'écrit que l'aiguillage, jamais la règle. Renvoie {@code true} si l'action a été appliquée.
    */
+  /**
+   * Choix / changement du <b>nom du joueur</b> (étape onboarding « CHOOSE NAME » + écran Réglages).
+   * Le client applique {@code UserHelper.changeName} de son côté puis envoie <b>fire-and-forget</b> un
+   * {@link com.perblue.heroes.network.messages.SetPlayerName}{@code {name}} (relevé au bytecode :
+   * {@code ChangeNamePrompt.changeNameInner} → {@code UserHelper.changeName} + {@code sendMessage(SetPlayerName)}).
+   * Le serveur AUTORITATIF ré-exécute la MÊME logique du jeu ({@code UserHelper.changeName} : légalité via
+   * {@code NameChangeHelper.isNameLegal}, coût — 1ᵉʳ changement gratuit via {@code FREE_NAME_CHANGE}, sinon
+   * item/diamants —, {@code setPreviousName}+{@code setName}), puis re-sync le nom vers le wire et persiste.
+   * Renvoie {@code true} si le nom a été appliqué.
+   */
+  public synchronized boolean setPlayerName(com.perblue.heroes.network.messages.SetPlayerName m) {
+    ServerContext.init();
+    if (m == null || m.name == null || m.name.isEmpty()) {
+      System.out.println("[setname] message vide → ignoré"); return false;
+    }
+    User user = ClientNetworkStateConverter.getUser(userInfo, userExtra, "setname");
+    IndividualUser iu = ClientNetworkStateConverter.getIndividualUser(
+        individualUserExtra, userID, userInfo.diamonds, "setname");
+    ServerContext.bind(user, iu);
+    try {
+      com.perblue.heroes.game.logic.UserHelper.changeName(user, m.name);   // logique d'origine (légalité+coût)
+    } catch (Throwable t) {
+      System.out.println("[setname] changeName refusé (" + m.name + ") : " + t);
+      return false;
+    }
+    // Le nom vit dans le champ User.userName (HORS this.extra) → re-sync vers le wire (basicInfo), comme
+    // le niveau d'équipe. previousName suit (changeName l'a posé). Diamants/compteurs sont dans this.extra.
+    if (userInfo.basicInfo != null) {
+      userInfo.basicInfo.name = user.getName();
+      userInfo.basicInfo.previousName = user.getPreviousName();
+    }
+    System.out.println("[setname] nom → '" + user.getName() + "' (précédent '" + user.getPreviousName() + "')");
+    return true;
+  }
+
   public synchronized boolean applyAction(Action m) {
     ServerContext.init();
     User user = ClientNetworkStateConverter.getUser(userInfo, userExtra, "action");

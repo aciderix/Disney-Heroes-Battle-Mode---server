@@ -1,5 +1,36 @@
 # JOURNAL — journal détaillé des modifications
 
+## 2026-07-19 (b) — CHOOSE NAME (SetPlayerName) + pilote dh.gosignin (ouvrir SIGN IN)
+
+### CHOOSE NAME — message + handler
+Relevé au bytecode (`ChangeNamePrompt.changeNameInner`) : le choix/changement de nom passe par
+`UserHelper.changeName(user, newName)` (logique du jeu : légalité `NameChangeHelper.isNameLegal`, coût — 1ᵉʳ
+changement gratuit via `FREE_NAME_CHANGE`, sinon item/diamants —, `setPreviousName`+`setName`) PUIS l'envoi
+**fire-and-forget** d'un `SetPlayerName{name}` (`getNetworkProvider().sendMessage`). Serveur : `LoginServer`
+branche `SetPlayerName` → `ServerUser.setPlayerName` ré-exécute `UserHelper.changeName`, **re-sync** le nom vers
+le wire (`userInfo.basicInfo.name`/`previousName`, car `User.userName` est un champ hors `this.extra`, comme le
+team-level) et persiste.
+
+### Blocage headless (Gdx.app) résolu par un ext serveur
+`UserHelper.changeName` → `NameChangeHelper.isNameLegal` fait le CŒUR (noms interdits, codepoints valides) PUIS
+délègue à un champ statique `isNameLegalExt` (Predicate CLIENTE) = `isNameLegalClientExt` qui vérifie le rendu
+POLICE (`DisplayStringUtil.containsUnsupportedCharacters` → `LanguageHelper.getPreferredLanguage` →
+`Gdx.app.getPreferences`) → NPE headless (`Gdx.app` null). Le rendu police est une préoccupation CLIENTE, déjà
+validée par le client avant l'envoi. `ServerContext.init` pose donc par réflexion un **ext SERVEUR** `s -> true`
+(même patron que `ServerSpecialEventsExt` : le cœur de légalité s'exécute, seule la vérif police — sans objet
+serveur — est omise ; pas une rustine, §2). Vérifié `server/smoke/SetNameTest` : nom « HeroTester » appliqué,
+`basicInfo.name` peuplé, survit au round-trip wire. Régressions `SigninTest`/`ResourceTest` vertes.
+
+### Pilote DEV dh.gosignin (vérif live du SIGN IN)
+`TutorialDriver` : flag `GO_SIGNIN` → au hub, ouvre le bâtiment SIGN IN via l'API du jeu
+`UINavHelper.navigateTo(Destination.SIGN_IN)` pour déclencher `REFRESH_SPECIAL_EVENTS` (→ le serveur répond
+`SpecialEventsRaw{signinRewards}`). **Constat live** : `canNavigateTo(SIGN_IN)=false` pendant le tuto
+(`mainScreenTutorialBlocked` → « TUTORIAL_CANT_DO_THAT_YET ») — la navigation libre est **verrouillée par le
+jeu** tant que le tuto n'est pas au point sign-in. Le hook **RESPECTE ce verrou** (n'ouvre que si
+`canNavigateTo=true` ; forcer serait une rustine, §2). La construction serveur `SigninRewards` est déjà prouvée
+(`SigninTest`) ; la vérif live du SIGN IN affiché s'obtiendra en progressant le tuto jusqu'au sign-in.
+Câblage `DH_GOSIGNIN` → `dh.gosignin` dans `run-online.sh`/`run-desktop.sh`.
+
 ## 2026-07-19 — SIGN-IN (récompense de connexion quotidienne) : construction serveur + réclamation
 
 ### Contexte & correction de cadrage

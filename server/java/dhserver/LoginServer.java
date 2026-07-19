@@ -163,6 +163,17 @@ public final class LoginServer {
                 System.out.println("[login]     action " + act.command
                     + (applied ? " appliquée [persisté]" : " non appliquée (PARTIEL)"));
               }
+            } else if (m instanceof com.perblue.heroes.network.messages.SetPlayerName) {
+              // Choix / changement du nom du joueur (onboarding « CHOOSE NAME » + Réglages). Fire-and-forget :
+              // le client a déjà appliqué UserHelper.changeName de son côté ; le serveur AUTORITATIF ré-exécute
+              // la même logique (légalité + coût) et PERSISTE. Aucune réponse attendue.
+              com.perblue.heroes.network.messages.SetPlayerName spn =
+                  (com.perblue.heroes.network.messages.SetPlayerName) m;
+              boolean applied = user.setPlayerName(spn);
+              if (applied) { try { store.save(user); } catch (Exception e) {
+                System.out.println("[login]     ! persistance échouée: " + e); } }
+              System.out.println("[login]     SetPlayerName '" + spn.name + "'"
+                  + (applied ? " appliqué [persisté]" : " refusé"));
             } else if (m instanceof Ping) {
               // Écho de latence/keepalive : le client mesure le RTT et surveille l'activité serveur.
               // Sans réponse, son chien de garde ferme la connexion (« Reconnecting… »).

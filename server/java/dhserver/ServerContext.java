@@ -60,6 +60,20 @@ public final class ServerContext {
       // Sans ça, SpecialEventsHelper.helper est null → NPE dès qu'un don d'objet enregistre une tâche de
       // contest (ChestHelper.giveChestRewards → RewardHelper.giveReward → ContestHelper.onItemEarn).
       SpecialEventsHelper.init(new ClientEventUserProvider(), new ServerSpecialEventsExt());
+      // Légalité du nom (SetPlayerName / CHOOSE NAME) : NameChangeHelper.isNameLegal fait le CŒUR (noms
+      // interdits ILLEGAL_NAMES, codepoints valides, alphabétique/chiffre/idéographique) PUIS délègue à
+      // isNameLegalExt (Predicate CLIENTE) qui vérifie le rendu POLICE (DisplayStringUtil.
+      // containsUnsupportedCharacters → LanguageHelper.getPreferredLanguage → Gdx.app.getPreferences) → NPE
+      // headless (Gdx.app null). Le rendu police est une préoccupation CLIENTE — le client l'a DÉJÀ validée
+      // avant d'envoyer SetPlayerName (ChangeNamePrompt appelle changeName localement d'abord). On pose donc
+      // un ext SERVEUR qui renvoie true après le cœur (comme ServerSpecialEventsExt omet la poussée réseau
+      // cliente) : PAS une rustine — la légalité de fond s'exécute, seule la vérif de police (sans objet
+      // serveur) est omise. isNameLegalExt = champ statique privé (com.badlogic.gdx.utils.Predicate).
+      try {
+        Field ext = com.perblue.heroes.game.logic.NameChangeHelper.class.getDeclaredField("isNameLegalExt");
+        ext.setAccessible(true);
+        ext.set(null, (com.badlogic.gdx.utils.Predicate<String>) s -> true);
+      } catch (Throwable t) { System.out.println("[ctx] isNameLegalExt (serveur) non posé: " + t); }
       System.out.println("[ctx] DH.app headless + données du jeu + couche évènements spéciaux");
     } catch (Throwable t) {
       throw new RuntimeException("échec init contexte serveur (DH.app)", t);

@@ -75,16 +75,24 @@ quand). Aujourd'hui : aucun évènement hébergé (`events=[]`, `changed=false`)
 sans évènement (cf. SERVER_PLAN §F). Un système d'hébergement d'évènements (planification + snapshots temporels)
 serait une feature à part entière, hors périmètre immédiat.
 
-## 5. Autre manque vu sur la même capture
+## 5. « CHOOSE NAME » ✅ (2026-07-19)
 
-- **« CHOOSE NAME »** (bas-gauche du hub) : étape d'onboarding — le joueur choisit son nom. Interaction serveur à
-  câbler (probablement un `Action`/message `SetName` → stocker dans `userInfo` → persister). À traiter après le
-  sign-in (même méthode : observer le message émis, exécuter la logique du jeu, persister).
+Étape d'onboarding : le joueur choisit son nom. Relevé au bytecode (`ChangeNamePrompt.changeNameInner`) : le
+client applique `UserHelper.changeName(user, name)` en local **puis** envoie **`SetPlayerName{name}`**
+fire-and-forget. **Serveur** (`LoginServer` branche `SetPlayerName` → `ServerUser.setPlayerName`) : ré-exécute
+`UserHelper.changeName` (légalité + coût — 1ᵉʳ gratuit via `FREE_NAME_CHANGE`), **re-sync** le nom vers le wire
+(`userInfo.basicInfo.name`/`previousName`, car `User.userName` vit hors `this.extra`), persiste. **Ext serveur**
+`isNameLegalExt = s -> true` posé dans `ServerContext.init` (le cœur de légalité s'exécute ; la vérif de POLICE
+cliente — `Gdx.app.getPreferences` — n'a pas d'objet serveur et est déjà faite par le client ; cf. SHIMS).
+Vérifié `server/smoke/SetNameTest` (nom appliqué + survit au round-trip wire).
 
 ## 6. Statut
 
 - ✅ `REFRESH_SPECIAL_EVENTS` : le serveur RÉPOND (`SpecialEventsRaw`, 0 évènement).
 - ✅ `SigninRewards` **construit + envoyé** (§3) → bâtiment SIGN IN alimenté.
 - ✅ Handler de **réclamation** (`CLAIM_SIGNIN_REWARD` / `_WITH_VIDEO`) → `SigninHelper.claim`.
-- ⬜ **Vérif EN JEU** (le SIGN IN affiche/réclame réellement — à confirmer au prochain run client).
-- ⬜ **CHOOSE NAME**.
+- ✅ **CHOOSE NAME** (`SetPlayerName` → `UserHelper.changeName`, §5).
+- ✅ **Pilote DEV `dh.gosignin`** : ouvre le bâtiment SIGN IN au hub via `UINavHelper.navigateTo(SIGN_IN)` —
+  **respecte le verrou de navigation du tuto** (`canNavigateTo=false` mid-tuto = comportement fidèle, non
+  contourné). ⬜ **Vérif live du SIGN IN affiché/réclamé** : nécessite d'atteindre le point sign-in du tuto (la
+  navigation libre est verrouillée pendant le tuto — c'est le jeu, pas un manque serveur).
