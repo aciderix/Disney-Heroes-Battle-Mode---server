@@ -1,5 +1,40 @@
 # JOURNAL — journal détaillé des modifications
 
+## 2026-07-19 (g2) — Coffres PAYANTS : débit DÉMONTRÉ end-to-end (bug 4ᵉ param) + correction « TL1 »
+
+### Demande & découverte
+User : « vérifier les coffres payants avec des team levels plus hauts pour vérifier tes dires ». Mon test
+précédent montrait qu'à TL40, une fois le coffre GOLD gratuit consommé, `openChest` REFUSAIT le payant avec un
+`ERROR` générique — le débit n'était donc PAS démontré. Cause trouvée en décompilant (CFR) la chaîne cliente
+`SilverChestDetailScreen` → `ChestHelper.openChest` → `openChestInner` :
+```
+if (validateChestPurchase(user, type, count, n2 /* = COÛT */, item, snapshot)) break;
+...
+buyChests.cost = n2;   // le coût est ré-émis dans le message
+```
+⇒ **le 4ᵉ paramètre de `validateChestPurchase` == `BuyChests.cost`** (0 pour un gratuit, le coût réel pour un
+payant). La branche PAYANTE de `validateChestPurchase` termine par `if (coûtRecalculéServeur > coûtDéclaréClient)
+throw ERROR` = un **contrôle ANTI-TAMPER** (le client ne peut pas déclarer un coût inférieur au vrai). Le serveur
+passait **`0` en dur** → pour un payant `288 > 0` → `ERROR` systématique → le débit était INATTEIGNABLE.
+
+### Fix (RÉEL, miroir du client)
+`ServerUser.openChest` : `validateChestPurchase(user, type, count, m.cost, usedItem, NONE)` (au lieu de `0`).
+Gratuit → `m.cost=0` → branche gratuite → OK ; payant → `m.cost=coût` → `coût==coût` faux → OK ; coût
+sous-déclaré → `coûtRecalculé > m.cost` → ERROR (anti-triche renforcée).
+
+### Vérifié — débit end-to-end (server/smoke/ChestPaidDebitTest, TL40)
+1) coffre GOLD gratuit consommé (`wasFree=true`) ; 2) ouverture GOLD **PAYANTE** avec coût correct déclaré
+(`m.cost=288`) → **-288 DIAMONDS** (100000→99712), **persiste au round-trip wire** (99712) ; 3) coût
+**sous-déclaré (287)** → **REFUSÉ** (anti-tamper), aucun débit. Régression 8/8 verte.
+
+### Correction d'une affirmation antérieure FAUSSE
+« À team level 1 (tuto) le jeu REFUSE tout achat payant » était **inexact**. `validateChestPurchase` n'a **aucun
+gate de team level** pour SILVER/GOLD (seuls VIDEO=`TEAM_LEVEL_LOCK`, SOUL=`VIP`, EVENT/WISH ont des gates). Le
+verrou du tuto `REBLOCK_SILVER_BUY_ONE` est **côté CLIENT** (`SilverChestDetailScreen`), pas dans la validation
+serveur. Le vrai blocage du débit était le bug du 4ᵉ param, pas le niveau d'équipe. `ChestChargeTest` recadré
+(le refus qu'il teste = coût sous-déclaré à 0, pas un « verrou TL1 »).
+
+
 ## 2026-07-19 (c) — SIGN-IN multi-jour (j2/j3) vérifié + GAP diamants corrigé (resyncDiamonds)
 
 ### Question (user) & vérification

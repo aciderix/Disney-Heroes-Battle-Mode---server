@@ -226,10 +226,19 @@ public final class ServerUser {
     // C'est LE point d'enforcement du cooldown 24h : la dispo se calcule sur l'ÉTAT SERVEUR (ressource +
     // horodatage de régénération persistés) avec l'HORLOGE DU SERVEUR (serverTimeNow = System.currentTimeMillis
     // côté serveur, CLOCK_OFFSET=0 jamais synchronisé sur un appareil) → avancer l'heure du mobile ne contourne
-    // rien. Réplique l'appel canonique de SilverChestDetailScreen : (count, 0, usedItem, snapshot).
+    // rien.
+    //
+    // 4ᵉ paramètre = LE COÛT DÉCLARÉ PAR LE CLIENT (m.cost), pas 0 en dur. Relevé au bytecode
+    // (ChestHelper.openChestInner) : le client appelle validateChestPurchase(user, type, count, n2, item,
+    // snapshot) où n2 = le coût, ET pose buyChests.cost = n2 → le 4ᵉ param de validate == BuyChests.cost
+    // (0 pour un GRATUIT, le coût réel pour un PAYANT). La branche PAYANTE de validate fait « if (coût
+    // recalculé serveur > coût déclaré client) throw ERROR » = ANTI-TAMPER (le tricheur ne peut pas déclarer
+    // un coût inférieur). En passant 0 en dur, TOUT achat payant levait ERROR (288 > 0) → le débit payant
+    // n'était jamais atteignable. Passer m.cost mirror le client exactement (gratuit → 0 → branche gratuite ;
+    // payant → coût → « coût==coût » faux → OK), et RENFORCE l'anti-triche (compare au coût déclaré).
     com.perblue.heroes.network.messages.ItemType usedItem =
         (m.usedItem == null || m.usedItem == com.perblue.heroes.network.messages.ItemType.DEFAULT) ? null : m.usedItem;
-    ChestHelper.validateChestPurchase(user, type, count, 0, usedItem, SpecialEventSnapshot.NONE);
+    ChestHelper.validateChestPurchase(user, type, count, m.cost, usedItem, SpecialEventSnapshot.NONE);
 
     DropTable dt = dropTable(type);
     ChestContext ctx = new ChestContext(user);

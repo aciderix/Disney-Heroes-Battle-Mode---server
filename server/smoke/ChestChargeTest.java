@@ -5,11 +5,14 @@ import dhserver.ServerUser;
 
 /**
  * Coffres PAYANTS — vérifie les PIÈCES du débit (monnaie + montant par coffre, via la logique du jeu
- * {@code getPurchaseCurrency}/{@code getPurchaseCost}) et le REJET TL1. Contexte : à team level 1 (tuto), le
- * jeu REFUSE toute ouverture payante (limite d'achats / feature verrouillée / monnaie) — donc le débit
- * ({@code openChest}, branche « payant ») n'est atteint QUE pour une ouverture payante LÉGITIME (niveau plus
- * élevé + monnaie + feature débloquée), gardé derrière {@code validateChestPurchase}. Ici on certifie que
- * (1) les valeurs de coût sont saines et (2) le serveur REJETTE bien un achat payant illégitime à TL1.
+ * {@code getPurchaseCurrency}/{@code getPurchaseCost}) et le REJET d'un achat au coût SOUS-DÉCLARÉ (anti-tamper).
+ *
+ * <p>NB (corrigé) : le débit end-to-end d'un achat payant LÉGITIME est démontré par {@code ChestPaidDebitTest}
+ * (GOLD payant, coût correct déclaré → -288 diamants, persiste). Ici on reste sur : (1) les valeurs de coût sont
+ * saines ; (2) une ouverture PAYANTE dont le client DÉCLARE un coût de 0 (le champ {@code BuyChests.cost}, 4ᵉ
+ * param de {@code validateChestPurchase}) est REJETÉE — le serveur recalcule 10000 > 0 déclaré → ERROR. Ce n'est
+ * PAS un verrou de team level : {@code validateChestPurchase} n'a pas de gate TL pour SILVER/GOLD (le verrou du
+ * tuto {@code REBLOCK_SILVER_BUY_ONE} est côté CLIENT) — c'est le contrôle anti-tamper coût-déclaré-vs-recalculé.
  */
 public final class ChestChargeTest {
 
@@ -30,17 +33,18 @@ public final class ChestChargeTest {
     check(u, ChestType.GOLD,   ResourceType.DIAMONDS, 288);
     check(u, ChestType.SOUL,   ResourceType.DIAMONDS, 74);
 
-    // 2) REJET TL1 : même avec la monnaie, une ouverture PAYANTE (gratuit consommé) est refusée (enforcement).
+    // 2) ANTI-TAMPER : une ouverture PAYANTE dont le client déclare cost=0 (gratuit consommé) est REFUSÉE.
     u.setResource(ResourceType.GOLD, 5_000_000, "t");
     u.setResource(ResourceType.DIAMONDS, 5000, "t");
-    BuyChests free = new BuyChests(); free.chestType = ChestType.SILVER; free.count = 1;
-    su.openChest(free);   // consomme le gratuit
+    BuyChests free = new BuyChests(); free.chestType = ChestType.SILVER; free.count = 1; free.cost = 0;
+    su.openChest(free);   // consomme le gratuit (wasFree=true)
     boolean refused = false;
+    // 2ᵉ ouverture : gratuit consommé → payant, mais cost DÉCLARÉ = 0 → serveur recalcule 10000 > 0 → ERROR.
     try { su.openChest(free); } catch (Throwable t) { refused = t.getClass().getSimpleName().contains("ClientErrorCode"); }
-    System.out.println("[charge] ouverture PAYANTE SILVER à TL1 (avec GOLD) : " + (refused ? "REFUSÉE (correct)" : "ACCORDÉE ⚠"));
-    if (!refused) throw new AssertionError("un achat payant illégitime à TL1 doit être REFUSÉ");
+    System.out.println("[charge] ouverture PAYANTE SILVER au coût déclaré=0 : " + (refused ? "REFUSÉE (anti-tamper)" : "ACCORDÉE ⚠"));
+    if (!refused) throw new AssertionError("un achat payant au coût sous-déclaré (0) doit être REFUSÉ");
 
-    System.out.println("[charge] OK — coûts (monnaie/montant) sains ; achat payant illégitime refusé (TL1)");
+    System.out.println("[charge] OK — coûts (monnaie/montant) sains ; achat payant au coût sous-déclaré refusé");
   }
 
   static void check(com.perblue.heroes.game.objects.User u, ChestType t, ResourceType expCur, int expCost) {
