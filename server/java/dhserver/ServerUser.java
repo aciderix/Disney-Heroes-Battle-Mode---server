@@ -166,9 +166,15 @@ public final class ServerUser {
         new com.perblue.heroes.network.messages.BattlePassV2Data();
     bp.type = com.perblue.heroes.network.messages.BattlePassType.QUEST;
     bp.userID = userID;
+    // PREMIUM POUR TOUS (serveurs d'achats fermés, aucun achat réel) : boughtBattlePass>0 → getPremiumUnlocked()
+    // vrai côté client → le track premium est débloqué sans achat. Choix d'OPÉRATEUR (le serveur ré-hébergé
+    // décide de son économie ; PRINCIPLES §3). Progression = 0 pour un compte neuf (s'accumule via les quêtes).
+    bp.boughtBattlePass = 1;
     try {
+      // Saison ANCRÉE AU MOIS COURANT (constantes overridées dans ServerContext → BP toujours actif, roulant).
       bp.startTime = com.perblue.heroes.game.data.battlepass.BattlePassV2Stats.getSeasonStartTime();
-    } catch (Throwable t) { System.out.println("[boot] battlePass startTime indispo: " + t); }
+      bp.endTime = com.perblue.heroes.game.data.battlepass.BattlePassV2Stats.getBattlePassHiddenTime();
+    } catch (Throwable t) { System.out.println("[boot] battlePass saison indispo: " + t); }
     bd.battlePassV2Data = bp;
     return bd;
   }

@@ -96,6 +96,34 @@ public final class ServerContext {
       // Sans ça, SpecialEventsHelper.helper est null → NPE dès qu'un don d'objet enregistre une tâche de
       // contest (ChestHelper.giveChestRewards → RewardHelper.giveReward → ContestHelper.onItemEarn).
       SpecialEventsHelper.init(new ClientEventUserProvider(), new ServerSpecialEventsExt());
+      // BATTLE PASS — SAISON ROULANTE MENSUELLE (choix d'opérateur : serveurs d'achats fermés). La saison BP
+      // est une fenêtre datée FIXE dans la donnée (battle_pass_v2_constants.tab : SEASON_START 2026-04-07,
+      // HIDE_BATTLE_PASS_AFTER 2026-04-30) → passée à notre date (2026+), donc `battlePassHidden()` = vrai
+      // (now >= HIDE) → BP inactif. Pour un serveur ré-hébergé, on ANCRE la saison sur le MOIS COURANT
+      // (SEASON_START = 1er du mois, HIDE = 1er du mois suivant) → le BP est TOUJOURS actif, roulant chaque
+      // mois, en réutilisant les paliers/récompenses de la `.tab`. On modifie les constantes parsées
+      // (`BattlePassV2Stats.CONSTANT_STATS.getStats()` → champs `Constants.SEASON_START_TIME`/
+      // `HIDE_BATTLE_PASS_AFTER`, longs epoch-ms) par réflexion — couche plateforme/config, PAS de la logique
+      // de jeu (le calcul de récompenses/paliers reste celui du jeu). N'affecte QUE le BP (pas la date globale
+      // → stamina/contenu inchangés). Combiné au `boughtBattlePass=1` du BootData (premium pour tous).
+      try {
+        java.util.Calendar cal = java.util.Calendar.getInstance();
+        cal.set(java.util.Calendar.DAY_OF_MONTH, 1);
+        cal.set(java.util.Calendar.HOUR_OF_DAY, 0); cal.set(java.util.Calendar.MINUTE, 0);
+        cal.set(java.util.Calendar.SECOND, 0); cal.set(java.util.Calendar.MILLISECOND, 0);
+        long monthStart = cal.getTimeInMillis();
+        cal.add(java.util.Calendar.MONTH, 1);
+        long monthEnd = cal.getTimeInMillis();               // 1er du mois suivant → toujours > now
+        Field csF = com.perblue.heroes.game.data.battlepass.BattlePassV2Stats.class.getDeclaredField("CONSTANT_STATS");
+        csF.setAccessible(true);
+        Object constStats = csF.get(null);                    // DHConstantStats
+        Object constants = com.perblue.common.stats.ConstantStats.class.getMethod("getStats").invoke(constStats);
+        Class<?> cc = constants.getClass();
+        setLongField(cc, constants, "SEASON_START_TIME", monthStart);
+        setLongField(cc, constants, "HIDE_BATTLE_PASS_AFTER", monthEnd);
+        System.out.println("[ctx] battle pass : saison ancrée au mois courant (start=" + monthStart
+            + " hide=" + monthEnd + ") → toujours actif");
+      } catch (Throwable t) { System.out.println("[ctx] override saison battle pass non posé: " + t); }
       // Légalité du nom (SetPlayerName / CHOOSE NAME) : NameChangeHelper.isNameLegal fait le CŒUR (noms
       // interdits ILLEGAL_NAMES, codepoints valides, alphabétique/chiffre/idéographique) PUIS délègue à
       // isNameLegalExt (Predicate CLIENTE) qui vérifie le rendu POLICE (DisplayStringUtil.
@@ -145,5 +173,10 @@ public final class ServerContext {
       catch (NoSuchFieldException e) { /* remonter */ }
     }
     throw new NoSuchFieldException(name);
+  }
+
+  /** Pose un champ {@code long} (par réflexion, en remontant la hiérarchie) — override de constantes parsées. */
+  private static void setLongField(Class<?> c, Object target, String name, long value) throws Exception {
+    field(c, name).setLong(target, value);
   }
 }
