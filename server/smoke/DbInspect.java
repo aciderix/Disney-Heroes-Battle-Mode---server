@@ -25,8 +25,10 @@ public final class DbInspect {
       long staminaCap = UserHelper.getResourceCap(ResourceType.STAMINA, u);
       System.out.println("=== ÉTAT PERSISTÉ (" + db + ") ===");
       // NB stamina : on affiche la valeur RÉELLE du jeu (getResource, = ce que voit le client) ET le cap de
-      // régénération. La stamina PEUT dépasser le cap (les récompenses — ex. quête « stamina boost » = +796 M
-      // en contenu R102 — s'ajoutent au-delà ; seule la RÉGÉNÉRATION s'arrête au cap). Le serveur ne « force »
+      // régénération. En contenu R102, la stamina DÉBORDE le cap de façon AUTHENTIQUE (établi 2026-07-14, pas un
+      // bug) : la branche stamina d'updateAndGetResource est NON-capée et le taux de régén (getRegenAmount) vaut
+      // ~39,96 M par intervalle de 6 min → dès qu'un intervalle passe sous le cap, un tick de 39,96 M est AJOUTÉ
+      // et STOCKÉ brut (les récompenses type « stamina boost » = +796 M s'ajoutent aussi). Le serveur ne « force »
       // donc PAS 120 : getResource renvoie la valeur stockée réelle, identique au client. (Historiquement cette
       // ligne affichait min(raw,cap) → « 120/120 » trompeur, laissant croire à un capping serveur inexistant.)
       System.out.println("RESSOURCES : teamLevel=" + u.getTeamLevel()
