@@ -73,6 +73,22 @@ Ordre de traitement (modifiable). On commence par **BATTLE PASS**.
 _(rempli au fur et à mesure)_
 
 - **2026-07-20** — Compte passé à TL65 (`SetTeamLevel`). Début de l'exploration par le **battle pass**.
+- **2026-07-20 — GAP `REFRESH_TRADER` (marchand/trader) — trouvé à TL65.** Au TL65 le marchand (TRADER, TL0)
+  est actif → le client **spamme `REFRESH_TRADER{TYPE=merchantType, REASON}`** (non géré → boucle, comme jadis
+  `REFRESH_SPECIAL_EVENTS`). **Réponse attendue** = `MerchantUpdate{type, reason, data:MerchantData}` (le client
+  fait `IndividualUser.initMerchantData(type, data)`). C'est la **feature MARCHAND** (écran MERCHANT + achats en
+  monnaie du jeu) : construire un `MerchantData` valide = **rouler l'inventaire** du marchand (`MerchantHelper`
+  + `merchant_*.tab`). → **feature à part** (pas un simple ack ; un `MerchantUpdate` vide stopperait la boucle
+  mais l'écran serait vide). Documenté ; à implémenter quand on fera le marchand.
+- **2026-07-20 — FIGHT_PIT / RANKINGS (arène) — non ouverts proprement.** Nav en état de session encombré
+  (modale CHANGE NAME résiduelle d'un mis-tap) → l'écran n'a pas basculé. À re-tester en **session propre** ;
+  l'arène a probablement besoin de **données d'arène/inscription** côté serveur (à établir).
+- **BILAN À TL65** : l'exploration confirme que les écrans mid-game déverrouillés déclenchent chacun une
+  **feature serveur à part entière** (marchand `MerchantUpdate`, arène, etc.) ET/OU butent sur l'**ère de
+  contenu** (battle pass). Prochaine grosse décision (à valider avec l'utilisateur) : **(A)** traiter l'**ère
+  de contenu** (le plus gros levier — débloque le battle pass EN JEU + fiabilise tout le contenu daté), ou
+  **(B)** implémenter les features mid-game une par une (marchand, arène, guildes…).
+
 - **2026-07-20 — BATTLE PASS ⚠️ (bloqué EN JEU par l'ÈRE DE CONTENU, pas par le serveur).** À TL65 l'onglet
   `PASS_BUTTON` (QUESTS) est **présent mais inerte** (`listeners=[]`, tap sans effet). **Cause établie par les
   faits** : `QuestsScreen` n'active l'onglet & n'appelle `requestBattlePassV2Data()` que si
