@@ -10,8 +10,9 @@
 > **À CHAQUE compression de contexte / reprise, exécuter dans l'ordre AVANT de continuer :**
 > 1. **Relire en ENTIER** : `MEMORY.md` (ce fichier), les **derniers commits** (`git log --oneline -20`),
 >    les **dernières entrées** de `JOURNAL.md`, **`docs/SHIMS.md` en entier**, `docs/PROTOCOL.md`,
->    `docs/PRINCIPLES.md`, `docs/SERVER_PLAN.md`, `docs/ARCHITECTURE.md` (+ `docs/TUTO_WALKTHROUGH.md`,
->    `docs/SIGNIN_EVENTS.md`, `docs/HUB_NAV.md` selon le sujet en cours).
+>    `docs/PRINCIPLES.md`, `docs/SERVER_PLAN.md`, `docs/ARCHITECTURE.md`, **`docs/EXPLORATION.md`** (checklist
+>    d'exploration des écrans, sujet en cours) (+ `docs/TUTO_WALKTHROUGH.md`, `docs/SIGNIN_EVENTS.md`,
+>    `docs/HUB_NAV.md` selon le sujet) **et tout autre document pertinent**.
 > 2. **Énumérer les RÈGLES DE TRAVAIL** (elles sont et resteront **incontournables**), + les **astuces,
 >    méthodologies et commandes documentées** (cf. §6bis/6ter ci-dessous), pour les avoir en contexte.
 > 3. **Faire le point** sur l'état courant ET sur ce qui a été transmis lors de la compression, PUIS enchaîner.
