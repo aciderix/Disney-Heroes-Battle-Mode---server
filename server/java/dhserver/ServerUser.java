@@ -867,6 +867,28 @@ public final class ServerUser {
             + " → " + d);
         return true;
       }
+      case "UNLOCK_HERO": {
+        // Débloquer un HÉROS (ex. Vanellope avec 10 fragments STONE_VANELLOPE — flux amorcé par le tuto
+        // UNLOCK_HERO, cf. g7). Le client envoie UNLOCK_HERO{heroType} (sans extra ; ClientActionHelper
+        // .unlockHero → doAction(UNLOCK_HERO, unitType, …)). Logique d'origine EXACTE : HeroHelper.unlock —
+        // qui porte TOUT l'anti-triche RÉEL et l'effet : assez de fragments (getItemAmount ≥ getUnlockStones
+        // sinon NOT_ENOUGH_STONES), héros pas déjà possédé (sinon ALREADY_HAVE_HERO), PUIS débite le coût GOLD
+        // (chargeUser, this.extra → auto-persisté), CONSOMME les fragments (useItem → individualUserExtra.items,
+        // auto-persisté) et AJOUTE le héros au roster (createAndAddHero → resyncHeroes par applyAction).
+        // canUnlock = pré-check (héros dispo dans le contenu, stoneType défini) → refus propre sans exception.
+        com.perblue.heroes.network.messages.UnitType hero = m.heroType;
+        if (hero == null || hero == com.perblue.heroes.network.messages.UnitType.DEFAULT) {
+          System.out.println("[action] UNLOCK_HERO: héros manquant"); return false;
+        }
+        if (!com.perblue.heroes.game.logic.HeroHelper.canUnlock(hero, user)) {
+          System.out.println("[action] UNLOCK_HERO: " + hero
+              + " REFUSÉ (canUnlock=false — déjà possédé / indisponible / pas de fragment)"); return false;
+        }
+        com.perblue.heroes.game.objects.IHero h = com.perblue.heroes.game.logic.HeroHelper.unlock(hero, user);
+        System.out.println("[action] UNLOCK_HERO " + hero
+            + " → héros débloqué (coût GOLD + fragments consommés, roster mis à jour, logique du jeu)");
+        return h != null;
+      }
       case "COMPLETE_QUEST": {
         // Réclamation d'une QUÊTE / ACHIEVEMENT — logique d'origine EXACTE (QuestHelper.completeQuest, code du
         // jeu). Gap trouvé EN JEU (écran MEDALS → « THANKS! » envoie Action{COMPLETE_QUEST, extra={ID=<questID>}}
