@@ -1098,6 +1098,11 @@ public final class ServerUser {
    */
   public synchronized com.perblue.heroes.network.messages.BattlePassV2Data refreshBattlePass() {
     ServerContext.init();
+    // Ré-ancre la saison sur le MOIS COURANT à CHAQUE refresh → saison réellement ROULANTE même sans redémarrage
+    // du serveur (sinon l'ancre, posée une seule fois à l'init, resterait sur le mois de démarrage → pas de
+    // rollover en franchissant un mois). Dès que le mois réel change, getSeasonStartTime() renvoie le nouveau
+    // mois → le bloc « nouvelle saison » ci-dessous se déclenche.
+    ServerContext.anchorBattlePassSeason();
     long seasonStart, seasonEnd;
     try {
       seasonStart = com.perblue.heroes.game.data.battlepass.BattlePassV2Stats.getSeasonStartTime();
@@ -1107,15 +1112,41 @@ public final class ServerUser {
       battlePassV2Data = new com.perblue.heroes.network.messages.BattlePassV2Data();
     }
     com.perblue.heroes.network.messages.BattlePassV2Data bp = battlePassV2Data;
-    // NOUVELLE SAISON (le mois a changé) → reset de la progression et des paliers réclamés (comme le jeu).
+    // ROLLOVER — NOUVELLE SAISON (le mois a changé). Comme le jeu à la fin d'une saison : les récompenses
+    // MÉRITÉES (progress ≥ points) mais NON réclamées de la saison écoulée sont conservées dans
+    // previousUnclaimed (réclamables ensuite via collectEndedSeasonRewards / BATTLE_PASS_V2_COLLECT_UNCLAIMED_
+    // REWARDS → le joueur ne PERD pas ce qu'il a gagné), PUIS progress + paliers réclamés sont remis à zéro.
     if (bp.startTime != 0 && bp.startTime != seasonStart) {
+      try {
+        com.perblue.heroes.game.objects.IUser boundU = com.perblue.heroes.DH.app.getYourUser();
+        if (boundU != null) {
+          com.perblue.heroes.game.data.battlepass.BattlePassV2DataWrapper old =
+              new com.perblue.heroes.game.data.battlepass.BattlePassV2DataWrapper(bp);  // saison écoulée (startTime encore ancien)
+          java.util.List<?> free = com.perblue.heroes.game.logic.BattlePassV2Helper.getUnclaimedFreeRewards(boundU, old, false);
+          java.util.List<?> prem = old.getPremiumUnlocked()
+              ? com.perblue.heroes.game.logic.BattlePassV2Helper.getUnclaimedPremiumRewards(boundU, old, false)
+              : new java.util.ArrayList<>();
+          if (bp.previousUnclaimedFreeRewards == null) bp.previousUnclaimedFreeRewards = new java.util.ArrayList<>();
+          if (bp.previousUnclaimedPremiumRewards == null) bp.previousUnclaimedPremiumRewards = new java.util.ArrayList<>();
+          if (free != null) com.perblue.heroes.game.logic.RewardHelper.mergeRewards(bp.previousUnclaimedFreeRewards, (java.util.List) free);
+          if (prem != null) com.perblue.heroes.game.logic.RewardHelper.mergeRewards(bp.previousUnclaimedPremiumRewards, (java.util.List) prem);
+          System.out.println("[bp] rollover saison → " + (free == null ? 0 : free.size()) + " récompense(s) gratuite(s) + "
+              + (prem == null ? 0 : prem.size()) + " premium non réclamées conservées (previousUnclaimed)");
+        }
+      } catch (Throwable t) { System.out.println("[bp] rollover: préservation unclaimed ignorée (reset seul): " + t); }
       bp.progress = 0; bp.lastSeenProgress = 0;
       if (bp.claimedFreeRewards != null) bp.claimedFreeRewards.clear();
       if (bp.claimedPremiumRewards != null) bp.claimedPremiumRewards.clear();
     }
     bp.type = com.perblue.heroes.network.messages.BattlePassType.QUEST;
     bp.userID = userID;
-    bp.boughtBattlePass = 1;                       // premium pour tous (serveurs d'achats fermés)
+    // PREMIUM POUR TOUS (serveurs d'achats fermés, aucun achat réel) : le vrai gate du track premium est le
+    // booléen premiumUnlocked (getPremiumUnlocked() = data.premiumUnlocked, prouvé au bytecode) — PAS
+    // boughtBattlePass (qui n'est que le compteur « acheté »/état d'upsell). On pose donc premiumUnlocked=true
+    // (track premium débloqué → claims premium OK) ET boughtBattlePass=1 (pas d'upsell « acheter »). Posé à
+    // CHAQUE refresh (après un éventuel reset de saison) → premium TOUJOURS débloqué, même à une nouvelle saison.
+    bp.premiumUnlocked = true;
+    bp.boughtBattlePass = 1;
     bp.startTime = seasonStart;
     bp.endTime = seasonEnd;
     return bp;

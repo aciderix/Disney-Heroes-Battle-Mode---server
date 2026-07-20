@@ -115,24 +115,7 @@ public final class ServerContext {
       // `HIDE_BATTLE_PASS_AFTER`, longs epoch-ms) par réflexion — couche plateforme/config, PAS de la logique
       // de jeu (le calcul de récompenses/paliers reste celui du jeu). N'affecte QUE le BP (pas la date globale
       // → stamina/contenu inchangés). Combiné au `boughtBattlePass=1` du BootData (premium pour tous).
-      try {
-        java.util.Calendar cal = java.util.Calendar.getInstance();
-        cal.set(java.util.Calendar.DAY_OF_MONTH, 1);
-        cal.set(java.util.Calendar.HOUR_OF_DAY, 0); cal.set(java.util.Calendar.MINUTE, 0);
-        cal.set(java.util.Calendar.SECOND, 0); cal.set(java.util.Calendar.MILLISECOND, 0);
-        long monthStart = cal.getTimeInMillis();
-        cal.add(java.util.Calendar.MONTH, 1);
-        long monthEnd = cal.getTimeInMillis();               // 1er du mois suivant → toujours > now
-        Field csF = com.perblue.heroes.game.data.battlepass.BattlePassV2Stats.class.getDeclaredField("CONSTANT_STATS");
-        csF.setAccessible(true);
-        Object constStats = csF.get(null);                    // DHConstantStats
-        Object constants = com.perblue.common.stats.ConstantStats.class.getMethod("getStats").invoke(constStats);
-        Class<?> cc = constants.getClass();
-        setLongField(cc, constants, "SEASON_START_TIME", monthStart);
-        setLongField(cc, constants, "HIDE_BATTLE_PASS_AFTER", monthEnd);
-        System.out.println("[ctx] battle pass : saison ancrée au mois courant (start=" + monthStart
-            + " hide=" + monthEnd + ") → toujours actif");
-      } catch (Throwable t) { System.out.println("[ctx] override saison battle pass non posé: " + t); }
+      anchorBattlePassSeason();   // ancre la saison sur le mois COURANT (re-appelé dynamiquement, cf. méthode)
       // Légalité du nom (SetPlayerName / CHOOSE NAME) : NameChangeHelper.isNameLegal fait le CŒUR (noms
       // interdits ILLEGAL_NAMES, codepoints valides, alphabétique/chiffre/idéographique) PUIS délègue à
       // isNameLegalExt (Predicate CLIENTE) qui vérifie le rendu POLICE (DisplayStringUtil.
@@ -189,6 +172,44 @@ public final class ServerContext {
       battlePassField.set(app, data == null ? null
           : new com.perblue.heroes.game.data.battlepass.BattlePassV2DataWrapper(data));
     } catch (Throwable t) { throw new RuntimeException("échec bind battle pass DH.app", t); }
+  }
+
+  private static long anchoredSeasonStart = 0;
+
+  /**
+   * ANCRE la saison battle pass sur le MOIS COURANT (SEASON_START = 1er du mois à 00:00, HIDE = 1er du mois
+   * suivant) en écrivant les constantes parsées ({@code Constants.SEASON_START_TIME}/{@code HIDE_BATTLE_PASS_AFTER}).
+   *
+   * <p><b>Pourquoi DYNAMIQUE (et pas seulement à l'init).</b> Fait établi : les constantes ne sont écrites qu'une
+   * fois ; si on ne ré-ancre jamais, un serveur qui tourne de juillet à août SANS redémarrer garderait
+   * {@code getSeasonStartTime()} = 1er juillet → la saison ne « roulerait » jamais (et le reset de rollover ne
+   * se déclencherait jamais). On ré-ancre donc à CHAQUE {@code refreshBattlePass} (appelé par action) : dès que
+   * le mois réel change, {@code getSeasonStartTime()} renvoie le nouveau mois → {@code refreshBattlePass}
+   * détecte {@code bp.startTime != seasonStart} et effectue le rollover. Coût négligeable (Calendar + 2 champs).
+   * Idempotent tant que le mois ne change pas (ne logge que sur changement).
+   */
+  public static synchronized void anchorBattlePassSeason() {
+    try {
+      java.util.Calendar cal = java.util.Calendar.getInstance();
+      cal.set(java.util.Calendar.DAY_OF_MONTH, 1);
+      cal.set(java.util.Calendar.HOUR_OF_DAY, 0); cal.set(java.util.Calendar.MINUTE, 0);
+      cal.set(java.util.Calendar.SECOND, 0); cal.set(java.util.Calendar.MILLISECOND, 0);
+      long monthStart = cal.getTimeInMillis();
+      cal.add(java.util.Calendar.MONTH, 1);
+      long monthEnd = cal.getTimeInMillis();                 // 1er du mois suivant → toujours > now
+      Field csF = com.perblue.heroes.game.data.battlepass.BattlePassV2Stats.class.getDeclaredField("CONSTANT_STATS");
+      csF.setAccessible(true);
+      Object constStats = csF.get(null);                      // DHConstantStats
+      Object constants = com.perblue.common.stats.ConstantStats.class.getMethod("getStats").invoke(constStats);
+      Class<?> cc = constants.getClass();
+      setLongField(cc, constants, "SEASON_START_TIME", monthStart);
+      setLongField(cc, constants, "HIDE_BATTLE_PASS_AFTER", monthEnd);
+      if (monthStart != anchoredSeasonStart) {                // ne logge qu'au (re)ancrage effectif
+        anchoredSeasonStart = monthStart;
+        System.out.println("[ctx] battle pass : saison ancrée au mois courant (start=" + monthStart
+            + " hide=" + monthEnd + ") → toujours actif, roulant");
+      }
+    } catch (Throwable t) { System.out.println("[ctx] override saison battle pass non posé: " + t); }
   }
 
   private static Field field(Class<?> c, String name) throws NoSuchFieldException {
