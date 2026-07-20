@@ -1,5 +1,40 @@
 # JOURNAL — journal détaillé des modifications
 
+## 2026-07-20 (g12) — Quêtes : boîtes-récompense weekly + START_QUEST/Prize Wall élucidés par les faits
+
+Demande « finir quêtes ». **Boîte-récompense weekly** (gap réel) : ouvrir une boîte (après
+`REDEEM_DAILY_QUESTS`) n'est PAS une commande — le client envoie un message top-level
+`ClaimWeeklyQuestReward{rewardChosen, rewardDrops, staminaReward}` (fire-and-forget, comme `CampaignAttack`).
+Handler `LoginServer` → `ServerUser.claimWeeklyReward` → `QuestHelper.claimWeeklyReward(user, rewardChosen,
+staminaReward)` : anti-triche RÉEL sur le NOMBRE (`getWeeklyRewardsRemaining = getCount(WEEKLY_QUEST_REWARDS)
+> 0` sinon `ClientErrorCodeException`), donne stamina + récompense, décrémente le compteur, persiste. PARTIEL
+documenté : le CHOIX `rewardChosen` est client-autoritative (re-valider le tirage vs graine
+`WEEKLY_QUEST_REWARD` = Partiels D/E, comme l'issue de combat). `START_QUEST` : **aucun émetteur client** dans
+le 12.1.0 (que la table de dispatch + l'enum) → non atteignable, rien à faire. Prize Wall : déjà couvert
+(quêtes `PRIZE_WALL_*` → `completeQuest` → `COMPLETE_QUEST`, handler g10). Vérifié `server/smoke/WeeklyBoxTest`
+(2 boîtes → ouvre/décrémente 2→1→0, persiste ; 3ᵉ à 0 REFUSÉE) + régression 26/26. Fichiers :
+`server/java/dhserver/{ServerUser,LoginServer}.java`, `server/smoke/WeeklyBoxTest.java`.
+
+## 2026-07-20 (g11) — Battle pass : changement de mois (rollover réel) + premium pour tous corrigé
+
+Deux faits trouvés/corrigés (règle « aucune supposition »). **(1) Premium pour tous était FAUX** :
+`getPremiumUnlocked()` lit le booléen `premiumUnlocked` (champ wire SÉPARÉ), PAS `boughtBattlePass`. On ne
+posait que `boughtBattlePass=1` → premium restait verrouillé (claim premium aurait échoué
+`BATTLE_PASS_MISSING_PREMIUM`). Fix : `refreshBattlePass` pose `premiumUnlocked=true` à chaque refresh (même
+après reset → premium toujours débloqué). **(2) La saison ne roulait qu'au REDÉMARRAGE** : l'ancre
+(`SEASON_START_TIME`/`HIDE_BATTLE_PASS_AFTER`) n'était posée qu'à `init()` (idempotent) → un serveur tournant
+de juillet à août sans redémarrer restait au 1er juillet. Fix : `ServerContext.anchorBattlePassSeason()`
+(re-calcule le mois courant), appelé à chaque `refreshBattlePass` → rollover dès que le mois réel change.
+**Ce qui se passe au changement de mois** : `refreshBattlePass` détecte `bp.startTime != seasonStart` →
+(a) conserve les récompenses MÉRITÉES non réclamées de la saison écoulée dans `previousUnclaimed` (comme le
+jeu en fin de saison ; réclamables via `BATTLE_PASS_V2_COLLECT_UNCLAIMED_REWARDS` → `collectEndedSeasonRewards`),
+(b) reset `progress`/`lastSeenProgress` + vide `claimedFree/PremiumRewards`, (c) ré-ancre `startTime`/`endTime`,
+garde `premiumUnlocked=true`. `getRewardTiers(l)=floorEntry(l)` → mois ancien/nouveau donnent le même jeu de
+paliers (contenu R102 stable). Vérifié `server/smoke/BattlePassRolloverTest` (premium claim OK ; rollover :
+progress 36→0, claims vidés, 6 gratuites + 5 premium non réclamées conservées puis collectées, premium
+maintenu, saison ré-ancrée) + régression 25/25. Fichiers :
+`server/java/dhserver/{ServerContext,ServerUser}.java`, `server/smoke/BattlePassRolloverTest.java`.
+
 ## 2026-07-20 (g10) — Battle pass : handlers de réclamation + progression AUTO via QUEST_POINTS + persistance
 
 Suite de « finir battle pass ». Établi PAR LES FAITS (bytecode) que la progression du battle pass EST la
