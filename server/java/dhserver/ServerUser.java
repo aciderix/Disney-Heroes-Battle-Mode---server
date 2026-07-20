@@ -115,7 +115,10 @@ public final class ServerUser {
     m.subject = "Welcome!";
     m.message = "Welcome to Disney Heroes: Battle Mode! Here's a gift to get you started. Have fun!";
     m.sentDate = now;
-    m.expiration = 0;                             // 0 = pas d'expiration
+    // EXPIRATION = une VRAIE date future. FAIT (bytecode MailboxWindow) : la mailbox CACHE tout courrier dont
+    // `getExpiration() < serverTimeNow()` → un `expiration=0` (époque 1970) est traité comme EXPIRÉ (invisible).
+    // Le jeu n'a pas de « 0 = jamais » ; on met donc un délai généreux (~10 ans) pour un courrier d'onboarding.
+    m.expiration = now + 3650L * 24L * 3600L * 1000L;   // ~10 ans
     m.opened = false;
     m.persistent = false;                         // non persistant → supprimé à la fermeture une fois vidé
     m.translatable = false;

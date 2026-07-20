@@ -38,6 +38,10 @@ public final class MailboxTest {
         + "\" opened=" + wm.opened + " piècesJointes=" + attach);
     if (wm.type != MailType.NEW_USER_WELCOME) throw new AssertionError("type NEW_USER_WELCOME attendu");
     if (attach != 1) throw new AssertionError("1 pièce jointe (récompense) attendue");
+    // VISIBILITÉ : la mailbox cache tout courrier dont expiration < now (bytecode MailboxWindow) → expiration
+    // doit être une VRAIE date FUTURE (un 0 = 1970 = expiré = invisible en jeu).
+    if (wm.expiration <= System.currentTimeMillis())
+      throw new AssertionError("expiration doit être future (sinon courrier caché comme expiré en jeu)");
 
     long diaBefore = diamonds(su);
 

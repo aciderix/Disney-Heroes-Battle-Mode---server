@@ -172,6 +172,25 @@ public final class LoginServer {
                 System.out.println("[login]     action " + act.command
                     + (applied ? " appliquée [persisté]" : " non appliquée (PARTIEL)"));
               }
+            } else if (m instanceof com.perblue.heroes.network.messages.ActionGroup) {
+              // LOT d'actions envoyé en UN message (trouvé en jeu : le « COLLECT ALL » de la mailbox groupe
+              // plusieurs TAKE_MAIL_ATTACHMENTS + MARK_MAIL_OPENED dans un ActionGroup ; idem opérations de masse).
+              // Le serveur applique CHAQUE action via applyAction (logique + anti-triche PAR action) et persiste
+              // une fois. Sans ça, un lot entier était ignoré (récompenses non créditées).
+              com.perblue.heroes.network.messages.ActionGroup ag =
+                  (com.perblue.heroes.network.messages.ActionGroup) m;
+              int applied = 0, total = 0;
+              if (ag.actions != null) {
+                for (Object o : ag.actions) {
+                  total++;
+                  try { if (user.applyAction((Action) o)) applied++; }
+                  catch (Throwable t) { System.out.println("[login]     ! action de groupe échouée: " + t); }
+                }
+              }
+              if (applied > 0) { try { store.save(user); } catch (Exception e) {
+                System.out.println("[login]     ! persistance échouée: " + e); } }
+              System.out.println("[login] <== ActionGroup : " + applied + "/" + total
+                  + " action(s) appliquée(s)" + (applied > 0 ? " [persisté]" : ""));
             } else if (m instanceof com.perblue.heroes.network.messages.SetPlayerName) {
               // Choix / changement du nom du joueur (onboarding « CHOOSE NAME » + Réglages). Fire-and-forget :
               // le client a déjà appliqué UserHelper.changeName de son côté ; le serveur AUTORITATIF ré-exécute
