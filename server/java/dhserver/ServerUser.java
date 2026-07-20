@@ -862,6 +862,30 @@ public final class ServerUser {
         System.out.println("[action] COMPLETE_QUEST id=" + questID + " → récompense créditée + complétion persistée (logique du jeu)");
         return true;
       }
+      case "VIEW_DAILY_QUESTS": {
+        // Le client (QuestsScreen, à l'ouverture) envoie Action{VIEW_DAILY_QUESTS} (extra vide). Le client NE
+        // marque PAS les quêtes vues localement (vérifié au bytecode : il ne fait que doAction) → c'est au
+        // SERVEUR de marquer les quêtes QUOTIDIENNES débloquées comme VUES (efface la pastille « nouveau »).
+        // Logique du jeu : IndividualUser.setViewedDailyQuest(id) écrit dans this.extra.viewedDailyQuests
+        // (= individualUserExtra, PARTAGÉ → auto-persisté). On énumère les IDs via QuestStats.getQuest (évite
+        // QuestHelper.getUnlockedDailyQuests → QuestStats.getAllQuestIDs, chemin CLIENT fragile headless :
+        // thread-check + cast gdx Array). On ne marque que les DAILY_QUEST DÉBLOQUÉES (isUnlocked) — marquer
+        // une quête verrouillée la ferait « déjà vue » à son futur déblocage (pastille perdue).
+        com.perblue.heroes.game.objects.IndividualUser vgiu =
+            (com.perblue.heroes.game.objects.IndividualUser) user.getIndividual();
+        int marked = 0;
+        for (int id = 1; id <= 5000; id++) {
+          try {
+            if (com.perblue.heroes.game.data.quests.QuestStats.getQuest(id) == null) continue;
+            if (com.perblue.heroes.game.data.quests.QuestStats.getType(id)
+                != com.perblue.heroes.game.data.quests.QuestType.DAILY_QUEST) continue;
+            if (!com.perblue.heroes.game.logic.QuestHelper.isUnlocked(id, user)) continue;
+            if (!vgiu.hasViewedDailyQuest(id)) { vgiu.setViewedDailyQuest(id); marked++; }
+          } catch (Throwable ignore) {}
+        }
+        System.out.println("[action] VIEW_DAILY_QUESTS → " + marked + " quête(s) quotidienne(s) marquée(s) vue(s)");
+        return true;
+      }
       case "RECORD_SERVER_ROLL_FINISHED":
         // NO-OP FIDÈLE (pas une rustine). Le code CLIENT du jeu ne mute AUCUN état pour cette
         // commande : ClientActionHelper.recordServerRollFinished ne fait que construire l'extra et

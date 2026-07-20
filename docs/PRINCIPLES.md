@@ -99,6 +99,22 @@ les artefacts lourds (APK, jars décompilés, assets) sont **régénérables par
 porte le point de reprise. **L'identifiant de modèle n'apparaît jamais** dans un
 commit/artefact.
 
+## 8. Aucune supposition — on travaille sur les FAITS (analyser, tester, vérifier de bout en bout)
+Règle **non négociable**. On ne **suppose JAMAIS** qu'une chose fonctionne (ou ne fonctionne pas) pour passer
+à la suite. Toute affirmation doit être **établie par les FAITS** — test, log, capture, bytecode — jamais par
+une explication plausible non vérifiée (« probablement time-gated », « ça devrait aller »…).
+- **Si quelque chose semble ne pas marcher tout de suite**, on **analyse et on teste la cause** immédiatement,
+  on ne s'en contente pas d'une hypothèse. Une hypothèse non testée n'est **pas** un résultat.
+- **Si ce n'est pas utilisable de suite ET que les FAITS le prouvent** (ex. un verrou de niveau d'équipe
+  démontré au bytecode/en jeu), on le **DOCUMENTE pour la suite** (SHIMS/MEMORY) au lieu de bricoler.
+- **Débloquer ne suffit pas.** Après un correctif, on **VÉRIFIE que ça fonctionne réellement de bout en bout**
+  (en suivant les règles de travail) — y compris les **cas et onglets adjacents** exercés par le même chemin —
+  **avant** de déclarer « OK ». Corriger le rendu d'un écran sans tester **tous** ses sous-écrans/actions =
+  vérification incomplète.
+- En cas de doute sur un comportement observé : reproduire, instrumenter (log/dump/capture), lire le code du
+  jeu concerné. On conclut **seulement** quand les faits le permettent ; sinon on dit explicitement « non
+  vérifié » et on va le vérifier.
+
 ## Philosophie
 Le but n'est **pas de recréer le jeu**, mais de le faire fonctionner dans un environnement
 moderne avec le **moins de modifications possible**. À chaque fois que c'est possible :
