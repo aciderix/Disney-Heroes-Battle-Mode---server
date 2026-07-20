@@ -44,9 +44,25 @@ load/save). Un objet du jeu = une colonne BLOB (§6).
 (1) claim à progress 0 → REFUSÉ (points manquants) ; (2) don QUEST_POINTS=9 → `getProgress`=9 &
 `getResource(QUEST_POINTS)`=9 (accumulation via le code du jeu) ; (3) claim → appliqué + `isFreeTierClaimed`
 true ; (4) re-claim → REFUSÉ (déjà réclamé) ; (5) reload wire → palier toujours réclamé + progress=9.
-**Régression 23/23 verte.** ⚠️ Écran verrouillé TL11 (`unlockables.tab BATTLE_PASS=11`) → vérif EN JEU
-reportée à TL≥11 (documenté par les faits, non supposé). Fichiers :
-`server/java/dhserver/{ServerContext,ServerUser,UserStore}.java`, `server/smoke/BattlePassClaimTest.java`.
+**Régression 23/23 verte.** ⚠️ Écran BATTLE PASS verrouillé TL11 (`unlockables.tab BATTLE_PASS=11`) → vérif
+EN JEU du battle pass reportée à TL≥11 (documenté par les faits, non supposé).
+
+**TESTÉ EN JEU — écran QUESTS à TL2 (choix user)** : client lancé (save au hub), navigation vers QUESTS via
+l'API du jeu (`UINavHelper.navigateTo(QUESTS)`, commande clic-fichier `goquests` ajoutée). L'écran rend avec
+les données SERVEUR (WEEKLY QUEST paliers 21..105 « Rewards 0/5 » « Quests 0/105 » PENDING ; STAMINA BOOST
+« Get 796262720 free Stamina between 12 PM and 2 PM » réclamable ; DAILY DEAL/TREASURE HUNTER/DAILY CAMPAIGN ;
+onglet **BATTLE PASS visiblement grisé/verrouillé** = TL11 confirmé à l'œil). Sonde B-bis (`dumpscreen` +
+`dump x y`) → bouton CLAIM du stamina boost = `QuestRow`/`DHTextButton name=QUEST_CLAIM_AWARDS` @stage(973,75)
+= screen(973,645). **Tap CLAIM** → client `Action COMPLETE_QUEST {ID=2}` → serveur « récompense créditée +
+complétion persistée [persisté] ». Après le claim (capture) : ligne STAMINA BOOST **consommée** (disparaît) +
+compteur weekly **« Quests 0/105 → 1/105 »**. Persistance DB : quête id=2 **plus réclamable** (OncePerDay) +
+`WEEKLY_DAILY_QUESTS_COMPLETE=1`. **⇒ CLÔT LE GAP g7 §8** (claim FREE_STAMINA « stamina boost » vérifié en jeu
+client↔serveur↔persistance). Outillage : commandes `goquests`/`dumpscreen` (`TutorialDriver.navTo/dumpScreen`),
+`server/smoke/DailyQuestProbe`. Snapshot pré-test `server/data/dh-snapshot-prequest-0720.db`.
+
+Fichiers : `server/java/dhserver/{ServerContext,ServerUser,UserStore}.java`,
+`server/smoke/{BattlePassClaimTest,DailyQuestProbe}.java`,
+`desktop-port/src/main/java/dhdesktop/{TutorialDriver,DesktopLauncher}.java`.
 
 ## 2026-07-19 (g5) — Prise de contrôle manuelle : 3 écrans confirmés EN JEU (CHOOSE NAME, SIGN IN claim, HERO_FILTERS)
 

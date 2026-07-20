@@ -625,6 +625,34 @@ public final class TutorialDriver {
         } catch (Throwable t) { System.out.println("[clicdump] err " + t); }
     }
 
+    /** DEV : navigue vers une destination du hub via l'API DU JEU (UINavHelper.navigateTo), en RESPECTANT le
+     *  verrou de nav (canNavigateTo=false = tuto/unlockable non levé → on n'ouvre pas ; fidèle, §2). */
+    public static void navTo(GameMain game, com.perblue.heroes.ui.UINavHelper.Destination dest) {
+        try {
+            if (!com.perblue.heroes.ui.UINavHelper.canNavigateTo(dest, false)) {
+                System.out.println("[nav] " + dest + " BLOQUÉ (canNavigateTo=false — verrou tuto/unlockable)");
+                return;
+            }
+            System.out.println("[nav] navigateTo(" + dest + ")");
+            com.perblue.heroes.ui.UINavHelper.navigateTo(dest, "dev", new String[0]);
+        } catch (Throwable t) { System.out.println("[nav] " + dest + " échec: " + t); }
+    }
+
+    /** DEV : dumpe les acteurs actionnables de l'ÉCRAN COURANT (bouton/label/tag tuto + position stage) —
+     *  pour savoir quoi taper (méthode B-bis). Invoqué via dh.clickfile "dumpscreen". */
+    public static void dumpScreen(GameMain game) {
+        try {
+            Object screen = game.getScreenManager().getScreen();
+            String cls = screen == null ? "null" : screen.getClass().getSimpleName();
+            Group root = null;
+            try { root = (Group) screen.getClass().getMethod("getRootStack").invoke(screen); } catch (Throwable ignore) {}
+            Actor searchRoot = root;
+            if (root != null && root.getStage() != null && root.getStage().getRoot() != null) searchRoot = root.getStage().getRoot();
+            if (searchRoot == null) { System.out.println("[dumpscreen] écran=" + cls + " (pas de racine actionnable)"); return; }
+            dumpActionable(searchRoot, cls);
+        } catch (Throwable t) { System.out.println("[dumpscreen] err " + t); }
+    }
+
     /** DEV : liste les acteurs actionnables d'une fenêtre (bouton/label/tag tuto + position stage). */
     private static void dumpActionable(Actor window, String cls) {
         System.out.println("[tutodrive] --- acteurs actionnables de " + cls + " ---");

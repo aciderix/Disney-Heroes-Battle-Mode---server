@@ -251,6 +251,14 @@ public final class DesktopLauncher {
                     input.tap(W / 2, H / 2);
                     continue;
                 }
+                if (low.equals("goquests") || low.equals("goquest")) {  // ouvrir l'écran QUESTS (API du jeu)
+                    TutorialDriver.navTo(game, com.perblue.heroes.ui.UINavHelper.Destination.QUESTS);
+                    continue;
+                }
+                if (low.equals("dumpscreen") || low.equals("dumpq")) {  // dumper les acteurs actionnables de l'écran
+                    TutorialDriver.dumpScreen(game);
+                    continue;
+                }
                 // --- Ligne "dump" (sans tap) : juste enregistrer l'écran+acteurs sous un point ---
                 boolean dumpOnly = low.startsWith("dump");
                 if (dumpOnly) ln = ln.substring(4).trim();
