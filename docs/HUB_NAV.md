@@ -90,3 +90,102 @@ Equip→`Action`). Écrans en lecture seule (VIP, rankings d'affichage…) → s
 le BootData). Reco d'ordre (flux naturel post-campagne) : **HERO_MANAGEMENT (`HeroListScreen`) → ITEMS → QUESTS/
 MISSIONS (claims) → coffres payants (#15)**. Méthode : « observer le protocole » (journaliser ce que l'écran
 envoie) puis écrire le handler.
+
+---
+
+## 7. État des ÉCRANS (hub + menu ☰) — testés / à tester + gating niveau d'équipe (2026-07-20)
+
+Liste canonique de **tous** les écrans navigables (`UINavHelper.Destination`) avec leur **déblocage par
+niveau d'équipe** (source de vérité : `game-data/stats/unlockables.tab`, colonne `TEAM_LEVEL_REQ`) et le
+**statut de test** dans le portage. Le compte de test est actuellement **TL2** → seuls les écrans « early
+game » sont atteignables EN JEU ; les autres sont **légitimement verrouillés** (badge/onglet grisé, prouvé).
+
+### 7.1 Écrans EARLY-GAME (TL1-2) — TESTÉS ✅
+
+| Écran (Destination) | Déblocage | Serveur | En jeu | Notes |
+|---|---|---|---|---|
+| CAMPAIGN | TL1 | ✅ | ✅ | combat `recordOutcome` (tuto + 1-1/1-2) |
+| HERO_MANAGEMENT (HEROES) | TL1 | ✅ | ✅ | `UNLOCK_HERO` (Vanellope), équip |
+| CHESTS | TL1 | ✅ | ✅ | coffres gratuit + payant (anti-triche) |
+| ITEMS (inventaire) | TL1 | ✅ | ✅ | `SELL_ITEM`/`USE_ITEM`/`VIEWED_CONSUMABLE_ITEM` |
+| QUESTS | TL1 | ✅ | ✅ | complete/view/redeem + boîtes weekly |
+| MEDALS (prize wall) | TL1 | ✅ | ✅ | `COMPLETE_QUEST` (achievements) |
+| MAILBOX | TL1 | ✅ | ✅ | livraison + open/take/delete + `ActionGroup` |
+| EVENTS | TL1 | ✅ | ✅ | rend (horaires quotidiens) + `UPDATE_TIME` ; events live-ops vides |
+| SIGN_IN | TL1 | ✅ | ✅ | `CLAIM_SIGNIN_REWARD` (31 jours) |
+| SETTINGS / CHOOSE NAME | TL1 | ✅ | ✅ | `SetPlayerName` |
+| BATTLE_PASS | **TL11** | ✅ | 🔒 | serveur complet (claim/collect/buyout/rollover/premium) ; **vérif en jeu reportée TL11** |
+
+### 7.2 Écrans MID/LATE-GAME — VERROUILLÉS au TL courant (NON testés, à débloquer)
+
+Déblocage `TEAM_LEVEL_REQ` de `unlockables.tab`. **Pour les tester → monter le compte au niveau requis**
+(idée user : passer le joueur à un **niveau élevé/max** pour tout débloquer d'un coup, puis balayer les écrans).
+
+| Écran / feature | TL requis | Type |
+|---|---|---|
+| AUTO_FIGHT | 2 | combat auto (déjà utilisé par le pilote DEV) |
+| SKILL_UPGRADE | 8 | montée de compétences héros |
+| RANKINGS (arena league) | 10 | classement |
+| FIGHT_PIT | 10 | arène PvP |
+| BATTLE_PASS | 11 | (serveur fait) |
+| ELITE_CAMPAIGN | 11 | campagne élite |
+| ALCHEMY | 12 | achat d'or |
+| GUILDS | 15 | guildes (+ chest social, dons, mercenaires…) |
+| CHALLENGES | 20 | défis |
+| SAVED_LINEUPS | 20 | line-ups sauvegardés |
+| FRIENDSHIPS | 24 | amitiés (campagnes d'amitié, disks) |
+| MISSIONS | 24 | missions d'amitié |
+| EXPEDITION | 25 | expédition |
+| COLLECTIONS | 26 | collections (cosmétiques) |
+| CRYPT_RAID / SURGE | 30 | crypt raid |
+| BLACK_MARKET | 31 | marché noir (store) |
+| ENCHANTING | 35 | enchantement d'équipement |
+| COLISEUM | 40 | coliseum PvP |
+| MEGA_MART | 41 | store |
+| GEAR_MARKET / MEMORY_MARKET | 42 | stores |
+| WAR (guild war) | 45 | guerre de guilde |
+| FRANCHISE_TRIALS | 55 | trials de franchise |
+| INVASION | 60 | invasion (guilde) |
+| CRYPT/PORT/TEAM_TRIALS/WISH_CHEST | divers | à mapper précisément |
+| PATCHED_HEROES | 185 | héros patchés (très haut niveau) |
+| HEIST | 9999 | **désactivé** (retiré du jeu) |
+
+### 7.3 Écrans STORE / ACHATS — volontairement FERMÉS
+
+`PURCHASING`, `VIP_BENEFITS`, `DAILY_DEAL`, `MEGA_DAILY_DEAL`, `PROMOS` (TL3), `DIRECT_PURCHASE`, l'onglet
+**DEALS** de l'écran EVENTS : offres d'**achat**. **Serveurs d'achats FERMÉS** (aucun IAP réel — choix du
+projet, cf. PRINCIPLES). Actuellement l'onglet DEALS est **vide** (aucune offre : ni event live-ops, ni store).
+
+### 7.4 Stratégie de test des écrans restants
+1. **Débloquer par le niveau d'équipe** : la plupart des écrans non testés sont gatés `TEAM_LEVEL_REQ`.
+   → outil de dev pour **fixer le team level du compte** (ou monter en jouant la campagne) afin d'ouvrir en
+   masse (RANKINGS/FIGHT_PIT à TL10, BATTLE_PASS/ELITE à TL11, GUILDS TL15, COLISEUM TL40, INVASION TL60…).
+2. Puis **balayer chaque écran** avec la méthode habituelle (capturer → observer → trouver+combler le gap
+   serveur → vérifier en jeu + persistance), comme QUESTS/HEROES/MAILBOX/ITEMS/EVENTS.
+
+---
+
+## 8. BACKLOG FONCTIONNEL (features à faire — hors dette technique de `SHIMS.md`)
+
+Suivi des features de plus haut niveau demandées/identifiées (les TODO de **dette technique** restent dans
+[`SHIMS.md`](SHIMS.md) « TODO suivis » ; le combat autoritatif #24/#25 y est décrit).
+
+1. **Panneau ADMIN serveur** (futur, demandé). Réutiliser `ServerUser.addMail(MailMessage)` (prouvé en jeu :
+   courrier `GLOBAL` texte libre + récompenses arbitraires rendu + réclamé) : interface pour **composer**
+   (subject/message/fromSender + attachments `RewardDrop` arbitraires) et **envoyer** à un joueur ciblé OU en
+   **broadcast** (type `GLOBAL`) à tous les joueurs du shard. À exposer via commande/console/route admin.
+
+2. **DEALS / EVENTS — achats en MONNAIE DU JEU** (à évaluer). L'onglet DEALS et les events live-ops sont vides
+   (store fermé + pas de live-ops). Certaines commandes d'achat n'utilisent PAS d'argent réel et **pourraient
+   être rendues fonctionnelles** : `BUY_GOLD` (or ↔ diamants), `BUY_STAMINA`/`BUY_FRIEND_STAMINA`/
+   `BUY_INVASION_STAMINA` (énergie ↔ diamants), `BUY_POWER_POINTS`… (logique du jeu à câbler, comme SELL_ITEM).
+   Les offres en **argent réel** (`BUY_DIAMOND_BUNDLE_EVENT`, packs, DAILY_DEAL) restent **fermées**. **Events
+   serveur** : `SpecialEventsRaw.events = List<SpecialEventRaw{eventID, jsonString}>` → livraison **admin-
+   contrôlée en JSON** (comme le courrier), MAIS chaque **type** d'event (contest/invasion/trial/vente) a son
+   rendu + ses actions serveur propres → rendre un event fonctionnel = définir le JSON **+** supporter sa
+   logique par type (gros). Le panneau « FREE REWARDS EVERY DAY! » de l'écran EVENTS est du **contenu client**
+   (horaires de reset), PAS un event serveur.
+
+3. **Écrans mid/late-game à tester** après montée de niveau (cf. §7.2) : RANKINGS, FIGHT_PIT, ELITE_CAMPAIGN,
+   ALCHEMY, GUILDS, CHALLENGES, FRIENDSHIPS/MISSIONS, EXPEDITION, COLLECTIONS, SURGE, ENCHANTING, COLISEUM,
+   WAR, INVASION… + **battle pass EN JEU à TL11** (serveur déjà fait).
