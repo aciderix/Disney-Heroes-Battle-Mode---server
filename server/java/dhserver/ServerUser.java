@@ -206,7 +206,20 @@ public final class ServerUser {
     // neuf (la progression s'accumule via les quêtes ; non persistée pour l'instant — champ hors userExtra).
     // NB `BattlePassType` n'a que {DEFAULT, QUEST} → ce n'est PAS un décalage d'ère, juste un état non initialisé.
     ServerContext.init();
-    bd.battlePassV2Data = refreshBattlePass();
+    bd.battlePassV2Data = refreshBattlePass();   // ancre la saison sur le mois courant (côté serveur)
+    // ÈRE DE CONTENU — STAT-SYNC (override opérateur). Le client applique BootData.statDataTxt au boot via
+    // SyncStatDataClientHelper.updateStats → GeneralStats.updateStats(map) → parseStats(nom, contenu) pour chaque
+    // fichier de `parsedFiles` présent dans la map (vérifié au bytecode). BattlePassV2Stats.getStatClasses() est
+    // enregistré dans GENERAL_STAT_FILE_CLASSES → CONSTANT_STATS (`battle_pass_v2_constants.tab`) est re-parsé.
+    // Sans ça le client garde SES stats embarquées de l'APK (SEASON_START/HIDE = 2026-04, PASSÉES) → il croit la
+    // saison terminée → onglet BATTLE PASS grisé, aucun `BattlePassV2GetData` envoyé. On pousse donc un
+    // battle_pass_v2_constants à SAISON COURANTE (mêmes bornes que l'ancre serveur) pour que le client voie une
+    // saison active. Clé = nom exact de `parsedFiles` (« .tab » inclus). Faute = pas d'override (dégradé propre).
+    String bpConstants = battlePassConstantsStatOverride();
+    if (bpConstants != null) {
+      if (bd.statDataTxt == null) bd.statDataTxt = new java.util.HashMap<>();
+      bd.statDataTxt.put("battle_pass_v2_constants.tab", bpConstants);
+    }
     // MAILBOX : livrer les courriers du joueur (le client les copie via User.setMailMessages). knownMailIDs =
     // vide (le client re-signalera ce qu'il connaît via GetNewMailMessages en session).
     if (mail != null && !mail.isEmpty()) {
@@ -1418,6 +1431,44 @@ public final class ServerUser {
     bp.startTime = seasonStart;
     bp.endTime = seasonEnd;
     return bp;
+  }
+
+  /**
+   * Construit le contenu {@code battle_pass_v2_constants.tab} à <b>saison courante</b> à pousser au client via
+   * {@code BootData.statDataTxt} (cf. bootData()). On <b>réutilise le vrai fichier du jeu</b> (game-data/stats,
+   * source de vérité — docs/PRINCIPLES.md §4 : on ne réécrit pas la donnée) et on ne remplace QUE les deux lignes
+   * datées {@code SEASON_START_TIME}/{@code HIDE_BATTLE_PASS_AFTER} par les <b>mêmes bornes que l'ancre serveur</b>
+   * ({@code BattlePassV2Stats.getSeasonStartTime()}/{@code getBattlePassHiddenTime()}, déjà ré-ancrées au mois
+   * courant par refreshBattlePass()). Le client re-parse ce fichier (converter TIME → {@code StatUtil}) et voit
+   * alors une saison active → l'onglet s'active et il envoie {@code BattlePassV2GetData}. Renvoie {@code null} en
+   * cas de souci (aucun override poussé — dégradé propre, le client garde ses stats).
+   */
+  private static String battlePassConstantsStatOverride() {
+    try {
+      long start = com.perblue.heroes.game.data.battlepass.BattlePassV2Stats.getSeasonStartTime();
+      long hide  = com.perblue.heroes.game.data.battlepass.BattlePassV2Stats.getBattlePassHiddenTime();
+      if (start <= 0 || hide <= 0) return null;
+      // Format IDENTIQUE au fichier d'origine (ex. « 2026-04-07T05:00:00.000-05:00 ») avec offset explicite →
+      // instant absolu indépendant du fuseau du client. SSS = ms, XXX = offset ±hh:mm.
+      java.text.SimpleDateFormat fmt = new java.text.SimpleDateFormat("yyyy-MM-dd'T'HH:mm:ss.SSSXXX");
+      String startStr = fmt.format(new java.util.Date(start));
+      String hideStr  = fmt.format(new java.util.Date(hide));
+      String path = System.getProperty("dh.stats", "game-data/stats");
+      java.io.File f = new java.io.File(new java.io.File(path).getAbsoluteFile(), "battle_pass_v2_constants.tab");
+      if (!f.isFile()) return null;
+      String content = new String(java.nio.file.Files.readAllBytes(f.toPath()), java.nio.charset.StandardCharsets.UTF_8);
+      StringBuilder out = new StringBuilder(content.length() + 16);
+      for (String line : content.split("\n", -1)) {
+        if (line.startsWith("SEASON_START_TIME\t"))          line = "SEASON_START_TIME\t" + startStr;
+        else if (line.startsWith("HIDE_BATTLE_PASS_AFTER\t")) line = "HIDE_BATTLE_PASS_AFTER\t" + hideStr;
+        if (out.length() > 0) out.append('\n');
+        out.append(line);
+      }
+      return out.toString();
+    } catch (Throwable t) {
+      System.out.println("[bp] override stat-sync battle_pass_v2_constants non construit: " + t);
+      return null;
+    }
   }
 
   private static byte[] wire(GruntMessage m) {
