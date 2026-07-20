@@ -61,6 +61,12 @@ public final class ServerUser {
   // rafraîchie à chaque bootData (elle est temporelle : saison roulante mensuelle, cf. ServerContext). Nullable
   // → créé paresseusement (compte neuf ou DB pré-migration).
   private com.perblue.heroes.network.messages.BattlePassV2Data battlePassV2Data;
+  // MAILBOX : liste de courriers REÇUS du serveur (jamais composés par le joueur). Chaque MailMessage vit HORS
+  // userExtra/individualUserExtra (le User les COPIE via setMailMessages) → persisté à part (colonne BLOB, liste
+  // sérialisée). Le serveur d'origine génère ces courriers sur événements (récompenses coliseum/guilde,
+  // remboursements, admin GLOBAL…) ; ré-hébergés, on n'a pas encore ces événements → on livre au moins le
+  // courrier d'ONBOARDING NEW_USER_WELCOME (geste opérateur, type authentique). Nullable → liste vide.
+  private java.util.List<com.perblue.heroes.network.messages.MailMessage> mail;
 
   // Graines RNG que le client annonce (Action SET_SEED) avant chaque combat, pour que le serveur puisse
   // REPRODUIRE/valider le tirage (combat COMBAT, loot LOOT ; cf. SERVER_PLAN §Partiels C→E). État de SESSION
@@ -90,7 +96,36 @@ public final class ServerUser {
     iue.tutorialActs = NewUserState.newUserTutorialActs();
     ServerUser su = new ServerUser(userID, shardID, ui, ue, iue);
     su.initNewPlayerResources(creation);
+    su.seedWelcomeMail(creation);
     return su;
+  }
+
+  /**
+   * Dépose le courrier d'ONBOARDING {@code NEW_USER_WELCOME} dans la mailbox d'un compte NEUF (le serveur
+   * d'origine envoie ce type de courrier à l'inscription). Contenu = choix d'OPÉRATEUR (serveur ré-hébergé) :
+   * texte de bienvenue + une petite récompense en pièce jointe (500 diamants via {@code RewardHelper.createDrop},
+   * un {@link RewardDrop} de RESSOURCE — logique/format du jeu, valeur au choix de l'opérateur, comme le premium
+   * pour tous). PAS une donnée de jeu inventée : c'est un message opérateur au format wire authentique.
+   */
+  private void seedWelcomeMail(long now) {
+    com.perblue.heroes.network.messages.MailMessage m = new com.perblue.heroes.network.messages.MailMessage();
+    m.iD = 1;                                     // 1er courrier du compte (IDs per-joueur croissants)
+    m.type = com.perblue.heroes.network.messages.MailType.NEW_USER_WELCOME;
+    m.fromSender = "Disney Heroes";
+    m.subject = "Welcome!";
+    m.message = "Welcome to Disney Heroes: Battle Mode! Here's a gift to get you started. Have fun!";
+    m.sentDate = now;
+    m.expiration = 0;                             // 0 = pas d'expiration
+    m.opened = false;
+    m.persistent = false;                         // non persistant → supprimé à la fermeture une fois vidé
+    m.translatable = false;
+    m.extra = new com.perblue.heroes.network.messages.MailExtra();
+    m.extra.attachments = new java.util.ArrayList<>();
+    m.extra.attachments.add(
+        com.perblue.heroes.game.logic.RewardHelper.createDrop(
+            com.perblue.heroes.network.messages.ResourceType.DIAMONDS, 500L));
+    mail = new java.util.ArrayList<>();
+    mail.add(m);
   }
 
   /**
@@ -169,6 +204,11 @@ public final class ServerUser {
     // NB `BattlePassType` n'a que {DEFAULT, QUEST} → ce n'est PAS un décalage d'ère, juste un état non initialisé.
     ServerContext.init();
     bd.battlePassV2Data = refreshBattlePass();
+    // MAILBOX : livrer les courriers du joueur (le client les copie via User.setMailMessages). knownMailIDs =
+    // vide (le client re-signalera ce qu'il connaît via GetNewMailMessages en session).
+    if (mail != null && !mail.isEmpty()) {
+      bd.mailMessages = new java.util.ArrayList<>(mail);
+    }
     return bd;
   }
 
@@ -1051,6 +1091,54 @@ public final class ServerUser {
         System.out.println("[action] VIEW_BATTLE_PASS_SCORE → lastSeenProgress=" + seen + " (marqué vu, persisté)");
         return true;
       }
+      case "MARK_MAIL_OPENED": {
+        // Marquer un courrier comme LU (extra={ID}). État de la mailbox (hors userExtra) → persisté à part.
+        Object idO = m.extra == null ? null : m.extra.get(com.perblue.heroes.network.messages.ActionExtraType.ID);
+        if (idO == null) { System.out.println("[action] MARK_MAIL_OPENED: ID manquant"); return false; }
+        com.perblue.heroes.network.messages.MailMessage mm = findMail(Long.parseLong(idO.toString()));
+        if (mm == null) { System.out.println("[action] MARK_MAIL_OPENED: courrier introuvable " + idO); return false; }
+        mm.opened = true;
+        System.out.println("[action] MARK_MAIL_OPENED id=" + mm.iD + " → marqué lu");
+        return true;
+      }
+      case "TAKE_MAIL_ATTACHMENTS": {
+        // Réclamer les PIÈCES JOINTES (récompenses) d'un courrier (extra={ID}). Logique : on DONNE chaque
+        // RewardDrop via RewardHelper.giveReward (héros/diamants/objets → resync par applyAction ; gold/items
+        // this.extra auto), PUIS on VIDE les attachments (anti-re-claim RÉEL : un 2ᵉ TAKE ne redonne rien).
+        // Un courrier non persistant vidé sera supprimé par le client à la fermeture (shouldDeleteOnClose).
+        Object idO = m.extra == null ? null : m.extra.get(com.perblue.heroes.network.messages.ActionExtraType.ID);
+        if (idO == null) { System.out.println("[action] TAKE_MAIL_ATTACHMENTS: ID manquant"); return false; }
+        com.perblue.heroes.network.messages.MailMessage mm = findMail(Long.parseLong(idO.toString()));
+        if (mm == null) { System.out.println("[action] TAKE_MAIL_ATTACHMENTS: courrier introuvable " + idO); return false; }
+        java.util.List<?> att = mm.extra == null ? null : mm.extra.attachments;
+        if (att == null || att.isEmpty()) {
+          System.out.println("[action] TAKE_MAIL_ATTACHMENTS id=" + mm.iD + " → REFUSÉ (aucune pièce jointe / déjà prises)");
+          return false;
+        }
+        int given = 0;
+        for (Object o : att) {
+          com.perblue.heroes.game.logic.RewardHelper.giveReward(user,
+              (com.perblue.heroes.network.messages.RewardDrop) o,
+              com.perblue.heroes.game.logic.RewardSourceType.NORMAL, false, "mail", Long.toString(mm.iD));
+          given++;
+        }
+        mm.extra.attachments = new java.util.ArrayList<>();   // vidées → plus rien à reprendre
+        mm.opened = true;
+        System.out.println("[action] TAKE_MAIL_ATTACHMENTS id=" + mm.iD + " → " + given
+            + " pièce(s) jointe(s) créditée(s) (logique du jeu) + vidées");
+        return true;
+      }
+      case "DELETE_MAIL_MESSAGE": {
+        // Supprimer un courrier de la mailbox (extra={ID}).
+        Object idO = m.extra == null ? null : m.extra.get(com.perblue.heroes.network.messages.ActionExtraType.ID);
+        if (idO == null) { System.out.println("[action] DELETE_MAIL_MESSAGE: ID manquant"); return false; }
+        long id = Long.parseLong(idO.toString());
+        com.perblue.heroes.network.messages.MailMessage mm = findMail(id);
+        if (mm == null) { System.out.println("[action] DELETE_MAIL_MESSAGE: courrier introuvable " + id); return false; }
+        mail.remove(mm);
+        System.out.println("[action] DELETE_MAIL_MESSAGE id=" + id + " → supprimé (reste " + mail.size() + ")");
+        return true;
+      }
       case "RECORD_SERVER_ROLL_FINISHED":
         // NO-OP FIDÈLE (pas une rustine). Le code CLIENT du jeu ne mute AUCUN état pour cette
         // commande : ClientActionHelper.recordServerRollFinished ne fait que construire l'extra et
@@ -1143,6 +1231,59 @@ public final class ServerUser {
   /** Restaure l'état battle pass persisté (au chargement DB ; {@code null}/vide = compte neuf / pré-migration). */
   public synchronized void setBattlePassWire(byte[] bytes) {
     if (bytes != null && bytes.length > 0) battlePassV2Data = read(bytes);
+  }
+
+  /**
+   * Sérialise la MAILBOX (liste de {@link com.perblue.heroes.network.messages.MailMessage}) en un BLOB :
+   * {@code int count} puis, pour chaque courrier, {@code int len + octets wire} (chaque message porte son
+   * en-tête de nom → {@link #read} le reconstruit). {@code null} si la mailbox est vide.
+   */
+  public synchronized byte[] mailWire() {
+    if (mail == null || mail.isEmpty()) return null;
+    try {
+      java.io.ByteArrayOutputStream bos = new java.io.ByteArrayOutputStream();
+      java.io.DataOutputStream dos = new java.io.DataOutputStream(bos);
+      dos.writeInt(mail.size());
+      for (com.perblue.heroes.network.messages.MailMessage m : mail) {
+        byte[] b = wire(m);
+        dos.writeInt(b.length);
+        dos.write(b);
+      }
+      dos.flush();
+      return bos.toByteArray();
+    } catch (java.io.IOException e) { throw new RuntimeException("sérialisation mailbox", e); }
+  }
+
+  /** Restaure la mailbox persistée (au chargement DB ; {@code null}/vide = pas de courrier). */
+  public synchronized void setMailWire(byte[] bytes) {
+    mail = new java.util.ArrayList<>();
+    if (bytes == null || bytes.length == 0) return;
+    try {
+      java.io.DataInputStream dis = new java.io.DataInputStream(new java.io.ByteArrayInputStream(bytes));
+      int n = dis.readInt();
+      for (int i = 0; i < n; i++) {
+        int len = dis.readInt();
+        byte[] b = new byte[len];
+        dis.readFully(b);
+        mail.add(read(b));
+      }
+    } catch (java.io.IOException e) { throw new RuntimeException("désérialisation mailbox", e); }
+  }
+
+  /**
+   * Dépose un courrier dans la mailbox (API pour les courriers GÉNÉRÉS PAR LE SERVEUR — récompenses de mode,
+   * cadeaux de guilde, remboursements, messages admin… le joueur n'en compose jamais). Persisté au prochain save.
+   */
+  public synchronized void addMail(com.perblue.heroes.network.messages.MailMessage m) {
+    if (mail == null) mail = new java.util.ArrayList<>();
+    mail.add(m);
+  }
+
+  /** Courrier de la mailbox portant l'{@code id}, ou {@code null}. */
+  private com.perblue.heroes.network.messages.MailMessage findMail(long id) {
+    if (mail == null) return null;
+    for (com.perblue.heroes.network.messages.MailMessage m : mail) if (m.iD == id) return m;
+    return null;
   }
 
   /**
