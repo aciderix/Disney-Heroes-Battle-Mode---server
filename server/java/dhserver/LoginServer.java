@@ -213,6 +213,18 @@ public final class LoginServer {
                 System.out.println("[login]     ! persistance échouée: " + e); } }
               System.out.println("[login] <== ClaimWeeklyQuestReward"
                   + (applied ? " → récompense weekly créditée [persisté]" : " refusé (boîtes épuisées)"));
+            } else if (m instanceof com.perblue.heroes.network.messages.BattlePassV2GetData) {
+              // REQUÊTE d'état du battle pass — envoyée par QuestsScreen quand l'onglet BATTLE PASS est
+              // DÉVERROUILLÉ (TL≥11) & la saison ACTIVE (requestBattlePassV2Data). Sans réponse, le client ne
+              // pose jamais userBattlePassV2 → l'onglet reste inerte (listener non ajouté). On répond avec
+              // NOTRE BattlePassV2Data (refreshBattlePass : type QUEST, saison courante, premium, progress/claims
+              // persistés) → GameMain.lambda$setupPostClientInfoHandlers pose userBattlePassV2 = wrapper + active
+              // l'onglet. Gap trouvé EN JEU à TL65 (onglet grisé/inerte malgré déblocage).
+              com.perblue.heroes.network.messages.BattlePassV2Data d = user.refreshBattlePass();
+              d.setAsReplyTo(m);
+              c.send(d);
+              System.out.println("[login] <== BattlePassV2GetData → ==> BattlePassV2Data (type=" + d.type
+                  + " premium=" + d.premiumUnlocked + " progress=" + d.progress + ")");
             } else if (m instanceof Ping) {
               // Écho de latence/keepalive : le client mesure le RTT et surveille l'activité serveur.
               // Sans réponse, son chien de garde ferme la connexion (« Reconnecting… »).

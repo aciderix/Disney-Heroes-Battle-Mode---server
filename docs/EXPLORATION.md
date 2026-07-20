@@ -41,7 +41,7 @@ Ordre de traitement (modifiable). On commence par **BATTLE PASS**.
 
 | # | Écran | TL | Statut | Problèmes rencontrés / fixés · notes |
 |---|---|---|---|---|
-| 1 | **BATTLE PASS** (onglet QUESTS) | 11 | 🔧 | serveur déjà fait (claim/collect/buyout/rollover/premium) → **vérif EN JEU** |
+| 1 | **BATTLE PASS** (onglet QUESTS) | 11 | ⚠️ | **serveur complet** (claim/collect/buyout/rollover/premium + handler `BattlePassV2GetData`) MAIS **onglet inerte EN JEU** (voir note ↓) |
 | 2 | RANKINGS (arena league) | 10 | ⬜ | |
 | 3 | FIGHT_PIT (arène PvP) | 10 | ⬜ | |
 | 4 | ELITE_CAMPAIGN | 11 | ⬜ | |
@@ -73,3 +73,19 @@ Ordre de traitement (modifiable). On commence par **BATTLE PASS**.
 _(rempli au fur et à mesure)_
 
 - **2026-07-20** — Compte passé à TL65 (`SetTeamLevel`). Début de l'exploration par le **battle pass**.
+- **2026-07-20 — BATTLE PASS ⚠️ (bloqué EN JEU par l'ÈRE DE CONTENU, pas par le serveur).** À TL65 l'onglet
+  `PASS_BUTTON` (QUESTS) est **présent mais inerte** (`listeners=[]`, tap sans effet). **Cause établie par les
+  faits** : `QuestsScreen` n'active l'onglet & n'appelle `requestBattlePassV2Data()` que si
+  `Unlockables.isUnlocked(BATTLE_PASS)` **ET** `!BattlePassV2Helper.battlePassHidden()`. Or `battlePassHidden()`
+  = `now ≥ getBattlePassHiddenTime()` = **constante STATIQUE** `HIDE_BATTLE_PASS_AFTER` des stats
+  (`battle_pass_v2_constants.tab` = **2026-04-30**, déjà passée à notre date 2026-07) — elle **ignore** le
+  `battlePassV2Data.endTime` qu'on envoie dans BootData. Le client se base sur SES stats embarquées
+  (`BootData.statDataTxt/Bin` **non peuplé par le serveur** → le client garde ses stats de l'APK). Donc le
+  client croit la saison **terminée** → onglet grisé + **aucun `BattlePassV2GetData` envoyé**. **Mon override
+  de saison (roulante mensuelle) est côté SERVEUR seulement** → n'atteint pas le client. **Fait côté serveur** :
+  handler `BattlePassV2GetData` ajouté (`LoginServer` → répond `BattlePassV2Data`) — correct, il activera
+  l'onglet dès que le client verra une saison active. **CE QUI RESTE (tâche « ère de contenu »)** : faire voir
+  au client une saison active — soit **peupler `BootData.statDataTxt` avec un `battle_pass_v2_constants` à
+  saison courante** (mécanisme stat-sync du jeu, override opérateur ; propre), soit l'alignement global de
+  l'ère de contenu. C'est un chantier à part (transverse), pas un simple handler. **⇒ battle pass serveur =
+  OK & testé ; affichage EN JEU reporté à la résolution de l'ère de contenu.** On continue avec les autres écrans.
