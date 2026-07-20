@@ -846,6 +846,25 @@ public final class ServerUser {
         System.out.println("[action] USE_ITEM " + useType + " ×" + cnt + " mode=" + gm + " → consommé (logique du jeu)");
         return true;
       }
+      case "UPDATE_TIME": {
+        // Setter de TEMPS générique (extra={TYPE=<TimeType>, TIME=<epoch-ms>}). Envoyé par de NOMBREUX écrans
+        // pour marquer « vu à l'instant t » et éteindre leur pastille « ! » : LAST_EVENT_VIEW_TIME (écran
+        // EVENTS, trouvé en jeu), LAST_CHESTS_VIEW_TIME, LAST_CONTEST_VIEW_TIME, LAST_MERCHANT_VIEW_TIME,
+        // LAST_PRIZE_WALL_VIEW_TIME… Logique du jeu : IUser.setTime(type, t) écrit dans this.extra.times
+        // (PARTAGÉ avec userExtra → AUTO-PERSISTÉ). Générique → couvre tous ces badges d'un coup.
+        Object tyO = m.extra == null ? null : m.extra.get(com.perblue.heroes.network.messages.ActionExtraType.TYPE);
+        Object tO  = m.extra == null ? null : m.extra.get(com.perblue.heroes.network.messages.ActionExtraType.TIME);
+        if (tyO == null || tO == null) { System.out.println("[action] UPDATE_TIME: TYPE/TIME manquant"); return false; }
+        try {
+          com.perblue.heroes.network.messages.TimeType tt =
+              com.perblue.heroes.network.messages.TimeType.valueOf(tyO.toString());
+          user.setTime(tt, Long.parseLong(tO.toString()));
+          System.out.println("[action] UPDATE_TIME " + tt + "=" + tO + " → marqué (pastille éteinte, persisté)");
+          return true;
+        } catch (Throwable t) {
+          System.out.println("[action] UPDATE_TIME: TYPE inconnu " + tyO + " : " + t); return false;
+        }
+      }
       case "VIEWED_CONSUMABLE_ITEM": {
         // Marquer un consommable comme VU (efface la pastille « nouveau »). setViewedConsumableItem écrit dans
         // this.extra (individualUserExtra) → auto-persisté (patron VIEW_DAILY_QUESTS).
