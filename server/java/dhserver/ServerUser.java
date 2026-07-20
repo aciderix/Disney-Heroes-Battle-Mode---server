@@ -315,6 +315,7 @@ public final class ServerUser {
     // Re-synchronise les champs hors this.extra vers le wire (persistance complète).
     resyncHeroes(user);
     resyncDiamonds(user);   // coffre payant → débit diamants (hors this.extra)
+    resyncCounts(user);     // compteurs/drapeaux UserFlag (hors this.extra)
     individualUserExtra.chestUpgradeXP = iu.getChestUpgradeXP();
     return lr;
   }
@@ -507,6 +508,7 @@ public final class ServerUser {
 
     resyncHeroes(user);   // héros (XP/état) → wire ; stamina/or sont dans this.extra (auto).
     resyncDiamonds(user); // diamants (champ dédié hors this.extra)
+    resyncCounts(user);   // compteurs/drapeaux UserFlag (hors this.extra)
     resyncCampaign(iu);   // progression campagne (statuts de niveau) → wire (hors this.extra, comme les héros).
     applyLootMemory(m);   // mémoire de loot (pitié) → individualUserExtra.lootMemory (auto-persistée).
     // Niveau d'équipe : User.teamLevel est un CHAMP de User (hors this.extra) — getUser le lit depuis
@@ -708,7 +710,7 @@ public final class ServerUser {
       System.out.println("[action] " + m.command + " échec : " + t);
       return false;
     }
-    if (applied) { resyncHeroes(user); resyncDiamonds(user); }
+    if (applied) { resyncHeroes(user); resyncDiamonds(user); resyncCounts(user); }
     return applied;
   }
 
@@ -886,6 +888,20 @@ public final class ServerUser {
         System.out.println("[action] VIEW_DAILY_QUESTS → " + marked + " quête(s) quotidienne(s) marquée(s) vue(s)");
         return true;
       }
+      case "REDEEM_DAILY_QUESTS": {
+        // Réclamation des récompenses WEEKLY (barre « Rewards 0/5 » de l'écran QUESTS, « Come back Monday »).
+        // Logique d'origine EXACTE : QuestHelper.redeemWeeklyRewards(user, checkDay=true). Elle vérifie
+        // (anti-triche RÉEL) : LUNDI (getUserDailyActivityDayOfWeek==2 → sinon WEEKLY_QUEST_WRONG_DAY) + pas
+        // déjà réclamé (dailyUses "claim_weekly_quest_rewards"==0 ET LAST_REDEEMED+2j ≤ now → sinon
+        // WEEKLY_QUEST_ALREADY_CLAIMED). Puis convertit le nb de quêtes quotidiennes faites cette semaine
+        // (WEEKLY_DAILY_QUESTS_COMPLETE = le « X/105 ») en N boîtes-récompense (getWeeklyQuestRewardsForQuestsCompleted)
+        // → WEEKLY_QUEST_REWARDS += N, reset le compteur, incDailyUses, setTime. Tout en UserFlag/times
+        // (this.extra → AUTO-PERSISTÉ). Les boîtes se réclament ensuite via le flux d'ouverture (claimWeeklyReward,
+        // roll de weekly_quest_rewards.tab). L'exception (mauvais jour / déjà réclamé) remonte → applyAction refuse.
+        com.perblue.heroes.game.logic.QuestHelper.redeemWeeklyRewards(user, true);
+        System.out.println("[action] REDEEM_DAILY_QUESTS → récompenses weekly converties en boîtes (logique du jeu)");
+        return true;
+      }
       case "RECORD_SERVER_ROLL_FINISHED":
         // NO-OP FIDÈLE (pas une rustine). Le code CLIENT du jeu ne mute AUCUN état pour cette
         // commande : ClientActionHelper.recordServerRollFinished ne fait que construire l'extra et
@@ -912,6 +928,34 @@ public final class ServerUser {
    */
   private void resyncDiamonds(User user) {
     userInfo.diamonds = user.getResource(com.perblue.heroes.network.messages.ResourceType.DIAMONDS);
+  }
+
+  /**
+   * Re-sync des <b>compteurs et drapeaux</b> ({@code UserFlag}) vers le wire. Comme les diamants/héros, l'objet
+   * de jeu {@code User} <b>COPIE</b> ces états depuis {@code userExtra} au chargement (relevé au bytecode :
+   * {@code User.setCounts}/{@code setFlags} vident puis re-remplissent des maps internes, en convertissant les
+   * clés String↔enum {@code UserFlag}) → les mutations (ex. {@code setCount(WEEKLY_DAILY_QUESTS_COMPLETE)} de
+   * {@code completeQuest}, {@code redeemWeeklyRewards}, monthly cards, etc.) restent <b>en mémoire</b> et sont
+   * perdues au round-trip wire sans re-sync. On lit les maps privées {@code User.counts} (clés {@code UserFlag}
+   * → Integer) et {@code User.flags} ({@code EnumSet<UserFlag>}) par réflexion et on les ré-écrit dans
+   * {@code userExtra.counts}/{@code flags} (clés String = {@code name()}). (Les <b>times</b> {@code TimeType}
+   * sont, eux, partagés avec {@code this.extra.times} → déjà persistés, cf. VIEWED_CHESTS.)
+   */
+  @SuppressWarnings("unchecked")
+  private void resyncCounts(User user) {
+    try {
+      java.lang.reflect.Field cf = User.class.getDeclaredField("counts");
+      cf.setAccessible(true);
+      java.util.Map<Object, Integer> uc = (java.util.Map<Object, Integer>) cf.get(user);
+      userExtra.counts.clear();
+      for (java.util.Map.Entry<Object, Integer> e : uc.entrySet())
+        userExtra.counts.put(((Enum<?>) e.getKey()).name(), e.getValue());
+      java.lang.reflect.Field ff = User.class.getDeclaredField("flags");
+      ff.setAccessible(true);
+      java.util.Set<Object> fl = (java.util.Set<Object>) ff.get(user);
+      userExtra.flags.clear();
+      for (Object flag : fl) userExtra.flags.put(((Enum<?>) flag).name(), Boolean.TRUE);
+    } catch (Throwable t) { System.out.println("[resync] counts/flags: " + t); }
   }
 
   /** Re-sync des héros (état hors {@code this.extra}) vers le wire — persistance complète. */
