@@ -28,7 +28,7 @@ import java.lang.reflect.Field;
 public final class ServerContext {
 
   private static GameMain app;              // GameMain headless (DH.app)
-  private static Field userField, individualField, guildInfoField;
+  private static Field userField, individualField, guildInfoField, battlePassField;
 
   private ServerContext() {}
 
@@ -90,6 +90,15 @@ public final class ServerContext {
       userField = field(GameMain.class, "user");
       individualField = field(GameMain.class, "individualUser");
       guildInfoField = field(GameMain.class, "guildInfo");
+      // BATTLE PASS V2 : le vrai client pose DH.app.userBattlePassV2 = new BattlePassV2DataWrapper(data) à la
+      // réception du BootData/d'un push BattlePassV2Data (GameMain.lambda$setupPostClientInfoHandlers). Côté
+      // serveur on fait pareil (bindBattlePass) → getUserBattlePassV2() répond au lieu de NPE. Crucial : la
+      // PROGRESSION du battle pass EST une ressource du jeu (ResourceType.QUEST_POINTS) — IndividualUser.
+      // setResource(QUEST_POINTS) route vers getUserBattlePassV2().setProgress, et getResource(QUEST_POINTS)
+      // lit getProgress (prouvé au bytecode). Donc en liant le wrapper sur NOTRE BattlePassV2Data persisté,
+      // la progression s'accumule TOUTE SEULE via le code du jeu quand une quête donne des QUEST_POINTS
+      // (zéro glue — PRINCIPLES §3), et les claims/progress écrivent directement dans le message persisté.
+      battlePassField = field(GameMain.class, "userBattlePassV2");
       // Couche évènements spéciaux — comme GameMain.create() :
       // SpecialEventsHelper.init(new ClientEventUserProvider(), extension). L'extension CLIENTE touche
       // libGDX (« Gdx.app not available » headless) → on fournit l'équivalent SERVEUR (ServerSpecialEventsExt).
@@ -165,6 +174,21 @@ public final class ServerContext {
       // contest actif (getActiveContestsWithTask renvoie une liste vide au lieu de NPE).
       SpecialEventsHelper.setSpecialEvents(new SpecialEventsRaw(), user, user.getShardID());
     } catch (Throwable t) { throw new RuntimeException("échec bind DH.app", t); }
+  }
+
+  /**
+   * Lie l'état battle pass du joueur courant au shim {@code DH.app.getUserBattlePassV2()} — comme le vrai
+   * client à la réception d'un {@code BattlePassV2Data}. On enveloppe le message PERSISTÉ dans un
+   * {@link com.perblue.heroes.game.data.battlepass.BattlePassV2DataWrapper} (writes-through : progress/claims
+   * mutent directement le message → persistés). {@code null} ⇒ pas de battle pass lié (chemins hors BP).
+   */
+  public static synchronized void bindBattlePass(
+      com.perblue.heroes.network.messages.BattlePassV2Data data) {
+    init();
+    try {
+      battlePassField.set(app, data == null ? null
+          : new com.perblue.heroes.game.data.battlepass.BattlePassV2DataWrapper(data));
+    } catch (Throwable t) { throw new RuntimeException("échec bind battle pass DH.app", t); }
   }
 
   private static Field field(Class<?> c, String name) throws NoSuchFieldException {

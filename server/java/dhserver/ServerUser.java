@@ -55,6 +55,12 @@ public final class ServerUser {
   private final UserInfo userInfo;
   private final UserExtra userExtra;
   private final IndividualUserExtra individualUserExtra;
+  // BATTLE PASS V2 : état PERSISTÉ (progress + paliers réclamés claimedFree/PremiumRewards + boughtBattlePass).
+  // Vit dans le message BattlePassV2Data (HORS userExtra/individualUserExtra) → persisté à part (colonne BLOB).
+  // On garde la PROGRESSION/les claims à travers les boots ; seule la SAISON (start/end/type/premium) est
+  // rafraîchie à chaque bootData (elle est temporelle : saison roulante mensuelle, cf. ServerContext). Nullable
+  // → créé paresseusement (compte neuf ou DB pré-migration).
+  private com.perblue.heroes.network.messages.BattlePassV2Data battlePassV2Data;
 
   // Graines RNG que le client annonce (Action SET_SEED) avant chaque combat, pour que le serveur puisse
   // REPRODUIRE/valider le tirage (combat COMBAT, loot LOOT ; cf. SERVER_PLAN §Partiels C→E). État de SESSION
@@ -162,20 +168,7 @@ public final class ServerUser {
     // neuf (la progression s'accumule via les quêtes ; non persistée pour l'instant — champ hors userExtra).
     // NB `BattlePassType` n'a que {DEFAULT, QUEST} → ce n'est PAS un décalage d'ère, juste un état non initialisé.
     ServerContext.init();
-    com.perblue.heroes.network.messages.BattlePassV2Data bp =
-        new com.perblue.heroes.network.messages.BattlePassV2Data();
-    bp.type = com.perblue.heroes.network.messages.BattlePassType.QUEST;
-    bp.userID = userID;
-    // PREMIUM POUR TOUS (serveurs d'achats fermés, aucun achat réel) : boughtBattlePass>0 → getPremiumUnlocked()
-    // vrai côté client → le track premium est débloqué sans achat. Choix d'OPÉRATEUR (le serveur ré-hébergé
-    // décide de son économie ; PRINCIPLES §3). Progression = 0 pour un compte neuf (s'accumule via les quêtes).
-    bp.boughtBattlePass = 1;
-    try {
-      // Saison ANCRÉE AU MOIS COURANT (constantes overridées dans ServerContext → BP toujours actif, roulant).
-      bp.startTime = com.perblue.heroes.game.data.battlepass.BattlePassV2Stats.getSeasonStartTime();
-      bp.endTime = com.perblue.heroes.game.data.battlepass.BattlePassV2Stats.getBattlePassHiddenTime();
-    } catch (Throwable t) { System.out.println("[boot] battlePass saison indispo: " + t); }
-    bd.battlePassV2Data = bp;
+    bd.battlePassV2Data = refreshBattlePass();
     return bd;
   }
 
@@ -709,6 +702,11 @@ public final class ServerUser {
     IndividualUser iu = ClientNetworkStateConverter.getIndividualUser(
         individualUserExtra, userID, userInfo.diamonds, "action");
     ServerContext.bind(user, iu);
+    // Battle pass : lier le wrapper sur NOTRE BattlePassV2Data persisté (créé si besoin) → getUserBattlePassV2()
+    // répond, la progression (ResourceType.QUEST_POINTS) s'accumule via le code du jeu, et claims/progress
+    // mutent le message persisté (cf. ServerContext.bindBattlePass). Fait pour TOUTE action (pas seulement les
+    // commandes BP) : une quête qui donne des QUEST_POINTS doit trouver le wrapper (sinon NPE).
+    ServerContext.bindBattlePass(refreshBattlePass());
     boolean applied;
     try {
       applied = applyCommand(m, user);
@@ -908,6 +906,93 @@ public final class ServerUser {
         System.out.println("[action] REDEEM_DAILY_QUESTS → récompenses weekly converties en boîtes (logique du jeu)");
         return true;
       }
+      case "BATTLE_PASS_V2_CLAIM_REWARD": {
+        // Réclamer la récompense d'UN palier du battle pass. extra = {TYPE, INDEX=palier, MODE=premium?}
+        // (relevé au bytecode : ClientActionHelper.claimBattlePassRewards). Logique d'origine EXACTE :
+        // BattlePassV2Helper.claimReward(user, bp, tier, isPremium, false). Elle vérifie (anti-triche RÉEL,
+        // claimableReward) : progress ≥ points du palier (BATTLE_PASS_MISSING_POINTS), premium débloqué si
+        // demandé (BATTLE_PASS_MISSING_PREMIUM), palier pas déjà réclamé (BATTLE_PASS_TIER_ALREADY_CLAIMED) →
+        // lève ClientErrorCodeException si illégitime (remonte → applyAction refuse). Sinon RewardHelper
+        // .giveRewards (héros/diamants/objets → resync par applyAction ; or → this.extra auto) + bp
+        // .addClaimedFree/PremiumRewards (marque le palier réclamé DANS notre BattlePassV2Data persisté via le
+        // wrapper writes-through). NB progress = ResourceType.QUEST_POINTS, accumulé par les quêtes.
+        com.perblue.heroes.game.objects.IBattlePassV2Data bp = com.perblue.heroes.DH.app.getUserBattlePassV2();
+        if (bp == null) { System.out.println("[action] BATTLE_PASS_V2_CLAIM_REWARD: battle pass non lié"); return false; }
+        Object tierO = m.extra == null ? null : m.extra.get(com.perblue.heroes.network.messages.ActionExtraType.INDEX);
+        Object premO = m.extra == null ? null : m.extra.get(com.perblue.heroes.network.messages.ActionExtraType.MODE);
+        if (tierO == null) { System.out.println("[action] BATTLE_PASS_V2_CLAIM_REWARD: INDEX (palier) manquant"); return false; }
+        int tier = Integer.parseInt(tierO.toString());
+        boolean premium = premO != null && Boolean.parseBoolean(premO.toString());
+        // GARDE AUTORITATIVE anti-double-claim, avec la SÉMANTIQUE DU JEU (pas une règle inventée) :
+        // isFreeTierClaimed/isPremiumTierClaimed est LE prédicat « palier réclamé » du jeu (celui que l'UI
+        // utilise pour griser un palier déjà pris). Le client empêche le re-claim en cachant le bouton ; mais
+        // la garde INTERNE de claimReward (claimableReward) teste `rewardTierClaimed = list.isEmpty()`, donc ne
+        // rebloque PAS un palier à récompense NON vide → double-claim possible si on ne l'exécute qu'elle. Un
+        // serveur AUTORITATIF doit refuser ce que le client empêche : on refuse via le prédicat OFFICIEL du jeu.
+        boolean already = premium
+            ? com.perblue.heroes.game.logic.BattlePassV2Helper.isPremiumTierClaimed(user, bp, tier)
+            : com.perblue.heroes.game.logic.BattlePassV2Helper.isFreeTierClaimed(user, bp, tier);
+        if (already) {
+          System.out.println("[action] BATTLE_PASS_V2_CLAIM_REWARD palier=" + tier + " premium=" + premium
+              + " → REFUSÉ (déjà réclamé — anti-triche, prédicat isFreeTierClaimed/isPremiumTierClaimed du jeu)");
+          return false;
+        }
+        com.perblue.heroes.game.logic.BattlePassV2Helper.claimReward(user, bp, tier, premium, false);
+        System.out.println("[action] BATTLE_PASS_V2_CLAIM_REWARD palier=" + tier + " premium=" + premium
+            + " → récompense créditée + palier réclamé (logique du jeu, anti-triche progress≥points)");
+        return true;
+      }
+      case "BATTLE_PASS_V2_COLLECT_UNCLAIMED_REWARDS": {
+        // Réclamer les récompenses NON réclamées d'une saison TERMINÉE. extra = {TYPE} (bytecode :
+        // ClientActionHelper.collectEndedSeasonRewards). Logique d'origine : BattlePassV2Helper
+        // .collectEndedSeasonRewards(user, bp) → giveRewards(previousUnclaimedFree/Premium) + clear. Ces
+        // listes ne sont peuplées qu'au changement de saison côté serveur PerBlue (report des paliers non pris) ;
+        // sur notre saison roulante elles restent vides sauf rollover → don idempotent (rien à donner = no-op).
+        com.perblue.heroes.game.objects.IBattlePassV2Data bp = com.perblue.heroes.DH.app.getUserBattlePassV2();
+        if (bp == null) { System.out.println("[action] BATTLE_PASS_V2_COLLECT_UNCLAIMED_REWARDS: battle pass non lié"); return false; }
+        com.perblue.heroes.game.logic.BattlePassV2Helper.collectEndedSeasonRewards(user, bp);
+        System.out.println("[action] BATTLE_PASS_V2_COLLECT_UNCLAIMED_REWARDS → récompenses de saison précédente données (logique du jeu)");
+        return true;
+      }
+      case "BATTLE_PASS_V2_BUYOUT": {
+        // Achat des paliers restants (« buyout ») en DIAMANTS. extra = {ID, TYPE} — le palier courant n'est
+        // PAS transmis (bytecode : ClientActionHelper.doBattlePassBuyout) → le SERVEUR le DÉRIVE de la
+        // progression : getTierByPoints(progress, startTime) (même dérivation que getBuyoutRewards du jeu).
+        // Logique d'origine : BattlePassV2Helper.doBattlePassBuyout(user, bp, tierCourant) → collecte les
+        // paliers déjà atteints, DÉBITE getBuyoutCost en DIAMONDS (UserHelper.chargeUser → resync par
+        // applyAction), pose progress = points max, réclame tous les paliers restants. buyoutAvailable faux →
+        // NO_BATTLE_PASS_BUYOUT (remonte → refus). Diamants insuffisants → chargeUser lève (refus).
+        com.perblue.heroes.game.objects.IBattlePassV2Data bp = com.perblue.heroes.DH.app.getUserBattlePassV2();
+        if (bp == null) { System.out.println("[action] BATTLE_PASS_V2_BUYOUT: battle pass non lié"); return false; }
+        int currentTier = com.perblue.heroes.game.logic.BattlePassV2Helper.getTierByPoints(bp.getProgress(), bp.getStartTime());
+        com.perblue.heroes.game.logic.BattlePassV2Helper.doBattlePassBuyout(user, bp, currentTier);
+        System.out.println("[action] BATTLE_PASS_V2_BUYOUT palierCourant=" + currentTier
+            + " → paliers restants achetés (diamants débités, récompenses créditées — logique du jeu)");
+        return true;
+      }
+      case "UPDATE_BATTLE_PASS": {
+        // Notification client→serveur (aucun extra, fire-and-forget ; bytecode : BattlePassTab
+        // .handleUnclaimedRewardsFromPreviousBattlePass appelle updateBattlePass() quand une NOUVELLE saison a
+        // démarré sans récompense en attente). Côté serveur : refreshBattlePass() (exécuté au bind de chaque
+        // action) gère DÉJÀ le rollover de saison (reset progress + claims quand startTime change) → on ACQUITTE.
+        // La progression (QUEST_POINTS) est déjà autoritative et persistée. (Un push live de BattlePassV2Data
+        // pour rafraîchir l'affichage client est reporté — feature verrouillée TL11, non testable en jeu ici.)
+        System.out.println("[action] UPDATE_BATTLE_PASS → acquitté (saison rafraîchie au bind ; progress persisté)");
+        return true;
+      }
+      case "VIEW_BATTLE_PASS_SCORE": {
+        // Le joueur a REGARDÉ son score battle pass → marquer le score vu (efface l'indicateur « nouveaux
+        // points »). extra = {COUNT=score vu} = getResource(QUEST_POINTS) = la progression (bytecode :
+        // BattlePassTab l.246). Logique fidèle : bp.setLastSeenProgress(count) (écrit dans notre message
+        // persisté via le wrapper). Repli sur la progression courante si COUNT absent.
+        com.perblue.heroes.game.objects.IBattlePassV2Data bp = com.perblue.heroes.DH.app.getUserBattlePassV2();
+        if (bp == null) { System.out.println("[action] VIEW_BATTLE_PASS_SCORE: battle pass non lié"); return false; }
+        Object cntO = m.extra == null ? null : m.extra.get(com.perblue.heroes.network.messages.ActionExtraType.COUNT);
+        int seen = cntO != null ? (int) Long.parseLong(cntO.toString()) : bp.getProgress();
+        bp.setLastSeenProgress(seen);
+        System.out.println("[action] VIEW_BATTLE_PASS_SCORE → lastSeenProgress=" + seen + " (marqué vu, persisté)");
+        return true;
+      }
       case "RECORD_SERVER_ROLL_FINISHED":
         // NO-OP FIDÈLE (pas une rustine). Le code CLIENT du jeu ne mute AUCUN état pour cette
         // commande : ClientActionHelper.recordServerRollFinished ne fait que construire l'extra et
@@ -993,6 +1078,48 @@ public final class ServerUser {
   public synchronized byte[] userInfoWire()   { return wire(userInfo); }
   public synchronized byte[] userExtraWire()  { return wire(userExtra); }
   public synchronized byte[] individualWire() { return wire(individualUserExtra); }
+  /** État battle pass persisté (progress + paliers réclamés), ou {@code null} si non initialisé. */
+  public synchronized byte[] battlePassWire() {
+    return battlePassV2Data == null ? null : wire(battlePassV2Data);
+  }
+  /** Restaure l'état battle pass persisté (au chargement DB ; {@code null}/vide = compte neuf / pré-migration). */
+  public synchronized void setBattlePassWire(byte[] bytes) {
+    if (bytes != null && bytes.length > 0) battlePassV2Data = read(bytes);
+  }
+
+  /**
+   * Renvoie le {@link com.perblue.heroes.network.messages.BattlePassV2Data} PERSISTÉ (progress + paliers
+   * réclamés conservés à travers les boots), en RAFRAÎCHISSANT la partie temporelle : type QUEST (seul
+   * implémenté par le 12.1.0), <b>premium pour tous</b> ({@code boughtBattlePass=1}), et la SAISON courante
+   * ({@code startTime}/{@code endTime} = fenêtre du mois, ancrée dans {@code ServerContext}). Créé
+   * paresseusement (compte neuf / DB pré-migration). NB : quand la saison CHANGE de mois, la progression du mois
+   * précédent devrait être remise à 0 — géré ici en comparant {@code startTime} (si la saison a bougé → reset
+   * progress + claims, comme le jeu à un changement de saison).
+   */
+  public synchronized com.perblue.heroes.network.messages.BattlePassV2Data refreshBattlePass() {
+    ServerContext.init();
+    long seasonStart, seasonEnd;
+    try {
+      seasonStart = com.perblue.heroes.game.data.battlepass.BattlePassV2Stats.getSeasonStartTime();
+      seasonEnd   = com.perblue.heroes.game.data.battlepass.BattlePassV2Stats.getBattlePassHiddenTime();
+    } catch (Throwable t) { seasonStart = 0; seasonEnd = 0; }
+    if (battlePassV2Data == null) {
+      battlePassV2Data = new com.perblue.heroes.network.messages.BattlePassV2Data();
+    }
+    com.perblue.heroes.network.messages.BattlePassV2Data bp = battlePassV2Data;
+    // NOUVELLE SAISON (le mois a changé) → reset de la progression et des paliers réclamés (comme le jeu).
+    if (bp.startTime != 0 && bp.startTime != seasonStart) {
+      bp.progress = 0; bp.lastSeenProgress = 0;
+      if (bp.claimedFreeRewards != null) bp.claimedFreeRewards.clear();
+      if (bp.claimedPremiumRewards != null) bp.claimedPremiumRewards.clear();
+    }
+    bp.type = com.perblue.heroes.network.messages.BattlePassType.QUEST;
+    bp.userID = userID;
+    bp.boughtBattlePass = 1;                       // premium pour tous (serveurs d'achats fermés)
+    bp.startTime = seasonStart;
+    bp.endTime = seasonEnd;
+    return bp;
+  }
 
   private static byte[] wire(GruntMessage m) {
     GruntOutputStream out = new GruntOutputStream();

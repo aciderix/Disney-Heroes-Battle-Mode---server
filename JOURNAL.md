@@ -1,5 +1,53 @@
 # JOURNAL — journal détaillé des modifications
 
+## 2026-07-20 (g10) — Battle pass : handlers de réclamation + progression AUTO via QUEST_POINTS + persistance
+
+Suite de « finir battle pass ». Établi PAR LES FAITS (bytecode) que la progression du battle pass EST la
+ressource `ResourceType.QUEST_POINTS` : `IndividualUser.setResource(QUEST_POINTS)` route vers
+`DH.app.getUserBattlePassV2().setProgress`, `getResource(QUEST_POINTS)` lit `getProgress` (décodé via le
+switch-map synthétique `IndividualUser$1` : `QUEST_POINTS.ordinal()` → case 4). Conséquence : en liant le
+shim `DH.app.getUserBattlePassV2()` à un `BattlePassV2DataWrapper` sur NOTRE `BattlePassV2Data` persisté, la
+progression s'accumule via le CODE DU JEU (une quête qui donne des QUEST_POINTS → setResource → setProgress),
+zéro glue (PRINCIPLES §3). Le wrapper est writes-through (`this.data.progress = n`, `claimedFreeRewards.put`)
+→ claims/progress mutent le message persisté.
+
+**Wiring** (`ServerContext`) : champ `battlePassField = GameMain.userBattlePassV2` + `bindBattlePass(data)`
+pose le wrapper (comme le vrai client `GameMain.lambda$setupPostClientInfoHandlers` à la réception d'un push
+`BattlePassV2Data`). Appelé dans `ServerUser.applyAction` pour TOUTE action (sinon NPE quand une quête donne
+QUEST_POINTS).
+
+**5 handlers** (`ServerUser.applyCommand`, extras relevés au bytecode `ClientActionHelper`) :
+- `BATTLE_PASS_V2_CLAIM_REWARD` `{TYPE, INDEX=palier, MODE=premium}` → `BattlePassV2Helper.claimReward(user,
+  bp, tier, premium, false)`. Anti-triche RÉEL du jeu : `claimableReward` refuse `BATTLE_PASS_MISSING_POINTS`
+  (progress < points du palier) et `BATTLE_PASS_MISSING_PREMIUM`. **+ GARDE AUTORITATIVE anti-double-claim**
+  ajoutée AVANT via le prédicat OFFICIEL du jeu `isFreeTierClaimed/isPremiumTierClaimed` (`entry != null &&
+  !isEmpty`). Raison (fait) : la garde INTERNE de `claimReward` (`claimableReward`) teste
+  `rewardTierClaimed(list) = list.isEmpty()` ET `addClaimedFreeRewards` APPEND les récompenses → un palier à
+  récompense NON vide n'est jamais « déjà réclamé » côté garde interne ; c'est le CLIENT (UI) qui grise le
+  bouton via `isFreeTierClaimed`. Un serveur autoritatif doit refuser ce que le client empêche → on réutilise
+  la sémantique du jeu (pas une règle inventée, §2).
+- `BATTLE_PASS_V2_COLLECT_UNCLAIMED_REWARDS` `{TYPE}` → `collectEndedSeasonRewards` (récompenses de saison
+  précédente non prises ; vides hors rollover → idempotent).
+- `BATTLE_PASS_V2_BUYOUT` `{ID, TYPE}` — le palier courant N'EST PAS transmis → DÉRIVÉ serveur
+  `getTierByPoints(progress, start)` (même dérivation que `getBuyoutRewards`) → `doBattlePassBuyout` (débit
+  DIAMONDS `getBuyoutCost`, collecte + réclame les paliers restants).
+- `UPDATE_BATTLE_PASS` (aucun extra, fire-and-forget) → acquitté (le rollover de saison est déjà géré par
+  `refreshBattlePass()` au bind : reset progress+claims quand `startTime` change).
+- `VIEW_BATTLE_PASS_SCORE` `{COUNT = getResource(QUEST_POINTS)}` → `setLastSeenProgress` (marque le score vu).
+
+**Persistance** (`ServerUser` + `UserStore`) : champ `battlePassV2Data` (mutable, hors userExtra) +
+`refreshBattlePass()` (lazy-create, reset au changement de saison, type QUEST + premium + saison courante) +
+`battlePassWire()`/`setBattlePassWire()` + colonne BLOB `battlePassV2Data` (ALTER migration `columnExists`,
+load/save). Un objet du jeu = une colonne BLOB (§6).
+
+**Vérifié** `server/smoke/BattlePassClaimTest` : palier RÉEL choisi = 2 (9 points, récompense non vide) ;
+(1) claim à progress 0 → REFUSÉ (points manquants) ; (2) don QUEST_POINTS=9 → `getProgress`=9 &
+`getResource(QUEST_POINTS)`=9 (accumulation via le code du jeu) ; (3) claim → appliqué + `isFreeTierClaimed`
+true ; (4) re-claim → REFUSÉ (déjà réclamé) ; (5) reload wire → palier toujours réclamé + progress=9.
+**Régression 23/23 verte.** ⚠️ Écran verrouillé TL11 (`unlockables.tab BATTLE_PASS=11`) → vérif EN JEU
+reportée à TL≥11 (documenté par les faits, non supposé). Fichiers :
+`server/java/dhserver/{ServerContext,ServerUser,UserStore}.java`, `server/smoke/BattlePassClaimTest.java`.
+
 ## 2026-07-19 (g5) — Prise de contrôle manuelle : 3 écrans confirmés EN JEU (CHOOSE NAME, SIGN IN claim, HERO_FILTERS)
 
 Depuis le save compte-neuf (au hub, autotap OFF + clickfile ON), pilotage manuel via `dh.clickfile` (tap par
