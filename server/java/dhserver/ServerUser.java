@@ -726,6 +726,42 @@ public final class ServerUser {
     return pendingSeeds.get(type);
   }
 
+  /**
+   * Ouverture d'une BOÎTE-RÉCOMPENSE HEBDOMADAIRE (écran QUESTS, après {@code REDEEM_DAILY_QUESTS} qui convertit
+   * la progression en N boîtes). Message top-level {@code ClaimWeeklyQuestReward} (fire-and-forget, comme
+   * {@code CampaignAttack}) : le client a ROULÉ les options ({@code rewardDrops}, graine
+   * {@code WEEKLY_QUEST_REWARD}), le joueur en a CHOISI une ({@code rewardChosen}) + un bonus stamina
+   * ({@code staminaReward}). Le serveur AUTORITATIF ré-exécute la logique d'origine {@code QuestHelper
+   * .claimWeeklyReward(user, rewardChosen, staminaReward)} :
+   * <ul>
+   *   <li><b>anti-triche RÉEL</b> : {@code getWeeklyRewardsRemaining>0} sinon {@code ClientErrorCodeException}
+   *       → on ne peut ouvrir QUE le nombre de boîtes GAGNÉES (décrémente {@code WEEKLY_QUEST_REWARDS}) ;</li>
+   *   <li>donne la stamina bonus + la récompense, décrémente le compteur, rend la graine RNG.</li>
+   * </ul>
+   * PARTIEL (documenté, cf. SHIMS) : le CHOIX ({@code rewardChosen}) est celui du client — la re-validation du
+   * tirage contre la graine {@code WEEKLY_QUEST_REWARD} (roll autoritatif de {@code weekly_quest_rewards.tab})
+   * relève des Partiels D/E (comme l'issue de combat, client-autoritative). L'anti-triche du NOMBRE de boîtes
+   * est, lui, RÉEL. Renvoie {@code true} si appliqué (à persister par l'appelant).
+   */
+  public synchronized boolean claimWeeklyReward(com.perblue.heroes.network.messages.ClaimWeeklyQuestReward m) {
+    ServerContext.init();
+    User user = ClientNetworkStateConverter.getUser(userInfo, userExtra, "weekly-box");
+    IndividualUser iu = ClientNetworkStateConverter.getIndividualUser(
+        individualUserExtra, userID, userInfo.diamonds, "weekly-box");
+    ServerContext.bind(user, iu);
+    ServerContext.bindBattlePass(refreshBattlePass());       // au cas où la récompense touche QUEST_POINTS
+    try {
+      com.perblue.heroes.game.logic.QuestHelper.claimWeeklyReward(user, m.rewardChosen, m.staminaReward);
+    } catch (Throwable t) {
+      System.out.println("[weekly-box] claimWeeklyReward refusé/échec (boîtes épuisées ?) : " + t);
+      return false;
+    }
+    resyncHeroes(user); resyncDiamonds(user); resyncCounts(user);
+    System.out.println("[weekly-box] boîte weekly ouverte → récompense « " + m.rewardChosen
+        + " » + " + m.staminaReward + " stamina créditées (logique du jeu ; boîtes restantes décrémentées)");
+    return true;
+  }
+
   /** Aiguille une commande vers la logique cœur du jeu. Le nom est comparé en String (l'enum du jeu
    *  a des annotations dex2jar qui gênent un switch). Étendu au fur et à mesure des commandes du jeu. */
   private boolean applyCommand(Action m, User user) {

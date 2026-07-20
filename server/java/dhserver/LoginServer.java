@@ -183,6 +183,17 @@ public final class LoginServer {
                 System.out.println("[login]     ! persistance échouée: " + e); } }
               System.out.println("[login]     SetPlayerName '" + spn.name + "'"
                   + (applied ? " appliqué [persisté]" : " refusé"));
+            } else if (m instanceof com.perblue.heroes.network.messages.ClaimWeeklyQuestReward) {
+              // Ouverture d'une BOÎTE-RÉCOMPENSE HEBDOMADAIRE (écran QUESTS). Fire-and-forget (le client a
+              // appliqué QuestHelper.claimWeeklyReward de son côté). Le serveur AUTORITATIF ré-exécute la même
+              // logique (anti-triche RÉEL sur le NOMBRE de boîtes restantes) et PERSISTE. Cf. ServerUser.
+              com.perblue.heroes.network.messages.ClaimWeeklyQuestReward cw =
+                  (com.perblue.heroes.network.messages.ClaimWeeklyQuestReward) m;
+              boolean applied = user.claimWeeklyReward(cw);
+              if (applied) { try { store.save(user); } catch (Exception e) {
+                System.out.println("[login]     ! persistance échouée: " + e); } }
+              System.out.println("[login] <== ClaimWeeklyQuestReward"
+                  + (applied ? " → récompense weekly créditée [persisté]" : " refusé (boîtes épuisées)"));
             } else if (m instanceof Ping) {
               // Écho de latence/keepalive : le client mesure le RTT et surveille l'activité serveur.
               // Sans réponse, son chien de garde ferme la connexion (« Reconnecting… »).
