@@ -24,10 +24,15 @@ public final class DbInspect {
       long staminaRaw = u.getResource(ResourceType.STAMINA);
       long staminaCap = UserHelper.getResourceCap(ResourceType.STAMINA, u);
       System.out.println("=== ÉTAT PERSISTÉ (" + db + ") ===");
+      // NB stamina : on affiche la valeur RÉELLE du jeu (getResource, = ce que voit le client) ET le cap de
+      // régénération. La stamina PEUT dépasser le cap (les récompenses — ex. quête « stamina boost » = +796 M
+      // en contenu R102 — s'ajoutent au-delà ; seule la RÉGÉNÉRATION s'arrête au cap). Le serveur ne « force »
+      // donc PAS 120 : getResource renvoie la valeur stockée réelle, identique au client. (Historiquement cette
+      // ligne affichait min(raw,cap) → « 120/120 » trompeur, laissant croire à un capping serveur inexistant.)
       System.out.println("RESSOURCES : teamLevel=" + u.getTeamLevel()
           + "  gold=" + u.getResource(ResourceType.GOLD)
           + "  diamants=" + bd.userInfo.diamonds
-          + "  stamina=" + Math.min(staminaRaw, staminaCap) + "/" + staminaCap);
+          + "  stamina=" + staminaRaw + " (cap régén " + staminaCap + ")");
 
       System.out.println("HÉROS :");
       int nHeroes = 0;
