@@ -255,6 +255,14 @@ public final class DesktopLauncher {
                     TutorialDriver.navTo(game, com.perblue.heroes.ui.UINavHelper.Destination.QUESTS);
                     continue;
                 }
+                if (low.startsWith("nav ")) {                    // nav <DESTINATION> — ouvrir un écran du hub (API du jeu)
+                    String dest = ln.substring(4).trim().toUpperCase();
+                    try {
+                        TutorialDriver.navTo(game,
+                            com.perblue.heroes.ui.UINavHelper.Destination.valueOf(dest));
+                    } catch (Throwable t) { System.out.println("[nav] destination inconnue: " + dest + " (" + t + ")"); }
+                    continue;
+                }
                 if (low.equals("dumpscreen") || low.equals("dumpq")) {  // dumper les acteurs actionnables de l'écran
                     TutorialDriver.dumpScreen(game);
                     continue;
