@@ -41,7 +41,7 @@ Ordre de traitement (modifiable). On commence par **BATTLE PASS**.
 
 | # | Écran | TL | Statut | Problèmes rencontrés / fixés · notes |
 |---|---|---|---|---|
-| 1 | **BATTLE PASS** (onglet QUESTS) | 11 | ⚠️ | **serveur complet** (claim/collect/buyout/rollover/premium + handler `BattlePassV2GetData`) MAIS **onglet inerte EN JEU** (voir note ↓) |
+| 1 | **BATTLE PASS** (onglet QUESTS) | 11 | ✅ | **serveur complet** (claim/collect/buyout/rollover/premium + handler `BattlePassV2GetData`) + **ère de contenu résolue** (stat-sync `BootData.statDataTxt`) → **onglet ACTIF EN JEU**, saison courante, PREMIUM « Activated », paliers réclamables (voir note ↓) |
 | 2 | RANKINGS (arena league) | 10 | ⬜ | |
 | 3 | FIGHT_PIT (arène PvP) | 10 | ⬜ | |
 | 4 | ELITE_CAMPAIGN | 11 | ⬜ | |
@@ -105,3 +105,21 @@ _(rempli au fur et à mesure)_
   saison courante** (mécanisme stat-sync du jeu, override opérateur ; propre), soit l'alignement global de
   l'ère de contenu. C'est un chantier à part (transverse), pas un simple handler. **⇒ battle pass serveur =
   OK & testé ; affichage EN JEU reporté à la résolution de l'ère de contenu.** On continue avec les autres écrans.
+
+- **2026-07-20 — BATTLE PASS ✅ RÉSOLU EN JEU (ère de contenu via STAT-SYNC).** Approche (A) retenue et
+  implémentée : `ServerUser.bootData` peuple `BootData.statDataTxt["battle_pass_v2_constants.tab"]` avec un
+  fichier à **saison courante**. **Mécanisme du jeu (prouvé au bytecode)** : au boot le client applique
+  `statDataTxt` via `SyncStatDataClientHelper.updateStats` → `GeneralStats.updateStats(map)` →
+  `parseStats(nom, contenu)` pour chaque `parsedFiles` présent (clé = `battle_pass_v2_constants.tab`, « .tab »
+  inclus). `BattlePassV2Stats.getStatClasses()` est enregistré dans `GENERAL_STAT_FILE_CLASSES` → `CONSTANT_STATS`
+  est re-parsé. On **réutilise le vrai fichier** (game-data/stats) et on ne remplace QUE les 2 lignes datées
+  (`SEASON_START_TIME`/`HIDE_BATTLE_PASS_AFTER`, **mêmes bornes que l'ancre serveur** — juillet→août 2026 à notre
+  date). Le `TIME` converter (`StatUtil`) parse le format ISO d'origine → on formate en `yyyy-MM-dd'T'HH:mm:ss.SSSXXX`.
+  **VÉRIFIÉ EN JEU (TL65, `nav QUESTS`)** : client log `Updated …DHConstantStats from text battle_pass_v2_constants.tab`
+  (override appliqué) → **onglet `PASS_BUTTON` désormais `touch=enabled`** (avant : inerte `listeners=[]`) → client
+  envoie **`BattlePassV2GetData`** → serveur répond **`BattlePassV2Data(type=QUEST, premium=true, progress=0)`** →
+  l'écran BATTLE PASS **rend** : « SEASON 1 », countdown ~11 j (jusqu'au 1er août), **PREMIUM « Activated »**,
+  paliers R102 avec pistes gratuite + premium et boutons **Collect** (stamina/or/diamants/chips/coffres). Régression
+  **21/21 verte** + `server/smoke/StatSyncProbe` (le client applique l'override → `battlePassHidden()`=false, saison
+  active). **⇒ BATTLE PASS entièrement fonctionnel client↔serveur↔affichage.** Fichiers : `server/java/dhserver/ServerUser.java`,
+  `server/smoke/StatSyncProbe.java`. **Portée** : ce même levier stat-sync pourra fiabiliser d'autres contenus datés.
