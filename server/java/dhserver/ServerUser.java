@@ -810,6 +810,53 @@ public final class ServerUser {
   private boolean applyCommand(Action m, User user) {
     String cmd = m.command == null ? "" : m.command.name();
     switch (cmd) {
+      case "SELL_ITEM": {
+        // Écran ITEMS (inventaire) : VENDRE un objet contre de l'or. Le client envoie SELL_ITEM{itemType,
+        // COUNT} (ClientActionHelper.sellItem, fire-and-forget). Logique d'origine EXACTE UserHelper.sellItem :
+        // or gagné = VEND_VALUE (ItemStats) × count ; anti-triche RÉEL (objet non vendable → CANT_SELL_ITEM ;
+        // pas assez d'exemplaires → CANT_SELL_ITEM ; dépassement d'or → SELL_ITEM_GOLD_OVERFLOW). retire les
+        // objets (individualUserExtra.items, auto-persisté) + donne l'or (this.extra, auto-persisté).
+        com.perblue.heroes.network.messages.ItemType sellType = m.itemType;
+        if (sellType == null || sellType == com.perblue.heroes.network.messages.ItemType.DEFAULT) {
+          System.out.println("[action] SELL_ITEM: objet manquant"); return false;
+        }
+        Object cntO = m.extra == null ? null : m.extra.get(com.perblue.heroes.network.messages.ActionExtraType.COUNT);
+        int cnt = cntO == null ? 1 : Integer.parseInt(cntO.toString());
+        com.perblue.heroes.game.logic.UserHelper.sellItem(sellType, cnt, user);
+        System.out.println("[action] SELL_ITEM " + sellType + " ×" + cnt + " → vendu contre or (logique du jeu)");
+        return true;
+      }
+      case "USE_ITEM": {
+        // Utiliser un CONSOMMABLE de l'inventaire. Le client envoie USE_ITEM{itemType, COUNT, MODE=gameMode}
+        // (ClientActionHelper.useItem). Logique d'origine EXACTE ItemHelper.useItem (applique l'effet du
+        // consommable + le décompte). SpecialEventSnapshot.NONE (pas de bonus évènement, comme recordOutcome).
+        com.perblue.heroes.network.messages.ItemType useType = m.itemType;
+        if (useType == null || useType == com.perblue.heroes.network.messages.ItemType.DEFAULT) {
+          System.out.println("[action] USE_ITEM: objet manquant"); return false;
+        }
+        Object cntO = m.extra == null ? null : m.extra.get(com.perblue.heroes.network.messages.ActionExtraType.COUNT);
+        int cnt = cntO == null ? 1 : Integer.parseInt(cntO.toString());
+        Object modeO = m.extra == null ? null : m.extra.get(com.perblue.heroes.network.messages.ActionExtraType.MODE);
+        com.perblue.heroes.network.messages.GameMode gm;
+        try { gm = modeO == null ? com.perblue.heroes.network.messages.GameMode.DEFAULT
+            : com.perblue.heroes.network.messages.GameMode.valueOf(modeO.toString()); }
+        catch (Throwable t) { gm = com.perblue.heroes.network.messages.GameMode.DEFAULT; }
+        com.perblue.heroes.game.logic.ItemHelper.useItem(user, user, useType, cnt, gm, false,
+            com.perblue.heroes.game.specialevent.SpecialEventSnapshot.NONE);
+        System.out.println("[action] USE_ITEM " + useType + " ×" + cnt + " mode=" + gm + " → consommé (logique du jeu)");
+        return true;
+      }
+      case "VIEWED_CONSUMABLE_ITEM": {
+        // Marquer un consommable comme VU (efface la pastille « nouveau »). setViewedConsumableItem écrit dans
+        // this.extra (individualUserExtra) → auto-persisté (patron VIEW_DAILY_QUESTS).
+        com.perblue.heroes.network.messages.ItemType vType = m.itemType;
+        if (vType == null || vType == com.perblue.heroes.network.messages.ItemType.DEFAULT) {
+          System.out.println("[action] VIEWED_CONSUMABLE_ITEM: objet manquant"); return false;
+        }
+        ((com.perblue.heroes.game.objects.IndividualUser) user.getIndividual()).setViewedConsumableItem(vType);
+        System.out.println("[action] VIEWED_CONSUMABLE_ITEM " + vType + " → marqué vu");
+        return true;
+      }
       case "EQUIP_ITEM": {
         // Équiper un objet d'équipement sur un héros — logique d'origine (HeroHelper.equipItem).
         // ⚠ SLOT = celui CHOISI PAR LE CLIENT (Action.extra[SLOT]) : le joueur a tapé un slot précis dans
