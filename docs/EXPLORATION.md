@@ -46,7 +46,7 @@ Ordre de traitement (modifiable). On commence par **BATTLE PASS**.
 | 3 | FIGHT_PIT (arène PvP) | 10 | ⬜ | |
 | 4 | ELITE_CAMPAIGN | 11 | ⬜ | |
 | 5 | ALCHEMY (achat d'or) | 12 | ⬜ | |
-| 6 | SKILL_UPGRADE (compétences héros) | 8 | 🟢 | **handler `UPGRADE_SKILL`** (`HeroHelper.upgradeSkill` : débit GOLD+SKILL_POINTS, `setSkillLevel`, anti-triche `NOT_ENOUGH_SKILL_POINTS`) + test `SkillUpgradeTest` (WHITE 1→2, débit, persiste, refus sans points) ; **en jeu à vérifier** |
+| 6 | SKILL_UPGRADE (compétences héros) | 8 | ✅ | **handler `UPGRADE_SKILL`** (`HeroHelper.upgradeSkill` : débit GOLD+SKILL_POINTS, `setSkillLevel`, anti-triche `NOT_ENOUGH_SKILL_POINTS`) + test `SkillUpgradeTest` + **VÉRIFIÉ EN JEU** (détail RALPH → SKILLS → WRECK IT [+] slider « +1 Levels » → serveur `UPGRADE_SKILL RALPH WHITE ×1` → **WRECK IT niv.1→2, SKILL_POINTS 500→499, Power +2, GOLD −100 persisté DB**) |
 | 7 | GUILDS | 15 | ⬜ | guilde, chest social, dons, mercenaires |
 | 8 | CHALLENGES | 20 | ⬜ | |
 | 9 | SAVED_LINEUPS | 20 | ⬜ | |
