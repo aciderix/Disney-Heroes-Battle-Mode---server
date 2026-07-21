@@ -144,3 +144,9 @@ _(rempli au fur et à mesure)_
   + persisté** ; il vaut 0 car le compte n'a pas encore fait de quête donnant des points BP. Le DÉNOMINATEUR = **9** =
   seuil du palier 2 (`battle_pass_v2_tiers.tab` : palier 1 POINTS=0, palier 2 POINTS=9), contenu R102 fourni au
   client via stat-sync. ⇒ le compteur bougera dès que le joueur complètera des quêtes créditant des QUEST_POINTS.
+  **PROUVÉ de bout en bout (serveur)** — `server/smoke/BattlePassPointsTest` (sur le compte RÉEL, `-Ddh.db`) : via
+  le **VRAI chemin de récompense du jeu** `RewardHelper.giveReward(RewardDrop(QUEST_POINTS,5))` →
+  `UserHelper.giveUser` → `setResource(QUEST_POINTS)` → `getUserBattlePassV2().setProgress` : **progress 0 → 5**,
+  `getResource(QUEST_POINTS)=5`, header **① 0/9 → 5/9** (numérateur `getPointsEarnedInTierSoFar(progress)`,
+  dénominateur `getMaxPointsInTier(tier)=9`), et **PERSISTE** (round-trip wire battle pass). Régression **22/22**.
+  ⇒ le compteur est **incrémenté, cohérent et persistant côté serveur** (pas seulement affiché).
