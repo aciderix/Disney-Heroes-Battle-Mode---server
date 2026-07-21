@@ -246,12 +246,21 @@ public final class LoginServer {
                   (com.perblue.heroes.network.messages.GetArenaInfo) m;
               com.perblue.heroes.network.messages.ArenaType at =
                   req.type == null ? com.perblue.heroes.network.messages.ArenaType.FIGHT_PIT : req.type;
-              com.perblue.heroes.network.messages.ArenaInfo ai = user.arenaInfo(at);
+              // #41 : CLASSEMENT PERSISTANT — on charge le ladder de (shard, type) ; absent → généré à la 1re
+              // ouverture ; on le PERSISTE (rangs/points/fights durables entre redémarrages, cohérent multi-serveur).
+              ServerArenaLadder loaded = null;
+              try { loaded = store.loadArenaLadder(user.shardID, at.name()); }
+              catch (Exception e) { System.out.println("[login]     ! lecture ladder échouée: " + e); }
+              ServerUser.ArenaResult ar = user.arenaInfoWithLadder(at, loaded);
+              try { store.saveArenaLadder(user.shardID, at.name(), ar.ladder); }
+              catch (Exception e) { System.out.println("[login]     ! persistance ladder échouée: " + e); }
+              com.perblue.heroes.network.messages.ArenaInfo ai = ar.info;
               ai.setAsReplyTo(m);
               c.send(ai);
               System.out.println("[login] <== GetArenaInfo(" + at + ") → ==> ArenaInfo (tier="
                   + ai.yourLeague.tier + " div=" + ai.yourLeague.division + " rank=" + ai.yourLeague.yourRank
-                  + " players=" + ai.yourLeague.players.size() + ")");
+                  + " players=" + ai.yourLeague.players.size() + ", ladder="
+                  + (loaded == null ? "GÉNÉRÉ" : "chargé") + " [persisté])");
             } else if (m instanceof Ping) {
               // Écho de latence/keepalive : le client mesure le RTT et surveille l'activité serveur.
               // Sans réponse, son chien de garde ferme la connexion (« Reconnecting… »).

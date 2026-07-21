@@ -23,7 +23,7 @@ TESTS=(
   MailboxTest ItemsTest SkillUpgradeTest AlchemyTest SetFlagTest UnlockHeroTest
   UpdateTimeTest SetNameTest TeamLevelPersistTest
   LootAuthoritativeTest LootEquipTest LootPersistTest SeedTest
-  ArenaInfoTest ArenaDefenseTest
+  ArenaInfoTest ArenaDefenseTest ArenaLadderTest
 )
 
 echo "[reg] compilation (serveur + ${#TESTS[@]} tests) ..."

@@ -1597,6 +1597,32 @@ public final class ServerUser {
     return ServerArena.buildArenaInfo(user, userInfo, type);
   }
 
+  /** Résultat d'un {@link #arenaInfoWithLadder} : l'{@code ArenaInfo} à renvoyer + le classement (à persister). */
+  public static final class ArenaResult {
+    public final com.perblue.heroes.network.messages.ArenaInfo info;
+    public final ServerArenaLadder ladder;
+    public ArenaResult(com.perblue.heroes.network.messages.ArenaInfo info, ServerArenaLadder ladder) {
+      this.info = info; this.ladder = ladder;
+    }
+  }
+
+  /**
+   * ARÈNE #41 — comme {@link #arenaInfo} mais à partir d'un CLASSEMENT PERSISTANT ({@link ServerArenaLadder}).
+   * {@code loaded} = classement chargé de la DB, ou {@code null} → on en GÉNÈRE un (première ouverture). Renvoie
+   * l'{@code ArenaInfo} + le classement (que l'appelant persiste : nouveau, ou raffraîchi).
+   */
+  public synchronized ArenaResult arenaInfoWithLadder(
+      com.perblue.heroes.network.messages.ArenaType type, ServerArenaLadder loaded) {
+    ServerContext.init();
+    User user = ClientNetworkStateConverter.getUser(userInfo, userExtra, "arena");
+    IndividualUser iu = ClientNetworkStateConverter.getIndividualUser(
+        individualUserExtra, userID, userInfo.diamonds, "arena");
+    ServerContext.bind(user, iu);
+    ServerArenaLadder ladder = (loaded != null) ? loaded : ServerArena.generateLadder(user, userInfo, type);
+    com.perblue.heroes.network.messages.ArenaInfo info = ServerArena.buildArenaInfo(user, userInfo, type, ladder);
+    return new ArenaResult(info, ladder);
+  }
+
   /**
    * Construit le contenu {@code battle_pass_v2_constants.tab} à <b>saison courante</b> à pousser au client via
    * {@code BootData.statDataTxt} (cf. bootData()). On <b>réutilise le vrai fichier du jeu</b> (game-data/stats,

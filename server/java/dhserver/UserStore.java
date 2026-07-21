@@ -38,6 +38,38 @@ public final class UserStore implements AutoCloseable {
       // Migration : colonne mail (BLOB nullable = liste de MailMessage sérialisée). NULL = mailbox vide.
       if (!columnExists(s, "users", "mail"))
         s.execute("ALTER TABLE users ADD COLUMN mail BLOB");
+      // ARÈNE #41 : classement (ladder) PERSISTANT par (shard, type). État opérateur partagé (pas de la donnée
+      // de jeu), une ligne par ligue → survit aux redémarrages + cohérent multi-serveur (PRINCIPLES §5).
+      s.execute("CREATE TABLE IF NOT EXISTS arena_ladder ("
+          + "shardID INTEGER NOT NULL, arenaType TEXT NOT NULL, ladder BLOB NOT NULL, "
+          + "updatedAt INTEGER NOT NULL, PRIMARY KEY (shardID, arenaType))");
+    }
+  }
+
+  /** ARÈNE #41 — charge le classement persisté de {@code (shard, type)}, ou {@code null} s'il n'existe pas encore. */
+  public synchronized ServerArenaLadder loadArenaLadder(int shardID, String arenaType) throws SQLException {
+    try (PreparedStatement ps = conn.prepareStatement(
+        "SELECT ladder FROM arena_ladder WHERE shardID=? AND arenaType=?")) {
+      ps.setInt(1, shardID);
+      ps.setString(2, arenaType);
+      try (ResultSet rs = ps.executeQuery()) {
+        if (rs.next()) return ServerArenaLadder.fromBytes(rs.getBytes(1));
+      }
+    }
+    return null;
+  }
+
+  /** ARÈNE #41 — écrit (upsert) le classement de {@code (shard, type)}. */
+  public synchronized void saveArenaLadder(int shardID, String arenaType, ServerArenaLadder ladder)
+      throws SQLException {
+    try (PreparedStatement ps = conn.prepareStatement(
+        "INSERT INTO arena_ladder (shardID, arenaType, ladder, updatedAt) VALUES (?,?,?,?) "
+        + "ON CONFLICT(shardID, arenaType) DO UPDATE SET ladder=excluded.ladder, updatedAt=excluded.updatedAt")) {
+      ps.setInt(1, shardID);
+      ps.setString(2, arenaType);
+      ps.setBytes(3, ladder.toBytes());
+      ps.setLong(4, System.currentTimeMillis());
+      ps.executeUpdate();
     }
   }
 

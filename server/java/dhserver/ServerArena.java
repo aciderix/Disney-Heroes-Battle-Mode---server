@@ -39,16 +39,122 @@ public final class ServerArena {
   };
 
 
-  /** Construit l'{@link ArenaInfo} du joueur pour un {@code type} d'arène (FIGHT_PIT/COLISEUM). */
-  public static ArenaInfo buildArenaInfo(User user, UserInfo userInfo, ArenaType type) {
-    long now = System.currentTimeMillis();
+  /** Chances de combat quotidiennes par ligue — <b>5</b> (relevé EN JEU « Fights Left 5/5 »). À terme = cap de la
+   *  {@code ResourceType} clé ({@code ArenaHelper.getKeyResource}) ; valeur observée pour l'instant. */
+  static final int MAX_FIGHTS = 5;
 
+  /**
+   * ARÈNE #41 — construit l'{@link ArenaInfo} depuis un CLASSEMENT PERSISTANT ({@link ServerArenaLadder}) : les
+   * rangs (ordre de la liste), points et fights viennent de l'état sauvegardé, pas d'une régénération. Les lineups
+   * des bots se régénèrent déterministiquement (graine = id du bot) ; ta row = ta défense RÉELLE + identité live.
+   */
+  public static ArenaInfo buildArenaInfo(User user, UserInfo userInfo, ArenaType type, ServerArenaLadder ladder) {
+    long now = System.currentTimeMillis();
     ArenaInfo info = new ArenaInfo();
     info.type = type;
     info.season = buildSeason(type, now);
-    info.yourLeague = buildLeague(user, userInfo, type, now);
-    info.topLeague = info.yourLeague;   // palier 1 : la ligue du haut = ta ligue (une seule ligue COPPER)
+    info.yourLeague = buildLeagueFromLadder(user, userInfo, type, ladder);
+    info.topLeague = info.yourLeague;   // une seule ligue COPPER (placement opérateur §3)
     return info;
+  }
+
+  /** Variante SANS état persistant (headless/tests) : génère un classement transitoire déterministe et bâtit. */
+  public static ArenaInfo buildArenaInfo(User user, UserInfo userInfo, ArenaType type) {
+    return buildArenaInfo(user, userInfo, type, generateLadder(user, userInfo, type));
+  }
+
+  /**
+   * ARÈNE #41 — GÉNÈRE un classement initial pour {@code (shard, type)} : {@link #SYNTHETIC_OPPONENTS} bots
+   * calibrés sur ton roster (rareté/niveau, ids stables {@code BOT_ID_BASE+i}) ordonnés par niveau décroissant,
+   * puis TOI en dernier (nouveau/provisoire). Points 0 et {@link #MAX_FIGHTS} chances pour tous au départ.
+   */
+  public static ServerArenaLadder generateLadder(User user, UserInfo userInfo, ArenaType type) {
+    ServerArenaLadder ladder = new ServerArenaLadder();
+    int userTL = userInfo.basicInfo != null ? userInfo.basicInfo.teamLevel : 1;
+    Rarity oppRarity = calibrateRarity(user);
+    int oppBaseLevel = calibrateLevel(user);
+    List<ServerArenaLadder.Entry> bots = new ArrayList<>();
+    for (int i = 0; i < SYNTHETIC_OPPONENTS; i++) {
+      ServerArenaLadder.Entry e = new ServerArenaLadder.Entry();
+      e.id = ServerArenaLadder.BOT_ID_BASE + i;
+      e.name = "Rival " + (i + 1);
+      e.teamLevel = userTL;
+      e.bot = true;
+      e.botRarityOrdinal = oppRarity.ordinal();
+      e.botLevel = Math.max(1, oppBaseLevel + (i - SYNTHETIC_OPPONENTS / 2));
+      e.remainingFightChances = MAX_FIGHTS;
+      bots.add(e);
+    }
+    bots.sort((a, b) -> Integer.compare(b.botLevel, a.botLevel));   // plus fort en haut (proxy = niveau)
+    ladder.entries().addAll(bots);
+    ServerArenaLadder.Entry me = new ServerArenaLadder.Entry();
+    me.id = userInfo.basicInfo != null ? userInfo.basicInfo.iD : 1L;
+    me.name = userInfo.basicInfo != null ? userInfo.basicInfo.name : "You";
+    me.teamLevel = userTL;
+    me.remainingFightChances = MAX_FIGHTS;
+    ladder.entries().add(me);                                       // toi en DERNIER (provisoire)
+    return ladder;
+  }
+
+  /** Bâtit la ligue à partir des entrées ORDONNÉES du classement (rang = index). */
+  private static ArenaLeagueInfo buildLeagueFromLadder(User user, UserInfo userInfo, ArenaType type,
+                                                       ServerArenaLadder ladder) {
+    ArenaLeagueInfo lg = new ArenaLeagueInfo();
+    lg.type = type;
+    lg.tier = ArenaTier.COPPER;
+    lg.division = 1;
+    lg.seasonal = false;
+    lg.singlePromotionPositions = 5;
+    lg.doublePromotionPositions = 0;
+    lg.players = new ArrayList<ArenaRow>();
+    int numTeams = defenseTeamCount(type);
+    int shardID = user.getShardID();
+    long myID = userInfo.basicInfo != null ? userInfo.basicInfo.iD : 1L;
+    for (ServerArenaLadder.Entry e : ladder.entries()) {
+      ArenaRow r;
+      if (!e.bot && e.id == myID) {
+        List<LineupSummary> yourTeams = playerLineups(user, type, numTeams);
+        List<HeroSummary> yourLineup = firstTeamSummaries(yourTeams);
+        long yourPower = totalPower(yourTeams);
+        r = row(userInfo.basicInfo, yourLineup, yourTeams, yourPower, /*isYou*/ e.points <= 0);
+      } else {
+        r = botRow(e, shardID, numTeams);
+      }
+      applyRowExtra(r, e);
+      lg.players.add(r);
+    }
+    int idx = ladder.indexOf(myID);
+    lg.yourRank = idx < 0 ? ladder.entries().size() : idx + 1;
+    return lg;
+  }
+
+  /** Une row d'adversaire (bot) reconstruite depuis son entrée de classement (lineups déterministes via son id). */
+  private static ArenaRow botRow(ServerArenaLadder.Entry e, int shardID, int numTeams) {
+    BasicUserInfo who = new BasicUserInfo();
+    who.iD = e.id;
+    who.name = e.name;
+    who.teamLevel = e.teamLevel;
+    who.creationTime = System.currentTimeMillis();
+    who.userLastActive = System.currentTimeMillis();
+    who.previousName = "";
+    Rarity rarity = rarityFromOrdinal(e.botRarityOrdinal);
+    return syntheticOpponent(rarity, e.botLevel, who, shardID, numTeams, new java.util.Random(e.id));
+  }
+
+  /** Reporte points/fights/bestScore de l'entrée persistée dans l'extra de la row (ce que le client affiche). */
+  private static void applyRowExtra(ArenaRow r, ServerArenaLadder.Entry e) {
+    ArenaRowExtra x = new ArenaRowExtra();
+    x.points = e.points;
+    x.pointsTiebreaker = e.pointsTiebreaker;
+    x.remainingFightChances = e.remainingFightChances;
+    x.bestScore = e.bestScore;
+    r.challengerExtra = x;
+  }
+
+  private static Rarity rarityFromOrdinal(int ord) {
+    Rarity[] vals = Rarity.values();
+    if (ord < 0 || ord >= vals.length) return Rarity.WHITE;
+    return vals[ord];
   }
 
   /** Saison courante, calculée fidèlement via {@link ArenaHelper} + {@code arena_constants.tab}. */
@@ -69,53 +175,6 @@ public final class ServerArena {
     return s;
   }
 
-  /** Ta ligue COPPER division 1 : ta row + des adversaires. */
-  private static ArenaLeagueInfo buildLeague(User user, UserInfo userInfo, ArenaType type, long now) {
-    ArenaLeagueInfo lg = new ArenaLeagueInfo();
-    lg.type = type;
-    lg.tier = ArenaTier.COPPER;                           // placement initial (opérateur §3)
-    lg.division = 1;
-    lg.seasonal = false;
-    lg.singlePromotionPositions = 5;                      // PROMOTION_POSITIONS (arena_constants.tab)
-    lg.doublePromotionPositions = 0;
-    lg.players = new ArrayList<ArenaRow>();
-
-    // Nombre d'ÉQUIPES de défense par row selon le mode (source du jeu, PRINCIPLES §4) : COLISEUM = 3 lignes
-    // (COLISEUM_DEFENSE_1/2/3, cf. ArenaHelper.COLISEUM_DEFENSE_LINEUPS) ; FIGHT_PIT = 1. Le rendu COLISEUM
-    // (PVPRow.createColiUnitTable) indexe ArenaRow.lineups → il DOIT être non vide (sinon get(-1) plante).
-    int numTeams = defenseTeamCount(type);
-
-    // TA row (identité réelle + tes équipes de défense, dérivées de ton roster tant que la défense d'arène
-    // n'est pas persistée — tâche #41).
-    List<LineupSummary> yourTeams = playerLineups(user, type, numTeams);
-    List<HeroSummary> yourLineup = firstTeamSummaries(yourTeams);
-    long yourPower = totalPower(yourTeams);
-    ArenaRow you = row(userInfo.basicInfo, yourLineup, yourTeams, yourPower, /*isYou*/ true);
-
-    // ADVERSAIRES : en PROD PvP = pool des autres joueurs du shard dans cette ligue (défenses persistées, tâche
-    // #41) ; ici (solo) on COMPLÈTE en SYNTHÉTIQUE — équipes générées via la logique du jeu (createAndAddHero →
-    // getHeroSummary), variées (pool curé) et calibrées par tier. Graine dérivée de ton ID → stable entre refresh.
-    List<ArenaRow> opponents = new ArrayList<>();
-    long seed = (userInfo.basicInfo != null ? userInfo.basicInfo.iD : 1L) * 2654435761L
-        + lg.tier.ordinal() * 1009L + lg.division;
-    java.util.Random rng = new java.util.Random(seed);
-    // CALIBRAGE : adversaires comparables à TON roster (rareté représentative + niveau médian) → matchs équitables
-    // en solo (un nouveau joueur affronte des équipes de son niveau, pas des monstres). En prod multi-joueurs, ce
-    // rôle revient au pool réel (joueurs de rang voisin).
-    Rarity oppRarity = calibrateRarity(user);
-    int oppBaseLevel = calibrateLevel(user);
-    int shardID = user.getShardID();                                        // bots dans TON shard (contenu déjà chargé)
-    for (int i = 0; i < SYNTHETIC_OPPONENTS; i++) {
-      int lvl = Math.max(1, oppBaseLevel + (i - SYNTHETIC_OPPONENTS / 2));   // légère échelle autour de ton niveau
-      opponents.add(syntheticOpponent(oppRarity, lvl, syntheticOpponentInfo(userInfo, i), shardID, numTeams, rng));
-    }
-    // Classement : adversaires par PUISSANCE décroissante (rang 1 = plus fort), toi en DERNIER (provisoire).
-    opponents.sort((x, y) -> Long.compare(y.heroPower, x.heroPower));
-    lg.players.addAll(opponents);
-    lg.players.add(you);
-    lg.yourRank = lg.players.size();
-    return lg;
-  }
 
   private static ArenaRow row(BasicUserInfo who, List<HeroSummary> lineup, List<LineupSummary> lineups,
                              long power, boolean isYou) {
@@ -326,17 +385,6 @@ public final class ServerArena {
     return Math.max(1, levels.get(levels.size() / 2));
   }
 
-  /** Identité SYNTHÉTIQUE d'un adversaire (nom/ID « bot » hors IDs joueurs réels). */
-  private static BasicUserInfo syntheticOpponentInfo(UserInfo self, int i) {
-    BasicUserInfo b = new BasicUserInfo();
-    b.iD = 900000L + i;                                   // IDs réservés « bots » (hors IDs joueurs réels)
-    b.name = "Rival " + (i + 1);
-    b.teamLevel = self.basicInfo != null ? self.basicInfo.teamLevel : 1;
-    b.creationTime = System.currentTimeMillis();
-    b.userLastActive = System.currentTimeMillis();
-    b.previousName = "";
-    return b;
-  }
 
   private static long safeSeasonStart(ArenaType type, long now) {
     try { return ArenaHelper.getCurrentSeasonStartTime(type, now); }
