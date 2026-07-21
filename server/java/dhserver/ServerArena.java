@@ -87,7 +87,7 @@ public final class ServerArena {
 
     // TA row (identité réelle + tes équipes de défense, dérivées de ton roster tant que la défense d'arène
     // n'est pas persistée — tâche #41).
-    List<LineupSummary> yourTeams = playerLineups(user, numTeams);
+    List<LineupSummary> yourTeams = playerLineups(user, type, numTeams);
     List<HeroSummary> yourLineup = firstTeamSummaries(yourTeams);
     long yourPower = totalPower(yourTeams);
     ArenaRow you = row(userInfo.basicInfo, yourLineup, yourTeams, yourPower, /*isYou*/ true);
@@ -179,10 +179,45 @@ public final class ServerArena {
     return out;
   }
 
-  /** Équipes de défense du joueur : son roster découpé en {@code numTeams} équipes de 5 (héros dans l'ordre du
-   *  roster). Placeholder tant que la défense d'arène n'est pas persistée (#41) — les héros/puissances viennent
-   *  du jeu (getHeroSummary/getPower/HP_MAX). Vide seulement si le joueur n'a aucun héros. */
-  private static List<LineupSummary> playerLineups(User user, int numTeams) {
+  /** Types de lineup de DÉFENSE pour le mode (modèle du jeu, PRINCIPLES §4) : COLISEUM = 3 lignes, FIGHT_PIT = 1. */
+  private static HeroLineupType[] defenseLineupTypes(ArenaType type) {
+    if (type == ArenaType.COLISEUM)
+      return new HeroLineupType[]{HeroLineupType.COLISEUM_DEFENSE_1,
+          HeroLineupType.COLISEUM_DEFENSE_2, HeroLineupType.COLISEUM_DEFENSE_3};
+    return new HeroLineupType[]{HeroLineupType.FIGHT_PIT_DEFENSE};
+  }
+
+  /** Une équipe de défense RÉELLE posée par le joueur (persistée via {@code HeroLineupUpdate}, #41), ou null si
+   *  non posée/vide. Les héros viennent du roster du joueur (getHero → getHeroSummary/HP_MAX). */
+  private static LineupSummary readDefenseTeam(User user, HeroLineupType dt) {
+    try {
+      HeroLineup hl = user.getHeroLineup(dt, 0L);
+      if (hl == null || hl.heroes == null || hl.heroes.isEmpty()) return null;
+      List<ExtendedHeroSummary> team = new ArrayList<>(); long power = 0;
+      for (Object o : hl.heroes) {
+        UnitData ud = (UnitData) user.getHero((UnitType) o);
+        if (ud == null) continue;                          // héros posé mais plus au roster → ignoré
+        team.add(extended(ud, ClientNetworkStateConverter.getHeroSummary(ud)));
+        try { power += Math.max(0L, ud.getPower(0)); } catch (Throwable t) {}
+      }
+      return team.isEmpty() ? null : lineupSummary(team, power);
+    } catch (Throwable t) { return null; }
+  }
+
+  /** Équipes de défense du joueur : d'abord la DÉFENSE RÉELLE qu'il a posée (persistée, modèle du jeu) ; à défaut,
+   *  son roster découpé en {@code numTeams} équipes (placeholder tant qu'aucune défense n'est posée). */
+  private static List<LineupSummary> playerLineups(User user, ArenaType type, int numTeams) {
+    List<LineupSummary> teams = new ArrayList<>();
+    for (HeroLineupType dt : defenseLineupTypes(type)) {
+      LineupSummary ls = readDefenseTeam(user, dt);
+      if (ls != null) teams.add(ls);
+    }
+    if (!teams.isEmpty()) return teams;                    // défense RÉELLE posée → on l'utilise
+    return playerLineupsFromRoster(user, numTeams);        // sinon placeholder roster
+  }
+
+  /** Placeholder : roster du joueur découpé en {@code numTeams} équipes de 5 (héros dans l'ordre du roster). */
+  private static List<LineupSummary> playerLineupsFromRoster(User user, int numTeams) {
     List<ExtendedHeroSummary> all = new ArrayList<>();
     List<Long> powers = new ArrayList<>();
     try {

@@ -834,6 +834,66 @@ public final class ServerUser {
     return true;
   }
 
+  /**
+   * ARÈNE #41 — enregistre une <b>lineup d'arène</b> (défense/attaque) que le client SAUVEGARDE via
+   * {@code HeroLineupUpdate{type, iD, lineup, …}}. On appelle la logique du jeu {@code User.setHeroLineup}
+   * (stocke dans les lineups du User) puis on <b>re-synchronise</b> vers {@code userExtra.heroLineups}
+   * (colonne persistée) → la défense d'arène SURVIT aux redémarrages (PRINCIPLES §6). Le modèle d'état est
+   * <b>celui du jeu</b> ({@code HeroLineupType} COLISEUM_DEFENSE_1/2/3, FIGHT_PIT_DEFENSE…), pas un schéma inventé.
+   */
+  public synchronized boolean applyHeroLineupUpdate(
+      com.perblue.heroes.network.messages.HeroLineupUpdate u) {
+    ServerContext.init();
+    User user = ClientNetworkStateConverter.getUser(userInfo, userExtra, "lineup");
+    IndividualUser iu = ClientNetworkStateConverter.getIndividualUser(
+        individualUserExtra, userID, userInfo.diamonds, "lineup");
+    ServerContext.bind(user, iu);
+    try {
+      // Signature du jeu : setHeroLineup(type, iD, lineup, expiration, customName, emeraldStatSlots, realGearOptions).
+      user.setHeroLineup(u.type, u.iD, u.lineup, 0L, u.customName,
+          u.emeraldStatSlotChoices, u.realGearOptions);
+    } catch (Throwable t) {
+      System.out.println("[lineup] setHeroLineup refusé/échec : " + t);
+      return false;
+    }
+    resyncLineups(user);
+    int n = (u.lineup != null && u.lineup.heroes != null) ? u.lineup.heroes.size() : 0;
+    System.out.println("[lineup] " + u.type + " (" + n + " héros) enregistrée [persistée]");
+    return true;
+  }
+
+  /**
+   * Re-synchronise les lineups du {@link User} vers {@code userExtra.heroLineups} (persistance complète, §6).
+   * On reconstruit la liste de {@link com.perblue.heroes.network.messages.UserHeroLineupData} depuis toutes les
+   * {@code HeroLineupType} dont la lineup est NON VIDE (le getter renvoie un défaut vide pour les types non posés).
+   */
+  private void resyncLineups(User user) {
+    java.util.List<com.perblue.heroes.network.messages.UserHeroLineupData> out = new java.util.ArrayList<>();
+    for (com.perblue.heroes.network.messages.HeroLineupType t
+        : com.perblue.heroes.network.messages.HeroLineupType.values()) {
+      if (t == com.perblue.heroes.network.messages.HeroLineupType.DEFAULT) continue;
+      try {
+        com.perblue.heroes.network.messages.UserHeroLineupData d = user.getHeroLineupData(t);
+        // Détection d'un type POSÉ = lineup NON VIDE (le getter renvoie {@code lineupType=DEFAULT} même pour un
+        // type posé → on ne filtre PAS sur lineupType ; on FORCE le type demandé dans la copie persistée pour que
+        // {@code getUser} le recharge correctement clé par type).
+        if (d != null && d.lineup != null && d.lineup.heroes != null && !d.lineup.heroes.isEmpty()) {
+          com.perblue.heroes.network.messages.UserHeroLineupData c =
+              new com.perblue.heroes.network.messages.UserHeroLineupData();
+          c.lineupType = t;
+          c.iD = d.iD;
+          c.expiration = d.expiration;
+          c.lineup = d.lineup;
+          c.customName = d.customName;
+          c.realGearOptions = d.realGearOptions;
+          c.emeraldStatSlotChoices = d.emeraldStatSlotChoices;
+          out.add(c);
+        }
+      } catch (Throwable ignore) { /* type non stocké → ignoré */ }
+    }
+    userExtra.heroLineups = out;
+  }
+
   /** Aiguille une commande vers la logique cœur du jeu. Le nom est comparé en String (l'enum du jeu
    *  a des annotations dex2jar qui gênent un switch). Étendu au fur et à mesure des commandes du jeu. */
   private boolean applyCommand(Action m, User user) {

@@ -225,6 +225,18 @@ public final class LoginServer {
               c.send(d);
               System.out.println("[login] <== BattlePassV2GetData → ==> BattlePassV2Data (type=" + d.type
                   + " premium=" + d.premiumUnlocked + " progress=" + d.progress + ")");
+            } else if (m instanceof com.perblue.heroes.network.messages.HeroLineupUpdate) {
+              // SAUVEGARDE d'une LINEUP (arène #41 : défense/attaque COLISEUM_DEFENSE_1/2/3, FIGHT_PIT_DEFENSE,
+              // mais aussi équipes de campagne, etc.). Fire-and-forget (le client a déjà mis à jour son état local) :
+              // le serveur AUTORITATIF ré-applique setHeroLineup et PERSISTE (userExtra.heroLineups) → la défense
+              // d'arène survit aux redémarrages. Modèle d'état = celui du jeu (HeroLineupType), pas inventé.
+              com.perblue.heroes.network.messages.HeroLineupUpdate hlu =
+                  (com.perblue.heroes.network.messages.HeroLineupUpdate) m;
+              boolean applied = user.applyHeroLineupUpdate(hlu);
+              if (applied) { try { store.save(user); } catch (Exception e) {
+                System.out.println("[login]     ! persistance échouée: " + e); } }
+              System.out.println("[login] <== HeroLineupUpdate(" + hlu.type + ")"
+                  + (applied ? " → lineup enregistrée [persistée]" : " refusée"));
             } else if (m instanceof com.perblue.heroes.network.messages.GetArenaInfo) {
               // OUVERTURE DE L'ARÈNE (FIGHT_PIT/COLISEUM) — le client (ArenaLeagueScreen) envoie GetArenaInfo{type}
               // et attend un ArenaInfo pour rendre l'écran (sinon « LOADING… » infini — trouvé EN JEU). Le builder
