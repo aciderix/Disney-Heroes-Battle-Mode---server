@@ -111,6 +111,12 @@ une explication plausible non vérifiée (« probablement time-gated », « ça 
   (en suivant les règles de travail) — y compris les **cas et onglets adjacents** exercés par le même chemin —
   **avant** de déclarer « OK ». Corriger le rendu d'un écran sans tester **tous** ses sous-écrans/actions =
   vérification incomplète.
+- **LA VÉRIFICATION EN JEU EST OBLIGATOIRE (règle utilisateur, 2026-07-21).** Un handler prouvé « headless »
+  (tests + bytecode) n'est **PAS** terminé : il faut TOUJOURS le **confirmer EN JEU** (client réel → serveur →
+  persistance → affichage). Elle n'est **optionnelle QUE si l'utilisateur le dit EXPLICITEMENT** — jamais de la
+  propre initiative de l'agent. Un statut « serveur OK, en jeu à confirmer » (🟢) reste **à finir**, pas un
+  livrable. **Astuce établie** : si le client est coincé sur un écran, un **redémarrage frais atterrit au hub**
+  (d'où la nav/burger fonctionne) ; suivre les flèches du tuto si un tuto contextuel verrouille la nav.
 - En cas de doute sur un comportement observé : reproduire, instrumenter (log/dump/capture), lire le code du
   jeu concerné. On conclut **seulement** quand les faits le permettent ; sinon on dit explicitement « non
   vérifié » et on va le vérifier.

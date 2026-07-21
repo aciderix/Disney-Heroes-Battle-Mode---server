@@ -45,7 +45,7 @@ Ordre de traitement (modifiable). On commence par **BATTLE PASS**.
 | 2 | RANKINGS (arena league) | 10 | ⬜ | |
 | 3 | FIGHT_PIT (arène PvP) | 10 | ⬜ | |
 | 4 | ELITE_CAMPAIGN | 11 | ⬜ | |
-| 5 | ALCHEMY (achat d'or) | 12 | 🟢 | **handler `BUY_GOLD{COUNT=nb}`** (`UserHelper.buyGold` : gate ALCHEMY, débit DIAMONDS `MidasStats.getCost`, don OR `getPreCritGold`×crit) + test `AlchemyTest` (−10 diamants→+166826 or, persiste, anti-triche coût diamants). **Fait** : achats ILLIMITÉS à cette ère (`areUnlimitedGoldBuysEnabled(shard1)=true`) → pas de limite quotidienne. **PARTIEL** : crit RNG serveur-autoritatif (peut différer de l'affichage client). **En jeu à confirmer** |
+| 5 | ALCHEMY (achat d'or) | 12 | ✅ | **handler `BUY_GOLD{COUNT=nb}`** (`UserHelper.buyGold`) + test `AlchemyTest` + **VÉRIFIÉ EN JEU** (bouton [+] or → écran BUY GOLD « 💎10 → 🪙166 826 » → BUY 1 → serveur `BUY_GOLD COUNT=1 → −10 DIAMONDS +166826 GOLD [persisté]` ; client : or 227.27M→227.44M, diamants 500→490, PURCHASE HISTORY ; DB persistée exact). **Faits** : achats ILLIMITÉS à cette ère (`areUnlimitedGoldBuysEnabled(shard1)=true`). **PARTIEL** : crit RNG serveur-autoritatif (ici a coïncidé avec l'affichage client) |
 | 6 | SKILL_UPGRADE (compétences héros) | 8 | ✅ | **handler `UPGRADE_SKILL`** (`HeroHelper.upgradeSkill` : débit GOLD+SKILL_POINTS, `setSkillLevel`, anti-triche `NOT_ENOUGH_SKILL_POINTS`) + test `SkillUpgradeTest` + **VÉRIFIÉ EN JEU** (détail RALPH → SKILLS → WRECK IT [+] slider « +1 Levels » → serveur `UPGRADE_SKILL RALPH WHITE ×1` → **WRECK IT niv.1→2, SKILL_POINTS 500→499, Power +2, GOLD −100 persisté DB**) |
 | 7 | GUILDS | 15 | ⬜ | guilde, chest social, dons, mercenaires |
 | 8 | CHALLENGES | 20 | ⬜ | |
