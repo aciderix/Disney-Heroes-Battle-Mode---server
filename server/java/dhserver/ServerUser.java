@@ -206,6 +206,7 @@ public final class ServerUser {
     // neuf (la progression s'accumule via les quêtes ; non persistée pour l'instant — champ hors userExtra).
     // NB `BattlePassType` n'a que {DEFAULT, QUEST} → ce n'est PAS un décalage d'ère, juste un état non initialisé.
     ServerContext.init();
+    dropIncompatibleTutorials();                 // retire les tutoriels d'arène incompatibles avec cette ère (deadlock)
     bd.battlePassV2Data = refreshBattlePass();   // ancre la saison sur le mois courant (côté serveur)
     // ÈRE DE CONTENU — STAT-SYNC (override opérateur). Le client applique BootData.statDataTxt au boot via
     // SyncStatDataClientHelper.updateStats → GeneralStats.updateStats(map) → parseStats(nom, contenu) pour chaque
@@ -252,6 +253,30 @@ public final class ServerUser {
 
   /** Nombre d'actes de tuto (diagnostic). */
   public synchronized int tutorialActCount() { return individualUserExtra.tutorialActs.size(); }
+
+  /** Tutoriels d'arène INCOMPATIBLES avec l'ère de contenu du client 12.1.0 (relevé EN JEU) : {@code SAVED_LINEUPS}
+   *  pointe {@code SAVED_LINEUPS_BUTTON} ABSENT de l'UI → l'écran de défense d'arène ({@code ArenaDefenseHeroChooser})
+   *  se BLOQUE (on ne peut plus poser sa défense ni attaquer) ; {@code ARENA_DEFENSE} est de toute façon désactivé
+   *  cette ère ({@code UNLOCK_LEVEL 999}, tutorials.tab). */
+  private static final java.util.Set<String> ERA_BROKEN_TUTORIALS =
+      new java.util.HashSet<>(java.util.Arrays.asList("SAVED_LINEUPS", "ARENA_DEFENSE"));
+
+  /**
+   * Décision OPÉRATEUR (§3) — retire des actes du joueur les tutoriels d'arène qui pointent une UI absente de ce
+   * build et DEADLOCK l'écran (cf. {@link #ERA_BROKEN_TUTORIALS}). Un acte ABSENT ⇒ {@code completedTutorialAct=true}
+   * (« déjà fait/sauté ») → plus de blocage. La FONCTIONNALITÉ reste (lineups sauvegardées, défense d'arène), seul le
+   * tuto saute. Idempotent ; appelé au boot (et persisté au prochain save).
+   */
+  @SuppressWarnings("unchecked")
+  private void dropIncompatibleTutorials() {
+    if (individualUserExtra.tutorialActs == null) return;
+    individualUserExtra.tutorialActs.removeIf(o -> {
+      try {
+        TutorialAct a = (TutorialAct) o;
+        return a.type != null && ERA_BROKEN_TUTORIALS.contains(a.type.name());
+      } catch (Throwable t) { return false; }
+    });
+  }
 
   /** Nombre de héros possédés (diagnostic). */
   public synchronized int heroCount() { return userExtra.heroes.size(); }
