@@ -71,6 +71,20 @@ Ordre de traitement (modifiable). On commence par **BATTLE PASS**.
 
 _(rempli au fur et à mesure)_
 
+- **2026-07-21 — ARÈNE (FIGHT_PIT, TL10) : flux d'ouverture OBSERVÉ EN JEU + gap `SET_FLAG` corrigé.** (Choix
+  user : « ouvrir l'écran pour voir + adversaires synthétiques ».) Tap bâtiment ARENA (`MAIN_SCREEN_FIGHT_PIT`)
+  → **modale CHANGE NAME** (le nom devient public en PvP à la 1ʳᵉ entrée) → confirm → **(1)** `SetPlayerName`
+  (déjà géré ✅) **(2)** `SET_FLAG{TYPE=FREE_NAME_CHANGE_SEEN, COUNT=1}` — **était non géré** → **CORRIGÉ** :
+  handler générique `SET_FLAG` (`User.setFlag(UserFlag.valueOf(TYPE), COUNT!=0)`, `User.flags`→resyncCounts,
+  auto-persisté ; test `SetFlagTest` + régression 23/23) **(3)** **`GetArenaInfo{type=FIGHT_PIT}`** envoyé →
+  **sans réponse serveur** → l'écran reste bloqué sur **« LOADING … »**. **CE QUI RESTE (feature arène)** :
+  répondre `GetArenaInfo` par un **`ArenaInfo{season:ArenaSeasonInfo, yourLeague:ArenaLeagueInfo{tier, division,
+  yourRank, players=adversaires}, topLeague, type}`**. **FAIT ÉTABLI** : le **builder d'`ArenaInfo` n'est PAS
+  dans le jar client** (le client ne fait que LIRE l'ArenaInfo ; PerBlue le construisait côté backend) → il faut
+  le construire à partir des **données d'arène du jeu** (`arena_*.tab` + `ArenaHelper`/`ArenaSeasonRulesHelper`
+  pour tiers/divisions/saison) + **placement** (décision opérateur §3) + **adversaires synthétiques** (`players`
+  = `ArenaRow`, à générer via la logique d'unités du jeu). = feature multi-étapes, prochaine itération.
+
 - **2026-07-21 — `quests.tab` version précédente = IDENTIQUE (byte-à-byte).** L'utilisateur a fourni un
   `quests.tab` d'une version antérieure → **md5 identique** au nôtre (`7d6c3538…`, 1582 lignes, 0 ligne diff).
   ⇒ **les quêtes sont les mêmes**, rien à intégrer de ce fichier (aucune variété à gagner). **Fait établi** :

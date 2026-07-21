@@ -894,6 +894,26 @@ public final class ServerUser {
           System.out.println("[action] UPDATE_TIME: TYPE inconnu " + tyO + " : " + t); return false;
         }
       }
+      case "SET_FLAG": {
+        // Setter de FLAG booléen générique (extra={TYPE=<UserFlag>, COUNT=<0/1>}). Envoyé par divers écrans pour
+        // mémoriser un état côté joueur — ex. FREE_NAME_CHANGE_SEEN à l'entrée de l'arène (trouvé EN JEU). Logique
+        // du jeu (ActionHelper.doAction branche SET_FLAG, relevé au bytecode) : User.setFlag(UserFlag.valueOf(TYPE),
+        // COUNT != 0). Les flags vivent dans User.flags (copiés de userExtra au chargement) → persistés par
+        // resyncCounts (déjà appelé par applyAction, cf. fix g8). Générique → couvre TOUS les SET_FLAG d'un coup.
+        Object fyO = m.extra == null ? null : m.extra.get(com.perblue.heroes.network.messages.ActionExtraType.TYPE);
+        if (fyO == null) { System.out.println("[action] SET_FLAG: TYPE manquant"); return false; }
+        Object fcO = m.extra == null ? null : m.extra.get(com.perblue.heroes.network.messages.ActionExtraType.COUNT);
+        boolean val = fcO != null && !"0".equals(fcO.toString());
+        try {
+          com.perblue.heroes.game.objects.UserFlag flag =
+              com.perblue.heroes.game.objects.UserFlag.valueOf(fyO.toString());
+          user.setFlag(flag, val);
+          System.out.println("[action] SET_FLAG " + flag + "=" + val + " → posé (User.flags, persisté)");
+          return true;
+        } catch (Throwable t) {
+          System.out.println("[action] SET_FLAG: flag inconnu " + fyO + " : " + t); return false;
+        }
+      }
       case "VIEWED_CONSUMABLE_ITEM": {
         // Marquer un consommable comme VU (efface la pastille « nouveau »). setViewedConsumableItem écrit dans
         // this.extra (individualUserExtra) → auto-persisté (patron VIEW_DAILY_QUESTS).
