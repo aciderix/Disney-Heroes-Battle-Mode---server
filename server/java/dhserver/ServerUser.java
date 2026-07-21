@@ -1622,6 +1622,90 @@ public final class ServerUser {
     return ServerArena.buildArenaInfo(user, userInfo, type);
   }
 
+  /** Points d'arène accordés par victoire (valeur OPÉRATEUR §3 pour l'affichage ; le fight pit classe par RANG). */
+  private static final int ARENA_WIN_POINTS = 30;
+
+  /**
+   * ARÈNE #44 — START d'une attaque. Le client envoie {@code Action{START_FIGHT_PIT_ATTACK/START_COLISEUM_ATTACK,
+   * extra={ID=defenderID,…}}} et RESTE bloqué sur « LOADING… » tant qu'il n'a pas la réponse (observé en jeu). On
+   * répond {@code Start(Arena|Coliseum)AttackResponse} avec les héros du DÉFENSEUR (HeroData complet → le client
+   * rejoue le combat), + saison/tier/division. Défenseur bot → régénéré déterministiquement (même équipe qu'affichée).
+   */
+  public synchronized com.perblue.grunt.translate.GruntMessage startArenaAttack(
+      com.perblue.heroes.network.messages.ArenaType type, long defenderID, ServerArenaLadder ladder) {
+    ServerContext.init();
+    User user = ClientNetworkStateConverter.getUser(userInfo, userExtra, "arena-start");
+    IndividualUser iu = ClientNetworkStateConverter.getIndividualUser(
+        individualUserExtra, userID, userInfo.diamonds, "arena-start");
+    ServerContext.bind(user, iu);
+    com.perblue.heroes.network.messages.ArenaInfo ai = ServerArena.buildArenaInfo(user, userInfo, type, ladder);
+    ServerArenaLadder.Entry def = null;
+    for (ServerArenaLadder.Entry e : ladder.entries()) if (e.id == defenderID) { def = e; break; }
+    String defName = def != null ? def.name : "Rival";
+    int shard = user.getShardID();
+    if (type == com.perblue.heroes.network.messages.ArenaType.COLISEUM) {
+      com.perblue.heroes.network.messages.StartColiseumAttackResponse r =
+          new com.perblue.heroes.network.messages.StartColiseumAttackResponse();
+      r.defendingUserID = defenderID; r.defendingUserName = defName;
+      r.defendingUserAvatar = new com.perblue.heroes.network.messages.Avatar();
+      r.defenderFriendships = new java.util.ArrayList<>();
+      r.division = ai.yourLeague.division; r.tier = ai.yourLeague.tier; r.season = ai.season;
+      r.combatModifiers = new java.util.HashMap<>();
+      r.defendingLineups = def != null ? ServerArena.defenderLineups(def, shard, 3) : new java.util.ArrayList<>();
+      return r;
+    }
+    com.perblue.heroes.network.messages.StartArenaAttackResponse r =
+        new com.perblue.heroes.network.messages.StartArenaAttackResponse();
+    r.defendingUserID = defenderID; r.defendingUserName = defName;
+    r.defendingUserAvatar = new com.perblue.heroes.network.messages.Avatar();
+    r.defenderFriendships = new java.util.ArrayList<>();
+    r.division = ai.yourLeague.division; r.tier = ai.yourLeague.tier; r.season = ai.season;
+    r.combatModifiers = new java.util.HashMap<>();
+    r.heroes = def != null ? ServerArena.defenderHeroData(def, shard) : new java.util.ArrayList<>();
+    return r;
+  }
+
+  /**
+   * ARÈNE #44 — RÉSOLUTION autoritative d'une attaque (résultat rapporté par le client, patron CampaignAttack #19).
+   * Décrémente les chances de combat ; sur VICTOIRE, applique la mécanique de RANG du fight pit (battre un mieux
+   * classé = prendre sa place, swap dans le ladder) + crédite des points. Mute le classement PERSISTANT (#41) et
+   * renvoie {@code ArenaUpdate} (nouveau classement). PARTIEL (§2) : XP d'arène ({@code giveArenaEXP}) non encore
+   * accordée — à ajouter. Le combat lui-même est joué côté client (re-sim serveur = #24/#25, ouvert aussi en campagne).
+   */
+  public synchronized com.perblue.heroes.network.messages.ArenaUpdate resolveArenaAttack(
+      long defenderID, boolean win, com.perblue.heroes.network.messages.ArenaType type, ServerArenaLadder ladder) {
+    ServerContext.init();
+    User user = ClientNetworkStateConverter.getUser(userInfo, userExtra, "arena-attack");
+    IndividualUser iu = ClientNetworkStateConverter.getIndividualUser(
+        individualUserExtra, userID, userInfo.diamonds, "arena-attack");
+    ServerContext.bind(user, iu);
+    long myID = userInfo.basicInfo != null ? userInfo.basicInfo.iD : 1L;
+    int myIdx = ladder.indexOf(myID);
+    int defIdx = ladder.indexOf(defenderID);
+    if (myIdx >= 0) {
+      ServerArenaLadder.Entry me = ladder.entries().get(myIdx);
+      me.remainingFightChances = Math.max(0, me.remainingFightChances - 1);   // 1 combat consommé
+    }
+    if (win) {
+      if (myIdx >= 0 && defIdx >= 0 && defIdx < myIdx) {   // le défenseur était MIEUX classé → je prends sa place
+        ladder.swap(myIdx, defIdx);
+        myIdx = defIdx;
+      }
+      if (myIdx >= 0) {
+        ServerArenaLadder.Entry me = ladder.entries().get(myIdx);
+        me.points += ARENA_WIN_POINTS;
+        me.pointsTiebreaker = System.currentTimeMillis();
+        if (me.points > me.bestScore) me.bestScore = me.points;
+      }
+    }
+    com.perblue.heroes.network.messages.ArenaInfo ai = ServerArena.buildArenaInfo(user, userInfo, type, ladder);
+    com.perblue.heroes.network.messages.ArenaUpdate up = new com.perblue.heroes.network.messages.ArenaUpdate();
+    up.type = type;
+    up.season = ai.season;
+    up.yourLeague = ai.yourLeague;
+    return up;
+  }
+
   /** Résultat d'un {@link #arenaInfoWithLadder} : l'{@code ArenaInfo} à renvoyer + le classement (à persister). */
   public static final class ArenaResult {
     public final com.perblue.heroes.network.messages.ArenaInfo info;

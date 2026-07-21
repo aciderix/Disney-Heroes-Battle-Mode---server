@@ -157,6 +157,56 @@ public final class ServerArena {
     return vals[ord];
   }
 
+  /** User synthétique (bot) lié, à TL élevé, dans le shard du joueur (contenu déjà chargé). */
+  private static User botUser(int shardID, long id) {
+    UserInfo ui = new UserInfo();
+    ui.shardID = shardID;
+    ui.basicInfo = new BasicUserInfo();
+    ui.basicInfo.teamLevel = 65;
+    User bot = ClientNetworkStateConverter.getUser(ui, new UserExtra(), "bot");
+    ServerContext.bind(bot,
+        ClientNetworkStateConverter.getIndividualUser(new IndividualUserExtra(), id, 0, "bot"));
+    return bot;
+  }
+
+  /**
+   * ARÈNE #44 — les héros du défenseur en {@code HeroData} COMPLET (pour {@code StartArenaAttackResponse.heroes},
+   * FIGHT_PIT) : le client rejoue le combat avec. Bot → régénéré DÉTERMINISTIQUEMENT (même graine = son id → même
+   * équipe que celle affichée dans la liste). 5 héros.
+   */
+  public static List<HeroData> defenderHeroData(ServerArenaLadder.Entry e, int shardID) {
+    List<HeroData> out = new ArrayList<>();
+    try {
+      User bot = botUser(shardID, e.id);
+      Rarity rarity = rarityFromOrdinal(e.botRarityOrdinal);
+      List<String> pool = new ArrayList<>(java.util.Arrays.asList(HERO_POOL));
+      java.util.Collections.shuffle(pool, new java.util.Random(e.id));
+      for (String n : pool) {
+        if (out.size() >= 5) break;
+        try {
+          UnitType t = UnitType.valueOf(n);
+          if (bot.getHero(t) == null) bot.createAndAddHero(t, rarity, e.botLevel, 1, new String[]{"bot"});
+          out.add(ClientNetworkStateConverter.getHeroData((UnitData) bot.getHero(t)));
+        } catch (Throwable perHero) { /* héros refusé → suivant */ }
+      }
+    } catch (Throwable t) { /* jamais fatal */ }
+    return out;
+  }
+
+  /** ARÈNE #44 — les {@code numTeams} équipes de défense du défenseur en {@code LineupSummary} (COLISEUM :
+   *  {@code StartColiseumAttackResponse.defendingLineups}). Réutilise la génération synthétique déterministe. */
+  @SuppressWarnings("unchecked")
+  public static List defenderLineups(ServerArenaLadder.Entry e, int shardID, int numTeams) {
+    BasicUserInfo who = new BasicUserInfo();
+    who.iD = e.id; who.name = e.name; who.teamLevel = e.teamLevel;
+    who.creationTime = System.currentTimeMillis();
+    who.userLastActive = System.currentTimeMillis();
+    who.previousName = "";
+    ArenaRow r = syntheticOpponent(rarityFromOrdinal(e.botRarityOrdinal), e.botLevel, who, shardID,
+        numTeams, new java.util.Random(e.id));
+    return r.lineups;
+  }
+
   /** Saison courante, calculée fidèlement via {@link ArenaHelper} + {@code arena_constants.tab}. */
   private static ArenaSeasonInfo buildSeason(ArenaType type, long now) {
     ArenaSeasonInfo s = new ArenaSeasonInfo();

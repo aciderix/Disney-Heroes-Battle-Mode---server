@@ -165,6 +165,26 @@ public final class LoginServer {
                     : raw.signinRewards.thisMonth.rewards.size();
                 System.out.println("[login]     ==> SpecialEventsRaw (reply, 0 évènement, "
                     + nDays + " jours de sign-in)");
+              } else if (act.command == com.perblue.heroes.network.messages.CommandType.START_FIGHT_PIT_ATTACK
+                  || act.command == com.perblue.heroes.network.messages.CommandType.START_COLISEUM_ATTACK) {
+                // ARÈNE #44 — START d'attaque : le client ATTEND Start(Arena|Coliseum)AttackResponse (héros du
+                // défenseur) sinon il reste figé sur « LOADING… » (observé en jeu). defenderID lu dans extra.ID.
+                com.perblue.heroes.network.messages.ArenaType at =
+                    act.command == com.perblue.heroes.network.messages.CommandType.START_COLISEUM_ATTACK
+                        ? com.perblue.heroes.network.messages.ArenaType.COLISEUM
+                        : com.perblue.heroes.network.messages.ArenaType.FIGHT_PIT;
+                long defID = -1;
+                try {
+                  Object ido = act.extra == null ? null
+                      : act.extra.get(com.perblue.heroes.network.messages.ActionExtraType.ID);
+                  if (ido != null) defID = Long.parseLong(ido.toString());
+                } catch (Throwable t) { /* ID absent/illisible → -1 (repli) */ }
+                ServerArenaLadder ladder = loadOrCreateLadder(user, at);
+                com.perblue.grunt.translate.GruntMessage resp = user.startArenaAttack(at, defID, ladder);
+                resp.setAsReplyTo(m);
+                c.send(resp);
+                System.out.println("[login] <== START " + at + " attaque défenseur=" + defID
+                    + " → ==> Start*AttackResponse (héros du défenseur envoyés)");
               } else {
                 boolean applied = user.applyAction(act);
                 if (applied) { try { store.save(user); } catch (Exception e) {
@@ -261,6 +281,35 @@ public final class LoginServer {
                   + ai.yourLeague.tier + " div=" + ai.yourLeague.division + " rank=" + ai.yourLeague.yourRank
                   + " players=" + ai.yourLeague.players.size() + ", ladder="
                   + (loaded == null ? "GÉNÉRÉ" : "chargé") + " [persisté])");
+            } else if (m instanceof com.perblue.heroes.network.messages.ArenaAttack
+                || m instanceof com.perblue.heroes.network.messages.ColiseumAttack) {
+              // ARÈNE #44 — RÉSULTAT du combat rapporté par le client (ArenaAttack=FIGHT_PIT / ColiseumAttack=COLISEUM).
+              // Résolution AUTORITATIVE : décrément fights + swap de rang sur victoire + points → mute le ladder
+              // PERSISTANT (#41) → répond ArenaUpdate (nouveau classement). Patron CampaignAttack #19.
+              com.perblue.heroes.network.messages.ArenaType at;
+              long defID; boolean win;
+              if (m instanceof com.perblue.heroes.network.messages.ColiseumAttack) {
+                com.perblue.heroes.network.messages.ColiseumAttack ca =
+                    (com.perblue.heroes.network.messages.ColiseumAttack) m;
+                at = com.perblue.heroes.network.messages.ArenaType.COLISEUM;
+                defID = ca.defendingUserID; win = outcomeWin(ca.base, ca.stats);
+              } else {
+                com.perblue.heroes.network.messages.ArenaAttack aa =
+                    (com.perblue.heroes.network.messages.ArenaAttack) m;
+                at = com.perblue.heroes.network.messages.ArenaType.FIGHT_PIT;
+                defID = aa.defendingUserID; win = outcomeWin(aa.base, aa.stats);
+              }
+              ServerArenaLadder ladder = loadOrCreateLadder(user, at);
+              com.perblue.heroes.network.messages.ArenaUpdate up = user.resolveArenaAttack(defID, win, at, ladder);
+              try { store.saveArenaLadder(user.shardID, at.name(), ladder); } catch (Exception e) {
+                System.out.println("[login]     ! persistance ladder échouée: " + e); }
+              try { store.save(user); } catch (Exception e) {
+                System.out.println("[login]     ! persistance joueur échouée: " + e); }
+              up.setAsReplyTo(m);
+              c.send(up);
+              System.out.println("[login] <== " + (m instanceof com.perblue.heroes.network.messages.ColiseumAttack
+                  ? "ColiseumAttack" : "ArenaAttack") + " défenseur=" + defID + " win=" + win
+                  + " → ==> ArenaUpdate (rank=" + up.yourLeague.yourRank + ") [persisté]");
             } else if (m instanceof Ping) {
               // Écho de latence/keepalive : le client mesure le RTT et surveille l'activité serveur.
               // Sans réponse, son chien de garde ferme la connexion (« Reconnecting… »).
@@ -282,6 +331,26 @@ public final class LoginServer {
         }
       }
       public void onClose(GruntConnection conn) { System.out.println("[login] onClose " + conn); }
+
+      /** Charge le classement de {@code (shard, type)} ; absent → le GÉNÈRE et le persiste (idem GetArenaInfo). */
+      private ServerArenaLadder loadOrCreateLadder(ServerUser u,
+          com.perblue.heroes.network.messages.ArenaType at) {
+        ServerArenaLadder ladder = null;
+        try { ladder = store.loadArenaLadder(u.shardID, at.name()); } catch (Exception e) {}
+        if (ladder == null) {
+          ladder = u.arenaInfoWithLadder(at, null).ladder;
+          try { store.saveArenaLadder(u.shardID, at.name(), ladder); } catch (Exception e) {}
+        }
+        return ladder;
+      }
+
+      /** Victoire = {@code CombatOutcome.WIN} dans la base d'attaque OU les stats (résultat rapporté par le client). */
+      private boolean outcomeWin(com.perblue.heroes.network.messages.AttackBase base,
+          com.perblue.heroes.network.messages.ArenaAttackStats stats) {
+        if (base != null && base.outcome == com.perblue.heroes.network.messages.CombatOutcome.WIN) return true;
+        if (stats != null && stats.outcome == com.perblue.heroes.network.messages.CombatOutcome.WIN) return true;
+        return false;
+      }
     };
 
     GruntServerFactory.startNioTcp(port, MessageFactory.getInstance(), exec, listener,
