@@ -46,7 +46,7 @@ Ordre de traitement (modifiable). On commence par **BATTLE PASS**.
 | 3 | FIGHT_PIT (arène PvP) | 10 | ⬜ | |
 | 4 | ELITE_CAMPAIGN | 11 | ⬜ | |
 | 5 | ALCHEMY (achat d'or) | 12 | ⬜ | |
-| 6 | SKILL_UPGRADE (compétences héros) | 8 | ⬜ | montée de skills |
+| 6 | SKILL_UPGRADE (compétences héros) | 8 | 🟢 | **handler `UPGRADE_SKILL`** (`HeroHelper.upgradeSkill` : débit GOLD+SKILL_POINTS, `setSkillLevel`, anti-triche `NOT_ENOUGH_SKILL_POINTS`) + test `SkillUpgradeTest` (WHITE 1→2, débit, persiste, refus sans points) ; **en jeu à vérifier** |
 | 7 | GUILDS | 15 | ⬜ | guilde, chest social, dons, mercenaires |
 | 8 | CHALLENGES | 20 | ⬜ | |
 | 9 | SAVED_LINEUPS | 20 | ⬜ | |
@@ -71,6 +71,16 @@ Ordre de traitement (modifiable). On commence par **BATTLE PASS**.
 ## C. Journal d'exploration (chronologique — problèmes & fixes)
 
 _(rempli au fur et à mesure)_
+
+- **2026-07-21 — `quests.tab` version précédente = IDENTIQUE (byte-à-byte).** L'utilisateur a fourni un
+  `quests.tab` d'une version antérieure → **md5 identique** au nôtre (`7d6c3538…`, 1582 lignes, 0 ligne diff).
+  ⇒ **les quêtes sont les mêmes**, rien à intégrer de ce fichier (aucune variété à gagner). **Fait établi** :
+  la variété des quêtes ne vient PAS de `quests.tab` différents — c'est un **pool fixe** (achievements + 34
+  `DAILY_QUEST` qui se **réinitialisent chaque jour**, même ensemble). **BACKLOG (piste user « roulement multi-ère »)**
+  : le vrai levier de variété = servir des **tabs qui changent par content release** (`signin_rewards`,
+  `battle_pass_v2_tiers`/`_constants`, `*_chest_drops`, events live-ops, héros/contenu datés) selon une
+  date/rotation choisie (**service multi-ère**). À ouvrir SI on récupère ces tabs d'autres versions ET qu'ils
+  diffèrent (à comparer par md5 au cas par cas — comme ici).
 
 - **2026-07-20** — Compte passé à TL65 (`SetTeamLevel`). Début de l'exploration par le **battle pass**.
 - **2026-07-20 — GAP `REFRESH_TRADER` (marchand/trader) — trouvé à TL65.** Au TL65 le marchand (TRADER, TL0)

@@ -269,6 +269,22 @@ public final class ServerUser {
     resyncHeroes(user);
   }
 
+  /** Outillage TEST : ajoute (ou remonte) un héros à un rang/niveau/étoiles donnés + resync wire. Sert à créer
+   *  un état exploitable pour tester une feature (ex. un héros avec de la marge de niveau pour SKILL_UPGRADE). */
+  public synchronized void grantHero(com.perblue.heroes.network.messages.UnitType type,
+      com.perblue.heroes.network.messages.Rarity rarity, int level, int stars) {
+    ServerContext.init();
+    User user = ClientNetworkStateConverter.getUser(userInfo, userExtra, "grant");
+    IndividualUser iu = ClientNetworkStateConverter.getIndividualUser(
+        individualUserExtra, userID, userInfo.diamonds, "grant");
+    ServerContext.bind(user, iu);
+    if (user.getHero(type) == null)
+      user.createAndAddHero(type, rarity, level, stars, new String[]{"grant"});
+    com.perblue.heroes.game.objects.UnitData ud = (com.perblue.heroes.game.objects.UnitData) user.getHero(type);
+    if (ud != null) { ud.setRarity(rarity); ud.setLevel(level); }
+    resyncHeroes(user);
+  }
+
   /**
    * Ouvre un coffre en <b>exécutant la logique du jeu</b> (docs/PRINCIPLES.md §3) : construit un
    * {@link User}/{@link IndividualUser} de jeu SUR nos objets wire (références partagées → la plupart
@@ -1010,6 +1026,35 @@ public final class ServerUser {
         System.out.println("[action] UNLOCK_HERO " + hero
             + " → héros débloqué (coût GOLD + fragments consommés, roster mis à jour, logique du jeu)");
         return h != null;
+      }
+      case "UPGRADE_SKILL": {
+        // Écran SKILL_UPGRADE : MONTER le niveau d'une compétence d'un héros. Le client envoie
+        // UPGRADE_SKILL{hero=<UnitType>, extra={SKILL=<SkillSlot>, COUNT=<n>}} (ClientActionHelper.upgradeSkill →
+        // ActionHelper.doAction, relevé au bytecode). Logique d'origine EXACTE HeroHelper.upgradeSkill(heroType,
+        // slot, count, user) : anti-triche RÉEL (canLevelUpSkill = niveau MAX du skill + gate rang/niveau du héros ;
+        // NOT_ENOUGH_SKILL_POINTS si pas assez de points), débite GOLD (getTotalGoldCost) + SKILL_POINTS puis pose
+        // setSkillLevel(slot, niveau) sur le héros. Persistance : GOLD & SKILL_POINTS vivent dans this.extra
+        // (SKILL_POINTS n'est PAS une ressource spéciale — hors switch IndividualUser$1 DIAMONDS/QUEST_POINTS/
+        // FREE/PAID_DIAMONDS → auto-persistée) ; le niveau de skill vit dans le héros → capté par resyncHeroes
+        // (getHeroData sérialise HeroData.skills), appliqué à TOUTE action. VIP SKILL_POINT_COST_FREE respecté par
+        // la logique du jeu. Aucune règle réécrite (glue + logique cœur).
+        com.perblue.heroes.network.messages.UnitType skHero = m.heroType;
+        if (skHero == null || skHero == com.perblue.heroes.network.messages.UnitType.DEFAULT) {
+          System.out.println("[action] UPGRADE_SKILL: héros manquant"); return false;
+        }
+        Object slotO = m.extra == null ? null : m.extra.get(com.perblue.heroes.network.messages.ActionExtraType.SKILL);
+        if (slotO == null) { System.out.println("[action] UPGRADE_SKILL: slot SKILL manquant"); return false; }
+        com.perblue.heroes.network.messages.SkillSlot slot;
+        try { slot = com.perblue.heroes.network.messages.SkillSlot.valueOf(slotO.toString()); }
+        catch (Throwable t) { System.out.println("[action] UPGRADE_SKILL: slot invalide " + slotO); return false; }
+        Object cntO = m.extra == null ? null : m.extra.get(com.perblue.heroes.network.messages.ActionExtraType.COUNT);
+        int cnt = cntO == null ? 1 : Integer.parseInt(cntO.toString());
+        if (user.getHero(skHero) == null) { System.out.println("[action] UPGRADE_SKILL: héros non possédé " + skHero); return false; }
+        com.perblue.heroes.game.objects.IHero sh =
+            com.perblue.heroes.game.logic.HeroHelper.upgradeSkill(skHero, slot, cnt, user);
+        System.out.println("[action] UPGRADE_SKILL " + skHero + " " + slot + " ×" + cnt
+            + " → compétence montée (coût GOLD + SKILL_POINTS, logique du jeu)");
+        return sh != null;
       }
       case "COMPLETE_QUEST": {
         // Réclamation d'une QUÊTE / ACHIEVEMENT — logique d'origine EXACTE (QuestHelper.completeQuest, code du
