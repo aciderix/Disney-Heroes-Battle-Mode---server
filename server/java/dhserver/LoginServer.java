@@ -77,6 +77,13 @@ public final class LoginServer {
           public void onReceive(GruntConnection c, GruntMessage m) {
             String name = m.getFullName();
             System.out.println("[login] <== " + name);
+            // ISOLATION TRANSPORT — un handler qui échoue ne DOIT PAS tuer la connexion. Sans ce garde, une
+            // exception non rattrapée remonte au routeur NIO grunt qui FERME la socket → le keepalive Ping meurt
+            // aussi → le client « Reconnecting… » (instabilité observée). On isole l'échec d'UN message du
+            // transport : la session (Ping, autres écrans) survit. Ce N'EST PAS une rustine — on journalise
+            // BRUYAMMENT la pile (un handler qui lève = un TROU à corriger, jamais masqué) ; et une REQUÊTE
+            // restée sans réponse laissera son écran en attente, ce qui rend le trou VISIBLE en jeu aussi.
+            try {
             if (m instanceof ClientInfo) {
               BootData bd = user.bootData();
               bd.setAsReplyTo(m);
@@ -323,6 +330,11 @@ public final class LoginServer {
               pong.setAsReplyTo(m);
               c.send(pong);
               System.out.println("[login] ==> Ping (echo)");
+            }
+            } catch (Throwable t) {
+              // Trou de handler : on GARDE la connexion vivante et on journalise la pile complète (jamais masqué).
+              System.out.println("[login] ✖ handler « " + name + " » a levé — connexion PRÉSERVÉE (keepalive intact) :");
+              t.printStackTrace();
             }
           }
         };
