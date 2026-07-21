@@ -123,3 +123,24 @@ _(rempli au fur et à mesure)_
   **21/21 verte** + `server/smoke/StatSyncProbe` (le client applique l'override → `battlePassHidden()`=false, saison
   active). **⇒ BATTLE PASS entièrement fonctionnel client↔serveur↔affichage.** Fichiers : `server/java/dhserver/ServerUser.java`,
   `server/smoke/StatSyncProbe.java`. **Portée** : ce même levier stat-sync pourra fiabiliser d'autres contenus datés.
+
+- **2026-07-21 — BATTLE PASS : COLLECTE vérifiée EN JEU + explication du compteur « ① 0/9 ».** (Demande user.)
+  **(a) Collecte EN JEU (TL65)** : onglet BATTLE PASS → tap « Collect » du palier 1 PREMIUM → client envoie
+  `Action BATTLE_PASS_V2_CLAIM_REWARD {TYPE=QUEST, INDEX=1, MODE=true}` → serveur `BattlePassV2Helper.claimReward`
+  (anti-triche RÉEL progress≥points) → **récompense créditée + palier réclamé [persisté]**. La récompense premium
+  palier 1 = **des OBJETS** (pas or/stamina) : `STAMINA_CONSUMABLE ×50 567 500` (la tuile « x60 / 50.56 M ») +
+  `STONE_BENJAMIN_FRANKLIN_GATES ×1690` (fragments du héros « Kevin Flynn » = Benjamin Franklin Gates, la tuile
+  « 1 690 ») → crédités dans `individualUserExtra.items` (this.extra, **auto-persisté**). **Persistance DB
+  confirmée** : inventaire **12 → 14 types** (les 2 objets présents au reload). **Client** : la tuile passe à ✓
+  (réclamée) et le bouton « Collect » disparaît. **Anti-double-claim** : re-tap sur la tuile réclamée → le client
+  n'envoie RIEN (bouton caché) → **1 seul message de claim** dans le log (vérifié `grep -c = 1`) ; la garde
+  serveur `isPremiumTierClaimed` reste couverte par `BattlePassClaimTest` (unité). Snapshot `dh-precollect.db`
+  (restauré après test → compte pristine). ⇒ **collecte OK client↔serveur↔persistance**.
+  **(b) Compteur « ① 0/9 » (haut-droite) — pris en charge par le serveur (OUI).** Établi au bytecode
+  (`BattlePassV2ContentHeader`) : le « ① » = **palier courant** (`getTierByPoints(getProgress(), start)` = 1) et
+  « 0/9 » = **points de battle pass acquis / points requis pour le palier suivant**. Le NUMÉRATEUR = `getProgress()`
+  = `ResourceType.QUEST_POINTS` sur NOTRE `BattlePassV2Data` **persisté** (s'accumule via les quêtes quotidiennes
+  qui donnent des QUEST_POINTS → `getUserBattlePassV2().setProgress`, `MAX_DAILY_POINTS=15/j`) → **serveur-autoritatif
+  + persisté** ; il vaut 0 car le compte n'a pas encore fait de quête donnant des points BP. Le DÉNOMINATEUR = **9** =
+  seuil du palier 2 (`battle_pass_v2_tiers.tab` : palier 1 POINTS=0, palier 2 POINTS=9), contenu R102 fourni au
+  client via stat-sync. ⇒ le compteur bougera dès que le joueur complètera des quêtes créditant des QUEST_POINTS.

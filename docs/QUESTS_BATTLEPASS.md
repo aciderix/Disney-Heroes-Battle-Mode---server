@@ -57,6 +57,15 @@ premium débloqué pour tous, **sans achat réel**. C'est un **choix d'OPÉRATEU
 décide de son économie ; §3). ⚠️ **MAIS** ça n'a d'effet que si la saison BP est **ACTIVE** — or à juillet 2026
 elle est passée. ⇒ dépend de la **décision d'ère de contenu** (cf. ci-dessous).
 
+> **⚠️ MISE À JOUR (2026-07-21) — cette section 2/3 est DÉPASSÉE (historique).** Le battle pass est désormais
+> **entièrement fonctionnel EN JEU** : handlers serveur complets (claim/collect/buyout/rollover/premium-pour-tous),
+> et l'**ère de contenu est résolue POUR LE BATTLE PASS** via **stat-sync** (`BootData.statDataTxt` pousse un
+> `battle_pass_v2_constants.tab` à saison courante → le client voit la saison active). Vérifié EN JEU à TL65 :
+> onglet actif, `BattlePassV2GetData`↔`BattlePassV2Data(premium)`, **collecte** de palier créditée+persistée,
+> compteur « ① 0/9 » = palier courant + `QUEST_POINTS`/seuil serveur-autoritatif. Cf. `MEMORY.md` g18/g19,
+> `docs/EXPLORATION.md`. **NB** : la stamina géante (39,96 M) et le reste du contenu daté restent sur l'ère R102
+> (le stat-sync n'a ciblé QUE `battle_pass_v2_constants`) — un alignement global d'ère reste un chantier séparé.
+
 ## 3. Décision de fond commune : l'ÈRE DE CONTENU (ouverte)
 
 Battle pass (saison 04/2026), stamina (regen R102 = 39,96 M), et tout le contenu daté butent sur le **même
