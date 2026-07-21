@@ -225,6 +225,21 @@ public final class LoginServer {
               c.send(d);
               System.out.println("[login] <== BattlePassV2GetData → ==> BattlePassV2Data (type=" + d.type
                   + " premium=" + d.premiumUnlocked + " progress=" + d.progress + ")");
+            } else if (m instanceof com.perblue.heroes.network.messages.GetArenaInfo) {
+              // OUVERTURE DE L'ARÈNE (FIGHT_PIT/COLISEUM) — le client (ArenaLeagueScreen) envoie GetArenaInfo{type}
+              // et attend un ArenaInfo pour rendre l'écran (sinon « LOADING… » infini — trouvé EN JEU). Le builder
+              // d'ArenaInfo n'existe PAS dans le jar client (backend PerBlue) → on le construit serveur-autoritativement
+              // (ServerArena : saison via ArenaHelper/arena_*.tab, ligue COPPER, ta row + adversaires). Palier 1.
+              com.perblue.heroes.network.messages.GetArenaInfo req =
+                  (com.perblue.heroes.network.messages.GetArenaInfo) m;
+              com.perblue.heroes.network.messages.ArenaType at =
+                  req.type == null ? com.perblue.heroes.network.messages.ArenaType.FIGHT_PIT : req.type;
+              com.perblue.heroes.network.messages.ArenaInfo ai = user.arenaInfo(at);
+              ai.setAsReplyTo(m);
+              c.send(ai);
+              System.out.println("[login] <== GetArenaInfo(" + at + ") → ==> ArenaInfo (tier="
+                  + ai.yourLeague.tier + " div=" + ai.yourLeague.division + " rank=" + ai.yourLeague.yourRank
+                  + " players=" + ai.yourLeague.players.size() + ")");
             } else if (m instanceof Ping) {
               // Écho de latence/keepalive : le client mesure le RTT et surveille l'activité serveur.
               // Sans réponse, son chien de garde ferme la connexion (« Reconnecting… »).

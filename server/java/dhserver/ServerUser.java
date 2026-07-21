@@ -1523,6 +1523,21 @@ public final class ServerUser {
   }
 
   /**
+   * ARÈNE PvP — construit l'{@link com.perblue.heroes.network.messages.ArenaInfo} (réponse à {@code GetArenaInfo}).
+   * Lie un {@link User} de jeu sur nos objets wire puis délègue à {@link ServerArena} (construction fidèle depuis
+   * {@code arena_*.tab}/{@code ArenaHelper}). Cf. tâches arène #41-44.
+   */
+  public synchronized com.perblue.heroes.network.messages.ArenaInfo arenaInfo(
+      com.perblue.heroes.network.messages.ArenaType type) {
+    ServerContext.init();
+    User user = ClientNetworkStateConverter.getUser(userInfo, userExtra, "arena");
+    IndividualUser iu = ClientNetworkStateConverter.getIndividualUser(
+        individualUserExtra, userID, userInfo.diamonds, "arena");
+    ServerContext.bind(user, iu);
+    return ServerArena.buildArenaInfo(user, userInfo, type);
+  }
+
+  /**
    * Construit le contenu {@code battle_pass_v2_constants.tab} à <b>saison courante</b> à pousser au client via
    * {@code BootData.statDataTxt} (cf. bootData()). On <b>réutilise le vrai fichier du jeu</b> (game-data/stats,
    * source de vérité — docs/PRINCIPLES.md §4 : on ne réécrit pas la donnée) et on ne remplace QUE les deux lignes
