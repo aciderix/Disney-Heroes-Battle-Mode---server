@@ -1056,6 +1056,30 @@ public final class ServerUser {
             + " → compétence montée (coût GOLD + SKILL_POINTS, logique du jeu)");
         return sh != null;
       }
+      case "BUY_GOLD": {
+        // Écran ALCHEMY (achat d'or contre DIAMANTS). Le client envoie BUY_GOLD{extra={COUNT=<tier>}}
+        // (ClientActionHelper.buyGold → ActionHelper.doEventAction, relevé au bytecode ; COUNT = l'index d'achat
+        // du jour, 0-based). Logique d'origine EXACTE UserHelper.buyGold(count, user, snapshot) : anti-triche RÉEL
+        // — gate Unlockable.ALCHEMY (TL12), limite quotidienne (getDailyUses("buy_gold") vs VIP DAILY_GOLD_BUYS,
+        // sinon GOLD_PURCHASES_USED) — débite les DIAMONDS (MidasStats.getCost) et crédite l'OR
+        // (getPreCritGold(count, teamLevel) × crit RNG ALCHEMY) + incrémente le compteur quotidien. Persistance :
+        // DIAMONDS via resyncDiamonds (champ dédié) + compteurs via resyncCounts (this.extra) + OR auto (this.extra) —
+        // TOUS déjà appelés par applyAction. PARTIEL documenté (comme le loot #25) : le multiplicateur CRIT est un
+        // tirage RNG (graine ALCHEMY) — le serveur roule le SIEN (autoritatif) ; il peut différer du montant affiché
+        // par le client (qui a roulé le sien). Aligner via SET_SEED(ALCHEMY) relève des Partiels D/E. L'anti-triche
+        // (gate + limite quotidienne + coût diamants) est, lui, RÉEL.
+        Object cO = m.extra == null ? null : m.extra.get(com.perblue.heroes.network.messages.ActionExtraType.COUNT);
+        int buyIdx = cO == null ? 0 : Integer.parseInt(cO.toString());
+        long diamondsBefore = user.getResource(com.perblue.heroes.network.messages.ResourceType.DIAMONDS);
+        long goldBefore = user.getResource(com.perblue.heroes.network.messages.ResourceType.GOLD);
+        com.perblue.heroes.game.logic.UserHelper.buyGold(buyIdx, user,
+            com.perblue.heroes.game.specialevent.SpecialEventSnapshot.NONE);
+        long dSpent = diamondsBefore - user.getResource(com.perblue.heroes.network.messages.ResourceType.DIAMONDS);
+        long gGain = user.getResource(com.perblue.heroes.network.messages.ResourceType.GOLD) - goldBefore;
+        System.out.println("[action] BUY_GOLD tier=" + buyIdx + " → −" + dSpent + " DIAMONDS, +" + gGain
+            + " GOLD (logique du jeu ; crit serveur-autoritatif)");
+        return true;
+      }
       case "COMPLETE_QUEST": {
         // Réclamation d'une QUÊTE / ACHIEVEMENT — logique d'origine EXACTE (QuestHelper.completeQuest, code du
         // jeu). Gap trouvé EN JEU (écran MEDALS → « THANKS! » envoie Action{COMPLETE_QUEST, extra={ID=<questID>}}
