@@ -298,23 +298,31 @@ public final class LoginServer {
               // PERSISTANT (#41) → répond ArenaUpdate (nouveau classement). Patron CampaignAttack #19.
               com.perblue.heroes.network.messages.ArenaType at;
               long defID; boolean win;
+              com.perblue.heroes.network.messages.AttackBase base;
               if (m instanceof com.perblue.heroes.network.messages.ColiseumAttack) {
                 com.perblue.heroes.network.messages.ColiseumAttack ca =
                     (com.perblue.heroes.network.messages.ColiseumAttack) m;
                 at = com.perblue.heroes.network.messages.ArenaType.COLISEUM;
-                defID = ca.defendingUserID; win = outcomeWin(ca.base, ca.stats);
+                defID = ca.defendingUserID; win = outcomeWin(ca.base, ca.stats); base = ca.base;
               } else {
                 com.perblue.heroes.network.messages.ArenaAttack aa =
                     (com.perblue.heroes.network.messages.ArenaAttack) m;
                 at = com.perblue.heroes.network.messages.ArenaType.FIGHT_PIT;
-                defID = aa.defendingUserID; win = outcomeWin(aa.base, aa.stats);
+                defID = aa.defendingUserID; win = outcomeWin(aa.base, aa.stats); base = aa.base;
               }
+              java.util.List<?> attackers = base == null ? null : base.attackers;
               ServerArenaLadder ladder = loadOrCreateLadder(user, at);
-              com.perblue.heroes.network.messages.ArenaUpdate up = user.resolveArenaAttack(defID, win, at, ladder, oppSrc);
+              com.perblue.heroes.network.messages.ArenaUpdate up =
+                  user.resolveArenaAttack(defID, win, at, ladder, oppSrc, attackers);   // + XP d'arène
               try { store.saveArenaLadder(user.shardID, at.name(), ladder); } catch (Exception e) {
                 System.out.println("[login]     ! persistance ladder échouée: " + e); }
               try { store.save(user); } catch (Exception e) {
                 System.out.println("[login]     ! persistance joueur échouée: " + e); }
+              // RAPPORT DE DÉFENSE — si le défenseur est un VRAI joueur, on lui dépose un courrier (FIGHT_PIT_DEFENSE /
+              // COLISEUM_DEFENSE) : qui l'a attaqué + issue (défense tenue / vaincue). Comme dans le vrai jeu.
+              String attackerName = user.basicInfo() != null && user.basicInfo().name != null
+                  ? user.basicInfo().name : "Un rival";
+              deliverDefenseMail(defID, user.shardID, at, win, attackerName);
               up.setAsReplyTo(m);
               c.send(up);
               System.out.println("[login] <== " + (m instanceof com.perblue.heroes.network.messages.ColiseumAttack
@@ -366,6 +374,35 @@ public final class LoginServer {
         if (stats != null && stats.outcome == com.perblue.heroes.network.messages.CombatOutcome.WIN) return true;
         return false;
       }
+
+      /** RAPPORT DE DÉFENSE — dépose un courrier au DÉFENSEUR (uniquement si c'est un VRAI joueur, pas un bot) :
+       *  qui l'a attaqué + issue de SA défense (tenue si l'attaquant a perdu, vaincue s'il a gagné). Type de courrier
+       *  du jeu (FIGHT_PIT_DEFENSE / COLISEUM_DEFENSE). Informationnel (pas de récompense). Chargé+sauvé via le store. */
+      private void deliverDefenseMail(long defenderID, int shard,
+          com.perblue.heroes.network.messages.ArenaType at, boolean attackerWon, String attackerName) {
+        if (defenderID <= 0 || defenderID >= ServerArenaLadder.BOT_ID_BASE) return;   // bot → pas de courrier
+        try {
+          ServerUser defender = store.loadIfExists(defenderID, shard);
+          if (defender == null) return;
+          boolean coli = at == com.perblue.heroes.network.messages.ArenaType.COLISEUM;
+          com.perblue.heroes.network.messages.MailType type = coli
+              ? com.perblue.heroes.network.messages.MailType.COLISEUM_DEFENSE
+              : com.perblue.heroes.network.messages.MailType.FIGHT_PIT_DEFENSE;
+          String arene = coli ? "Coliseum" : "Fight Pit";
+          String subject = arene + " Defense";
+          String body = attackerWon
+              ? (attackerName + " attacked your " + arene + " team and won. Your defense was defeated.")
+              : (attackerName + " attacked your " + arena(coli) + " team but your defense held!");
+          long id = defender.deliverMail(type, attackerName, subject, body, null);
+          try { store.save(defender); } catch (Exception e) {
+            System.out.println("[login]     ! persistance courrier défenseur échouée: " + e); }
+          System.out.println("[login]     ✉ rapport de défense → joueur " + defenderID
+              + " (courrier #" + id + ", " + (attackerWon ? "défense vaincue" : "défense tenue") + ")");
+        } catch (Exception e) {
+          System.out.println("[login]     ! rapport de défense échoué: " + e);
+        }
+      }
+      private String arena(boolean coli) { return coli ? "Coliseum" : "Fight Pit"; }
     };
 
     GruntServerFactory.startNioTcp(port, MessageFactory.getInstance(), exec, listener,

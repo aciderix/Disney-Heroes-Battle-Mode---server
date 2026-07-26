@@ -1573,6 +1573,46 @@ public final class ServerUser {
     mail.add(m);
   }
 
+  /** Courriers persistés (mailbox), pour vérification. */
+  public synchronized java.util.List<com.perblue.heroes.network.messages.MailMessage> mailPersisted() {
+    return mail == null ? java.util.Collections.emptyList() : mail;
+  }
+
+  /** Prochain identifiant de courrier (per-joueur, croissant : max existant + 1 ; 1 si mailbox vide). */
+  public synchronized long nextMailID() {
+    long max = 0;
+    if (mail != null) for (com.perblue.heroes.network.messages.MailMessage m : mail) if (m.iD > max) max = m.iD;
+    return max + 1;
+  }
+
+  /**
+   * Construit + DÉPOSE un courrier serveur (format wire authentique du jeu) : sujet/texte + pièces jointes
+   * (récompenses arbitraires via {@code RewardHelper.createDrop}). Sert au rapport de défense d'arène et au
+   * panneau admin (courrier global/ciblé). ID auto (croissant), expiration ~10 ans, non lu, non persistant.
+   * @return l'ID attribué.
+   */
+  public synchronized long deliverMail(com.perblue.heroes.network.messages.MailType type, String from,
+      String subject, String body,
+      java.util.List<com.perblue.heroes.network.messages.RewardDrop> attachments) {
+    long now = System.currentTimeMillis();
+    com.perblue.heroes.network.messages.MailMessage m = new com.perblue.heroes.network.messages.MailMessage();
+    m.iD = nextMailID();
+    m.type = type;
+    m.fromSender = from == null ? "Disney Heroes" : from;
+    m.subject = subject == null ? "" : subject;
+    m.message = body == null ? "" : body;
+    m.sentDate = now;
+    m.expiration = now + 3650L * 24L * 3600L * 1000L;   // ~10 ans (0 = traité comme EXPIRÉ par la mailbox)
+    m.opened = false;
+    m.persistent = false;
+    m.translatable = false;                             // texte LITTÉRAL (pas une clé i18n)
+    m.extra = new com.perblue.heroes.network.messages.MailExtra();
+    m.extra.attachments = (attachments == null)
+        ? new java.util.ArrayList<>() : new java.util.ArrayList<>(attachments);
+    addMail(m);
+    return m.iD;
+  }
+
   /** Courrier de la mailbox portant l'{@code id}, ou {@code null}. */
   private com.perblue.heroes.network.messages.MailMessage findMail(long id) {
     if (mail == null) return null;
@@ -1714,20 +1754,27 @@ public final class ServerUser {
    * ARÈNE #44 — RÉSOLUTION autoritative d'une attaque (résultat rapporté par le client, patron CampaignAttack #19).
    * Décrémente les chances de combat ; sur VICTOIRE, applique la mécanique de RANG du fight pit (battre un mieux
    * classé = prendre sa place, swap dans le ladder) + crédite des points. Mute le classement PERSISTANT (#41) et
-   * renvoie {@code ArenaUpdate} (nouveau classement). PARTIEL (§2) : XP d'arène ({@code giveArenaEXP}) non encore
-   * accordée — à ajouter. Le combat lui-même est joué côté client (re-sim serveur = #24/#25, ouvert aussi en campagne).
+   * renvoie {@code ArenaUpdate} (nouveau classement). Accorde aussi l'<b>XP d'arène</b> (héros attaquants) via la
+   * logique du jeu ({@code ArenaHelper.giveArenaEXP}). Le combat lui-même est joué côté client (re-sim serveur = #24/#25).
    */
   public synchronized com.perblue.heroes.network.messages.ArenaUpdate resolveArenaAttack(
       long defenderID, boolean win, com.perblue.heroes.network.messages.ArenaType type, ServerArenaLadder ladder) {
-    return resolveArenaAttack(defenderID, win, type, ladder, null);
+    return resolveArenaAttack(defenderID, win, type, ladder, null, null);
   }
 
-  /** Variante vrai PvP : {@code src} sert à rendre les rows des vrais joueurs (défense réelle) dans l'ArenaUpdate.
+  public synchronized com.perblue.heroes.network.messages.ArenaUpdate resolveArenaAttack(
+      long defenderID, boolean win, com.perblue.heroes.network.messages.ArenaType type, ServerArenaLadder ladder,
+      ServerArena.OpponentSource src) {
+    return resolveArenaAttack(defenderID, win, type, ladder, src, null);
+  }
+
+  /** Variante vrai PvP + XP : {@code src} rend les rows des vrais joueurs (défense réelle) ; {@code attackers}
+   *  ({@code ArenaAttack.base.attackers}) reçoit l'XP d'arène (héros attaquants, {@code giveArenaEXP}).
    *  La mécanique de RANG (swap) déplace À LA FOIS l'attaquant (monte) ET le défenseur (descend) dans le classement
    *  PARTAGÉ+persistant → les DEUX côtés voient le résultat (le défenseur à sa prochaine ouverture). */
   public synchronized com.perblue.heroes.network.messages.ArenaUpdate resolveArenaAttack(
       long defenderID, boolean win, com.perblue.heroes.network.messages.ArenaType type, ServerArenaLadder ladder,
-      ServerArena.OpponentSource src) {
+      ServerArena.OpponentSource src, java.util.List<?> attackers) {
     ServerContext.init();
     User user = ClientNetworkStateConverter.getUser(userInfo, userExtra, "arena-attack");
     IndividualUser iu = ClientNetworkStateConverter.getIndividualUser(
@@ -1751,6 +1798,23 @@ public final class ServerUser {
         me.points += ARENA_WIN_POINTS;
         me.pointsTiebreaker = System.currentTimeMillis();
         if (me.points > me.bestScore) me.bestScore = me.points;
+      }
+    }
+    // XP D'ARÈNE — les héros ATTAQUANTS gagnent de l'XP (logique du jeu ArenaHelper.giveArenaEXP :
+    // ArenaStats.getHeroEXPGiven(teamLevel) × multiplicateur d'évènement, sur chaque unité). L'XP modifie l'état
+    // des héros → resyncHeroes pour persister (§6). Best-effort : jamais fatal pour la résolution du combat.
+    if (attackers != null && !attackers.isEmpty()) {
+      try {
+        // Snapshot d'évènements = NONE : le serveur n'héberge AUCUN évènement spécial (§F) → multiplicateur d'XP de
+        // base (1×). NB : SpecialEventsHelper.snapshot() touche l'UI (Gdx.graphics) → inutilisable en headless ; NONE
+        // est la valeur « aucun bonus » du jeu, sans dépendance graphique.
+        com.perblue.heroes.game.specialevent.SpecialEventSnapshot snap =
+            com.perblue.heroes.game.specialevent.SpecialEventSnapshot.NONE;
+        int exp = com.perblue.heroes.game.logic.ArenaHelper.giveArenaEXP(user, attackers, type, snap);
+        resyncHeroes(user);                                  // XP héros → wire (userExtra.heroes)
+        System.out.println("[arena] XP d'arène accordée aux héros attaquants : +" + exp);
+      } catch (Throwable t) {
+        System.out.println("[arena] giveArenaEXP échec (PARTIEL) : " + t);
       }
     }
     com.perblue.heroes.network.messages.ArenaInfo ai = ServerArena.buildArenaInfo(user, userInfo, type, ladder, src);
