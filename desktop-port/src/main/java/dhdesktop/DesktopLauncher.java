@@ -255,6 +255,17 @@ public final class DesktopLauncher {
                     TutorialDriver.navTo(game, com.perblue.heroes.ui.UINavHelper.Destination.QUESTS);
                     continue;
                 }
+                if (low.startsWith("drag ")) {                   // drag x1,y1,x2,y2[,frames] — GLISSER (scroll de liste)
+                    String[] d = ln.substring(5).trim().split("[,;\\s]+");
+                    if (d.length >= 4) {
+                        int x1 = Integer.parseInt(d[0].trim()), y1 = Integer.parseInt(d[1].trim());
+                        int x2 = Integer.parseInt(d[2].trim()), y2 = Integer.parseInt(d[3].trim());
+                        int frames = d.length >= 5 ? Integer.parseInt(d[4].trim()) : 15;
+                        System.out.println("[manualclick] drag (" + x1 + "," + y1 + ")→(" + x2 + "," + y2 + ") " + frames + "f");
+                        input.drag(x1, y1, x2, y2, frames);
+                    }
+                    continue;
+                }
                 if (low.startsWith("nav ")) {                    // nav <DESTINATION> — ouvrir un écran du hub (API du jeu)
                     String dest = ln.substring(4).trim().toUpperCase();
                     try {

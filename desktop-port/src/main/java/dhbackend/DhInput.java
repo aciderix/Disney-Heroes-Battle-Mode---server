@@ -86,9 +86,23 @@ public final class DhInput implements Input {
     public void inject(Runnable r) { injected.add(r); }
     // touchUp DIFFÉRÉS : pour un press-relâche RÉEL (down maintenant, up après N drains, comme un doigt).
     private final java.util.List<int[]> pendingUp = java.util.Collections.synchronizedList(new java.util.ArrayList<>());
+    // GLISSER (drag) EN COURS : {x1,y1,x2,y2,totalFrames,framesLeft} — un touchDragged interpolé par drain, comme un
+    // doigt qui glisse (scroll d'une liste, ex. classement d'arène). touchUp au dernier frame.
+    private final java.util.List<int[]> pendingDrag = java.util.Collections.synchronizedList(new java.util.ArrayList<>());
     public void drain() {
         justPressed.clear(); // "just pressed" = valable pour la frame courante
         Runnable r; while ((r = injected.poll()) != null) { try { r.run(); } catch (Throwable t) { t.printStackTrace(); } }
+        synchronized (pendingDrag) {
+            for (java.util.Iterator<int[]> it = pendingDrag.iterator(); it.hasNext();) {
+                int[] d = it.next();                        // {x1,y1,x2,y2,total,left}
+                d[5]--;
+                double prog = 1.0 - (double) Math.max(0, d[5]) / d[4];   // 0→1 sur la durée
+                int cx = (int) Math.round(d[0] + (d[2] - d[0]) * prog);
+                int cy = (int) Math.round(d[1] + (d[3] - d[1]) * prog);
+                moved(cx, cy);                              // bouton enfoncé → touchDragged
+                if (d[5] <= 0) { touchUp(d[2], d[3], 0); it.remove(); }
+            }
+        }
         synchronized (pendingUp) {
             for (java.util.Iterator<int[]> it = pendingUp.iterator(); it.hasNext();) {
                 int[] d = it.next();
@@ -102,5 +116,12 @@ public final class DhInput implements Input {
     public void tapHold(int x, int y, int holdFrames) {
         inject(() -> touchDown(x, y, 0));
         synchronized (pendingUp) { pendingUp.add(new int[]{x, y, 0, Math.max(1, holdFrames)}); }
+    }
+    /** GLISSER RÉEL (scroll) : touchDown en (x1,y1), touchDragged interpolé jusqu'à (x2,y2) sur {@code frames}
+     *  frames, puis touchUp — comme un doigt qui fait défiler une liste. */
+    public void drag(int x1, int y1, int x2, int y2, int frames) {
+        int f = Math.max(2, frames);
+        inject(() -> touchDown(x1, y1, 0));
+        synchronized (pendingDrag) { pendingDrag.add(new int[]{x1, y1, x2, y2, f, f}); }
     }
 }
