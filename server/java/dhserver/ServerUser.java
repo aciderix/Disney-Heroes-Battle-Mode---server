@@ -284,6 +284,38 @@ public final class ServerUser {
         ? java.util.Collections.emptyList() : userExtra.heroLineups;
   }
 
+  /** ARÈNE (vrai PvP) — le {@link User} du jeu de CE compte, lié au contexte (lecture de sa défense par un autre
+   *  joueur qui l'attaque). C'est le MÊME chemin que la lecture de sa propre défense — aucune régénération. */
+  public synchronized User gameUser() {
+    ServerContext.init();
+    User u = ClientNetworkStateConverter.getUser(userInfo, userExtra, "opp");
+    ServerContext.bind(u, ClientNetworkStateConverter.getIndividualUser(
+        individualUserExtra, userID, userInfo.diamonds, "opp"));
+    return u;
+  }
+
+  /** Identité de base (id/nom/TL) pour peupler une entrée de classement d'arène. */
+  public synchronized com.perblue.heroes.network.messages.BasicUserInfo basicInfo() {
+    return userInfo.basicInfo;
+  }
+
+  /** ARÈNE (vrai PvP) — ce compte a-t-il une DÉFENSE posée pour {@code type} (donc éligible comme adversaire réel) ?
+   *  Vrai ssi au moins une lineup de défense du mode est non vide dans l'état persisté. */
+  public synchronized boolean hasArenaDefense(com.perblue.heroes.network.messages.ArenaType type) {
+    if (userExtra.heroLineups == null) return false;
+    java.util.Set<String> want = new java.util.HashSet<>();
+    if (type == com.perblue.heroes.network.messages.ArenaType.COLISEUM) {
+      want.add("COLISEUM_DEFENSE_1"); want.add("COLISEUM_DEFENSE_2"); want.add("COLISEUM_DEFENSE_3");
+    } else { want.add("FIGHT_PIT_DEFENSE"); }
+    for (Object o : userExtra.heroLineups) {
+      com.perblue.heroes.network.messages.UserHeroLineupData d =
+          (com.perblue.heroes.network.messages.UserHeroLineupData) o;
+      if (d != null && d.lineupType != null && want.contains(d.lineupType.name())
+          && d.lineup != null && d.lineup.heroes != null && !d.lineup.heroes.isEmpty()) return true;
+    }
+    return false;
+  }
+
   /** Ajoute un héros au roster (état de base WHITE niv.1, comme un compte neuf) via la logique du jeu
    *  ({@code User.createAndAddHero}) + resync wire. Idempotent (ne double pas un héros déjà possédé). */
   public synchronized void grantHero(com.perblue.heroes.network.messages.UnitType type) {
@@ -1639,12 +1671,19 @@ public final class ServerUser {
    */
   public synchronized com.perblue.grunt.translate.GruntMessage startArenaAttack(
       com.perblue.heroes.network.messages.ArenaType type, long defenderID, ServerArenaLadder ladder) {
+    return startArenaAttack(type, defenderID, ladder, null);
+  }
+
+  /** Variante vrai PvP : {@code src} sert les héros de défense RÉELS d'un vrai défenseur (sinon bot synthétique). */
+  public synchronized com.perblue.grunt.translate.GruntMessage startArenaAttack(
+      com.perblue.heroes.network.messages.ArenaType type, long defenderID, ServerArenaLadder ladder,
+      ServerArena.OpponentSource src) {
     ServerContext.init();
     User user = ClientNetworkStateConverter.getUser(userInfo, userExtra, "arena-start");
     IndividualUser iu = ClientNetworkStateConverter.getIndividualUser(
         individualUserExtra, userID, userInfo.diamonds, "arena-start");
     ServerContext.bind(user, iu);
-    com.perblue.heroes.network.messages.ArenaInfo ai = ServerArena.buildArenaInfo(user, userInfo, type, ladder);
+    com.perblue.heroes.network.messages.ArenaInfo ai = ServerArena.buildArenaInfo(user, userInfo, type, ladder, src);
     ServerArenaLadder.Entry def = null;
     for (ServerArenaLadder.Entry e : ladder.entries()) if (e.id == defenderID) { def = e; break; }
     String defName = def != null ? def.name : "Rival";
@@ -1657,7 +1696,7 @@ public final class ServerUser {
       r.defenderFriendships = new java.util.ArrayList<>();
       r.division = ai.yourLeague.division; r.tier = ai.yourLeague.tier; r.season = ai.season;
       r.combatModifiers = new java.util.HashMap<>();
-      r.defendingLineups = def != null ? ServerArena.defenderLineups(def, shard, 3) : new java.util.ArrayList<>();
+      r.defendingLineups = def != null ? ServerArena.defenderLineups(def, shard, 3, src) : new java.util.ArrayList<>();
       return r;
     }
     com.perblue.heroes.network.messages.StartArenaAttackResponse r =
@@ -1667,7 +1706,7 @@ public final class ServerUser {
     r.defenderFriendships = new java.util.ArrayList<>();
     r.division = ai.yourLeague.division; r.tier = ai.yourLeague.tier; r.season = ai.season;
     r.combatModifiers = new java.util.HashMap<>();
-    r.heroes = def != null ? ServerArena.defenderHeroData(def, shard) : new java.util.ArrayList<>();
+    r.heroes = def != null ? ServerArena.defenderHeroData(def, shard, src) : new java.util.ArrayList<>();
     return r;
   }
 
@@ -1680,6 +1719,15 @@ public final class ServerUser {
    */
   public synchronized com.perblue.heroes.network.messages.ArenaUpdate resolveArenaAttack(
       long defenderID, boolean win, com.perblue.heroes.network.messages.ArenaType type, ServerArenaLadder ladder) {
+    return resolveArenaAttack(defenderID, win, type, ladder, null);
+  }
+
+  /** Variante vrai PvP : {@code src} sert à rendre les rows des vrais joueurs (défense réelle) dans l'ArenaUpdate.
+   *  La mécanique de RANG (swap) déplace À LA FOIS l'attaquant (monte) ET le défenseur (descend) dans le classement
+   *  PARTAGÉ+persistant → les DEUX côtés voient le résultat (le défenseur à sa prochaine ouverture). */
+  public synchronized com.perblue.heroes.network.messages.ArenaUpdate resolveArenaAttack(
+      long defenderID, boolean win, com.perblue.heroes.network.messages.ArenaType type, ServerArenaLadder ladder,
+      ServerArena.OpponentSource src) {
     ServerContext.init();
     User user = ClientNetworkStateConverter.getUser(userInfo, userExtra, "arena-attack");
     IndividualUser iu = ClientNetworkStateConverter.getIndividualUser(
@@ -1704,7 +1752,7 @@ public final class ServerUser {
         if (me.points > me.bestScore) me.bestScore = me.points;
       }
     }
-    com.perblue.heroes.network.messages.ArenaInfo ai = ServerArena.buildArenaInfo(user, userInfo, type, ladder);
+    com.perblue.heroes.network.messages.ArenaInfo ai = ServerArena.buildArenaInfo(user, userInfo, type, ladder, src);
     com.perblue.heroes.network.messages.ArenaUpdate up = new com.perblue.heroes.network.messages.ArenaUpdate();
     up.type = type;
     up.season = ai.season;
@@ -1728,13 +1776,28 @@ public final class ServerUser {
    */
   public synchronized ArenaResult arenaInfoWithLadder(
       com.perblue.heroes.network.messages.ArenaType type, ServerArenaLadder loaded) {
+    return arenaInfoWithLadder(type, loaded, null);
+  }
+
+  /** Variante vrai PvP : {@code src} peuple le classement avec les VRAIS joueurs du shard (génération OU fusion des
+   *  nouveaux dans un ladder chargé), et bâtit leurs rows depuis leur défense réelle. */
+  public synchronized ArenaResult arenaInfoWithLadder(
+      com.perblue.heroes.network.messages.ArenaType type, ServerArenaLadder loaded, ServerArena.OpponentSource src) {
     ServerContext.init();
     User user = ClientNetworkStateConverter.getUser(userInfo, userExtra, "arena");
     IndividualUser iu = ClientNetworkStateConverter.getIndividualUser(
         individualUserExtra, userID, userInfo.diamonds, "arena");
     ServerContext.bind(user, iu);
-    ServerArenaLadder ladder = (loaded != null) ? loaded : ServerArena.generateLadder(user, userInfo, type);
-    com.perblue.heroes.network.messages.ArenaInfo info = ServerArena.buildArenaInfo(user, userInfo, type, ladder);
+    long myID = userInfo.basicInfo != null ? userInfo.basicInfo.iD : 1L;
+    ServerArenaLadder ladder;
+    if (loaded != null) {
+      ladder = loaded;
+      ServerArena.mergeRealOpponents(ladder, src, user.getShardID(), myID, type);   // garde le ladder à jour
+    } else {
+      ladder = ServerArena.generateLadder(user, userInfo, type, src);
+    }
+    com.perblue.heroes.network.messages.ArenaInfo info =
+        ServerArena.buildArenaInfo(user, userInfo, type, ladder, src);
     return new ArenaResult(info, ladder);
   }
 

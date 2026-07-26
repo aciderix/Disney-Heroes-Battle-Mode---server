@@ -41,7 +41,7 @@ public final class ServerArena {
 
   /** Chances de combat quotidiennes par ligue — <b>5</b> (relevé EN JEU « Fights Left 5/5 »). À terme = cap de la
    *  {@code ResourceType} clé ({@code ArenaHelper.getKeyResource}) ; valeur observée pour l'instant. */
-  static final int MAX_FIGHTS = 5;
+  public static final int MAX_FIGHTS = 5;
 
   /**
    * ARÈNE #41 — construit l'{@link ArenaInfo} depuis un CLASSEMENT PERSISTANT ({@link ServerArenaLadder}) : les
@@ -49,11 +49,18 @@ public final class ServerArena {
    * des bots se régénèrent déterministiquement (graine = id du bot) ; ta row = ta défense RÉELLE + identité live.
    */
   public static ArenaInfo buildArenaInfo(User user, UserInfo userInfo, ArenaType type, ServerArenaLadder ladder) {
+    return buildArenaInfo(user, userInfo, type, ladder, null);
+  }
+
+  /** Comme ci-dessus mais avec la source d'adversaires réels : les rows des vrais joueurs sont bâties depuis LEUR
+   *  défense RÉELLE (via {@code src.loadDefender}), pas en synthétique. */
+  public static ArenaInfo buildArenaInfo(User user, UserInfo userInfo, ArenaType type, ServerArenaLadder ladder,
+                                         OpponentSource src) {
     long now = System.currentTimeMillis();
     ArenaInfo info = new ArenaInfo();
     info.type = type;
     info.season = buildSeason(type, now);
-    info.yourLeague = buildLeagueFromLadder(user, userInfo, type, ladder);
+    info.yourLeague = buildLeagueFromLadder(user, userInfo, type, ladder, src);
     info.topLeague = info.yourLeague;   // une seule ligue COPPER (placement opérateur §3)
     return info;
   }
@@ -64,31 +71,62 @@ public final class ServerArena {
   }
 
   /**
-   * ARÈNE #41 — GÉNÈRE un classement initial pour {@code (shard, type)} : {@link #SYNTHETIC_OPPONENTS} bots
-   * calibrés sur ton roster (rareté/niveau, ids stables {@code BOT_ID_BASE+i}) ordonnés par niveau décroissant,
-   * puis TOI en dernier (nouveau/provisoire). Points 0 et {@link #MAX_FIGHTS} chances pour tous au départ.
+   * ARÈNE (vrai PvP) — source d'adversaires RÉELS : les autres comptes du shard qui ont posé une défense.
+   * Fournie par la couche persistance ({@link StoreOpponentSource} sur {@link UserStore}). {@code null} en headless →
+   * ladder 100 % bots (repli). C'est la façon dont le serveur affronte de VRAIS joueurs : leur défense est lue par
+   * le MÊME chemin que la sienne ({@code playerLineups}), aucune régénération synthétique.
    */
+  public interface OpponentSource {
+    /** Autres vrais joueurs du shard AVEC une défense posée pour {@code type} (entrées bot=false : id/nom/TL). */
+    List<ServerArenaLadder.Entry> realOpponents(int shardID, long excludeID, ArenaType type);
+    /** {@link User} (jeu) d'un vrai joueur — pour lire sa défense RÉELLE —, ou {@code null} si absent. */
+    User loadDefender(long id, int shardID);
+  }
+
+  /** Force d'une entrée pour l'ordre du classement (proxy) : bot → niveau du bot, vrai joueur → team level. */
+  private static int strength(ServerArenaLadder.Entry e) { return e.bot ? e.botLevel : e.teamLevel; }
+
+  /** Variante SANS source d'adversaires réels (headless/tests) : 100 % bots + toi. */
   public static ServerArenaLadder generateLadder(User user, UserInfo userInfo, ArenaType type) {
+    return generateLadder(user, userInfo, type, null);
+  }
+
+  /**
+   * ARÈNE #41/vrai PvP — GÉNÈRE un classement initial pour {@code (shard, type)} : d'abord les VRAIS joueurs du
+   * shard ayant une défense (via {@code src}), puis complément de bots calibrés sur ton roster jusqu'à
+   * {@link #SYNTHETIC_OPPONENTS} adversaires, ordonnés par force décroissante, puis TOI en dernier (provisoire).
+   * Points 0 et {@link #MAX_FIGHTS} chances pour tous au départ. {@code src==null} → 100 % bots (repli headless).
+   */
+  public static ServerArenaLadder generateLadder(User user, UserInfo userInfo, ArenaType type, OpponentSource src) {
     ServerArenaLadder ladder = new ServerArenaLadder();
     int userTL = userInfo.basicInfo != null ? userInfo.basicInfo.teamLevel : 1;
+    long myID = userInfo.basicInfo != null ? userInfo.basicInfo.iD : 1L;
+    List<ServerArenaLadder.Entry> opponents = new ArrayList<>();
+    if (src != null) {
+      for (ServerArenaLadder.Entry e : src.realOpponents(user.getShardID(), myID, type)) {
+        e.bot = false;
+        if (e.remainingFightChances <= 0) e.remainingFightChances = MAX_FIGHTS;
+        opponents.add(e);                                          // VRAIS joueurs d'abord
+      }
+    }
     Rarity oppRarity = calibrateRarity(user);
     int oppBaseLevel = calibrateLevel(user);
-    List<ServerArenaLadder.Entry> bots = new ArrayList<>();
-    for (int i = 0; i < SYNTHETIC_OPPONENTS; i++) {
+    int need = Math.max(0, SYNTHETIC_OPPONENTS - opponents.size());  // complément bots si trop peu de vrais joueurs
+    for (int i = 0; i < need; i++) {
       ServerArenaLadder.Entry e = new ServerArenaLadder.Entry();
       e.id = ServerArenaLadder.BOT_ID_BASE + i;
       e.name = "Rival " + (i + 1);
       e.teamLevel = userTL;
       e.bot = true;
       e.botRarityOrdinal = oppRarity.ordinal();
-      e.botLevel = Math.max(1, oppBaseLevel + (i - SYNTHETIC_OPPONENTS / 2));
+      e.botLevel = Math.max(1, oppBaseLevel + (i - need / 2));
       e.remainingFightChances = MAX_FIGHTS;
-      bots.add(e);
+      opponents.add(e);
     }
-    bots.sort((a, b) -> Integer.compare(b.botLevel, a.botLevel));   // plus fort en haut (proxy = niveau)
-    ladder.entries().addAll(bots);
+    opponents.sort((a, b) -> Integer.compare(strength(b), strength(a)));   // plus fort en haut
+    ladder.entries().addAll(opponents);
     ServerArenaLadder.Entry me = new ServerArenaLadder.Entry();
-    me.id = userInfo.basicInfo != null ? userInfo.basicInfo.iD : 1L;
+    me.id = myID;
     me.name = userInfo.basicInfo != null ? userInfo.basicInfo.name : "You";
     me.teamLevel = userTL;
     me.remainingFightChances = MAX_FIGHTS;
@@ -96,9 +134,29 @@ public final class ServerArena {
     return ladder;
   }
 
+  /**
+   * ARÈNE (vrai PvP) — fusionne dans un ladder DÉJÀ chargé les VRAIS joueurs du shard qui ont posé une défense
+   * depuis mais ne sont pas encore classés (ils ont rejoint/posé leur défense après la génération). Ajoutés en bas
+   * (non classés, ils grimperont en jouant). Garde le classement à jour sans le régénérer. Renvoie le nb ajouté.
+   */
+  public static int mergeRealOpponents(ServerArenaLadder ladder, OpponentSource src, int shardID,
+                                       long myID, ArenaType type) {
+    if (src == null) return 0;
+    int added = 0;
+    for (ServerArenaLadder.Entry e : src.realOpponents(shardID, myID, type)) {
+      if (ladder.indexOf(e.id) >= 0) continue;                     // déjà classé
+      e.bot = false;
+      if (e.remainingFightChances <= 0) e.remainingFightChances = MAX_FIGHTS;
+      int meIdx = ladder.indexOf(myID);                            // inséré JUSTE au-dessus de toi si tu es en bas
+      if (meIdx >= 0) ladder.entries().add(meIdx, e); else ladder.entries().add(e);
+      added++;
+    }
+    return added;
+  }
+
   /** Bâtit la ligue à partir des entrées ORDONNÉES du classement (rang = index). */
   private static ArenaLeagueInfo buildLeagueFromLadder(User user, UserInfo userInfo, ArenaType type,
-                                                       ServerArenaLadder ladder) {
+                                                       ServerArenaLadder ladder, OpponentSource src) {
     ArenaLeagueInfo lg = new ArenaLeagueInfo();
     lg.type = type;
     lg.tier = ArenaTier.COPPER;
@@ -117,8 +175,10 @@ public final class ServerArena {
         List<HeroSummary> yourLineup = firstTeamSummaries(yourTeams);
         long yourPower = totalPower(yourTeams);
         r = row(userInfo.basicInfo, yourLineup, yourTeams, yourPower, /*isYou*/ e.points <= 0);
+      } else if (!e.bot) {
+        r = realPlayerRow(e, src, type, numTeams, shardID);        // VRAI adversaire → sa défense RÉELLE
       } else {
-        r = botRow(e, shardID, numTeams);
+        r = botRow(e, shardID, numTeams);                          // bot → défense synthétique déterministe
       }
       applyRowExtra(r, e);
       lg.players.add(r);
@@ -126,6 +186,35 @@ public final class ServerArena {
     int idx = ladder.indexOf(myID);
     lg.yourRank = idx < 0 ? ladder.entries().size() : idx + 1;
     return lg;
+  }
+
+  /** Row d'un VRAI adversaire, bâtie depuis SA défense RÉELLE (lue par le même chemin que la tienne). heroIds
+   *  décalés dans une plage haute (unicité dans la ligue). Repli bot si le compte est introuvable. */
+  private static ArenaRow realPlayerRow(ServerArenaLadder.Entry e, OpponentSource src, ArenaType type,
+                                        int numTeams, int shardID) {
+    User d = src != null ? src.loadDefender(e.id, shardID) : null;
+    if (d == null) return botRow(e, shardID, numTeams);            // compte disparu → repli synthétique
+    BasicUserInfo who = new BasicUserInfo();
+    who.iD = e.id; who.name = e.name; who.teamLevel = e.teamLevel;
+    who.creationTime = System.currentTimeMillis();
+    who.userLastActive = System.currentTimeMillis();
+    who.previousName = "";
+    List<LineupSummary> teams = playerLineups(d, type, numTeams);  // SA défense posée (ou roster à défaut)
+    offsetHeroIds(teams, 1_000_000 + (int) (e.id % 9000L) * 100);  // unicité heroId dans la ligue
+    List<HeroSummary> first = firstTeamSummaries(teams);
+    return row(who, first, teams, totalPower(teams), /*isYou*/ false);
+  }
+
+  /** Réattribue des heroId uniques (base + compteur) à toutes les équipes — évite les collisions d'ID entre les
+   *  rows de plusieurs vrais joueurs/toi dans la même ligue (le client indexe les widgets par heroId). */
+  private static void offsetHeroIds(List<LineupSummary> teams, int base) {
+    int c = 0;
+    for (LineupSummary ls : teams) {
+      if (ls.lineup == null) continue;
+      for (Object o : ls.lineup) {
+        try { ((ExtendedHeroSummary) o).summary.heroId = base + (c++); } catch (Throwable ignore) {}
+      }
+    }
   }
 
   /** Une row d'adversaire (bot) reconstruite depuis son entrée de classement (lineups déterministes via son id). */
@@ -174,6 +263,29 @@ public final class ServerArena {
    * FIGHT_PIT) : le client rejoue le combat avec. Bot → régénéré DÉTERMINISTIQUEMENT (même graine = son id → même
    * équipe que celle affichée dans la liste). 5 héros.
    */
+  public static List<HeroData> defenderHeroData(ServerArenaLadder.Entry e, int shardID, OpponentSource src) {
+    if (!e.bot && src != null) {                                   // VRAI défenseur → SES héros de défense réels
+      User d = src.loadDefender(e.id, shardID);
+      if (d != null) return realDefenderHeroData(d);
+    }
+    return defenderHeroData(e, shardID);                            // bot → synthétique déterministe
+  }
+
+  /** Les héros de la défense FIGHT_PIT RÉELLE d'un vrai joueur en {@link HeroData} (le client rejoue le combat). */
+  private static List<HeroData> realDefenderHeroData(User d) {
+    List<HeroData> out = new ArrayList<>();
+    try {
+      HeroLineup hl = d.getHeroLineup(HeroLineupType.FIGHT_PIT_DEFENSE, 0L);
+      if (hl != null && hl.heroes != null) {
+        for (Object o : hl.heroes) {
+          UnitData ud = (UnitData) d.getHero((UnitType) o);
+          if (ud != null) out.add(ClientNetworkStateConverter.getHeroData(ud));
+        }
+      }
+    } catch (Throwable t) { /* jamais fatal */ }
+    return out;
+  }
+
   public static List<HeroData> defenderHeroData(ServerArenaLadder.Entry e, int shardID) {
     List<HeroData> out = new ArrayList<>();
     try {
@@ -195,6 +307,20 @@ public final class ServerArena {
 
   /** ARÈNE #44 — les {@code numTeams} équipes de défense du défenseur en {@code LineupSummary} (COLISEUM :
    *  {@code StartColiseumAttackResponse.defendingLineups}). Réutilise la génération synthétique déterministe. */
+  /** COLISEUM : équipes de défense du défenseur — RÉELLES si vrai joueur (via {@code src}), sinon synthétiques (bot). */
+  @SuppressWarnings("unchecked")
+  public static List defenderLineups(ServerArenaLadder.Entry e, int shardID, int numTeams, OpponentSource src) {
+    if (!e.bot && src != null) {
+      User d = src.loadDefender(e.id, shardID);
+      if (d != null) {
+        List<LineupSummary> teams = playerLineups(d, ArenaType.COLISEUM, numTeams);
+        offsetHeroIds(teams, 1_000_000 + (int) (e.id % 9000L) * 100);
+        return teams;
+      }
+    }
+    return defenderLineups(e, shardID, numTeams);                   // bot → synthétique
+  }
+
   @SuppressWarnings("unchecked")
   public static List defenderLineups(ServerArenaLadder.Entry e, int shardID, int numTeams) {
     BasicUserInfo who = new BasicUserInfo();

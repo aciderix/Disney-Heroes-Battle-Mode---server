@@ -39,9 +39,12 @@ public final class LoginServer {
   private final ServerUser user;
   /** Persistance SQLite (octets wire des objets du jeu). */
   private final UserStore store;
+  /** ARÈNE (vrai PvP) — source d'adversaires RÉELS (autres comptes du shard) adossée à la base. */
+  private final ServerArena.OpponentSource oppSrc;
 
   public LoginServer(int port, ServerUser user, UserStore store) {
     this.port = port; this.user = user; this.store = store;
+    this.oppSrc = new StoreOpponentSource(store);
   }
 
   /** Toutes les classes de message du jeu (dérivées du registre MessageFactory.messageIndex). */
@@ -187,7 +190,7 @@ public final class LoginServer {
                   if (ido != null) defID = Long.parseLong(ido.toString());
                 } catch (Throwable t) { /* ID absent/illisible → -1 (repli) */ }
                 ServerArenaLadder ladder = loadOrCreateLadder(user, at);
-                com.perblue.grunt.translate.GruntMessage resp = user.startArenaAttack(at, defID, ladder);
+                com.perblue.grunt.translate.GruntMessage resp = user.startArenaAttack(at, defID, ladder, oppSrc);
                 resp.setAsReplyTo(m);
                 c.send(resp);
                 System.out.println("[login] <== START " + at + " attaque défenseur=" + defID
@@ -278,7 +281,7 @@ public final class LoginServer {
               ServerArenaLadder loaded = null;
               try { loaded = store.loadArenaLadder(user.shardID, at.name()); }
               catch (Exception e) { System.out.println("[login]     ! lecture ladder échouée: " + e); }
-              ServerUser.ArenaResult ar = user.arenaInfoWithLadder(at, loaded);
+              ServerUser.ArenaResult ar = user.arenaInfoWithLadder(at, loaded, oppSrc);
               try { store.saveArenaLadder(user.shardID, at.name(), ar.ladder); }
               catch (Exception e) { System.out.println("[login]     ! persistance ladder échouée: " + e); }
               com.perblue.heroes.network.messages.ArenaInfo ai = ar.info;
@@ -307,7 +310,7 @@ public final class LoginServer {
                 defID = aa.defendingUserID; win = outcomeWin(aa.base, aa.stats);
               }
               ServerArenaLadder ladder = loadOrCreateLadder(user, at);
-              com.perblue.heroes.network.messages.ArenaUpdate up = user.resolveArenaAttack(defID, win, at, ladder);
+              com.perblue.heroes.network.messages.ArenaUpdate up = user.resolveArenaAttack(defID, win, at, ladder, oppSrc);
               try { store.saveArenaLadder(user.shardID, at.name(), ladder); } catch (Exception e) {
                 System.out.println("[login]     ! persistance ladder échouée: " + e); }
               try { store.save(user); } catch (Exception e) {
@@ -350,7 +353,7 @@ public final class LoginServer {
         ServerArenaLadder ladder = null;
         try { ladder = store.loadArenaLadder(u.shardID, at.name()); } catch (Exception e) {}
         if (ladder == null) {
-          ladder = u.arenaInfoWithLadder(at, null).ladder;
+          ladder = u.arenaInfoWithLadder(at, null, oppSrc).ladder;
           try { store.saveArenaLadder(u.shardID, at.name(), ladder); } catch (Exception e) {}
         }
         return ladder;

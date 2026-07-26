@@ -80,6 +80,36 @@ public final class UserStore implements AutoCloseable {
     return false;
   }
 
+  /** ARÈNE (vrai PvP) — IDs des AUTRES joueurs d'un shard (matchmaking sur de vrais comptes). Exclut {@code excludeID}. */
+  public synchronized java.util.List<Long> listUserIDs(int shardID, long excludeID) throws SQLException {
+    java.util.List<Long> out = new java.util.ArrayList<>();
+    try (PreparedStatement ps = conn.prepareStatement(
+        "SELECT userID FROM users WHERE shardID=? AND userID<>? ORDER BY userID")) {
+      ps.setInt(1, shardID);
+      ps.setLong(2, excludeID);
+      try (ResultSet rs = ps.executeQuery()) { while (rs.next()) out.add(rs.getLong(1)); }
+    }
+    return out;
+  }
+
+  /** Charge le joueur (userID,shardID) s'il EXISTE, sinon {@code null} (ne crée RIEN — pour lire un adversaire). */
+  public synchronized ServerUser loadIfExists(long userID, int shardID) throws SQLException {
+    try (PreparedStatement ps = conn.prepareStatement(
+        "SELECT userInfo, userExtra, individualUserExtra, battlePassV2Data, mail FROM users WHERE userID=? AND shardID=?")) {
+      ps.setLong(1, userID);
+      ps.setInt(2, shardID);
+      try (ResultSet rs = ps.executeQuery()) {
+        if (rs.next()) {
+          ServerUser su = ServerUser.fromWire(userID, shardID, rs.getBytes(1), rs.getBytes(2), rs.getBytes(3));
+          su.setBattlePassWire(rs.getBytes(4));
+          su.setMailWire(rs.getBytes(5));
+          return su;
+        }
+      }
+    }
+    return null;
+  }
+
   /** Charge le joueur (userID,shardID) s'il existe, sinon en crée un NOUVEAU et le persiste. */
   public synchronized ServerUser loadOrCreate(long userID, int shardID) throws SQLException {
     try (PreparedStatement ps = conn.prepareStatement(
