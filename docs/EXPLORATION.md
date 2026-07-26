@@ -29,7 +29,7 @@
 | ITEMS | 1 | ✅ | `SELL_ITEM`/`USE_ITEM`/`VIEWED_CONSUMABLE_ITEM` |
 | QUESTS | 1 | ✅ | complete/view/redeem + boîtes weekly |
 | MEDALS (prize wall) | 1 | ✅ | `COMPLETE_QUEST` |
-| MAILBOX | 1 | ✅ | livraison + open/take/delete + `ActionGroup` |
+| MAILBOX | 1 | ✅ | livraison + open/take/delete + `ActionGroup` · **PANNEAU ADMIN** (`AdminMail` : courrier ciblé/global + récompenses arbitraires) · **rapports de défense d'arène** (`FIGHT_PIT_DEFENSE`/`COLISEUM_DEFENSE`) — vérifié en jeu (courrier admin « GIFT FROM THE ADMIN » +💎1000 → CLAIM crédité) |
 | EVENTS | 1 | ✅ | rend + `UPDATE_TIME` (events live-ops vides) |
 | SIGN_IN | 1 | ✅ | `CLAIM_SIGNIN_REWARD` |
 
@@ -42,7 +42,7 @@ Ordre de traitement (modifiable). On commence par **BATTLE PASS**.
 | # | Écran | TL | Statut | Problèmes rencontrés / fixés · notes |
 |---|---|---|---|---|
 | 1 | **BATTLE PASS** (onglet QUESTS) | 11 | ✅ | **serveur complet** (claim/collect/buyout/rollover/premium + handler `BattlePassV2GetData`) + **ère de contenu résolue** (stat-sync `BootData.statDataTxt`) → **onglet ACTIF EN JEU**, saison courante, PREMIUM « Activated », paliers réclamables (voir note ↓) |
-| 2-3 | RANKINGS / FIGHT_PIT / COLISEUM (arène PvP) | 10/40 | 🔧 | **FEATURE PvP EN COURS (paliers).** **Palier 1 ✅ EN JEU** : `GetArenaInfo{type}` → **`ArenaInfo` construit serveur-autoritativement** (`ServerArena` : saison via `ArenaHelper`/`arena_constants.tab`, ligue COPPER I, ta row réelle + adversaires) → l'écran REND (« COPPER I », « Fights Left 5/5 », REWARDS, provisoire). **#43 ✅ EN JEU** : **adversaires SYNTHÉTIQUES** générés via la logique du jeu (`createAndAddHero` → `HeroSummary`/`ExtendedHeroSummary`), pool curé 27 héros, calibrés (rareté/niveau) sur ton roster, classés par puissance. **FIGHT_PIT** = équipe unique (`ArenaRow.lineup`) ; **COLISEUM** = **3 équipes de défense** (`ArenaRow.lineups`=List<`LineupSummary`>, source `ArenaHelper.COLISEUM_DEFENSE_LINEUPS`) — sinon `PVPRow.createColiUnitTable` plante (`IndexOutOfBounds` sur `lineups` vide, trouvé en jeu §8). Vérifié en jeu : COLISEUM rivaux distincts Power 930 (3×310) + bascule ⌃/⌄ des 3 équipes, ARENA/FIGHT_PIT rivaux Power 310, ta row DEFENSE 8305 ; `ArenaInfoTest` (FIGHT_PIT+COLISEUM round-trip) + régression 35/35. **#41 ✅ EN JEU + DB** : **état PvP persistant** — (a) défense d'arène du joueur (`HeroLineupUpdate`→`setHeroLineup`→`userExtra.heroLineups`, lue par `ServerArena`) ; (b) **ladder par-shard persistant** (`ServerArenaLadder`, table `arena_ladder`) : `GetArenaInfo` charge/génère/persiste rangs+points+fights (`ArenaRowExtra`), bots à ids stables. Vérifié DB (shard 1/COLISEUM/10 entrées) + `Arena{Defense,Ladder}Test` + régression 37/37. **RESTE #44** `ArenaAttack` : ⚠️ protocole FIGHT à OBSERVER en jeu (§8) — `ArenaAttack`/`ColiseumAttack` → `Start{Arena,Coliseum}AttackResponse` (HeroData défenseur) → `ArenaUpdate` (+promo/démo) ; gaté par le sous-flux « équipes d'attaque ». |
+| 2-3 | RANKINGS / FIGHT_PIT / COLISEUM (arène PvP) | 10/40 | ✅ | **ARÈNE PvP COMPLÈTE — vérifiée EN JEU + DB, régression 42/42.** **Rendu** (`GetArenaInfo{type}`→`ArenaInfo` serveur-autoritatif via `ServerArena` : saison `ArenaHelper`/`arena_constants.tab`, ligue COPPER I ; FIGHT_PIT=1 équipe `ArenaRow.lineup`, COLISEUM=3 équipes `ArenaRow.lineups`). **Adversaires = VRAIS joueurs du shard** (défense RÉELLE lue via `StoreOpponentSource`/`loadIfExists`, même chemin que la tienne) **+ complément de bots** synthétiques (pool curé 27 héros calibrés). **État persistant** (`ServerArenaLadder`, table `arena_ladder` par shard) : rangs+points+fights (`ArenaRowExtra`). **Défense** du joueur persistée (`HeroLineupUpdate`→`setHeroLineup`→`userExtra.heroLineups` ; **fix ordre args realGear/emerald** qui plantait la sérialisation). **Combat** (`ArenaAttack`/`ColiseumAttack`) : résolution autoritative → **swap de rang des DEUX côtés** (attaquant monte / défenseur descend, classement partagé) + points + 1 combat consommé → `ArenaUpdate` ; START (`START_FIGHT_PIT_ATTACK`/`START_COLISEUM_ATTACK`) sert les **héros de défense réels** du défenseur (`Start*AttackResponse`). **Régén** = **reset quotidien** (21h, `ArenaHelper.getNextDailyUpdateTime` ; `ServerArenaLadder.lastFightReset`). **XP d'arène** aux héros attaquants (`ArenaHelper.giveArenaEXP`, snapshot `NONE`). **Rapport de défense** : courrier `FIGHT_PIT_DEFENSE`/`COLISEUM_DEFENSE` déposé au vrai défenseur attaqué. **Robustesse** : garde d'isolation transport (`onReceive`), **fix interblocage store↔user** (sérialisation wire hors verrou store). Tests : `Arena{Info,Defense,Ladder,Attack,RealPvP,Concurrency,FightReset,Rewards}Test`. Vérifié en jeu : RivalReal (vrai 2ᵉ compte) classé rang 4 avec sa vraie défense, attaque→XP +109→rapport de défense chez lui ; reset quotidien « Fights Left 5/5 » ; défense posée persistée. |
 | 4 | ELITE_CAMPAIGN | 11 | ⬜ | |
 | 5 | ALCHEMY (achat d'or) | 12 | ✅ | **handler `BUY_GOLD{COUNT=nb}`** (`UserHelper.buyGold`) + test `AlchemyTest` + **VÉRIFIÉ EN JEU** (bouton [+] or → écran BUY GOLD « 💎10 → 🪙166 826 » → BUY 1 → serveur `BUY_GOLD COUNT=1 → −10 DIAMONDS +166826 GOLD [persisté]` ; client : or 227.27M→227.44M, diamants 500→490, PURCHASE HISTORY ; DB persistée exact). **Faits** : achats ILLIMITÉS à cette ère (`areUnlimitedGoldBuysEnabled(shard1)=true`). **PARTIEL** : crit RNG serveur-autoritatif (ici a coïncidé avec l'affichage client) |
 | 6 | SKILL_UPGRADE (compétences héros) | 8 | ✅ | **handler `UPGRADE_SKILL`** (`HeroHelper.upgradeSkill` : débit GOLD+SKILL_POINTS, `setSkillLevel`, anti-triche `NOT_ENOUGH_SKILL_POINTS`) + test `SkillUpgradeTest` + **VÉRIFIÉ EN JEU** (détail RALPH → SKILLS → WRECK IT [+] slider « +1 Levels » → serveur `UPGRADE_SKILL RALPH WHITE ×1` → **WRECK IT niv.1→2, SKILL_POINTS 500→499, Power +2, GOLD −100 persisté DB**) |
@@ -70,6 +70,27 @@ Ordre de traitement (modifiable). On commence par **BATTLE PASS**.
 ## C. Journal d'exploration (chronologique — problèmes & fixes)
 
 _(rempli au fur et à mesure)_
+
+- **2026-07-26 — ARÈNE : finalisation COMPLÈTE (vrai PvP, régén, XP, courriers, admin) — vérifiée EN JEU + DB.**
+  - **#44 combat** vérifié en jeu : FIGHT→`START_FIGHT_PIT_ATTACK`→héros défenseur→combat→`ArenaAttack`→`ArenaUpdate`,
+    swap de rang 10→9 + points + 1 combat consommé, persisté DB.
+  - **Fix persistance défense** : `setHeroLineup(…, realGearOptions, emeraldStatSlotChoices)` — les 2 `Map` finales
+    étaient **INVERSÉES** → les émeraudes (`HeroStatSlotChoices`) atterrissaient dans realGear → `store.save`
+    plantait (`ClassCastException` à `packEnumList`). Trouvé EN JEU (pose de défense héros leveled). Corrigé + test.
+  - **Vrai PvP** : `StoreOpponentSource` charge les AUTRES comptes du shard avec défense posée → classés dans le
+    ladder (bot=false) + fill bots. Row = leur défense RÉELLE ; START = leurs héros réels ; victoire = **swap des
+    DEUX côtés** (le défenseur voit son rang chuter à sa réouverture). Vérifié : 2ᵉ compte **RivalReal** rang 4.
+  - **Interblocage store↔user** trouvé EN JEU (client figé « LOADING… » sur l'attaque d'un vrai joueur) : `store.save`
+    (store→user via `*Wire()` synchronisés) vs `startArenaAttack` (user→store via `loadIfExists`). **Corrigé** :
+    `UserStore.save` sérialise HORS du verrou store. Test `ArenaConcurrencyTest` (2 threads, pas de deadlock).
+  - **Régén** = **reset quotidien** (21h, `getNextDailyUpdateTime` ; `lastFightReset` persisté v2) — vérifié en jeu
+    (compte antidaté → ouverture arène → « Fights Left 5/5 »).
+  - **XP d'arène** (`giveArenaEXP`, snapshot `NONE` pour éviter l'UI headless) : +109/héros attaquant, persisté.
+  - **Rapport de défense** : courrier `FIGHT_PIT_DEFENSE` au vrai défenseur (« BaronessDante attacked… defense held »).
+  - **Panneau admin** (`AdminMail` : ciblé `--to` / global `--all` + `--reward RES:amt`) — vérifié en jeu (courrier
+    « GIFT FROM THE ADMIN » +💎1000 dans la mailbox → CLAIM → crédité).
+  - Outillage pilote DEV : commandes `hold x,y[,f]` (press-relâche réel) et `drag x1,y1,x2,y2[,f]` (scroll de liste).
+  - Régression **42/42**.
 
 - **2026-07-21 — ARÈNE (FIGHT_PIT, TL10) : flux d'ouverture OBSERVÉ EN JEU + gap `SET_FLAG` corrigé.** (Choix
   user : « ouvrir l'écran pour voir + adversaires synthétiques ».) Tap bâtiment ARENA (`MAIN_SCREEN_FIGHT_PIT`)
