@@ -638,6 +638,32 @@ public final class TutorialDriver {
         } catch (Throwable t) { System.out.println("[nav] " + dest + " échec: " + t); }
     }
 
+    /** DEV : ouvre l'APERÇU d'un niveau de campagne (CampaignPreviewScreen) via l'API DU JEU
+     *  {@code CampaignScreen.normalOrEliteNodeSelected(CampaignLevelID)} — la MÊME méthode que le tap d'un nœud
+     *  (la carte est g2d, pas d'acteur scene2d cliquable → on cible l'API, pas une coordonnée devinée, cf. B-bis).
+     *  NORMAL ou ELITE selon l'onglet actif de la carte (état de CampaignScreen). Invoqué via dh.clickfile
+     *  "enterlevel ch,lvl". De là on peut taper PLAY ou RAID (boutons scene2d de l'aperçu) au clic. */
+    public static void enterLevel(GameMain game, int ch, int lvl) {
+        try {
+            Object screen = game.getScreenManager().getScreen();
+            if (screen == null || !screen.getClass().getSimpleName().contains("Campaign")) {
+                System.out.println("[enterlevel] écran courant = "
+                    + (screen == null ? "null" : screen.getClass().getSimpleName()) + " (pas une carte de campagne)");
+                return;
+            }
+            Class<?> idCls = Class.forName("com.perblue.heroes.ui.campaign.CampaignLevelID");
+            Object id = idCls.getConstructor(int.class, int.class).newInstance(ch, lvl);
+            java.lang.reflect.Method m = null;
+            for (Class<?> c = screen.getClass(); c != null && m == null; c = c.getSuperclass()) {
+                try { m = c.getDeclaredMethod("normalOrEliteNodeSelected", idCls); } catch (NoSuchMethodException ignore) {}
+            }
+            if (m == null) { System.out.println("[enterlevel] normalOrEliteNodeSelected introuvable"); return; }
+            m.setAccessible(true);
+            m.invoke(screen, id);
+            System.out.println("[enterlevel] normalOrEliteNodeSelected(" + ch + "-" + lvl + ") [API du jeu → aperçu du niveau]");
+        } catch (Throwable t) { System.out.println("[enterlevel] échec: " + t); }
+    }
+
     /** DEV : dumpe les acteurs actionnables de l'ÉCRAN COURANT (bouton/label/tag tuto + position stage) —
      *  pour savoir quoi taper (méthode B-bis). Invoqué via dh.clickfile "dumpscreen". */
     public static void dumpScreen(GameMain game) {

@@ -278,6 +278,12 @@ public final class DesktopLauncher {
                     TutorialDriver.dumpScreen(game);
                     continue;
                 }
+                if (low.startsWith("enterlevel ")) {             // enterlevel ch,lvl — ouvrir l'aperçu d'un niveau (API du jeu)
+                    String[] e = ln.substring(11).trim().split("[,;\\s]+");
+                    if (e.length >= 2) TutorialDriver.enterLevel(game,
+                        Integer.parseInt(e[0].trim()), Integer.parseInt(e[1].trim()));
+                    continue;
+                }
                 // --- Ligne "dump" (sans tap) : juste enregistrer l'écran+acteurs sous un point ---
                 boolean dumpOnly = low.startsWith("dump");
                 if (dumpOnly) ln = ln.substring(4).trim();
