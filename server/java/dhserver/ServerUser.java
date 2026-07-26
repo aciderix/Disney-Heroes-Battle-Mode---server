@@ -305,6 +305,103 @@ public final class ServerUser {
     return userInfo.basicInfo;
   }
 
+  /** Outillage TEST : crédite une ressource (ex. GOLD pour tester la création de guilde). GOLD vit dans this.extra
+   *  (auto-persisté) ; DIAMONDS via resyncDiamonds (champ dédié). Valeurs via la logique du jeu (setResource). */
+  public synchronized void giveResource(com.perblue.heroes.network.messages.ResourceType rt, long amount) {
+    ServerContext.init();
+    User user = ClientNetworkStateConverter.getUser(userInfo, userExtra, "give");
+    IndividualUser iu = ClientNetworkStateConverter.getIndividualUser(
+        individualUserExtra, userID, userInfo.diamonds, "give");
+    ServerContext.bind(user, iu);
+    user.setResource(rt, user.getResource(rt) + amount, "test");
+    resyncDiamonds(user);
+  }
+
+  // ===================== GUILDES #7 =====================
+  // L'appartenance de guilde du joueur vit dans BasicUserInfo (guildID/guildRole), déjà persisté (userInfo BLOB)
+  // et relu par le client au boot (ClientNetworkStateConverter → User.setGuildID/Role). L'état de la GUILDE
+  // elle-même (roster, nom, perks…) est un objet à part (ServerGuild), persisté dans la table `guilds`.
+
+  /** Le joueur est-il déjà dans une guilde ? ({@code BasicUserInfo.guildID > 0}, cf. GuildHelper.isInGuild). */
+  public synchronized boolean inGuild() {
+    return userInfo.basicInfo != null && userInfo.basicInfo.guildID > 0;
+  }
+
+  /** guildID courant du joueur (0 = aucune). */
+  public synchronized long currentGuildID() {
+    return userInfo.basicInfo == null ? 0L : userInfo.basicInfo.guildID;
+  }
+
+  /** Rôle courant du joueur dans sa guilde ({@code NONE} si aucune). */
+  public synchronized com.perblue.heroes.network.messages.GuildRole currentGuildRole() {
+    return userInfo.basicInfo == null || userInfo.basicInfo.guildRole == null
+        ? com.perblue.heroes.network.messages.GuildRole.NONE : userInfo.basicInfo.guildRole;
+  }
+
+  /**
+   * CRÉATION DE GUILDE (message {@code CreateGuild}). Le serveur AUTORITATIF débite le coût via la logique du jeu
+   * ({@code GuildHelper.chargeForCreation} = 2000 GOLD ; lève {@code ClientErrorCodeException} si insuffisant →
+   * REFUS anti-triche), construit la guilde ({@link ServerGuild#create}) et pose l'appartenance du fondateur
+   * (RULER) dans {@code BasicUserInfo} (persisté via userInfo). {@code guildID} = id libre fourni par le store.
+   * La GOLD vit dans this.extra (auto-persisté) — cf. openChest.
+   */
+  public synchronized ServerGuild createGuild(com.perblue.heroes.network.messages.CreateGuild m, long guildID) {
+    ServerContext.init();
+    User user = ClientNetworkStateConverter.getUser(userInfo, userExtra, "guild");
+    IndividualUser iu = ClientNetworkStateConverter.getIndividualUser(
+        individualUserExtra, userID, userInfo.diamonds, "guild");
+    ServerContext.bind(user, iu);
+    com.perblue.heroes.game.logic.GuildHelper.chargeForCreation(user);   // débit 2000 GOLD (anti-triche)
+    ServerGuild g = ServerGuild.create(guildID, shardID, userID, m);
+    userInfo.basicInfo.guildID = guildID;
+    userInfo.basicInfo.guildRole = com.perblue.heroes.network.messages.GuildRole.RULER;
+    userExtra.guildJoinTime = com.perblue.heroes.util.TimeUtil.serverTimeNow();
+    resyncCounts(user);     // drapeaux/compteurs éventuels
+    resyncDiamonds(user);
+    return g;
+  }
+
+  /** Retire le joueur de sa guilde (départ / dissolution). Efface l'appartenance persistée (userInfo). */
+  public synchronized void leaveGuild() {
+    if (userInfo.basicInfo == null) return;
+    userExtra.previousGuildID = userInfo.basicInfo.guildID;
+    userInfo.basicInfo.guildID = 0L;
+    userInfo.basicInfo.guildRole = com.perblue.heroes.network.messages.GuildRole.NONE;
+    userExtra.guildJoinTime = 0L;
+  }
+
+  /** Rejoint une guilde existante en tant que MEMBER (politique OPEN). Pose l'appartenance persistée. */
+  public synchronized void joinGuildAs(long guildID, com.perblue.heroes.network.messages.GuildRole role) {
+    userInfo.basicInfo.guildID = guildID;
+    userInfo.basicInfo.guildRole = role;
+    userExtra.guildJoinTime = com.perblue.heroes.util.TimeUtil.serverTimeNow();
+  }
+
+  /** Construit le {@code UserGuildUpdate} annonçant au client sa nouvelle appartenance (create/join/leave). */
+  public synchronized com.perblue.heroes.network.messages.UserGuildUpdate buildUserGuildUpdate(
+      ServerGuild g, com.perblue.heroes.network.messages.GuildRole role,
+      com.perblue.heroes.network.messages.GuildUpdateReason reason) {
+    com.perblue.heroes.network.messages.UserGuildUpdate u =
+        new com.perblue.heroes.network.messages.UserGuildUpdate();
+    u.guildID = g == null ? 0L : g.guildID;
+    u.guildRole = role;
+    u.guildInfo = g == null ? new com.perblue.heroes.network.messages.GuildInfo() : g.info;
+    u.reason = reason;
+    return u;
+  }
+
+  /** Une ligne de roster ({@code PlayerGuildRow}) pour CE joueur (écran membres, ExtendedGuildInfo). */
+  public synchronized com.perblue.heroes.network.messages.PlayerGuildRow buildPlayerGuildRow() {
+    com.perblue.heroes.network.messages.PlayerGuildRow row =
+        new com.perblue.heroes.network.messages.PlayerGuildRow();
+    com.perblue.heroes.network.messages.PlayerRow pr =
+        new com.perblue.heroes.network.messages.PlayerRow();
+    pr.info = userInfo.basicInfo;
+    row.playerRow = pr;
+    row.joinGuildTime = userExtra.guildJoinTime;
+    return row;
+  }
+
   /** ARÈNE (vrai PvP) — ce compte a-t-il une DÉFENSE posée pour {@code type} (donc éligible comme adversaire réel) ?
    *  Vrai ssi au moins une lineup de défense du mode est non vide dans l'état persisté. */
   public synchronized boolean hasArenaDefense(com.perblue.heroes.network.messages.ArenaType type) {

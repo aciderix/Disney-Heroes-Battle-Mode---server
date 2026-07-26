@@ -358,6 +358,142 @@ public final class LoginServer {
               System.out.println("[login] <== " + (m instanceof com.perblue.heroes.network.messages.ColiseumAttack
                   ? "ColiseumAttack" : "ArenaAttack") + " défenseur=" + defID + " win=" + win
                   + " → ==> ArenaUpdate (rank=" + up.yourLeague.yourRank + ") [persisté]");
+            } else if (m instanceof com.perblue.heroes.network.messages.ListRecommendedGuilds) {
+              // GUILDES #7 — écran FIND A GUILD : le client (GuildSearchScreen) envoie ListRecommendedGuilds et
+              // attend un ListRecGuildsResponse pour rendre la liste (sinon « LOADING… » infini — trouvé EN JEU).
+              // On liste les guildes RÉELLES du shard (table `guilds`, état persistant multi-serveur). Aucune guilde
+              // → liste vide = réponse AUTORITATIVE correcte (l'écran affiche NO_RECOMMENDABLE_GUILDS_FOUND).
+              com.perblue.heroes.network.messages.ListRecommendedGuilds req =
+                  (com.perblue.heroes.network.messages.ListRecommendedGuilds) m;
+              com.perblue.heroes.network.messages.ListRecGuildsResponse resp =
+                  new com.perblue.heroes.network.messages.ListRecGuildsResponse();
+              resp.parameters = req.parameters;
+              resp.startIndex = req.startIndex;
+              resp.guilds = guildRows(store.listGuilds(user.shardID, null, 20));
+              resp.endIndex = req.startIndex + resp.guilds.size();
+              resp.setAsReplyTo(m);
+              c.send(resp);
+              System.out.println("[login] <== ListRecommendedGuilds → ==> ListRecGuildsResponse ("
+                  + resp.guilds.size() + " guilde(s))");
+            } else if (m instanceof com.perblue.heroes.network.messages.SearchGuilds) {
+              // GUILDES #7 — recherche par NOM (champ « Search Guilds »). Répond SearchGuildsResponse (LIKE sur le nom).
+              com.perblue.heroes.network.messages.SearchGuilds req =
+                  (com.perblue.heroes.network.messages.SearchGuilds) m;
+              com.perblue.heroes.network.messages.SearchGuildsResponse resp =
+                  new com.perblue.heroes.network.messages.SearchGuildsResponse();
+              resp.guilds = guildRows(store.listGuilds(user.shardID, req.nameSearch, 20));
+              resp.setAsReplyTo(m);
+              c.send(resp);
+              System.out.println("[login] <== SearchGuilds '" + req.nameSearch
+                  + "' → ==> SearchGuildsResponse (" + resp.guilds.size() + " guilde(s))");
+            } else if (m instanceof com.perblue.heroes.network.messages.CreateGuild) {
+              // GUILDES #7 — CRÉATION : le serveur AUTORITATIF débite le coût (GuildHelper.chargeForCreation = 2000
+              // GOLD, lève si insuffisant), crée la guilde (id libre du shard), pose l'appartenance du fondateur
+              // (RULER) et PERSISTE (guilde + joueur). Répond UserGuildUpdate(reason=CREATE) → le client bascule
+              // « en guilde » et ouvre l'écran de guilde.
+              com.perblue.heroes.network.messages.CreateGuild cg =
+                  (com.perblue.heroes.network.messages.CreateGuild) m;
+              try {
+                if (user.inGuild()) {
+                  System.out.println("[login]     ⛔ CreateGuild REFUSÉ : joueur déjà dans une guilde ("
+                      + user.currentGuildID() + ")");
+                } else {
+                  long gid = store.nextGuildID(user.shardID);
+                  ServerGuild g = user.createGuild(cg, gid);
+                  store.saveGuild(g);
+                  store.save(user);
+                  com.perblue.heroes.network.messages.UserGuildUpdate up = user.buildUserGuildUpdate(
+                      g, com.perblue.heroes.network.messages.GuildRole.RULER,
+                      com.perblue.heroes.network.messages.GuildUpdateReason.CREATE);
+                  up.setAsReplyTo(m);
+                  c.send(up);
+                  System.out.println("[login] <== CreateGuild '" + cg.name + "' → guilde #" + gid
+                      + " créée (fondateur RULER) [persisté] ==> UserGuildUpdate(CREATE)");
+                }
+              } catch (Throwable t) {
+                if (t instanceof com.perblue.heroes.ClientErrorCodeException) {
+                  System.out.println("[login]     ⛔ CreateGuild REFUSÉ (anti-triche) : " + t.getMessage()
+                      + " — aucune guilde créée");
+                } else {
+                  System.out.println("[login]     ! createGuild échec: " + t);
+                  t.printStackTrace();
+                }
+              }
+            } else if (m instanceof com.perblue.heroes.network.messages.RequestExtendedGuildInfo) {
+              // GUILDES #7 — écran GUILDE : détails complets (roster). Répond ExtendedGuildInfo (guildInfo + membres).
+              com.perblue.heroes.network.messages.RequestExtendedGuildInfo req =
+                  (com.perblue.heroes.network.messages.RequestExtendedGuildInfo) m;
+              ServerGuild g = store.loadGuild(user.shardID, req.guildID);
+              if (g == null) {
+                System.out.println("[login]     ! RequestExtendedGuildInfo : guilde #" + req.guildID + " introuvable");
+              } else {
+                com.perblue.heroes.network.messages.ExtendedGuildInfo egi =
+                    new com.perblue.heroes.network.messages.ExtendedGuildInfo();
+                egi.guildInfo = g.info;
+                egi.members = new java.util.ArrayList<>();
+                for (Long mid : g.memberIDs) {
+                  ServerUser mu = mid == user.userID ? user : store.loadIfExists(mid, user.shardID);
+                  if (mu != null) egi.members.add(mu.buildPlayerGuildRow());
+                }
+                egi.newestGuildDonationRequest = 0L;
+                egi.setAsReplyTo(m);
+                c.send(egi);
+                System.out.println("[login] <== RequestExtendedGuildInfo #" + req.guildID
+                    + " → ==> ExtendedGuildInfo (" + egi.members.size() + " membre(s))");
+              }
+            } else if (m instanceof com.perblue.heroes.network.messages.JoinGuild) {
+              // GUILDES #7 — rejoindre une guilde OUVERTE (OPEN). Politiques APPLICATION_ONLY/PRIVATE = flux de
+              // candidature (AcceptGuildMember, à venir). Répond UserGuildUpdate(JOIN).
+              com.perblue.heroes.network.messages.JoinGuild jg =
+                  (com.perblue.heroes.network.messages.JoinGuild) m;
+              ServerGuild g = store.loadGuild(user.shardID, jg.guildID);
+              int maxMembers = com.perblue.heroes.game.logic.GuildHelper.getMaxMembers();
+              if (g == null) {
+                System.out.println("[login]     ! JoinGuild : guilde #" + jg.guildID + " introuvable");
+              } else if (user.inGuild()) {
+                System.out.println("[login]     ⛔ JoinGuild REFUSÉ : joueur déjà dans une guilde");
+              } else if (g.memberCount() >= maxMembers) {
+                System.out.println("[login]     ⛔ JoinGuild REFUSÉ : guilde #" + jg.guildID + " pleine");
+              } else if (g.info.newMemberPolicy != com.perblue.heroes.network.messages.GuildNewMemberPolicy.OPEN) {
+                System.out.println("[login]     ⛔ JoinGuild REFUSÉ : guilde #" + jg.guildID
+                    + " non ouverte (" + g.info.newMemberPolicy + ") — candidature requise (à venir)");
+              } else {
+                user.joinGuildAs(jg.guildID, com.perblue.heroes.network.messages.GuildRole.MEMBER);
+                g.memberIDs.add(user.userID);
+                g.info.memberCount = g.memberCount();
+                store.saveGuild(g);
+                store.save(user);
+                com.perblue.heroes.network.messages.UserGuildUpdate up = user.buildUserGuildUpdate(
+                    g, com.perblue.heroes.network.messages.GuildRole.MEMBER,
+                    com.perblue.heroes.network.messages.GuildUpdateReason.JOIN);
+                up.setAsReplyTo(m);
+                c.send(up);
+                System.out.println("[login] <== JoinGuild #" + jg.guildID
+                    + " → membre ajouté [persisté] ==> UserGuildUpdate(JOIN)");
+              }
+            } else if (m instanceof com.perblue.heroes.network.messages.LeaveGuild) {
+              // GUILDES #7 — DÉPART. Retire le joueur du roster ; guilde vidée → dissoute. Répond UserGuildUpdate(LEAVE).
+              long gid = user.currentGuildID();
+              if (gid <= 0) {
+                System.out.println("[login]     ! LeaveGuild : joueur sans guilde");
+              } else {
+                ServerGuild g = store.loadGuild(user.shardID, gid);
+                user.leaveGuild();
+                if (g != null) {
+                  g.memberIDs.remove(Long.valueOf(user.userID));
+                  g.info.memberCount = g.memberCount();
+                  if (g.memberIDs.isEmpty()) { store.deleteGuild(user.shardID, gid);
+                    System.out.println("[login]     guilde #" + gid + " dissoute (dernier membre parti)"); }
+                  else store.saveGuild(g);
+                }
+                store.save(user);
+                com.perblue.heroes.network.messages.UserGuildUpdate up = user.buildUserGuildUpdate(
+                    null, com.perblue.heroes.network.messages.GuildRole.NONE,
+                    com.perblue.heroes.network.messages.GuildUpdateReason.LEAVE);
+                up.setAsReplyTo(m);
+                c.send(up);
+                System.out.println("[login] <== LeaveGuild #" + gid + " [persisté] ==> UserGuildUpdate(LEAVE)");
+              }
             } else if (m instanceof Ping) {
               // Écho de latence/keepalive : le client mesure le RTT et surveille l'activité serveur.
               // Sans réponse, son chien de garde ferme la connexion (« Reconnecting… »).
@@ -433,6 +569,19 @@ public final class LoginServer {
         }
       }
       private String arena(boolean coli) { return coli ? "Coliseum" : "Fight Pit"; }
+
+      /** GUILDES #7 — enveloppe une liste de {@link ServerGuild} en {@code List<GuildRow>} (élément de liste attendu
+       *  par ListRecGuildsResponse et SearchGuildsResponse). */
+      private java.util.List<com.perblue.heroes.network.messages.GuildRow> guildRows(
+          java.util.List<ServerGuild> guilds) {
+        java.util.List<com.perblue.heroes.network.messages.GuildRow> out = new java.util.ArrayList<>();
+        for (ServerGuild g : guilds) {
+          com.perblue.heroes.network.messages.GuildRow row = new com.perblue.heroes.network.messages.GuildRow();
+          row.guildInfo = g.info;
+          out.add(row);
+        }
+        return out;
+      }
     };
 
     GruntServerFactory.startNioTcp(port, MessageFactory.getInstance(), exec, listener,

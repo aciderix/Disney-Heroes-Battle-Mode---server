@@ -43,7 +43,83 @@ public final class UserStore implements AutoCloseable {
       s.execute("CREATE TABLE IF NOT EXISTS arena_ladder ("
           + "shardID INTEGER NOT NULL, arenaType TEXT NOT NULL, ladder BLOB NOT NULL, "
           + "updatedAt INTEGER NOT NULL, PRIMARY KEY (shardID, arenaType))");
+      // GUILDES #7 : une guilde par (shard, guildID). État opérateur partagé (comme arena_ladder) → survit aux
+      // redémarrages + cohérent multi-serveur (PRINCIPLES §5). BLOB = octets wire du GuildInfo du jeu + roster.
+      s.execute("CREATE TABLE IF NOT EXISTS guilds ("
+          + "shardID INTEGER NOT NULL, guildID INTEGER NOT NULL, guild BLOB NOT NULL, "
+          + "name TEXT, updatedAt INTEGER NOT NULL, PRIMARY KEY (shardID, guildID))");
     }
+  }
+
+  /** GUILDES #7 — charge la guilde {@code (shard, guildID)}, ou {@code null} si absente. */
+  public synchronized ServerGuild loadGuild(int shardID, long guildID) throws SQLException {
+    try (PreparedStatement ps = conn.prepareStatement(
+        "SELECT guild FROM guilds WHERE shardID=? AND guildID=?")) {
+      ps.setInt(1, shardID);
+      ps.setLong(2, guildID);
+      try (ResultSet rs = ps.executeQuery()) {
+        if (rs.next()) return ServerGuild.fromBytes(rs.getBytes(1));
+      }
+    }
+    return null;
+  }
+
+  /** GUILDES #7 — écrit (upsert) la guilde ; {@code name} dupliqué en colonne pour la recherche par nom. */
+  public synchronized void saveGuild(ServerGuild g) throws SQLException {
+    String name = g.info != null && g.info.basicInfo != null ? g.info.basicInfo.name : null;
+    try (PreparedStatement ps = conn.prepareStatement(
+        "INSERT INTO guilds (shardID, guildID, guild, name, updatedAt) VALUES (?,?,?,?,?) "
+        + "ON CONFLICT(shardID, guildID) DO UPDATE SET guild=excluded.guild, name=excluded.name, "
+        + "updatedAt=excluded.updatedAt")) {
+      ps.setInt(1, g.shardID);
+      ps.setLong(2, g.guildID);
+      ps.setBytes(3, g.toBytes());
+      ps.setString(4, name);
+      ps.setLong(5, System.currentTimeMillis());
+      ps.executeUpdate();
+    }
+  }
+
+  /** GUILDES #7 — supprime une guilde (dissolution : dernier membre parti). */
+  public synchronized void deleteGuild(int shardID, long guildID) throws SQLException {
+    try (PreparedStatement ps = conn.prepareStatement(
+        "DELETE FROM guilds WHERE shardID=? AND guildID=?")) {
+      ps.setInt(1, shardID);
+      ps.setLong(2, guildID);
+      ps.executeUpdate();
+    }
+  }
+
+  /** GUILDES #7 — liste les guildes du shard (recommandations / recherche). {@code nameLike}=null → toutes. */
+  public synchronized java.util.List<ServerGuild> listGuilds(int shardID, String nameLike, int limit)
+      throws SQLException {
+    java.util.List<ServerGuild> out = new java.util.ArrayList<>();
+    String sql = "SELECT guild FROM guilds WHERE shardID=?"
+        + (nameLike != null ? " AND name LIKE ? COLLATE NOCASE" : "")
+        + " ORDER BY updatedAt DESC LIMIT ?";
+    try (PreparedStatement ps = conn.prepareStatement(sql)) {
+      int i = 1;
+      ps.setInt(i++, shardID);
+      if (nameLike != null) ps.setString(i++, "%" + nameLike + "%");
+      ps.setInt(i, limit);
+      try (ResultSet rs = ps.executeQuery()) {
+        while (rs.next()) {
+          ServerGuild g = ServerGuild.fromBytes(rs.getBytes(1));
+          if (g != null) out.add(g);
+        }
+      }
+    }
+    return out;
+  }
+
+  /** GUILDES #7 — prochain guildID libre du shard (max+1, base 1). guildID>0 = « en guilde » côté client. */
+  public synchronized long nextGuildID(int shardID) throws SQLException {
+    try (PreparedStatement ps = conn.prepareStatement(
+        "SELECT COALESCE(MAX(guildID),0)+1 FROM guilds WHERE shardID=?")) {
+      ps.setInt(1, shardID);
+      try (ResultSet rs = ps.executeQuery()) { if (rs.next()) return rs.getLong(1); }
+    }
+    return 1L;
   }
 
   /** ARÈNE #41 — charge le classement persisté de {@code (shard, type)}, ou {@code null} s'il n'existe pas encore. */
