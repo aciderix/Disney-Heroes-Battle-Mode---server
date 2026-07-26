@@ -144,6 +144,36 @@ public final class LoginServer {
                 System.out.println("[login]     ! recordCampaignAttack échec: " + t);
                 t.printStackTrace();
               }
+            } else if (m instanceof com.perblue.heroes.network.messages.RaidCampaign) {
+              // RAID d'un niveau (ELITE_CAMPAIGN / raid d'un niveau) : le client a rejoué le niveau raidCount
+              // fois en local (charge tickets/énergie + record) et envoie l'issue (fire-and-forget). Le serveur
+              // AUTORITATIF REJOUE chargeForRaid + recordRaidOutcome sur son état et persiste. Pas de réponse.
+              try {
+                com.perblue.heroes.network.messages.RaidCampaign rc =
+                    (com.perblue.heroes.network.messages.RaidCampaign) m;
+                user.recordRaidCampaign(rc);
+                try { store.save(user); } catch (Exception e) {
+                  System.out.println("[login]     ! persistance échouée: " + e); }
+                System.out.println("[login] <== RaidCampaign : " + rc.campaignType + " " + rc.chapter
+                    + "-" + rc.level + " ×" + rc.raidCount + " → recordRaidOutcome appliqué [persisté]");
+              } catch (Throwable t) {
+                System.out.println("[login]     ! recordRaidCampaign échec: " + t);
+                t.printStackTrace();
+              }
+            } else if (m instanceof com.perblue.heroes.network.messages.RaidAllCampaign) {
+              // RAID ALL (plusieurs niveaux en une fois) : results = List<RaidCampaign>. Même traitement, en boucle.
+              try {
+                com.perblue.heroes.network.messages.RaidAllCampaign ra =
+                    (com.perblue.heroes.network.messages.RaidAllCampaign) m;
+                user.recordRaidAllCampaign(ra);
+                try { store.save(user); } catch (Exception e) {
+                  System.out.println("[login]     ! persistance échouée: " + e); }
+                System.out.println("[login] <== RaidAllCampaign : "
+                    + (ra.results == null ? 0 : ra.results.size()) + " niveau(x) → appliqué [persisté]");
+              } catch (Throwable t) {
+                System.out.println("[login]     ! recordRaidAllCampaign échec: " + t);
+                t.printStackTrace();
+              }
             } else if (m instanceof Action) {
               // Commande générique du jeu (équiper, promouvoir, vendre…). La plupart sont fire-and-forget
               // (le client applique de son côté) ; certaines sont des REQUÊTES attendant une réponse.

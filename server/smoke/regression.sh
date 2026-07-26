@@ -16,7 +16,7 @@ OUT="$SMOKE/out"; rm -rf "$OUT"; mkdir -p "$OUT"
 TESTS=(
   ResourceTest RosterTest
   SigninTest SigninMultiDayTest SigninAllRewardsTest
-  EquipTest CampaignAttackTest CampaignPersistTest
+  EquipTest CampaignAttackTest CampaignPersistTest EliteCampaignRaidTest
   ChestWireTest ChestChargeTest ChestPaidDebitTest ChestValidateTest FreeChestTest ViewedChestsTest
   BattlePassTest BattlePassClaimTest BattlePassPointsTest BattlePassRolloverTest
   CompleteQuestTest WeeklyBoxTest WeeklyQuestTest

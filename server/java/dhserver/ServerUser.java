@@ -651,6 +651,113 @@ public final class ServerUser {
   }
 
   /**
+   * <b>RAID de campagne</b> (écran ELITE_CAMPAIGN / raid d'un niveau NORMAL ou ELITE) — message
+   * {@link com.perblue.heroes.network.messages.RaidCampaign}{@code {campaignType, chapter, level, raidCount,
+   * outcomes:List<RaidOutcome>, rewards}}. Le RAID rejoue le niveau {@code raidCount} fois <b>sans combat</b>
+   * (ticket de raid ou énergie), contre des tickets/énergie, pour du loot/gold/XP/progression.
+   *
+   * <p><b>Séquence CLIENT reproduite fidèlement</b> (relevée au bytecode : {@code CampaignPreviewScreen}/
+   * {@code RaidTicketOutcomeWindow}/{@code CampaignScreen}) — le client fait DEUX appels AUTORITATIFS en local
+   * avant d'envoyer le message ; le serveur AUTORITATIF les REJOUE sur son propre {@code User} :
+   * <ol>
+   *   <li>{@code CampaignHelper.chargeForRaid(user, user, type, chapter, level, raidCount, snap, useTickets)}
+   *       — VALIDE (assez de tickets/énergie ; VIP {@code RAID_10} si {@code raidCount>1} ; chances quotidiennes
+   *       ELITE ; niveau 3★ ou {@code CAMPAIGN_UNLOCKED} → sinon lève {@code ClientErrorCodeException} = anti-triche)
+   *       et DÉBITE : {@code RAID_TICKET} via {@code useItem} si {@code useTickets}, sinon la <i>raid tax</i> ;
+   *       <b>puis l'énergie TOUJOURS</b> ({@code chargeUser(STAMINA, staminaCost×raidCount)}) ; crédite aussi le
+   *       XP d'équipe ({@code giveTeamXP}) + XP poolé. Le booléen {@code useTickets} = {@code
+   *       !VIPStats.isUnlocked(RAID_WITHOUT_TICKETS, user)} (EXACTEMENT comme le client).</li>
+   *   <li>{@code CampaignHelper.recordRaidOutcome(user, user, type, chapter, level, raidCount, loot, perkBonus,
+   *       snap)} — progression ({@code winsAtCurrentStars/totalWins/lastWinTime/battleCount += raidCount},
+   *       {@code dailyUses/dailyChances} ELITE), GOLD, objets d'XP, gear juice, et <b>crédite le loot passé</b>
+   *       ({@code giveLoot}). Son {@code getTeamXP} interne ne fait que RAPPORTER (pas de double-crédit du XP
+   *       d'équipe, déjà donné par {@code chargeForRaid}).</li>
+   * </ol>
+   *
+   * <p><b>Loot = client (PARTIEL, cohérent §4bis/#25)</b> : le client roule le loot par raid (flux RNG {@code LOOT},
+   * graine non rejouée côté serveur) et l'envoie dans {@code outcomes[i].loot}. On agrège ces listes et on les
+   * passe en 1ᵉʳ paramètre List de {@code recordRaidOutcome} (le loot À CRÉDITER), comme {@code recordCampaignAttack}
+   * fait confiance à {@code m.lootEarned}. 2ᵉ paramètre List = {@code perkBonusLoot} (bonus de perk de guilde) —
+   * VIDE headless (pas de guilde). La <b>mémoire de loot</b> (pitié) des outcomes est appliquée à part
+   * ({@code applyLootMemory}), comme en campagne.
+   */
+  public synchronized void recordRaidCampaign(com.perblue.heroes.network.messages.RaidCampaign m) {
+    ServerContext.init();
+    User user = ClientNetworkStateConverter.getUser(userInfo, userExtra, "raid");
+    IndividualUser iu = ClientNetworkStateConverter.getIndividualUser(
+        individualUserExtra, userID, userInfo.diamonds, "raid");
+    ServerContext.bind(user, iu);
+    applyRaidLevel(user, iu, m);
+    resyncAfterRaid(user, iu);
+  }
+
+  /**
+   * <b>RAID ALL</b> (raid de plusieurs niveaux en une fois) — message
+   * {@link com.perblue.heroes.network.messages.RaidAllCampaign}{@code {results:List<RaidCampaign>}}. Le client
+   * construit un {@code RaidCampaign} par niveau raidé (même sous-flux que ci-dessus) et les emballe dans
+   * {@code results}. Le serveur rejoue CHAQUE {@code RaidCampaign} (charge + record) puis re-synchronise une fois.
+   */
+  public synchronized void recordRaidAllCampaign(com.perblue.heroes.network.messages.RaidAllCampaign m) {
+    ServerContext.init();
+    User user = ClientNetworkStateConverter.getUser(userInfo, userExtra, "raidall");
+    IndividualUser iu = ClientNetworkStateConverter.getIndividualUser(
+        individualUserExtra, userID, userInfo.diamonds, "raidall");
+    ServerContext.bind(user, iu);
+    if (m.results != null) {
+      for (Object o : m.results) applyRaidLevel(user, iu, (com.perblue.heroes.network.messages.RaidCampaign) o);
+    }
+    resyncAfterRaid(user, iu);
+  }
+
+  /** Applique UN {@code RaidCampaign} (charge + record) sur le {@code User} déjà bindé. Voir {@link #recordRaidCampaign}. */
+  @SuppressWarnings({"rawtypes", "unchecked"})
+  private void applyRaidLevel(User user, IndividualUser iu, com.perblue.heroes.network.messages.RaidCampaign m) {
+    CampaignType type = m.campaignType == null ? CampaignType.NORMAL : m.campaignType;
+    int chapter = m.chapter, level = m.level, raidCount = Math.max(1, m.raidCount);
+    // Booléen useTickets = EXACTEMENT comme le client (CampaignPreviewScreen) : sans le VIP RAID_WITHOUT_TICKETS,
+    // le raid consomme des RAID_TICKET (+ énergie) ; avec, énergie seule (raid tax).
+    boolean useTickets = !com.perblue.heroes.game.data.misc.VIPStats.isUnlocked(
+        com.perblue.heroes.game.data.misc.VIPFeature.RAID_WITHOUT_TICKETS, user);
+    try {
+      // (1) DÉBIT + validation anti-triche (lève ClientErrorCodeException si illégitime).
+      CampaignHelper.chargeForRaid(user, user, type, chapter, level, raidCount, SpecialEventSnapshot.NONE, useTickets);
+    } catch (Throwable t) {
+      System.out.println("[raid] REFUSÉ " + type + " " + chapter + "-" + level + " ×" + raidCount + " : " + t);
+      return;   // état inchangé (comme un vrai refus serveur) — cohérent avec le client qui a validé de son côté.
+    }
+    // (2) Loot CLIENT agrégé (somme des outcomes[i].loot). Perk bonus = vide (pas de guilde headless).
+    java.util.List clientLoot = new java.util.ArrayList();
+    if (m.outcomes != null) {
+      for (Object o : m.outcomes) {
+        com.perblue.heroes.network.messages.RaidOutcome ro = (com.perblue.heroes.network.messages.RaidOutcome) o;
+        if (ro.loot != null && !ro.loot.isEmpty())
+          com.perblue.heroes.game.logic.RewardHelper.mergeRewards(clientLoot, ro.loot);
+      }
+    }
+    java.util.List perkBonus = new java.util.ArrayList();
+    // (3) RECORD : progression + gold + XP-items + crédit du loot.
+    CampaignHelper.recordRaidOutcome(user, user, type, chapter, level, raidCount, clientLoot, perkBonus, SpecialEventSnapshot.NONE);
+    // (4) Mémoire de loot (pitié) : agréger les memoryChanges de tous les outcomes.
+    if (m.outcomes != null) {
+      for (Object o : m.outcomes) {
+        com.perblue.heroes.network.messages.RaidOutcome ro = (com.perblue.heroes.network.messages.RaidOutcome) o;
+        applyLootMemory(ro.memoryChanges);
+      }
+    }
+    System.out.println("[raid] " + type + " " + chapter + "-" + level + " ×" + raidCount
+        + " → appliqué (tickets=" + useTickets + ", loot=" + clientLoot.size() + ") [persisté]");
+  }
+
+  /** Re-synchro complète après un/des raid(s) : héros, diamants, compteurs, progression campagne, niveau d'équipe. */
+  private void resyncAfterRaid(User user, IndividualUser iu) {
+    resyncHeroes(user);
+    resyncDiamonds(user);
+    resyncCounts(user);
+    resyncCampaign(iu);
+    if (userInfo.basicInfo != null) userInfo.basicInfo.teamLevel = user.getTeamLevel();
+  }
+
+  /**
    * #25 — Loot AUTORITAIRE. Le serveur ROULE lui-même le butin avec la graine LOOT du client (capturée via
    * {@code Action SET_SEED}, cf. #23), au lieu de faire confiance à {@code m.lootEarned}. Le loot est un flux
    * RNG <b>SÉPARÉ du combat</b> ({@code RandomSeedType.LOOT} ≠ {@code COMBAT}) → fonction déterministe de la
@@ -773,9 +880,15 @@ public final class ServerUser {
    */
   @SuppressWarnings("unchecked")
   private void applyLootMemory(CampaignAttack m) {
-    if (m.memoryChanges == null || m.memoryChanges.isEmpty()) return;
+    applyLootMemory(m.memoryChanges);
+  }
+
+  /** Applique une liste de {@code UserLootMemoryChange} (pitié) vers {@code lootMemory}. Partagé campagne/raid. */
+  @SuppressWarnings("unchecked")
+  private void applyLootMemory(java.util.List memoryChanges) {
+    if (memoryChanges == null || memoryChanges.isEmpty()) return;
     if (individualUserExtra.lootMemory == null) individualUserExtra.lootMemory = new java.util.HashMap();
-    for (Object o : m.memoryChanges) {
+    for (Object o : memoryChanges) {
       com.perblue.heroes.network.messages.UserLootMemoryChange ch =
           (com.perblue.heroes.network.messages.UserLootMemoryChange) o;
       if (ch.itemType != null) individualUserExtra.lootMemory.put(ch.itemType, ch.endingMemory);
