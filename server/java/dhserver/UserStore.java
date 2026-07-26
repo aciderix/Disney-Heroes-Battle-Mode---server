@@ -131,24 +131,39 @@ public final class UserStore implements AutoCloseable {
     return fresh;
   }
 
-  /** Écrit (upsert) l'état courant du joueur en octets wire. */
-  public synchronized void save(ServerUser u) throws SQLException {
-    try (PreparedStatement ps = conn.prepareStatement(
-        "INSERT INTO users (userID, shardID, userInfo, userExtra, individualUserExtra, battlePassV2Data, mail, updatedAt) "
-        + "VALUES (?,?,?,?,?,?,?,?) "
-        + "ON CONFLICT(userID, shardID) DO UPDATE SET "
-        + "userInfo=excluded.userInfo, userExtra=excluded.userExtra, "
-        + "individualUserExtra=excluded.individualUserExtra, battlePassV2Data=excluded.battlePassV2Data, "
-        + "mail=excluded.mail, updatedAt=excluded.updatedAt")) {
-      ps.setLong(1, u.userID);
-      ps.setInt(2, u.shardID);
-      ps.setBytes(3, u.userInfoWire());
-      ps.setBytes(4, u.userExtraWire());
-      ps.setBytes(5, u.individualWire());
-      ps.setBytes(6, u.battlePassWire());          // NULL si battle pass non initialisé (recréé au boot)
-      ps.setBytes(7, u.mailWire());                // NULL si mailbox vide
-      ps.setLong(8, System.currentTimeMillis());
-      ps.executeUpdate();
+  /**
+   * Écrit (upsert) l'état courant du joueur en octets wire.
+   * <p><b>Ordre des verrous</b> : on sérialise les octets wire (qui verrouillent le {@link ServerUser}) AVANT de
+   * prendre le verrou du store — jamais {@code store→user} pendant que d'autres chemins font {@code user→store}
+   * (ex. {@code startArenaAttack} synchronisé sur l'user qui charge un adversaire via {@code loadIfExists}). Sans ça,
+   * inversion d'ordre = INTERBLOCAGE (observé en jeu sur le vrai PvP). La méthode n'est donc PAS {@code synchronized} :
+   * seule l'écriture DB l'est.
+   */
+  public void save(ServerUser u) throws SQLException {
+    // 1) sérialisation (verrouille l'user), HORS du verrou du store
+    long id = u.userID; int shard = u.shardID;
+    byte[] uiW = u.userInfoWire(), ueW = u.userExtraWire(), iuW = u.individualWire();
+    byte[] bpW = u.battlePassWire(), mlW = u.mailWire();
+    long now = System.currentTimeMillis();
+    // 2) écriture DB, sous le verrou du store uniquement
+    synchronized (this) {
+      try (PreparedStatement ps = conn.prepareStatement(
+          "INSERT INTO users (userID, shardID, userInfo, userExtra, individualUserExtra, battlePassV2Data, mail, updatedAt) "
+          + "VALUES (?,?,?,?,?,?,?,?) "
+          + "ON CONFLICT(userID, shardID) DO UPDATE SET "
+          + "userInfo=excluded.userInfo, userExtra=excluded.userExtra, "
+          + "individualUserExtra=excluded.individualUserExtra, battlePassV2Data=excluded.battlePassV2Data, "
+          + "mail=excluded.mail, updatedAt=excluded.updatedAt")) {
+        ps.setLong(1, id);
+        ps.setInt(2, shard);
+        ps.setBytes(3, uiW);
+        ps.setBytes(4, ueW);
+        ps.setBytes(5, iuW);
+        ps.setBytes(6, bpW);          // NULL si battle pass non initialisé (recréé au boot)
+        ps.setBytes(7, mlW);          // NULL si mailbox vide
+        ps.setLong(8, now);
+        ps.executeUpdate();
+      }
     }
   }
 
