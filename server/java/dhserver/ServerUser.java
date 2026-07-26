@@ -739,17 +739,72 @@ public final class ServerUser {
       }
     }
     java.util.List perkBonus = new java.util.ArrayList();
-    // (3) RECORD : progression + gold + XP-items + crédit du loot.
-    CampaignHelper.recordRaidOutcome(user, user, type, chapter, level, raidCount, clientLoot, perkBonus, SpecialEventSnapshot.NONE);
-    // (4) Mémoire de loot (pitié) : agréger les memoryChanges de tous les outcomes.
-    if (m.outcomes != null) {
+    // (3) LOOT AUTORITAIRE (garde-fou §4bis, comme la campagne) : le serveur roule le butin des raidCount raids
+    // et, si == client, crédite SON tirage (la mémoire de pitié est déjà avancée par le roll) ; sinon repli client.
+    boolean[] advancedState = new boolean[1];
+    java.util.List lootToGive = creditRaidLootAuthoritative(user, iu, type, chapter, level, raidCount, clientLoot, advancedState);
+    // RECORD : progression + gold + XP-items + crédit du loot (serveur si autorité confirmée, sinon client).
+    CampaignHelper.recordRaidOutcome(user, user, type, chapter, level, raidCount, lootToGive, perkBonus, SpecialEventSnapshot.NONE);
+    // (4) Mémoire de pitié : si l'autorité a avancé l'état (updateMemoryUnconditional par raid), NE PAS ré-appliquer
+    // les deltas client (double-comptage) ; sinon (repli), appliquer les deltas client des outcomes comme avant.
+    if (!advancedState[0] && m.outcomes != null) {
       for (Object o : m.outcomes) {
         com.perblue.heroes.network.messages.RaidOutcome ro = (com.perblue.heroes.network.messages.RaidOutcome) o;
         applyLootMemory(ro.memoryChanges);
       }
     }
     System.out.println("[raid] " + type + " " + chapter + "-" + level + " ×" + raidCount
-        + " → appliqué (tickets=" + useTickets + ", loot=" + clientLoot.size() + ") [persisté]");
+        + " → appliqué (tickets=" + useTickets + ", loot=" + lootToGive.size()
+        + ", autorité=" + advancedState[0] + ") [persisté]");
+  }
+
+  /**
+   * #25 — CRÉDIT DE LOOT RAID AUTORITAIRE (garde-fou §4bis). Reproduit EXACTEMENT la séquence RNG raid du client
+   * (relevé au bytecode {@code RaidTicketOutcomeWindow}) : {@code resetRandom(LOOT)} UNE fois, puis par raid
+   * {@code getLoot(...)} + {@code updateMemoryUnconditional} (le flux LOOT AVANCE entre raids ; les raids ne
+   * touchent PAS le pool d'XP combat — XP raid séparée), {@code returnRandom(LOOT)} à la fin. Agrège le butin des
+   * {@code raidCount} raids et le compare au client : si ÉGAL → crédite le tirage SERVEUR (mémoire déjà avancée) ;
+   * si DIVERGENCE → RESTAURE la mémoire (snapshot) et retombe sur le loot CLIENT (jamais léser un honnête).
+   */
+  @SuppressWarnings({"rawtypes", "unchecked"})
+  private java.util.List creditRaidLootAuthoritative(User user, IndividualUser iu, CampaignType type,
+      int chapter, int level, int raidCount, java.util.List clientLoot, boolean[] advancedState) {
+    advancedState[0] = false;
+    java.util.Map memSnapshot = individualUserExtra.lootMemory == null
+        ? new java.util.HashMap() : new java.util.HashMap(individualUserExtra.lootMemory);
+    try {
+      Long lootSeed = getPendingSeed(com.perblue.heroes.network.messages.RandomSeedType.LOOT);
+      if (lootSeed != null)
+        iu.setSeed(com.perblue.heroes.network.messages.RandomSeedType.LOOT, lootSeed, "");
+      user.resetRandom(com.perblue.heroes.network.messages.RandomSeedType.LOOT);   // UNE fois (flux avance ensuite)
+      com.perblue.heroes.game.objects.GuildInfoPerkProvider perks =
+          new com.perblue.heroes.game.objects.GuildInfoPerkProvider(com.perblue.heroes.DH.app.getYourGuildInfo());
+      java.util.List serverLoot = new java.util.ArrayList();
+      for (int i = 0; i < raidCount; i++) {
+        com.perblue.heroes.game.logic.CampaignLootHelper.CampaignLoot cl =
+            com.perblue.heroes.game.logic.CampaignLootHelper.getLoot(
+                user, type, 0, chapter, level, SpecialEventSnapshot.NONE, perks, true);
+        if (cl == null) { user.returnRandom(com.perblue.heroes.network.messages.RandomSeedType.LOOT); return clientLoot; }
+        com.perblue.heroes.game.logic.CampaignLootHelper.updateMemoryUnconditional(user, cl, chapter);
+        if (cl.combinedLoot != null)
+          com.perblue.heroes.game.logic.RewardHelper.mergeRewards(serverLoot, cl.combinedLoot);
+      }
+      user.returnRandom(com.perblue.heroes.network.messages.RandomSeedType.LOOT);
+      if (lootMultiset(serverLoot).equals(lootMultiset(clientLoot))) {
+        advancedState[0] = true;
+        System.out.println("[loot-authoritative] #25 RAID AUTORITAIRE ✅ crédit=serveur (==client) " + lootMultiset(serverLoot));
+        return serverLoot;
+      }
+      // divergence → restaure la mémoire avancée par les rolls, repli client
+      individualUserExtra.lootMemory = memSnapshot;
+      System.out.println("[loot-authoritative] #25 RAID DIVERGENCE ⚠️ repli loot CLIENT — serveur="
+          + lootMultiset(serverLoot) + " client=" + lootMultiset(clientLoot));
+      return clientLoot;
+    } catch (Throwable t) {
+      individualUserExtra.lootMemory = memSnapshot;
+      System.out.println("[loot-authoritative] RAID roll serveur échoué (" + t + ") → confiance client");
+      return clientLoot;
+    }
   }
 
   /** Re-synchro complète après un/des raid(s) : héros, diamants, compteurs, progression campagne, niveau d'équipe. */
