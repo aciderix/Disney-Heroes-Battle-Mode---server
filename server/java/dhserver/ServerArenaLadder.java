@@ -38,6 +38,10 @@ public final class ServerArenaLadder {
 
   public static final long BOT_ID_BASE = 900000L;
 
+  /** Horodatage du dernier RESET quotidien des combats (ms). La régén d'arène est un reset quotidien (21h serveur,
+   *  {@code ArenaHelper.getNextDailyUpdateTime}) — pas un timer par combat. Voir {@code ServerArena.maybeDailyReset}. */
+  public long lastFightReset;
+
   private final List<Entry> entries = new ArrayList<>();
 
   public List<Entry> entries() { return entries; }
@@ -59,7 +63,8 @@ public final class ServerArenaLadder {
     try {
       ByteArrayOutputStream bos = new ByteArrayOutputStream();
       DataOutputStream o = new DataOutputStream(bos);
-      o.writeInt(1);                       // version
+      o.writeInt(2);                       // version (2 = + lastFightReset)
+      o.writeLong(lastFightReset);
       o.writeInt(entries.size());
       for (Entry e : entries) {
         o.writeLong(e.id);
@@ -86,7 +91,8 @@ public final class ServerArenaLadder {
     if (b == null || b.length == 0) return l;
     try {
       DataInputStream in = new DataInputStream(new ByteArrayInputStream(b));
-      in.readInt();                        // version (1)
+      int version = in.readInt();
+      if (version >= 2) l.lastFightReset = in.readLong();   // v1 : champ absent → 0 (reset au 1er accès)
       int n = in.readInt();
       for (int i = 0; i < n; i++) {
         Entry e = new Entry();

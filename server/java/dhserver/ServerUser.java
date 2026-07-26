@@ -1734,6 +1734,7 @@ public final class ServerUser {
         individualUserExtra, userID, userInfo.diamonds, "arena-attack");
     ServerContext.bind(user, iu);
     long myID = userInfo.basicInfo != null ? userInfo.basicInfo.iD : 1L;
+    ServerArena.maybeDailyReset(ladder, type, System.currentTimeMillis());   // régén (si on franchit le reset en session)
     int myIdx = ladder.indexOf(myID);
     int defIdx = ladder.indexOf(defenderID);
     if (myIdx >= 0) {
@@ -1796,6 +1797,7 @@ public final class ServerUser {
     } else {
       ladder = ServerArena.generateLadder(user, userInfo, type, src);
     }
+    ServerArena.maybeDailyReset(ladder, type, System.currentTimeMillis());           // régén combats (reset quotidien)
     com.perblue.heroes.network.messages.ArenaInfo info =
         ServerArena.buildArenaInfo(user, userInfo, type, ladder, src);
     return new ArenaResult(info, ladder);

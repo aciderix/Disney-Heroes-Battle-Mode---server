@@ -131,7 +131,28 @@ public final class ServerArena {
     me.teamLevel = userTL;
     me.remainingFightChances = MAX_FIGHTS;
     ladder.entries().add(me);                                       // toi en DERNIER (provisoire)
+    ladder.lastFightReset = System.currentTimeMillis();            // combats pleins → prochain reset = prochain 21h
     return ladder;
+  }
+
+  /**
+   * ARÈNE — RÉGÉN des combats = RESET QUOTIDIEN (fidèle : le jeu réinitialise l'arène chaque jour à 21h serveur,
+   * {@code ArenaHelper.getNextDailyUpdateTime} / {@code resetArenaChances} ; ce n'est PAS un timer par combat). Si un
+   * passage de reset quotidien a eu lieu depuis {@code ladder.lastFightReset}, on remet TOUTES les entrées à
+   * {@link #MAX_FIGHTS} et on note l'instant. Appelé à chaque ouverture/attaque ; l'appelant persiste le ladder.
+   * @return true si un reset a été appliqué (le ladder a changé → à persister).
+   */
+  public static boolean maybeDailyReset(ServerArenaLadder ladder, ArenaType type, long now) {
+    if (ladder == null) return false;
+    long due;
+    try { due = ArenaHelper.getNextDailyUpdateTime(type, ladder.lastFightReset); }
+    catch (Throwable t) { due = ladder.lastFightReset + 24L * 60 * 60 * 1000; }   // repli : +24h
+    if (now < due) return false;                                   // pas encore franchi le reset quotidien
+    for (ServerArenaLadder.Entry e : ladder.entries()) e.remainingFightChances = MAX_FIGHTS;
+    ladder.lastFightReset = now;
+    System.out.println("[arena] reset quotidien des combats → " + MAX_FIGHTS + "/joueur ("
+        + ladder.entries().size() + " entrées)");
+    return true;
   }
 
   /**
@@ -341,7 +362,7 @@ public final class ServerArena {
     // Numéro de jour dans la saison (SEASON_WEEKS×7 jours), 1-based.
     long day = (now - seasonStart) / (24L * 60 * 60 * 1000);
     s.dayNumber = (int) Math.max(0, day);
-    s.endOfDay = nextDailyReset(now);                     // prochain reset quotidien (DAILY_UPDATE_HOUR=21)
+    s.endOfDay = safeNextDailyUpdate(type, now);          // prochain reset quotidien (= boundary de maybeDailyReset)
     s.endOfWeek = safeNextWeeklyReset(type, now);         // prochain reset hebdo (mercredi 21h)
     s.ended = false;
     s.featuredHeroesA = true;
@@ -569,6 +590,11 @@ public final class ServerArena {
   private static long safeNextWeeklyReset(ArenaType type, long now) {
     try { return ArenaHelper.getNextWeeklyResetTime(type, now); }
     catch (Throwable t) { return now + 7L * 24 * 60 * 60 * 1000; }
+  }
+  /** Prochain reset quotidien via la logique du jeu (repli sur le calcul local 21h). */
+  private static long safeNextDailyUpdate(ArenaType type, long now) {
+    try { return ArenaHelper.getNextDailyUpdateTime(type, now); }
+    catch (Throwable t) { return nextDailyReset(now); }
   }
 
   /** Prochain reset quotidien à DAILY_UPDATE_HOUR (21h, heure serveur). */
