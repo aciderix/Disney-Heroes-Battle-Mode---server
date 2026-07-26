@@ -270,13 +270,22 @@ public final class DesktopLauncher {
                 // --- Ligne "dump" (sans tap) : juste enregistrer l'écran+acteurs sous un point ---
                 boolean dumpOnly = low.startsWith("dump");
                 if (dumpOnly) ln = ln.substring(4).trim();
+                // --- Ligne "hold x,y[,frames]" : press-relâche RÉEL (touchDown maintenant, touchUp après N frames,
+                //     comme un doigt). Certains acteurs (ActorGestureListener.tap, grilles de sélection de héros)
+                //     ignorent un tap 0-frame → utiliser hold pour eux. ---
+                boolean hold = low.startsWith("hold");
+                if (hold) ln = ln.substring(4).trim();
                 String[] xy = ln.split("[,;\\s]+");
                 if (xy.length >= 2) {
                     int cx = Integer.parseInt(xy[0].trim()), cy = Integer.parseInt(xy[1].trim());
                     // MÉTHODE B-bis : on ENREGISTRE ce que le clic va toucher (acteur+ancêtres+listeners+écran)
                     // AVANT de taper → on sait ce que le clic active et quoi câbler dans l'auto-pilote.
                     TutorialDriver.dumpClickTarget(game, cx, cy);
-                    if (!dumpOnly) {
+                    if (hold) {
+                        int frames = xy.length >= 3 ? Integer.parseInt(xy[2].trim()) : 8;
+                        System.out.println("[manualclick] hold (" + cx + "," + cy + ") " + frames + " frames");
+                        input.tapHold(cx, cy, frames);
+                    } else if (!dumpOnly) {
                         System.out.println("[manualclick] tap (" + cx + "," + cy + ")");
                         input.tap(cx, cy);
                     }
