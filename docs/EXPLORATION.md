@@ -13,6 +13,13 @@
 - Héros : Ralph/Elastigirl/Frozone/Vanellope (WHITE niv.1-2) — **pas montés** (le TL est fixé, pas la puissance
   réelle) → certains écrans PvP/contenu peuvent se comporter différemment ; on le note au cas par cas.
 
+> **⭐ À FAIRE à la prochaine REMISE À ZÉRO de la DB** (`rm server/data/dh-server.db`, faite pour une autre
+> raison — nouveau joueur/tuto) : **re-valider le LOOT AUTORITAIRE #25 en jeu** sur ce compte frais (chaîne de
+> graine serveur ET client depuis S0). Jouer le 1er combat de campagne → **taper CONTINUE sur l'écran REWARDS**
+> (émet `CampaignAttack`) → lire `/tmp/dh_game.log` : on doit voir `[loot-authoritative] AUTORITAIRE ✅` (et non
+> `DIVERGENCE`). Off-by-one de graine corrigé (commit `83409c1`) ; BaronessDante hérité reste désynchronisé →
+> nécessite un compte neuf. Tâche #46 (opportuniste, pas de session dédiée nécessaire).
+
 ## Légende statut
 ✅ OK (vérifié en jeu + persistance) · 🟢 serveur OK (en jeu à faire) · 🔧 en cours · ⚠️ problème ouvert ·
 ⬜ à explorer · 🔒 verrouillé (raison) · 💤 hors scope (store fermé / feature retirée)
