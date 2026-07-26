@@ -22,7 +22,7 @@ TESTS=(
   CompleteQuestTest WeeklyBoxTest WeeklyQuestTest
   MailboxTest ItemsTest SkillUpgradeTest AlchemyTest SetFlagTest UnlockHeroTest
   UpdateTimeTest SetNameTest TeamLevelPersistTest
-  LootAuthoritativeTest LootEquipTest LootPersistTest LootDeterminismTest LootCreditAuthoritativeTest LootParityMultiCombatTest SeedTest
+  LootAuthoritativeTest LootEquipTest LootPersistTest LootDeterminismTest LootCreditAuthoritativeTest LootParityMultiCombatTest LootSeedChainTest SeedTest
   ArenaInfoTest ArenaDefenseTest ArenaLadderTest ArenaAttackTest ArenaRealPvPTest ArenaConcurrencyTest ArenaFightResetTest
   ArenaRewardsTest
 )
