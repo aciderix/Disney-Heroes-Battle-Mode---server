@@ -234,6 +234,57 @@ public final class LoginServer {
                 c.send(resp);
                 System.out.println("[login] <== START " + at + " attaque défenseur=" + defID
                     + " → ==> Start*AttackResponse (héros du défenseur envoyés)");
+              } else if (act.command == com.perblue.heroes.network.messages.CommandType.GET_GUILD_CHECK_IN_INFO) {
+                // GUILD CHECK-IN — état d'émargement du jour (écran CHECK IN attend un GuildCheckInInfo, sinon LOADING).
+                ServerGuild g = currentGuild(user);
+                com.perblue.heroes.network.messages.GuildCheckInInfo ci = user.buildGuildCheckInInfo(g);
+                ci.setAsReplyTo(m);
+                c.send(ci);
+                System.out.println("[login] <== GET_GUILD_CHECK_IN_INFO → ==> GuildCheckInInfo (today="
+                    + ci.totalCheckInsToday + "/" + ci.maxCheckInsToday + ")");
+              } else if (act.command == com.perblue.heroes.network.messages.CommandType.GET_HEROES_FOR_HIRE) {
+                // MERCENAIRES — héros à louer postés dans la guilde (écran MERCENARIES attend HeroesForHire).
+                ServerGuild g = currentGuild(user);
+                com.perblue.heroes.network.messages.HeroesForHire hf =
+                    new com.perblue.heroes.network.messages.HeroesForHire();
+                hf.guildID = user.currentGuildID();
+                hf.mercenaries = new java.util.ArrayList<>();
+                Object ep = act.extra == null ? null
+                    : act.extra.get(com.perblue.heroes.network.messages.ActionExtraType.ENTRY_POINT);
+                hf.forJobBoard = ep != null && Boolean.parseBoolean(ep.toString());
+                hf.setAsReplyTo(m);
+                c.send(hf);
+                System.out.println("[login] <== GET_HEROES_FOR_HIRE → ==> HeroesForHire (0 merc)");
+              } else if (act.command == com.perblue.heroes.network.messages.CommandType.GET_GUILD_RANKINGS) {
+                // CLASSEMENT DES GUILDES — bouton graphique de l'écran de guilde. Une seule guilde sur le shard →
+                // rang 1. topGuilds vide (le client affiche ta guilde via yourGuildRank/Value).
+                com.perblue.heroes.network.messages.GuildRankings gr =
+                    new com.perblue.heroes.network.messages.GuildRankings();
+                Object rt = act.extra == null ? null
+                    : act.extra.get(com.perblue.heroes.network.messages.ActionExtraType.TYPE);
+                try { gr.rankType = rt == null ? com.perblue.heroes.network.messages.RankType.TOTAL_POWER
+                    : com.perblue.heroes.network.messages.RankType.valueOf(rt.toString()); }
+                catch (Throwable t) { gr.rankType = com.perblue.heroes.network.messages.RankType.TOTAL_POWER; }
+                gr.topGuilds = new java.util.ArrayList<>();
+                gr.yourGuildRank = user.inGuild() ? 1 : 0;
+                gr.yourGuildValue = 0L;
+                gr.setAsReplyTo(m);
+                c.send(gr);
+                System.out.println("[login] <== GET_GUILD_RANKINGS(" + gr.rankType + ") → ==> GuildRankings (rang "
+                    + gr.yourGuildRank + ")");
+              } else if (act.command == com.perblue.heroes.network.messages.CommandType.GET_CONTEST_RANKINGS
+                  || act.command == com.perblue.heroes.network.messages.CommandType.GET_GUILD_CONTEST_RANKINGS) {
+                // CONTESTS de guilde — aucun contest hébergé (cf. évènements) → classement vide (l'écran rend « pas de contest »).
+                com.perblue.heroes.network.messages.GuildContestRankings gc =
+                    new com.perblue.heroes.network.messages.GuildContestRankings();
+                gc.topGuilds = new java.util.ArrayList<>();
+                gc.setAsReplyTo(m);
+                c.send(gc);
+                System.out.println("[login] <== " + act.command + " → ==> GuildContestRankings (vide)");
+              } else if (act.command == com.perblue.heroes.network.messages.CommandType.VIEWED_GUILD_WALL
+                  || act.command == com.perblue.heroes.network.messages.CommandType.VIEWED_CONTEST_POINTS) {
+                // Marqueurs « vu » (pastille) — informationnels, pas d'état à modifier. On acquitte (pas de LOADING).
+                System.out.println("[login]     action " + act.command + " (marqueur vu, no-op)");
               } else {
                 boolean applied = user.applyAction(act);
                 if (applied) { try { store.save(user); } catch (Exception e) {
@@ -503,6 +554,37 @@ public final class LoginServer {
                 c.send(up);
                 System.out.println("[login] <== LeaveGuild #" + gid + " [persisté] ==> UserGuildUpdate(LEAVE)");
               }
+            } else if (m instanceof com.perblue.heroes.network.messages.GetGuildDonationRequests) {
+              // GUILD AID — liste des demandes de don en attente (écran GUILD AID). Aucune demande ouverte → liste
+              // vide = réponse autoritative (l'écran rend « aucune demande » au lieu de « LOADING… »).
+              com.perblue.heroes.network.messages.GuildDonationRequests resp =
+                  new com.perblue.heroes.network.messages.GuildDonationRequests();
+              resp.guildID = user.currentGuildID();
+              resp.requests = new java.util.ArrayList<>();
+              resp.setAsReplyTo(m);
+              c.send(resp);
+              System.out.println("[login] <== GetGuildDonationRequests → ==> GuildDonationRequests (0 demande)");
+            } else if (m instanceof com.perblue.heroes.network.messages.GetGuildGiftRewards) {
+              // GUILD CRATE / cadeaux de guilde — récompenses de cadeau en attente. Aucune → vide.
+              com.perblue.heroes.network.messages.GetGuildGiftRewards req =
+                  (com.perblue.heroes.network.messages.GetGuildGiftRewards) m;
+              com.perblue.heroes.network.messages.GuildGiftRewards resp =
+                  new com.perblue.heroes.network.messages.GuildGiftRewards();
+              resp.eventID = req.eventID;
+              resp.gifters = new java.util.ArrayList<>();
+              resp.rewards = new java.util.ArrayList<>();
+              resp.lastGiftTime = 0L;
+              resp.setAsReplyTo(m);
+              c.send(resp);
+              System.out.println("[login] <== GetGuildGiftRewards(" + req.eventID + ") → ==> GuildGiftRewards (0)");
+            } else if (m instanceof com.perblue.heroes.network.messages.GetUnlockedGuildAvatars) {
+              // Avatars/emblèmes de guilde débloqués — liste (vide = aucun débloqué).
+              com.perblue.heroes.network.messages.UnlockedGuildAvatars resp =
+                  new com.perblue.heroes.network.messages.UnlockedGuildAvatars();
+              resp.avatars = new java.util.ArrayList<>();
+              resp.setAsReplyTo(m);
+              c.send(resp);
+              System.out.println("[login] <== GetUnlockedGuildAvatars → ==> UnlockedGuildAvatars (0)");
             } else if (m instanceof Ping) {
               // Écho de latence/keepalive : le client mesure le RTT et surveille l'activité serveur.
               // Sans réponse, son chien de garde ferme la connexion (« Reconnecting… »).
@@ -578,6 +660,13 @@ public final class LoginServer {
         }
       }
       private String arena(boolean coli) { return coli ? "Coliseum" : "Fight Pit"; }
+
+      /** GUILDES #7 — la guilde courante du joueur (ou {@code null} s'il n'en a pas / introuvable). */
+      private ServerGuild currentGuild(ServerUser u) {
+        if (!u.inGuild()) return null;
+        try { return store.loadGuild(u.shardID, u.currentGuildID()); }
+        catch (Exception e) { System.out.println("[login]     ! chargement guilde échoué: " + e); return null; }
+      }
 
       /** GUILDES #7 — enveloppe une liste de {@link ServerGuild} en {@code List<GuildRow>} (élément de liste attendu
        *  par ListRecGuildsResponse et SearchGuildsResponse). */

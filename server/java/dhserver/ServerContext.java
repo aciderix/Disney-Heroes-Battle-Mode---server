@@ -130,6 +130,17 @@ public final class ServerContext {
         ext.setAccessible(true);
         ext.set(null, (com.badlogic.gdx.utils.Predicate<String>) s -> true);
       } catch (Throwable t) { System.out.println("[ctx] isNameLegalExt (serveur) non posé: " + t); }
+      // WARM-UP GuildStats (guildes #7) : la 1ʳᵉ lecture des perks de guilde déclenche le PARSE PARESSEUX de
+      // guild_perk_levels.tab, dont les lignes TIMED_* ont un CONTENT_TL vide (parseInt("") lève, journalisé
+      // SEVERE par onStatError pendant le chargement). Sous accès concurrent (l'écran de guilde demande le
+      // check-in ET le clic manuel), ce parse paresseux non ré-entrant lève par intermittence un
+      // NumberFormatException jusqu'à ce que le chargement soit terminé. On force le chargement UNE fois ici
+      // (mono-thread), en absorbant les erreurs de cellule, pour que l'accès runtime soit ensuite stable.
+      try {
+        com.perblue.heroes.game.objects.GuildInfoPerkProvider warm =
+            new com.perblue.heroes.game.objects.GuildInfoPerkProvider(new GuildInfo());
+        com.perblue.heroes.game.logic.GuildCheckInHelper.getMaxDailyCheckIns(warm);
+      } catch (Throwable t) { System.out.println("[ctx] warm-up GuildStats (perks): " + t); }
       System.out.println("[ctx] DH.app headless + données du jeu + couche évènements spéciaux");
     } catch (Throwable t) {
       throw new RuntimeException("échec init contexte serveur (DH.app)", t);

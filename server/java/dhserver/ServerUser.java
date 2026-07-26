@@ -393,6 +393,33 @@ public final class ServerUser {
     return u;
   }
 
+  /** GUILD CHECK-IN (écran CHECK IN) — état d'émargement du jour. Max quotidien = logique du jeu
+   *  ({@code GuildCheckInHelper.getMaxDailyCheckIns} sur les perks de la guilde) ; reset quotidien = horloge serveur. */
+  public synchronized com.perblue.heroes.network.messages.GuildCheckInInfo buildGuildCheckInInfo(ServerGuild g) {
+    ServerContext.init();
+    com.perblue.heroes.network.messages.GuildCheckInInfo ci =
+        new com.perblue.heroes.network.messages.GuildCheckInInfo();
+    ci.guildID = g == null ? 0L : g.guildID;
+    com.perblue.heroes.game.objects.GuildInfoPerkProvider perks =
+        new com.perblue.heroes.game.objects.GuildInfoPerkProvider(g == null ? new com.perblue.heroes.network.messages.GuildInfo() : g.info);
+    // getMaxDailyCheckIns lit les perks de guilde ; le parse paresseux de guild_perk_levels.tab (lignes TIMED_*
+    // à CONTENT_TL vide) peut lever par intermittence tant qu'il n'est pas chaud (cf. warm-up ServerContext).
+    // On réessaie une fois puis on retombe sur la base du jeu (7 au niveau de perk 0) pour toujours rendre l'écran.
+    int max;
+    try { max = com.perblue.heroes.game.logic.GuildCheckInHelper.getMaxDailyCheckIns(perks); }
+    catch (Throwable t1) {
+      try { max = com.perblue.heroes.game.logic.GuildCheckInHelper.getMaxDailyCheckIns(perks); }
+      catch (Throwable t2) { max = 7; System.out.println("[guild] getMaxDailyCheckIns indispo (parse perks) → défaut 7"); }
+    }
+    ci.maxCheckInsToday = max;
+    long lastReset = g == null ? 0L : com.perblue.heroes.game.logic.GuildCheckInHelper.getLastCheckinResetTime(g.guildID);
+    ci.nextDailyResetTime = lastReset + 24L * 60L * 60L * 1000L;
+    ci.totalCheckInsToday = g == null ? 0 : g.checkInsToday();
+    ci.totalCheckInsYesterday = 0;
+    ci.rewardsClaimed = new java.util.ArrayList<>();
+    return ci;
+  }
+
   /** Une ligne de roster ({@code PlayerGuildRow}) pour CE joueur (écran membres, ExtendedGuildInfo). */
   public synchronized com.perblue.heroes.network.messages.PlayerGuildRow buildPlayerGuildRow() {
     com.perblue.heroes.network.messages.PlayerGuildRow row =

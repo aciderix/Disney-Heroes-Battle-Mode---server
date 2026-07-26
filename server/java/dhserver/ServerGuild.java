@@ -39,7 +39,16 @@ public final class ServerGuild {
   /** Roster : userID des membres, le CHEF (RULER) en tête. Détails résolus depuis le store à l'affichage. */
   public final List<Long> memberIDs = new ArrayList<>();
 
+  // --- État de guilde MUTABLE (état opérateur ; persisté v2) ---
+  /** CHECK-IN : userID des membres ayant émargé aujourd'hui + horodatage du dernier reset quotidien (horloge serveur). */
+  public final java.util.Set<Long> checkedInToday = new java.util.LinkedHashSet<>();
+  public long lastCheckInResetTime;
+  /** Candidatures en attente (guildes APPLICATION_ONLY) : userID → nom. */
+  public final java.util.LinkedHashMap<Long, String> applicants = new java.util.LinkedHashMap<>();
+
   public ServerGuild() {}
+
+  public int checkInsToday() { return checkedInToday.size(); }
 
   /**
    * Crée une guilde à partir d'un {@link CreateGuild} (message du jeu) — fondateur = {@code founderID} (RULER).
@@ -82,13 +91,22 @@ public final class ServerGuild {
 
       ByteArrayOutputStream bos = new ByteArrayOutputStream();
       DataOutputStream o = new DataOutputStream(bos);
-      o.writeInt(1);                       // version
+      o.writeInt(2);                       // version (2 = + check-in + candidatures)
       o.writeLong(guildID);
       o.writeInt(shardID);
       o.writeInt(infoWire.length);
       o.write(infoWire);
       o.writeInt(memberIDs.size());
       for (Long id : memberIDs) o.writeLong(id);
+      // v2 : état mutable
+      o.writeLong(lastCheckInResetTime);
+      o.writeInt(checkedInToday.size());
+      for (Long id : checkedInToday) o.writeLong(id);
+      o.writeInt(applicants.size());
+      for (java.util.Map.Entry<Long, String> e : applicants.entrySet()) {
+        o.writeLong(e.getKey());
+        o.writeUTF(e.getValue() == null ? "" : e.getValue());
+      }
       o.flush();
       return bos.toByteArray();
     } catch (Exception ex) {
@@ -110,6 +128,13 @@ public final class ServerGuild {
       g.info = (GuildInfo) MessageFactory.getInstance().readMessage(new GruntInputStream(infoWire));
       int n = in.readInt();
       for (int i = 0; i < n; i++) g.memberIDs.add(in.readLong());
+      if (version >= 2) {
+        g.lastCheckInResetTime = in.readLong();
+        int c = in.readInt();
+        for (int i = 0; i < c; i++) g.checkedInToday.add(in.readLong());
+        int a = in.readInt();
+        for (int i = 0; i < a; i++) { long id = in.readLong(); g.applicants.put(id, in.readUTF()); }
+      }
       return g;
     } catch (Exception ex) {
       throw new RuntimeException("lecture guilde échouée", ex);
