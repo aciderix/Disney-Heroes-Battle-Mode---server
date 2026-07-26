@@ -22,7 +22,18 @@ public final class EliteSetup {
     return s;
   }
 
-  static void win3(ServerUser su, CampaignType type, int ch, int lvl) {
+  /** Attaquants = héros RÉELLEMENT possédés par le compte (recordOutcome donne l'XP à chaque attaquant via
+   *  addHeroEXP → getHero(type) ; un type NON possédé renvoie null → ClientErrorCode.ERROR). */
+  static List<UnitType> ownedTeam(ServerUser su) {
+    List<UnitType> team = new ArrayList<>();
+    for (Object o : su.gameUser().getHeroes()) {
+      team.add(((com.perblue.heroes.game.objects.IHero) o).getType());
+      if (team.size() == 5) break;
+    }
+    return team;
+  }
+
+  static void win3(ServerUser su, CampaignType type, int ch, int lvl, List<UnitType> team) {
     CampaignAttack ca = new CampaignAttack();
     ca.campaignType = type; ca.chapter = ch; ca.level = lvl; ca.stagesCleared = 1;
     ca.lootEarned = new ArrayList<>(); ca.memoryChanges = new ArrayList<>();
@@ -30,7 +41,7 @@ public final class EliteSetup {
     base.outcome = CombatOutcome.WIN; base.stars = 3;
     AttackLineupSummary lu = new AttackLineupSummary();
     lu.units = new ArrayList<>();
-    for (UnitType t : new UnitType[]{UnitType.RALPH, UnitType.ELASTIGIRL, UnitType.FROZONE}) lu.units.add(unit(t));
+    for (UnitType t : team) lu.units.add(unit(t));
     base.attackers = new ArrayList<>(Collections.singletonList(lu));
     base.defenders = new ArrayList<>();
     ca.base = base;
@@ -46,6 +57,8 @@ public final class EliteSetup {
       ServerUser su = st.loadIfExists(uid, shard);
       if (su == null) { System.out.println("[elite-setup] joueur introuvable"); return; }
 
+      List<UnitType> team = ownedTeam(su);
+      System.out.println("[elite-setup] équipe possédée = " + team);
       // 3★ le chapitre 1 NORMAL, niveau par niveau (chaque victoire débloque le suivant), jusqu'à débloquer ELITE 1-1.
       int won = 0;
       for (int lvl = 1; lvl <= 20; lvl++) {
@@ -54,7 +67,7 @@ public final class EliteSetup {
           System.out.println("[elite-setup] NORMAL 1-" + lvl + " pas (encore) débloqué → stop");
           break;
         }
-        try { win3(su, CampaignType.NORMAL, 1, lvl); won++; }
+        try { win3(su, CampaignType.NORMAL, 1, lvl, team); won++; }
         catch (Throwable t) { System.out.println("[elite-setup] NORMAL 1-" + lvl + " échec : " + t); break; }
         if (CampaignHelper.isLevelUnlocked(su.gameUser(), CampaignType.ELITE, 1, 1)) {
           System.out.println("[elite-setup] ELITE 1-1 débloqué après NORMAL 1-" + lvl);
