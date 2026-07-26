@@ -664,6 +664,41 @@ public final class TutorialDriver {
         } catch (Throwable t) { System.out.println("[enterlevel] échec: " + t); }
     }
 
+    /** DEV : crée une guilde depuis l'écran CREATE GUILD courant, en fournissant le NOM (ce que ferait le clavier
+     *  natif — non pilotable en headless) puis en déclenchant le CHEMIN D'ENVOI RÉEL du jeu ({@code tryCreateGuild})
+     *  qui valide côté client (NameChangeHelper.isNameLegal) et envoie {@code CreateGuild} au serveur via la pile
+     *  réseau du client. Le reste (motto, politique, min level…) garde les valeurs par défaut de l'écran. Le tour
+     *  client→serveur→UserGuildUpdate→transition « en guilde » est donc exercé EN JEU. Invoqué via
+     *  dh.clickfile "createguild &lt;nom&gt;". */
+    public static void createGuild(GameMain game, String name) {
+        try {
+            Object screen = game.getScreenManager().getScreen();
+            if (screen == null || !screen.getClass().getSimpleName().contains("CreateGuild")) {
+                System.out.println("[createguild] écran courant = "
+                    + (screen == null ? "null" : screen.getClass().getSimpleName()) + " (pas CreateGuildScreen)");
+                return;
+            }
+            // settingsTable.setGuildName(name) — champ nom réel de l'écran (public).
+            java.lang.reflect.Field stf = null;
+            for (Class<?> c = screen.getClass(); c != null && stf == null; c = c.getSuperclass()) {
+                try { stf = c.getDeclaredField("settingsTable"); } catch (NoSuchFieldException ignore) {}
+            }
+            if (stf == null) { System.out.println("[createguild] champ settingsTable introuvable"); return; }
+            stf.setAccessible(true);
+            Object settingsTable = stf.get(screen);
+            settingsTable.getClass().getMethod("setGuildName", String.class).invoke(settingsTable, name);
+            // tryCreateGuild() — chemin d'envoi réel (validation client + envoi CreateGuild au serveur).
+            java.lang.reflect.Method m = null;
+            for (Class<?> c = screen.getClass(); c != null && m == null; c = c.getSuperclass()) {
+                try { m = c.getDeclaredMethod("tryCreateGuild"); } catch (NoSuchMethodException ignore) {}
+            }
+            if (m == null) { System.out.println("[createguild] tryCreateGuild introuvable"); return; }
+            m.setAccessible(true);
+            m.invoke(screen);
+            System.out.println("[createguild] nom='" + name + "' → tryCreateGuild() [chemin d'envoi réel du jeu]");
+        } catch (Throwable t) { System.out.println("[createguild] échec: " + t); }
+    }
+
     /** DEV : dumpe les acteurs actionnables de l'ÉCRAN COURANT (bouton/label/tag tuto + position stage) —
      *  pour savoir quoi taper (méthode B-bis). Invoqué via dh.clickfile "dumpscreen". */
     public static void dumpScreen(GameMain game) {

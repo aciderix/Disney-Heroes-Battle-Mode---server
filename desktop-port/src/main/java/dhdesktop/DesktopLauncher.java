@@ -284,6 +284,10 @@ public final class DesktopLauncher {
                         Integer.parseInt(e[0].trim()), Integer.parseInt(e[1].trim()));
                     continue;
                 }
+                if (low.startsWith("createguild ")) {            // createguild <nom> — créer une guilde (chemin d'envoi réel)
+                    TutorialDriver.createGuild(game, ln.substring(12).trim());
+                    continue;
+                }
                 // --- Ligne "dump" (sans tap) : juste enregistrer l'écran+acteurs sous un point ---
                 boolean dumpOnly = low.startsWith("dump");
                 if (dumpOnly) ln = ln.substring(4).trim();

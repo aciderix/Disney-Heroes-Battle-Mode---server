@@ -89,6 +89,15 @@ public final class LoginServer {
             try {
             if (m instanceof ClientInfo) {
               BootData bd = user.bootData();
+              // GUILDES #7 — si le joueur est en guilde, LIVRER son GuildInfo au boot (bd.guildInfo). Sans ça le
+              // client sait « en guilde » (guildID>0 persisté) mais sans données de guilde → écran vide au
+              // démarrage tant qu'il n'a pas re-demandé. Chargé depuis le store (état persistant multi-serveur).
+              if (user.inGuild()) {
+                try {
+                  ServerGuild g = store.loadGuild(user.shardID, user.currentGuildID());
+                  if (g != null) bd.guildInfo = g.info;
+                } catch (Exception e) { System.out.println("[login]     ! chargement guilde (boot) échoué: " + e); }
+              }
               bd.setAsReplyTo(m);
               c.send(bd);
               System.out.println("[login] ==> BootData (reply) : "

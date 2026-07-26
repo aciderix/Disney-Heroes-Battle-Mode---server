@@ -194,6 +194,9 @@ public final class ServerUser {
     bd.serverTime = now;
     bd.currentServer.shardID = shardID;
     userInfo.lastLoginTime = now;
+    // « Vu pour la dernière fois » (roster de guilde, tri ONLINE) = BasicUserInfo.userLastActive. Le joueur se
+    // connecte MAINTENANT → on l'actualise (sinon 0 = « il y a 20660 j » dans l'écran MEMBERS).
+    if (userInfo.basicInfo != null) userInfo.basicInfo.userLastActive = now;
     bd.userInfo = userInfo;
     bd.userExtra = userExtra;
     bd.individualUserExtra = individualUserExtra;
