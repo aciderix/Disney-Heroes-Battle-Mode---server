@@ -26,11 +26,21 @@ public final class ArenaDefenseTest {
     u.iD = 0L;
     u.lineup = hl;
     u.customName = "";
+    // Personnalisations d'endgame que le VRAI client envoie (émeraude/vrai-équipement). NON VIDES pour couvrir la
+    // sérialisation de userExtra : UserHeroLineupData.writeListed pack les émeraudes (HeroStatSlotChoices) et le
+    // vrai-équipement (RealGearType) dans des FORMATS différents → un mauvais ordre d'arguments de setHeroLineup
+    // (émeraude/vrai-équipement inversés) plante en ClassCastException au wire. Ce test verrouille le bon ordre.
+    HeroStatSlotChoices emerald = new HeroStatSlotChoices();
+    emerald.statSlotChoices = new java.util.HashMap<>();
+    emerald.statSlotChoices.put(EmeraldStatSlot.values()[1], CombatStatType.values()[1]);
     u.emeraldStatSlotChoices = new java.util.HashMap<>();
+    u.emeraldStatSlotChoices.put(UnitType.MOANA, emerald);
     u.realGearOptions = new java.util.HashMap<>();
+    u.realGearOptions.put(UnitType.MERIDA, RealGearType.values()[1]);
 
     if (!su.applyHeroLineupUpdate(u)) throw new AssertionError("applyHeroLineupUpdate a échoué");
-    System.out.println("[def] défense COLISEUM_DEFENSE_1 posée = [MOANA, MERIDA, MAUI]");
+    System.out.println("[def] défense COLISEUM_DEFENSE_1 posée = [MOANA, MERIDA, MAUI]"
+        + " (+ émeraude MOANA, vrai-équipement MERIDA)");
 
     // PERSISTANCE : recharger depuis les octets wire (comme la DB) → la défense doit survivre.
     ServerUser reloaded = ServerUser.fromWire(1L, 1,
@@ -54,6 +64,20 @@ public final class ArenaDefenseTest {
     for (Object o : firstTeam.lineup)
       if (((ExtendedHeroSummary) o).health <= 0)
         throw new AssertionError("PV nuls dans la défense relue");
+
+    // NON-RÉGRESSION du bug d'ordre d'arguments : après reload, l'émeraude doit revenir dans emeraldStatSlotChoices
+    // (valeur = HeroStatSlotChoices) et le vrai-équipement dans realGearOptions (valeur = RealGearType), PAS l'inverse.
+    UserHeroLineupData back = null;
+    for (UserHeroLineupData d : reloaded.heroLineupsPersisted())
+      if (d.lineupType == HeroLineupType.COLISEUM_DEFENSE_1) { back = d; break; }
+    if (back == null) throw new AssertionError("lineup COLISEUM_DEFENSE_1 absente après reload");
+    Object emVal = back.emeraldStatSlotChoices.get(UnitType.MOANA);
+    if (!(emVal instanceof HeroStatSlotChoices))
+      throw new AssertionError("émeraude relue mal typée (attendu HeroStatSlotChoices) : " + emVal);
+    Object rgVal = back.realGearOptions.get(UnitType.MERIDA);
+    if (!(rgVal instanceof RealGearType))
+      throw new AssertionError("vrai-équipement relu mal typé (attendu RealGearType) : " + rgVal);
+    System.out.println("[def] émeraude/vrai-équipement relus dans les BONS champs (pas d'inversion)");
 
     System.out.println("[def] OK — défense d'arène POSÉE → PERSISTÉE (round-trip wire) → RELUE par ServerArena");
   }

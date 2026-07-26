@@ -278,6 +278,12 @@ public final class ServerUser {
   /** Nombre de héros possédés (diagnostic). */
   public synchronized int heroCount() { return userExtra.heroes.size(); }
 
+  /** ARÈNE #41 — lineups persistées ({@code userExtra.heroLineups}), pour vérification (défense/attaque relues). */
+  public synchronized java.util.List<com.perblue.heroes.network.messages.UserHeroLineupData> heroLineupsPersisted() {
+    return userExtra.heroLineups == null
+        ? java.util.Collections.emptyList() : userExtra.heroLineups;
+  }
+
   /** Ajoute un héros au roster (état de base WHITE niv.1, comme un compte neuf) via la logique du jeu
    *  ({@code User.createAndAddHero}) + resync wire. Idempotent (ne double pas un héros déjà possédé). */
   public synchronized void grantHero(com.perblue.heroes.network.messages.UnitType type) {
@@ -871,9 +877,12 @@ public final class ServerUser {
         individualUserExtra, userID, userInfo.diamonds, "lineup");
     ServerContext.bind(user, iu);
     try {
-      // Signature du jeu : setHeroLineup(type, iD, lineup, expiration, customName, emeraldStatSlots, realGearOptions).
+      // Signature RÉELLE du jeu (relevée par bytecode — les deux Map sont brutes, l'ordre n'est PAS déductible
+      // du prototype) : setHeroLineup(type, iD, lineup, expiration, customName, realGearOptions, emeraldStatSlotChoices).
+      // NB : inversé au départ → les HeroStatSlotChoices (émeraude) atterrissaient dans realGearOptions et la
+      // sérialisation de userExtra (UserHeroLineupData.writeListed → packEnumList) plantait en ClassCastException.
       user.setHeroLineup(u.type, u.iD, u.lineup, 0L, u.customName,
-          u.emeraldStatSlotChoices, u.realGearOptions);
+          u.realGearOptions, u.emeraldStatSlotChoices);
     } catch (Throwable t) {
       System.out.println("[lineup] setHeroLineup refusé/échec : " + t);
       return false;
