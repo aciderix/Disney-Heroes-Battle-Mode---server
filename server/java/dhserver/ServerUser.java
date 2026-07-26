@@ -278,6 +278,12 @@ public final class ServerUser {
   /** Nombre de héros possédés (diagnostic). */
   public synchronized int heroCount() { return userExtra.heroes.size(); }
 
+  /** #25 (test) — nb d'entrées de mémoire de pitié + pool d'XP persistés (distinguent crédit autoritaire vs repli). */
+  public synchronized int lootMemorySize() {
+    return individualUserExtra.lootMemory == null ? 0 : individualUserExtra.lootMemory.size();
+  }
+  public synchronized int expLootPoolPersisted() { return individualUserExtra.expLootPool; }
+
   /** ARÈNE #41 — lineups persistées ({@code userExtra.heroLineups}), pour vérification (défense/attaque relues). */
   public synchronized java.util.List<com.perblue.heroes.network.messages.UserHeroLineupData> heroLineupsPersisted() {
     return userExtra.heroLineups == null
@@ -617,21 +623,17 @@ public final class ServerUser {
     // serveur ne re-roule pas, il fait confiance au loot client. La mémoire de loot (m.memoryChanges) EST
     // appliquée plus bas (auto-persistée), voir applyLootMemory.
     java.util.List clientLoot = m.lootEarned != null ? m.lootEarned : new java.util.ArrayList<>();
-    // #25 — LOOT AUTORITAIRE (mode OMBRE — PAS ENCORE crédité). Le serveur ROULE le butin avec la graine LOOT
-    // (flux RNG séparé du combat) et le COMPARE au client, mais crédite ENCORE le loot CLIENT.
-    // POURQUOI PAS ENCORE AUTORITAIRE : en jeu réel multi-combat, le tirage serveur DIVERGE du client légitime
-    // (relevé au run frais 1-5 : les items EXP et la pitié divergent). Le loot dépend d'un ÉTAT ÉVOLUTIF que le
-    // serveur ne reproduit pas encore fidèlement : le POOL D'XP (`IUser.getExpLootPool`/`CampaignLoot.
-    // newExpLootPool`, non suivi/mis à jour côté serveur) et la MÉMOIRE DE LOOT (pitié) au moment du tirage. Le
-    // test 5/5 ne l'avait pas vu (état FRAIS identique des 2 côtés). Créditer un tirage divergent donnerait au
-    // joueur HONNÊTE un mauvais butin (régression §4bis) → tant que le serveur ne reproduit pas le client dans
-    // TOUS les cas légitimes, on garde le loot client et on LOGue la divergence (diagnostic). Bascule
-    // autoritative UNIQUEMENT une fois l'état (pool XP + mémoire) reproduit fidèlement (== client en jeu réel).
-    java.util.List serverLoot = rollAuthoritativeLoot(user, iu, type, m);
-    if (serverLoot != null && m.base != null
-        && m.base.outcome == com.perblue.heroes.network.messages.CombatOutcome.WIN)
-      logLootValidation(serverLoot, clientLoot);
-    java.util.List lootEarned = clientLoot;
+    // #25 — LOOT AUTORITAIRE (garde-fou §4bis). Le serveur ROULE le butin (graine LOOT reproductible = hash
+    // userID, cf. SeedHelper.getDefaultSeed / SET_SEED #23) et le COMPARE au client. Si ÉGAL → l'autorité est
+    // CONFIRMÉE : on crédite le tirage SERVEUR et on AVANCE l'état évolutif (pool d'XP + pitié) pour que les
+    // combats suivants restent en phase (le loot dépend de cet état — prouvé LootDeterminismTest). Si DIVERGENCE
+    // (ou pas de graine) → repli sur loot CLIENT + log (jamais léser un joueur honnête ; signal de triche/écart de
+    // repro). Un compte joué DEPUIS la création sur ce serveur reste en phase (même graine userID + même avance)
+    // → autorité effective ; le repli protège les états désynchronisés hérités. Voir creditLootAuthoritative.
+    boolean[] advancedState = new boolean[1];
+    java.util.List lootEarned = (m.base != null && m.base.outcome == com.perblue.heroes.network.messages.CombatOutcome.WIN)
+        ? creditLootAuthoritative(user, iu, type, m.chapter, m.level, clientLoot, advancedState)
+        : clientLoot;
     java.util.List shownDelta = new java.util.ArrayList<>();
     // base : attackers/defenders = Collection de AttackLineupSummary, outcome + stars remplis par le client.
     CampaignHelper.recordOutcome(user, user, level, m.base.outcome, m.base.stars, m.stagesCleared,
@@ -641,7 +643,9 @@ public final class ServerUser {
     resyncDiamonds(user); // diamants (champ dédié hors this.extra)
     resyncCounts(user);   // compteurs/drapeaux UserFlag (hors this.extra)
     resyncCampaign(iu);   // progression campagne (statuts de niveau) → wire (hors this.extra, comme les héros).
-    applyLootMemory(m);   // mémoire de loot (pitié) → individualUserExtra.lootMemory (auto-persistée).
+    // Mémoire de pitié : si l'autorité a avancé l'état (updateMemoryUnconditional), NE PAS ré-appliquer les
+    // deltas client (double-comptage) ; sinon (repli client) on applique les deltas client comme avant.
+    if (!advancedState[0]) applyLootMemory(m);
     // Niveau d'équipe : User.teamLevel est un CHAMP de User (hors this.extra) — getUser le lit depuis
     // userInfo.basicInfo.teamLevel, mais setTeamLevel (montée de niveau via giveTeamXP) ne l'écrit QUE sur
     // l'objet User. Sans re-sync vers le wire, le niveau reste BLOQUÉ à 1 : l'équipe « remonte 1→2 » à chaque
@@ -769,19 +773,68 @@ public final class ServerUser {
    */
   @SuppressWarnings({"rawtypes", "unchecked"})
   private java.util.List rollAuthoritativeLoot(User user, IndividualUser iu, CampaignType type, CampaignAttack m) {
+    com.perblue.heroes.game.logic.CampaignLootHelper.CampaignLoot cl =
+        rollAuthoritativeLootFull(user, iu, type, m.chapter, m.level);
+    return cl == null ? null : cl.combinedLoot;
+  }
+
+  /**
+   * #25 — ROLL AUTORITAIRE (objet complet). Reproduit EXACTEMENT le tirage client (flux RNG {@code LOOT}, séparé
+   * du combat) : {@code resetRandom(LOOT)} + {@code CampaignLootHelper.getLoot(...)}. La graine LOOT est
+   * <b>reproductible côté serveur</b> — par défaut {@code SeedHelper.getDefaultSeed(userID)} (hash FNV de l'userID,
+   * relevé au bytecode #25/B) ; si le client a re-semé, la valeur est reçue via {@code Action SET_SEED} (#23) et
+   * ancrée ici. On NE fait PAS l'avance d'état ici (setExpLootPool/updateMemory) : l'appelant décide en fonction
+   * de la comparaison au client (garde-fou §4bis). @return le {@code CampaignLoot} roulé, ou {@code null} si pas de
+   * graine connue (→ confiance client).
+   */
+  @SuppressWarnings({"rawtypes", "unchecked"})
+  private com.perblue.heroes.game.logic.CampaignLootHelper.CampaignLoot rollAuthoritativeLootFull(
+      User user, IndividualUser iu, CampaignType type, int chapter, int level) {
     Long lootSeed = getPendingSeed(com.perblue.heroes.network.messages.RandomSeedType.LOOT);
-    if (lootSeed == null) return null;   // pas de graine → confiance client (documenté), non bloquant
-    // Ancre la graine LOOT du client puis reseed le flux (getLoot consomme user.getRandom(LOOT) en interne).
-    iu.setSeed(com.perblue.heroes.network.messages.RandomSeedType.LOOT, lootSeed, "");
+    if (lootSeed != null)   // le client a re-semé (SET_SEED) → on ancre SA graine ; sinon le défaut userID sert
+      iu.setSeed(com.perblue.heroes.network.messages.RandomSeedType.LOOT, lootSeed, "");
     user.resetRandom(com.perblue.heroes.network.messages.RandomSeedType.LOOT);
     // GuildInfoPerkProvider sur le GuildInfo du joueur (shim ServerContext ; vide = pas de bonus de perk de
     // guilde, exact pour un joueur sans guilde). SpecialEventSnapshot.NONE (serveur sans évènement, cf. §F).
     com.perblue.heroes.game.objects.GuildInfoPerkProvider perks =
         new com.perblue.heroes.game.objects.GuildInfoPerkProvider(com.perblue.heroes.DH.app.getYourGuildInfo());
-    com.perblue.heroes.game.logic.CampaignLootHelper.CampaignLoot cl =
-        com.perblue.heroes.game.logic.CampaignLootHelper.getLoot(
-            user, type, 0, m.chapter, m.level, SpecialEventSnapshot.NONE, perks, true);
-    return cl == null ? null : cl.combinedLoot;
+    return com.perblue.heroes.game.logic.CampaignLootHelper.getLoot(
+        user, type, 0, chapter, level, SpecialEventSnapshot.NONE, perks, true);
+  }
+
+  /**
+   * #25 — CRÉDIT DE LOOT AUTORITAIRE (garde-fou §4bis). Roule le butin côté serveur, compare au client, et :
+   *  <ul><li><b>si serveur == client</b> → l'autorité est <b>confirmée</b> : on crédite le tirage SERVEUR et on
+   *  AVANCE l'état évolutif ({@code setExpLootPool(newExpLootPool)} + {@code updateMemoryUnconditional}) pour que
+   *  les combats suivants restent en phase (le loot dépend de cet état — prouvé par {@code LootDeterminismTest}) ;
+   *  </li><li><b>si divergence</b> (ou pas de graine) → on RETOMBE sur le loot CLIENT + on logue (jamais léser un
+   *  joueur honnête ; signal de triche/écart de repro).</li></ul>
+   * @return la liste de {@code RewardDrop} à créditer, et indique via {@code advancedState[0]} si l'état a été
+   *         avancé côté serveur (→ l'appelant ne doit PAS ré-appliquer la mémoire client).
+   */
+  @SuppressWarnings({"rawtypes", "unchecked"})
+  private java.util.List creditLootAuthoritative(User user, IndividualUser iu, CampaignType type,
+      int chapter, int level, java.util.List clientLoot, boolean[] advancedState) {
+    advancedState[0] = false;
+    com.perblue.heroes.game.logic.CampaignLootHelper.CampaignLoot sl;
+    try {
+      sl = rollAuthoritativeLootFull(user, iu, type, chapter, level);
+    } catch (Throwable t) {
+      System.out.println("[loot-authoritative] roll serveur échoué (" + t + ") → confiance client"); return clientLoot;
+    }
+    if (sl == null || sl.combinedLoot == null) return clientLoot;   // pas de graine → client (documenté)
+    boolean match = lootMultiset(sl.combinedLoot).equals(lootMultiset(clientLoot));
+    if (match) {
+      user.setExpLootPool(sl.newExpLootPool);                                   // avance le pool d'XP (persisté this.extra)
+      com.perblue.heroes.game.logic.CampaignLootHelper.updateMemoryUnconditional(user, sl, chapter); // avance la pitié
+      advancedState[0] = true;
+      System.out.println("[loot-authoritative] #25 AUTORITAIRE ✅ crédité=serveur (==client) " + lootMultiset(sl.combinedLoot)
+          + " poolXP→" + sl.newExpLootPool);
+      return sl.combinedLoot;
+    }
+    System.out.println("[loot-authoritative] #25 DIVERGENCE ⚠️ repli sur loot CLIENT (jamais léser l'honnête) — "
+        + "serveur=" + lootMultiset(sl.combinedLoot) + " client=" + lootMultiset(clientLoot));
+    return clientLoot;
   }
 
   /** Expose le tirage de loot AUTORITAIRE (reconstruit user/iu depuis l'état courant). Utilisé par le test de
