@@ -773,10 +773,12 @@ public final class ServerUser {
     java.util.Map memSnapshot = individualUserExtra.lootMemory == null
         ? new java.util.HashMap() : new java.util.HashMap(individualUserExtra.lootMemory);
     try {
-      Long lootSeed = getPendingSeed(com.perblue.heroes.network.messages.RandomSeedType.LOOT);
-      if (lootSeed != null)
-        iu.setSeed(com.perblue.heroes.network.messages.RandomSeedType.LOOT, lootSeed, "");
-      user.resetRandom(com.perblue.heroes.network.messages.RandomSeedType.LOOT);   // UNE fois (flux avance ensuite)
+      // Graine = CHAÎNE SERVEUR (étude A) : resetRandom UNE fois (le flux LOOT AVANCE entre raids), PAS de
+      // getPendingSeed (off-by-one). La mémoire s'avance par raid (updateMemoryUnconditional). En fin de fournée,
+      // on avance la chaîne d'UN cran (comme le returnRandom UNIQUE du client) via advanceLootSeedChain (nextLong
+      // + setSeed "boot" — évite le NPE réseau de returnRandom headless), INCONDITIONNEL (le client l'avance
+      // toujours → on reste en phase). État (mémoire) gardé SEULEMENT sur match ; sur divergence on RESTAURE + repli.
+      user.resetRandom(com.perblue.heroes.network.messages.RandomSeedType.LOOT);
       com.perblue.heroes.game.objects.GuildInfoPerkProvider perks =
           new com.perblue.heroes.game.objects.GuildInfoPerkProvider(com.perblue.heroes.DH.app.getYourGuildInfo());
       java.util.List serverLoot = new java.util.ArrayList();
@@ -784,19 +786,18 @@ public final class ServerUser {
         com.perblue.heroes.game.logic.CampaignLootHelper.CampaignLoot cl =
             com.perblue.heroes.game.logic.CampaignLootHelper.getLoot(
                 user, type, 0, chapter, level, SpecialEventSnapshot.NONE, perks, true);
-        if (cl == null) { user.returnRandom(com.perblue.heroes.network.messages.RandomSeedType.LOOT); return clientLoot; }
+        if (cl == null) { individualUserExtra.lootMemory = memSnapshot; return clientLoot; }
         com.perblue.heroes.game.logic.CampaignLootHelper.updateMemoryUnconditional(user, cl, chapter);
         if (cl.combinedLoot != null)
           com.perblue.heroes.game.logic.RewardHelper.mergeRewards(serverLoot, cl.combinedLoot);
       }
-      user.returnRandom(com.perblue.heroes.network.messages.RandomSeedType.LOOT);
+      advanceLootSeedChain(user, iu);   // un cran (returnRandom-équivalent, sans réseau) — INCONDITIONNEL
       if (lootMultiset(serverLoot).equals(lootMultiset(clientLoot))) {
-        advancedState[0] = true;
+        advancedState[0] = true;   // mémoire avancée par les rolls = gardée (autorité)
         System.out.println("[loot-authoritative] #25 RAID AUTORITAIRE ✅ crédit=serveur (==client) " + lootMultiset(serverLoot));
         return serverLoot;
       }
-      // divergence → restaure la mémoire avancée par les rolls, repli client
-      individualUserExtra.lootMemory = memSnapshot;
+      individualUserExtra.lootMemory = memSnapshot;   // divergence → restaure la mémoire, repli (deltas client via l'appelant)
       System.out.println("[loot-authoritative] #25 RAID DIVERGENCE ⚠️ repli loot CLIENT — serveur="
           + lootMultiset(serverLoot) + " client=" + lootMultiset(clientLoot));
       return clientLoot;
@@ -835,26 +836,32 @@ public final class ServerUser {
 
   /**
    * #25 — ROLL AUTORITAIRE (objet complet). Reproduit EXACTEMENT le tirage client (flux RNG {@code LOOT}, séparé
-   * du combat) : {@code resetRandom(LOOT)} + {@code CampaignLootHelper.getLoot(...)}. La graine LOOT est
-   * <b>reproductible côté serveur</b> — par défaut {@code SeedHelper.getDefaultSeed(userID)} (hash FNV de l'userID,
-   * relevé au bytecode #25/B) ; si le client a re-semé, la valeur est reçue via {@code Action SET_SEED} (#23) et
-   * ancrée ici. On NE fait PAS l'avance d'état ici (setExpLootPool/updateMemory) : l'appelant décide en fonction
-   * de la comparaison au client (garde-fou §4bis). @return le {@code CampaignLoot} roulé, ou {@code null} si pas de
-   * graine connue (→ confiance client).
+   * du combat) : {@code resetRandom(LOOT)} + {@code CampaignLootHelper.getLoot(...)}. <b>Graine = CHAÎNE SERVEUR</b>
+   * (étude A, 2026-07-26) : on N'UTILISE PLUS {@code getPendingSeed} (= la graine POST-tirage que le client
+   * annonce via {@code SET_SEED REASON=return}, ce qui causait un OFF-BY-ONE → divergence en jeu). On roule avec
+   * la graine STOCKÉE du serveur ({@code getSeed(LOOT)}, par défaut {@code SeedHelper.getDefaultSeed(userID)} =
+   * hash FNV de l'userID) ; l'appelant AVANCE ensuite la chaîne ({@code returnRandom}-équivalent) pour rester en
+   * phase avec le client à chaque combat (prouvé {@code LootSeedChainTest}). Roll PUR ici (aucune avance d'état/
+   * graine) — l'appelant décide (garde-fou §4bis). @return le {@code CampaignLoot} roulé, ou {@code null}.
    */
   @SuppressWarnings({"rawtypes", "unchecked"})
   private com.perblue.heroes.game.logic.CampaignLootHelper.CampaignLoot rollAuthoritativeLootFull(
       User user, IndividualUser iu, CampaignType type, int chapter, int level) {
-    Long lootSeed = getPendingSeed(com.perblue.heroes.network.messages.RandomSeedType.LOOT);
-    if (lootSeed != null)   // le client a re-semé (SET_SEED) → on ancre SA graine ; sinon le défaut userID sert
-      iu.setSeed(com.perblue.heroes.network.messages.RandomSeedType.LOOT, lootSeed, "");
-    user.resetRandom(com.perblue.heroes.network.messages.RandomSeedType.LOOT);
+    user.resetRandom(com.perblue.heroes.network.messages.RandomSeedType.LOOT);   // graine = chaîne serveur (getSeed/défaut userID)
     // GuildInfoPerkProvider sur le GuildInfo du joueur (shim ServerContext ; vide = pas de bonus de perk de
     // guilde, exact pour un joueur sans guilde). SpecialEventSnapshot.NONE (serveur sans évènement, cf. §F).
     com.perblue.heroes.game.objects.GuildInfoPerkProvider perks =
         new com.perblue.heroes.game.objects.GuildInfoPerkProvider(com.perblue.heroes.DH.app.getYourGuildInfo());
     return com.perblue.heroes.game.logic.CampaignLootHelper.getLoot(
         user, type, 0, chapter, level, SpecialEventSnapshot.NONE, perks, true);
+  }
+
+  /** #25 (étude A) — AVANCE la chaîne de graines LOOT du serveur comme {@code returnRandom} du client : tire un
+   *  {@code nextLong()} du flux LOOT (après {@code getLoot}) → nouvelle graine, stockée ({@code setSeed} reason
+   *  "boot" = SANS envoi réseau headless). Garde la chaîne serveur EN PHASE avec le client (S0→S1→…). */
+  private void advanceLootSeedChain(User user, IndividualUser iu) {
+    long next = user.getRandom(com.perblue.heroes.network.messages.RandomSeedType.LOOT).nextLong();
+    iu.setSeed(com.perblue.heroes.network.messages.RandomSeedType.LOOT, next, "boot");
   }
 
   /**
@@ -877,7 +884,12 @@ public final class ServerUser {
     } catch (Throwable t) {
       System.out.println("[loot-authoritative] roll serveur échoué (" + t + ") → confiance client"); return clientLoot;
     }
-    if (sl == null || sl.combinedLoot == null) return clientLoot;   // pas de graine → client (documenté)
+    if (sl == null || sl.combinedLoot == null) return clientLoot;   // roll impossible → client (documenté)
+    // AVANCE de la CHAÎNE de graine INCONDITIONNELLE : le client fait un returnRandom(LOOT) après CHAQUE combat
+    // (match ou non) → le serveur doit avancer sa graine pareil pour rester EN PHASE au combat suivant (sinon
+    // décalage cumulatif). L'avance d'ÉTAT (pool/pitié), elle, n'est faite QUE sur match (autorité confirmée) ;
+    // sur divergence on retombe sur le loot ET la mémoire CLIENT (comportement d'avant, jamais léser l'honnête).
+    advanceLootSeedChain(user, iu);
     boolean match = lootMultiset(sl.combinedLoot).equals(lootMultiset(clientLoot));
     if (match) {
       user.setExpLootPool(sl.newExpLootPool);                                   // avance le pool d'XP (persisté this.extra)
