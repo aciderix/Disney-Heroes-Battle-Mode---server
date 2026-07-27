@@ -157,9 +157,22 @@ public final class LoginServer {
                 user.recordCampaignAttack(ca);
                 try { store.save(user); } catch (Exception e) {
                   System.out.println("[login]     ! persistance échouée: " + e); }
+                // ÉCONOMIE D'INFLUENCE (#54) — la stamina brûlée fait gagner de l'influence à la guilde (passif).
+                long inflGain = 0;
+                if (user.inGuild()) {
+                  ServerGuild g = currentGuild(user);
+                  if (g != null) {
+                    inflGain = user.applyStaminaBurnInfluence(g, ca.campaignType, ca.chapter, ca.level);
+                    if (inflGain > 0) { store.saveGuild(g);
+                      com.perblue.heroes.network.messages.GuildInfluenceDiff idf =
+                          new com.perblue.heroes.network.messages.GuildInfluenceDiff();
+                      idf.guildID = g.guildID; idf.influence = g.info.influence; c.send(idf); }
+                  }
+                }
                 System.out.println("[login] <== CampaignAttack : " + ca.campaignType + " " + ca.chapter
                     + "-" + ca.level + " outcome=" + (ca.base == null ? "?" : ca.base.outcome)
-                    + " → recordOutcome appliqué [persisté]");
+                    + " → recordOutcome appliqué [persisté]"
+                    + (inflGain > 0 ? " (+" + inflGain + " influence guilde)" : ""));
               } catch (Throwable t) {
                 System.out.println("[login]     ! recordCampaignAttack échec: " + t);
                 t.printStackTrace();
@@ -286,7 +299,7 @@ public final class LoginServer {
                 // MERCENAIRES (#57) — louer un héros du pool (Action HIRE_HERO : heroType, ID=ownerID, LEVEL=mode).
                 // L'emprunt est gratuit ; on renvoie HeroHired{hero} pour que le client l'utilise en combat.
                 com.perblue.heroes.network.messages.UnitType t = act.heroType;
-                long ownerID = act.iD;
+                long ownerID = extraLong(act, com.perblue.heroes.network.messages.ActionExtraType.ID, 0);
                 com.perblue.heroes.network.messages.MercenaryHeroData picked = null;
                 try {
                   ServerUser owner = ownerID == user.userID ? user : store.loadIfExists(ownerID, user.shardID);
@@ -365,6 +378,36 @@ public final class LoginServer {
                   System.out.println("[login] <== UPGRADE_GUILD_PERK " + type + " → niv." + newLvl
                       + " [persisté] ==> GuildPerkUpgraded + GuildInfluenceDiff");
                 }
+              } else if (act.command == com.perblue.heroes.network.messages.CommandType.ACTIVATE_TIMED_GUILD_PERK) {
+                // PERK TEMPORISÉ (#54) — active un perk timed (boost temporaire). extra[TYPE]=perk, COUNT=quantité.
+                ServerGuild g = currentGuild(user);
+                com.perblue.heroes.network.messages.GuildPerkType type = parseGuildPerkType(act);
+                int amount = (int) extraLong(act, com.perblue.heroes.network.messages.ActionExtraType.COUNT, 1);
+                boolean ok = (g != null && type != null) && user.activateTimedGuildPerk(g, type, amount);
+                if (ok) {
+                  store.saveGuild(g);
+                  com.perblue.heroes.network.messages.UserGuildUpdate up = user.buildUserGuildUpdate(
+                      g, user.currentGuildRole(), com.perblue.heroes.network.messages.GuildUpdateReason.DEFAULT);
+                  up.setAsReplyTo(m);
+                  c.send(up);
+                  System.out.println("[login] <== ACTIVATE_TIMED_GUILD_PERK " + type + " ×" + amount + " [persisté]");
+                } else {
+                  System.out.println("[login]     ⛔ ACTIVATE_TIMED_GUILD_PERK refusé (type=" + type + ")");
+                }
+              } else if (act.command == com.perblue.heroes.network.messages.CommandType.CLAIM_GUILD_GIFT_REWARDS) {
+                // CADEAUX DE GUILDE (#58) — réclamer les cadeaux disponibles. Sans achat de membre générant des
+                // cadeaux, il n'y a RIEN à réclamer (état fidèle) → on acquitte par un GuildGiftRewardsUpdate vide
+                // (le callback client se termine ; l'écran reste cohérent). L'accumulation (achats→cadeaux) est une
+                // dépendance d'économie live-ops, cf. note #58.
+                com.perblue.heroes.network.messages.GuildGiftRewardsUpdate up =
+                    new com.perblue.heroes.network.messages.GuildGiftRewardsUpdate();
+                up.eventID = extraLong(act, com.perblue.heroes.network.messages.ActionExtraType.ID, 0);
+                up.lastGiftTime = com.perblue.heroes.util.TimeUtil.serverTimeNow();
+                up.newGifters = new java.util.ArrayList<>();
+                up.newRewards = new java.util.ArrayList<>();
+                up.setAsReplyTo(m);
+                c.send(up);
+                System.out.println("[login] <== CLAIM_GUILD_GIFT_REWARDS → ==> GuildGiftRewardsUpdate (0 cadeau)");
               } else if (act.command == com.perblue.heroes.network.messages.CommandType.REQUEST_GUILD_DONATION) {
                 // DONS / GUILD AID (#55) — le joueur demande de l'aide. extra[TYPE] = HERO_XP|SKILL_LEVEL|STAMINA.
                 // #55a : STAMINA (pilotable sans navigation gear) ; HERO_XP/SKILL à venir (#55b, dérivation reward).
@@ -1071,6 +1114,15 @@ public final class LoginServer {
           System.out.println("[login]     ~ demande d'aide #" + r.requestID + " expirée → retirée"
               + (r.remainingDonations < r.totalRequestedDonations ? " (+partiel au demandeur)" : ""));
         }
+      }
+
+      /** Lit une valeur numérique de l'extra d'une Action (les long/int passent par extra ID/COUNT/TIME, pas par act.iD). */
+      private long extraLong(com.perblue.heroes.network.messages.Action act,
+          com.perblue.heroes.network.messages.ActionExtraType key, long dflt) {
+        if (act.extra == null) return dflt;
+        Object v = act.extra.get(key);
+        if (v == null) return dflt;
+        try { return Long.parseLong(v.toString().trim()); } catch (Throwable t) { return dflt; }
       }
 
       /** MERCENAIRES #57 — pool de la guilde : héros postés par CE joueur + tous les autres membres. */

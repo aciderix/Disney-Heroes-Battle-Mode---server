@@ -538,6 +538,28 @@ public final class ServerUser {
     return cur + 1;
   }
 
+  /** PERK TEMPORISÉ (#54) — active un perk timed ({@code GuildPerkHelper.activateTimedGuildPerk}) après validation
+   *  ({@code getActivationError}). Pose une fin dans {@code guildInfo.perkEndTimes}. Renvoie true si activé. */
+  public synchronized boolean activateTimedGuildPerk(ServerGuild g,
+      com.perblue.heroes.network.messages.GuildPerkType type, int amount) {
+    if (g == null || type == null) return false;
+    ServerContext.init();
+    User user = ClientNetworkStateConverter.getUser(userInfo, userExtra, "guild");
+    IndividualUser iu = ClientNetworkStateConverter.getIndividualUser(
+        individualUserExtra, userID, userInfo.diamonds, "guild");
+    ServerContext.bind(user, iu);
+    com.perblue.heroes.game.objects.GuildInfoPerkProvider perks =
+        new com.perblue.heroes.game.objects.GuildInfoPerkProvider(g.info);
+    com.perblue.heroes.util.localization.ClientErrorCode err;
+    try { err = com.perblue.heroes.game.logic.GuildPerkHelper.getActivationError(user, perks, type, amount); }
+    catch (Throwable t) { System.out.println("[guild] getActivationError: " + t); return false; }
+    if (err != null) { System.out.println("[guild] activation timed " + type + " refusée: " + err); return false; }
+    try { com.perblue.heroes.game.logic.GuildPerkHelper.activateTimedGuildPerk(user, perks, type, amount); }
+    catch (Throwable t) { System.out.println("[guild] activateTimedGuildPerk: " + t); return false; }
+    System.out.println("[guild] perk timed " + type + " activé (×" + amount + ")");
+    return true;
+  }
+
   // ===================== CHAT de guilde (#59) =====================
   // Le client (ChatWindow.sendChatMessage) envoie un SendChat{message, room=GUILD, time, toUserID} SANS
   // ajouter le message localement pour les salons de guilde (GUILD/GUILD_WALL/GUILD_OFFICER/GUILD_WAR) — il
@@ -600,6 +622,32 @@ public final class ServerUser {
     IndividualUser iu = ClientNetworkStateConverter.getIndividualUser(
         individualUserExtra, userID, userInfo.diamonds, "read");
     return iu.getItemAmount(type);
+  }
+
+  /** ÉCONOMIE D'INFLUENCE (#54) — brûler de la stamina en combat de campagne fait GAGNER de l'influence à la
+   *  guilde ({@code coût stamina × getStaminaBurnInfluenceMultiplier}, plafonné {@code getMaxGuildInfluence}).
+   *  C'est la source PASSIVE qui fait monter l'influence (→ perks achetables). Renvoie l'influence ajoutée. */
+  public synchronized long applyStaminaBurnInfluence(ServerGuild g,
+      com.perblue.heroes.network.messages.CampaignType type, int chapter, int level) {
+    if (g == null || g.info == null || type == null) return 0L;
+    ServerContext.init();
+    User user = ClientNetworkStateConverter.getUser(userInfo, userExtra, "infl");
+    IndividualUser iu = ClientNetworkStateConverter.getIndividualUser(
+        individualUserExtra, userID, userInfo.diamonds, "infl");
+    ServerContext.bind(user, iu);
+    int cost;
+    try { cost = com.perblue.heroes.game.logic.CampaignHelper.getStaminaCost(user, type, chapter, level); }
+    catch (Throwable t) { return 0L; }
+    long gain = (long) cost * com.perblue.heroes.game.data.guild.GuildStats.getStaminaBurnInfluenceMultiplier();
+    if (gain <= 0) return 0L;
+    com.perblue.heroes.game.objects.GuildInfoPerkProvider perks =
+        new com.perblue.heroes.game.objects.GuildInfoPerkProvider(g.info);
+    long max;
+    try { max = com.perblue.heroes.game.logic.GuildPerkHelper.getMaxGuildInfluence(perks); }
+    catch (Throwable t) { max = com.perblue.heroes.game.data.guild.GuildStats.getBaseInfluenceCap(); }
+    long before = g.info.influence;
+    g.info.influence = Math.min(g.info.influence + gain, max);
+    return g.info.influence - before;
   }
 
   // ===================== MERCENAIRES (#57) =====================
