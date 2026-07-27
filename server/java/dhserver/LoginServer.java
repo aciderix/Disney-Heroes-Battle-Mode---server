@@ -397,15 +397,21 @@ public final class LoginServer {
                 System.out.println("[login] <== GET_GUILD_RANKINGS(" + gr.rankType + ") → ==> GuildRankings ("
                     + gr.topGuilds.size() + " guilde(s), ton rang " + gr.yourGuildRank + "/" + all.size()
                     + " valeur " + gr.yourGuildValue + ")");
-              } else if (act.command == com.perblue.heroes.network.messages.CommandType.GET_CONTEST_RANKINGS
-                  || act.command == com.perblue.heroes.network.messages.CommandType.GET_GUILD_CONTEST_RANKINGS) {
-                // CONTESTS de guilde — aucun contest hébergé (cf. évènements) → classement vide (l'écran rend « pas de contest »).
-                com.perblue.heroes.network.messages.GuildContestRankings gc =
-                    new com.perblue.heroes.network.messages.GuildContestRankings();
-                gc.topGuilds = new java.util.ArrayList<>();
+              } else if (act.command == com.perblue.heroes.network.messages.CommandType.GET_GUILD_CONTEST_RANKINGS) {
+                // CONTEST DES GUILDES (#67) — leaderboard RÉEL : guildes du shard triées par GuildInfo.contestPoints.
+                com.perblue.heroes.network.messages.GuildContestRankings gc = buildGuildContestRankings(user);
                 gc.setAsReplyTo(m);
                 c.send(gc);
-                System.out.println("[login] <== " + act.command + " → ==> GuildContestRankings (vide)");
+                System.out.println("[login] <== GET_GUILD_CONTEST_RANKINGS → ==> GuildContestRankings ("
+                    + gc.topGuilds.size() + " guilde(s))");
+              } else if (act.command == com.perblue.heroes.network.messages.CommandType.GET_CONTEST_RANKINGS) {
+                // CONTEST DES JOUEURS (#67) — membres de la guilde triés par leurs points de contest
+                // (ressource GUILD_CONTEST_POINTS) + ta ligne.
+                com.perblue.heroes.network.messages.ContestRankings cr = buildContestRankings(user);
+                cr.setAsReplyTo(m);
+                c.send(cr);
+                System.out.println("[login] <== GET_CONTEST_RANKINGS → ==> ContestRankings ("
+                    + cr.guildMembers.size() + " membre(s), ton rang " + (cr.yourInfo == null ? 0 : cr.yourInfo.rank) + ")");
               } else if (act.command == com.perblue.heroes.network.messages.CommandType.UPGRADE_GUILD_PERK) {
                 // PERK — upgrade autoritatif (débit influence de guilde + niveau+1). Le type de perk est dans extra.
                 System.out.println("[login]     UPGRADE_GUILD_PERK extra=" + act.extra);
@@ -1244,6 +1250,63 @@ public final class LoginServer {
           case CONTEST_RANK: return gi.contestPoints;
           default: return gi.totalPower;
         }
+      }
+
+      /** CONTEST DES GUILDES (#67) — classement RÉEL des guildes du shard par {@code GuildInfo.contestPoints}. */
+      private com.perblue.heroes.network.messages.GuildContestRankings buildGuildContestRankings(ServerUser u) {
+        com.perblue.heroes.network.messages.GuildContestRankings gc =
+            new com.perblue.heroes.network.messages.GuildContestRankings();
+        gc.topGuilds = new java.util.ArrayList<>();
+        java.util.List<ServerGuild> all;
+        try { all = store.listGuilds(u.shardID, null, 200); }
+        catch (Exception e) { System.out.println("[login]     ! listGuilds contest: " + e); return gc; }
+        all.sort((x, y) -> Long.compare(y.info.contestPoints, x.info.contestPoints));   // décroissant
+        int idx = 0;
+        for (ServerGuild sg : all) {
+          idx++;
+          if (gc.topGuilds.size() >= 100) break;
+          com.perblue.heroes.network.messages.GuildContestRankingRow row =
+              new com.perblue.heroes.network.messages.GuildContestRankingRow();
+          row.guildInfo = sg.info.basicInfo;         // BasicGuildInfo
+          row.points = sg.info.contestPoints;
+          row.rank = idx; row.contestRankIndex = idx - 1;
+          gc.topGuilds.add(row);
+        }
+        return gc;
+      }
+
+      /** CONTEST DES JOUEURS (#67) — membres de la guilde du joueur classés par leurs points de contest
+       *  (ressource {@code GUILD_CONTEST_POINTS}) ; {@code yourInfo} = la ligne du joueur. */
+      private com.perblue.heroes.network.messages.ContestRankings buildContestRankings(ServerUser u) {
+        com.perblue.heroes.network.messages.ContestRankings cr =
+            new com.perblue.heroes.network.messages.ContestRankings();
+        cr.guildMembers = new java.util.ArrayList<>();
+        cr.topPlayers = new java.util.ArrayList<>();
+        ServerGuild g = currentGuild(u);
+        if (g == null) return cr;
+        java.util.List<com.perblue.heroes.network.messages.ContestRankingRow> rows = new java.util.ArrayList<>();
+        for (Long mid : g.memberIDs) {
+          try {
+            ServerUser mu = (mid == u.userID) ? u : store.loadIfExists(mid, u.shardID);
+            if (mu == null) continue;
+            com.perblue.heroes.network.messages.ContestRankingRow row =
+                new com.perblue.heroes.network.messages.ContestRankingRow();
+            com.perblue.heroes.network.messages.PlayerRow pr = new com.perblue.heroes.network.messages.PlayerRow();
+            pr.info = mu.basicInfo();
+            row.playerRow = pr;
+            row.points = mu.resourceAmount(com.perblue.heroes.network.messages.ResourceType.GUILD_CONTEST_POINTS);
+            rows.add(row);
+          } catch (Exception e) { System.out.println("[login]     ! contest membre " + mid + ": " + e); }
+        }
+        rows.sort((x, y) -> Long.compare(y.points, x.points));   // décroissant
+        int idx = 0;
+        for (com.perblue.heroes.network.messages.ContestRankingRow row : rows) {
+          idx++; row.rank = idx; row.contestRankIndex = idx - 1;
+          if (row.playerRow != null && row.playerRow.info != null && row.playerRow.info.iD == u.userID) cr.yourInfo = row;
+        }
+        cr.guildMembers = rows;
+        cr.topPlayers = new java.util.ArrayList<>(rows);   // top = mêmes membres (contest de guilde)
+        return cr;
       }
 
       /** GUILDES #7 — la guilde courante du joueur (ou {@code null} s'il n'en a pas / introuvable). */

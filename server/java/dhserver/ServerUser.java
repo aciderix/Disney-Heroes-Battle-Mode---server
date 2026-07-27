@@ -330,6 +330,19 @@ public final class ServerUser {
     return user.getResource(rt);
   }
 
+  // NB (#67) : les points de contest du JOUEUR (ressource GUILD_CONTEST_POINTS) sont une ressource SPÉCIALE
+  // NON réglable par setResource (le jeu la calcule depuis l'état du contest — vérifié : giveResource est un
+  // no-op pour ce type, contrairement à GOLD/SOCIAL_BUCKS). Ils sont donc opérateur/contest-calculés ; le
+  // classement des joueurs (GET_CONTEST_RANKINGS) LIT la ressource (0 hors contest actif = fidèle). Seul le
+  // scoring de la GUILDE (GuildInfo.contestPoints, champ réglable) est exposé ci-dessous.
+
+  /** SCORING contest (#67) — ajoute des points de contest à la GUILDE ({@code GuildInfo.contestPoints},
+   *  persisté via {@code store.saveGuild}). Base du classement des guildes en contest. */
+  public synchronized void awardGuildContestPoints(ServerGuild g, int points) {
+    if (g == null || points <= 0) return;
+    g.info.contestPoints += points;
+  }
+
   // ===================== GUILDES #7 =====================
   // L'appartenance de guilde du joueur vit dans BasicUserInfo (guildID/guildRole), déjà persisté (userInfo BLOB)
   // et relu par le client au boot (ClientNetworkStateConverter → User.setGuildID/Role). L'état de la GUILDE

@@ -18,7 +18,7 @@
 | B | Dons SKILL_LEVEL (✅) + HERO_XP (opérateur §4) | ✅ SKILL FAIT + push | `daeb260` |
 | E | Génération serveur des cadeaux de crate | ✅ FAIT (test) | `<en cours>` |
 | D | MULTI-USER + registre connexions + broadcast | ✅ FAIT (socle, compile-clean) | `0536a52` |
-| F | Contests programmables (admin) | ⏳ à faire (live-ops) | — |
+| F | Contests — classements réels + scoring guilde | ✅ FAIT (test) | `<en cours>` |
 
 ---
 
@@ -94,8 +94,21 @@ Le choisir = inventer une valeur → **INTERDIT (§4)**. Handler : journalise «
 **Restes** : le shard est fixe (celui du compte par défaut) ; l'authentification est l'`userID` du `ClientInfo`
 (le vrai serveur ajouterait un jeton). Vérif 2 sessions simultanées = à faire en jeu quand utile.
 
-## F — Contests programmables (admin) ⏳
+## F — Contests ✅ (classements réels + scoring guilde)
 
-Faits : page perk `GUILD_CONTESTS`, ressource `GUILD_CONTEST_POINTS`. Contests = événements datés (live-ops).
-**Design** : planification via le panneau admin (#37), scoring (contribution des membres → `contestPoints`),
-classements `GET_(GUILD_)CONTEST_RANKINGS` réels. Le plus lourd.
+**FAIT (classements + scoring guilde).**
+- **`GET_GUILD_CONTEST_RANKINGS`** → `GuildContestRankings{topGuilds: List<GuildContestRankingRow>}` **RÉEL** :
+  `buildGuildContestRankings` trie les guildes du shard par `GuildInfo.contestPoints` (row = BasicGuildInfo +
+  points + rank). Comme le leaderboard de guilde.
+- **`GET_CONTEST_RANKINGS`** → `ContestRankings{guildMembers, topPlayers, yourInfo}` : `buildContestRankings`
+  classe les membres de la guilde par leurs points de contest.
+- **Scoring GUILDE** : `ServerUser.awardGuildContestPoints(g, points)` → `GuildInfo.contestPoints` (persisté).
+  Capacité opérateur (le contest = planifié par l'admin, comme #37).
+- **FAIT VÉRIFIÉ** : les points de contest du JOUEUR (ressource `GUILD_CONTEST_POINTS`) sont une ressource
+  **SPÉCIALE NON réglable** par `setResource` (le jeu la calcule depuis l'état du contest — `giveResource` est un
+  no-op pour ce type, contrairement à GOLD/SOCIAL_BUCKS). Donc points joueur = **opérateur/contest-calculés** ; le
+  classement des joueurs LIT la ressource (0 hors contest actif = fidèle). Pas de scoring joueur inventé (§4).
+- `GuildContestTest` : 3 guildes (100/200/300) → tri 300>200>100, round-trip DB ; confirme
+  `GUILD_CONTEST_POINTS` non réglable.
+- **Reste** : la PLANIFICATION d'un contest (fenêtre active, type, récompenses de fin) = live-ops opérateur (via
+  le panneau admin #37 / évènements spéciaux) ; le scoring joueur temps réel dépend d'un contest actif hébergé.
