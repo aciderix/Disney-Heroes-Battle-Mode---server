@@ -80,6 +80,46 @@ Ordre de traitement (modifiable). On commence par **BATTLE PASS**.
 
 _(rempli au fur et à mesure)_
 
+- **2026-07-27 — DONS / GUILD AID (#55) : protocole CARTOGRAPHIÉ au bytecode (avant implémentation, §8).**
+  Flux établi (client = source de vérité) :
+  - **Poster une demande** : `Action{REQUEST_GUILD_DONATION}` (`ClientActionHelper.requestHeroXPGuildHelp/
+    requestSkillGuildHelp/requestStamina`). Extra : `TYPE=HERO_XP` (unit=héros) · `TYPE=SKILL_LEVEL`
+    (unit=héros, `SKILL=<slot>`) · `TYPE=STAMINA` (unit=DEFAULT). Le client appelle localement
+    `GuildDonationHelper.requestHelp(user, type, unit, skill)` = **valide** (`canRequestHeroXPHelp/
+    canRequestSkillLevelHelp/canRequestStaminaHelp` : caps `getHeroXPHelpCap/getSkillHelpCap/getStaminaHelpCap`,
+    demande déjà active, ressource `GUILD_DONATION_REQUEST_*` > 0) **puis charge** 1×
+    `getRequestResourceType(type)` (`GUILD_DONATION_REQUEST_HERO_XP/SKILL/STAMINA` — ressources RÉGÉNÉRÉES).
+    Ajoute aussi un `GuildDonationRequestUserData{iD, type, unit, skill, expiration}` à
+    `individual.getGuildDonationRequests()` (le client s'en sert pour interdire les doublons) et poste un chat
+    `ChatType.DONATION_REQUEST` (si `autoPostAidRequests`).
+  - **La DEMANDE elle-même = état OPÉRATEUR** (`IGuildDonationRequest`/`WrappedGuildDonationRequest`,
+    construit d'un `GuildDonationRequestRow`) : `{requestID, member:BasicUserInfo, type, hero:HeroSummary,
+    skill, donation:RewardDrop (ce que CHAQUE donateur donne), totalRequestedDonations, remainingDonations,
+    yourDonations, expiration}`. **Le BUILDER n'est PAS dans le jar client** (comme `ArenaInfo` — PerBlue le
+    créait côté backend) → à synthétiser côté serveur et persister dans `ServerGuild` (multi-serveur §5).
+  - **Faire un don** (autre membre) : `GuildDonationHelper.tryDonation(row[, drop])` → `doDonation(user, req,
+    drop)` (**débite le donateur** de `req.donation` — ressource/objet ; escrow SKILL_LEVEL uniquement, cf.
+    `isDonationEscrowed` ; caps `getMaxDonationsPerUserPerHelpRequest`, `CANT_DONATE_TO_SELF`,
+    `GUILD_DONATION_ALREADY_DONATED`, `REQUEST_NOT_ACTIVE`, `NOT_ENOUGH_TO_DONATE`) puis envoie
+    `GuildDonation{memberID=requesterID, requestID, donation:RewardDrop}`. Le serveur doit décrémenter
+    `remainingDonations`, tracer `donationsByUser`, et **livrer la récompense au DEMANDEUR** (escrow →
+    accumulation → mail `resultMailSent` à `FULFILLED`/`EXPIRED`). Réponse `GuildDonationRequestUpdate{
+    requestID, remainingDonations}`.
+  - **Affichage** : `GetGuildDonationRequests` → `GuildDonationRequests{guildID, requests:List<
+    GuildDonationRequestRow>}` (handler de LECTURE déjà en place, renvoie vide → à peupler avec les vraies
+    demandes du store).
+  - **Stats du jeu** (valeurs RÉELLES, non inventées) : `GuildStats.getHelpRequestDuration()` (expiration),
+    `getStaminaHelpAmount(maxTL)`/`getExpectedStaminaHelpAmount` (montant stamina), `getMaxDonationsPerUser
+    PerHelpRequest()` (cap par donateur), caps hero-xp/skill. **⚠️ `totalRequestedDonations` (nb total de dons
+    d'une demande) n'a AUCUNE source dans le jar** = **décision opérateur** (§3) à documenter — comme le
+    placement de ligue en arène. Options : (a) = taille de guilde courante ; (b) = `getMaxDonationsPerUser
+    PerHelpRequest()` ; (c) constante opérateur documentée (ex. 30, valeur DHB usuelle). **À trancher avec
+    l'utilisateur avant de fixer une valeur (fidélité §4).**
+  - **Vérif en jeu** : poster STAMINA est pilotable SANS navigation gear (DEV → `ClientActionHelper.
+    requestStamina()`, comme `guildchat`) ; HERO_XP/SKILL exigent l'écran héros. Le **don** exige un 2ᵉ membre
+    (patron `GuildSeed` établi, comme kick/promote). Plan : #55a poster+afficher (vérifiable 1 client), #55b
+    don+livraison récompense (test headless 2 membres + 2ᵉ client si possible).
+
 - **2026-07-26 — ARÈNE : finalisation COMPLÈTE (vrai PvP, régén, XP, courriers, admin) — vérifiée EN JEU + DB.**
   - **#44 combat** vérifié en jeu : FIGHT→`START_FIGHT_PIT_ATTACK`→héros défenseur→combat→`ArenaAttack`→`ArenaUpdate`,
     swap de rang 10→9 + points + 1 combat consommé, persisté DB.
