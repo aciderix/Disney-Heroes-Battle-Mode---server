@@ -15,9 +15,9 @@
 |-----|-------|--------|--------|
 | A | Avatars calculés depuis le niveau de guilde | ✅ FAIT (test + push) | `5be06ee` |
 | C | Mercenaire — créditer Social Bucks au posteur | ✅ FAIT (test + push) | `cb58d5e` |
-| B | Dons SKILL_LEVEL (✅) + HERO_XP (opérateur §4) | ✅ SKILL FAIT ; HERO_XP = donnée opérateur | `<en cours>` |
+| B | Dons SKILL_LEVEL (✅) + HERO_XP (opérateur §4) | ✅ SKILL FAIT + push | `daeb260` |
 | E | Génération serveur des cadeaux de crate | ⏳ à faire | — |
-| D | Registre de connexions + broadcast + **REFACTOR MULTI-USER** | ⏳ à faire (in scope, confirmé user) | — |
+| D | MULTI-USER + registre connexions + broadcast | ✅ FAIT (socle, compile-clean) | `<en cours>` |
 | F | Contests programmables (admin) | ⏳ à faire (live-ops) | — |
 
 ---
@@ -71,15 +71,21 @@ Faits : aucun `GuildGiftHelper` client (génération 100 % opérateur) ; message
 guilde), réclamable par tous via `CLAIM_GUILD_GIFT_REWARDS`. À concevoir : structure `GuildGiftRewards`
 (champs), condition d'achat qualifiant, anti-double-claim par joueur.
 
-## D — Registre de connexions + broadcast (chat live) ⏳
+## D — MULTI-USER + registre de connexions + broadcast ✅ (socle)
 
-**BLOQUÉ par un socle** : `LoginServer` est actuellement **mono-utilisateur** (`main` charge id=1 ;
-`private final ServerUser user` ; tous les handlers référencent ce champ). Le broadcast présuppose des
-**connexions multi-utilisateurs**. **Design** : (1) résoudre l'utilisateur PAR CONNEXION depuis `ClientInfo`
-(au lieu du champ unique) ; (2) registre `Map<Long,GruntConnection>` (bind onOpen après auth, retrait onClose) ;
-(3) sur `SendChat` guilde, pousser le `Chat` à tous les membres connectés de la guilde. Gros jalon (touche tous
-les handlers). Tant qu'il n'est pas fait, le chat marche pour la connexion pilote + persistance (les autres voient
-au rechargement).
+**FAIT (socle multi-serveur)**. `ClientInfo` porte `public long userID` → chaque connexion s'identifie.
+- **Résolution PAR CONNEXION** : au début de `onReceive`, un local `ServerUser user` **SHADOW** le champ ;
+  à `ClientInfo`, `user = store.loadOrCreate(ClientInfo.userID, shard)` + enregistrement. Tous les handlers (~140
+  références à `user`) utilisent ce local **sans modification** (refactor sûr, compilateur garant). Repli = compte
+  par défaut (pilote DEV / 1ᵉ message).
+- **Registres** : `connUsers` (socket→compte) et `online` (userID→socket), remplis à `ClientInfo`, vidés à
+  `onClose`.
+- **Broadcast** : `pushToGuild(g, exceptUserID, msg)` pousse à tous les membres EN LIGNE. Câblé sur `SendChat`
+  guilde → le `Chat` autoritatif est diffusé en temps réel aux autres membres connectés (en plus de l'écho
+  émetteur + persistance). Base réutilisable pour toute livraison live (dons, joins…).
+
+**Restes** : le shard est fixe (celui du compte par défaut) ; l'authentification est l'`userID` du `ClientInfo`
+(le vrai serveur ajouterait un jeton). Vérif 2 sessions simultanées = à faire en jeu quand utile.
 
 ## F — Contests programmables (admin) ⏳
 

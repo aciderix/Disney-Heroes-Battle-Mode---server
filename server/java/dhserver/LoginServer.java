@@ -35,16 +35,37 @@ import java.util.concurrent.Executors;
 public final class LoginServer {
 
   private final int port;
-  /** État serveur autoritaire (un seul compte pour l'instant). */
+  /** Compte PAR DÉFAUT (repli avant ClientInfo, et pilote DEV). En multi-user, chaque connexion résout SON
+   *  {@code ServerUser} depuis {@code ClientInfo.userID} (voir {@code connUsers} + le shadow dans onReceive). */
   private final ServerUser user;
   /** Persistance SQLite (octets wire des objets du jeu). */
   private final UserStore store;
   /** ARÈNE (vrai PvP) — source d'adversaires RÉELS (autres comptes du shard) adossée à la base. */
   private final ServerArena.OpponentSource oppSrc;
+  /** MULTI-USER (#65) — compte résolu PAR CONNEXION (depuis {@code ClientInfo.userID}). Une entrée par socket. */
+  private final java.util.concurrent.ConcurrentHashMap<GruntConnection, ServerUser> connUsers =
+      new java.util.concurrent.ConcurrentHashMap<>();
+  /** MULTI-USER (#65) — registre des connexions EN LIGNE (userID → socket) pour le PUSH serveur (broadcast chat,
+   *  et toute livraison temps réel aux autres membres). Rempli à ClientInfo, vidé à onClose. */
+  private final java.util.concurrent.ConcurrentHashMap<Long, GruntConnection> online =
+      new java.util.concurrent.ConcurrentHashMap<>();
 
   public LoginServer(int port, ServerUser user, UserStore store) {
     this.port = port; this.user = user; this.store = store;
     this.oppSrc = new StoreOpponentSource(store);
+  }
+
+  /** Pousse un message à tous les MEMBRES d'une guilde actuellement EN LIGNE, sauf {@code exceptUserID}
+   *  (typiquement l'émetteur, déjà servi). Base du temps réel multi-user (#65). Ne lève jamais (best-effort). */
+  private void pushToGuild(ServerGuild g, long exceptUserID, GruntMessage msg) {
+    if (g == null || g.memberIDs == null) return;
+    for (Long mid : g.memberIDs) {
+      if (mid == null || mid == exceptUserID) continue;
+      GruntConnection oc = online.get(mid);
+      if (oc == null) continue;
+      try { oc.send(msg); System.out.println("[login]     ↳ push à membre en ligne " + mid); }
+      catch (Throwable t) { System.out.println("[login]     ! push membre " + mid + ": " + t); }
+    }
   }
 
   /** Toutes les classes de message du jeu (dérivées du registre MessageFactory.messageIndex). */
@@ -80,6 +101,25 @@ public final class LoginServer {
           public void onReceive(GruntConnection c, GruntMessage m) {
             String name = m.getFullName();
             System.out.println("[login] <== " + name);
+            // MULTI-USER (#65) — RÉSOUT le compte de CETTE connexion et SHADOW le champ `user` : tous les handlers
+            // ci-dessous utilisent ce local (par connexion), pas le compte par défaut. À ClientInfo, on (re)charge
+            // le compte depuis ClientInfo.userID (identité fournie par le client, comme le vrai serveur) et on
+            // l'enregistre (connUsers + online) pour le PUSH temps réel. Repli = compte par défaut (pilote DEV,
+            // et 1ᵉ message avant ClientInfo). Le shadow rend le refactor SÛR : aucune des ~140 références à `user`
+            // n'est modifiée, le compilateur garantit la cohérence.
+            ServerUser user = connUsers.getOrDefault(c, LoginServer.this.user);
+            if (m instanceof ClientInfo) {
+              long uid = ((ClientInfo) m).userID;
+              if (uid > 0) {
+                try {
+                  user = store.loadOrCreate(uid, LoginServer.this.user.shardID);
+                  connUsers.put(c, user);
+                  online.put(uid, c);
+                  System.out.println("[login] connexion ← compte " + uid + " (multi-user, "
+                      + online.size() + " en ligne)");
+                } catch (Exception e) { System.out.println("[login]     ! loadOrCreate(" + uid + "): " + e); }
+              }
+            }
             // ISOLATION TRANSPORT — un handler qui échoue ne DOIT PAS tuer la connexion. Sans ce garde, une
             // exception non rattrapée remonte au routeur NIO grunt qui FERME la socket → le keepalive Ping meurt
             // aussi → le client « Reconnecting… » (instabilité observée). On isole l'échec d'UN message du
@@ -981,9 +1021,12 @@ public final class LoginServer {
                   System.out.println("[login]     ~ SendChat GUILD : message vide, ignoré");
                 } else {
                   store.saveGuild(g);
-                  c.send(chat);   // renvoyé à l'expéditeur (affichage) ; broadcast multi-connexion = extension
+                  c.send(chat);   // renvoyé à l'expéditeur (affichage)
+                  // BROADCAST temps réel (#65) : pousse le MÊME Chat autoritatif à tous les autres membres de la
+                  // guilde actuellement EN LIGNE (leur listener GameMain(Chat)→SocialDataManager.addChat l'affiche).
+                  pushToGuild(g, user.userID, chat);
                   System.out.println("[login] <== SendChat GUILD « " + chat.message + " » (#" + chat.chatID
-                      + ") ==> Chat [archivé " + g.guildChatWire.size() + ", persisté]");
+                      + ") ==> Chat [archivé " + g.guildChatWire.size() + ", persisté, diffusé]");
                 }
               }
             } else if (m instanceof com.perblue.heroes.network.messages.GuildDonation) {
@@ -1051,7 +1094,12 @@ public final class LoginServer {
           try { conn.setListener(c, logger); } catch (Throwable ignore) {}
         }
       }
-      public void onClose(GruntConnection conn) { System.out.println("[login] onClose " + conn); }
+      public void onClose(GruntConnection conn) {
+        // MULTI-USER (#65) — désenregistre la connexion des deux registres (compte par socket + en ligne).
+        connUsers.remove(conn);
+        online.values().remove(conn);
+        System.out.println("[login] onClose " + conn + " (" + online.size() + " en ligne)");
+      }
 
       /** Charge le classement de {@code (shard, type)} ; absent → le GÉNÈRE et le persiste (idem GetArenaInfo). */
       private ServerArenaLadder loadOrCreateLadder(ServerUser u,
