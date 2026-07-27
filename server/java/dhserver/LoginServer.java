@@ -281,6 +281,29 @@ public final class LoginServer {
                 gc.setAsReplyTo(m);
                 c.send(gc);
                 System.out.println("[login] <== " + act.command + " → ==> GuildContestRankings (vide)");
+              } else if (act.command == com.perblue.heroes.network.messages.CommandType.DISBAND_GUILD) {
+                // DISSOLUTION — le RULER dissout la guilde (GuildHelper.canDisband). Efface l'appartenance de TOUS les
+                // membres (chargés du store) + supprime la guilde. Répond UserGuildUpdate(DISBAND) au dissolveur.
+                ServerGuild g = currentGuild(user);
+                if (g == null) {
+                  System.out.println("[login]     ! DISBAND_GUILD : joueur sans guilde");
+                } else if (!com.perblue.heroes.game.logic.GuildHelper.canDisband(user.currentGuildRole())) {
+                  System.out.println("[login]     ⛔ DISBAND_GUILD REFUSÉ : rôle " + user.currentGuildRole() + " insuffisant");
+                } else {
+                  long gid = g.guildID;
+                  for (Long mid : new java.util.ArrayList<>(g.memberIDs)) {
+                    ServerUser mu = mid == user.userID ? user : store.loadIfExists(mid, user.shardID);
+                    if (mu != null) { mu.leaveGuild(); try { store.save(mu); } catch (Exception e) {} }
+                  }
+                  store.deleteGuild(user.shardID, gid);
+                  com.perblue.heroes.network.messages.UserGuildUpdate up = user.buildUserGuildUpdate(
+                      null, com.perblue.heroes.network.messages.GuildRole.NONE,
+                      com.perblue.heroes.network.messages.GuildUpdateReason.DISBAND);
+                  up.setAsReplyTo(m);
+                  c.send(up);
+                  System.out.println("[login] <== DISBAND_GUILD #" + gid + " dissoute (" + g.memberCount()
+                      + " membre(s) libérés) [persisté] ==> UserGuildUpdate(DISBAND)");
+                }
               } else if (act.command == com.perblue.heroes.network.messages.CommandType.VIEWED_GUILD_WALL
                   || act.command == com.perblue.heroes.network.messages.CommandType.VIEWED_CONTEST_POINTS) {
                 // Marqueurs « vu » (pastille) — informationnels, pas d'état à modifier. On acquitte (pas de LOADING).
@@ -553,6 +576,41 @@ public final class LoginServer {
                 up.setAsReplyTo(m);
                 c.send(up);
                 System.out.println("[login] <== LeaveGuild #" + gid + " [persisté] ==> UserGuildUpdate(LEAVE)");
+              }
+            } else if (m instanceof com.perblue.heroes.network.messages.EditGuild) {
+              // GUILD SETTINGS — édition des réglages (motto, min level, politique, pays, fuseau, drapeaux). Autoritatif
+              // selon le RÔLE (GuildHelper.canEdit*). Persiste + répond UserGuildUpdate(DEFAULT) pour rafraîchir le client.
+              com.perblue.heroes.network.messages.EditGuild eg =
+                  (com.perblue.heroes.network.messages.EditGuild) m;
+              ServerGuild g = currentGuild(user);
+              if (g == null || g.guildID != eg.guildID) {
+                System.out.println("[login]     ! EditGuild : guilde introuvable / non membre");
+              } else {
+                boolean changed = user.editGuild(g, eg);
+                if (changed) store.saveGuild(g);
+                com.perblue.heroes.network.messages.UserGuildUpdate up = user.buildUserGuildUpdate(
+                    g, user.currentGuildRole(), com.perblue.heroes.network.messages.GuildUpdateReason.DEFAULT);
+                up.setAsReplyTo(m);
+                c.send(up);
+                System.out.println("[login] <== EditGuild #" + eg.guildID + (changed ? " appliqué [persisté]" : " (aucun droit)")
+                    + " ==> UserGuildUpdate(DEFAULT)");
+              }
+            } else if (m instanceof com.perblue.heroes.network.messages.SetGuildName) {
+              // GUILD SETTINGS — renommer la guilde. Autoritatif (GuildHelper.canRenameGuild). Persiste + refresh client.
+              com.perblue.heroes.network.messages.SetGuildName sn =
+                  (com.perblue.heroes.network.messages.SetGuildName) m;
+              ServerGuild g = currentGuild(user);
+              if (g == null) {
+                System.out.println("[login]     ! SetGuildName : joueur sans guilde");
+              } else {
+                boolean ok = user.renameGuild(g, sn.name);
+                if (ok) store.saveGuild(g);
+                com.perblue.heroes.network.messages.UserGuildUpdate up = user.buildUserGuildUpdate(
+                    g, user.currentGuildRole(), com.perblue.heroes.network.messages.GuildUpdateReason.DEFAULT);
+                up.setAsReplyTo(m);
+                c.send(up);
+                System.out.println("[login] <== SetGuildName '" + sn.name + "'"
+                    + (ok ? " appliqué [persisté]" : " refusé (rôle)") + " ==> UserGuildUpdate(DEFAULT)");
               }
             } else if (m instanceof com.perblue.heroes.network.messages.GetGuildDonationRequests) {
               // GUILD AID — liste des demandes de don en attente (écran GUILD AID). Aucune demande ouverte → liste

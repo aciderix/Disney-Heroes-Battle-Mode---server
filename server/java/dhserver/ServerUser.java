@@ -364,6 +364,36 @@ public final class ServerUser {
     return g;
   }
 
+  /** ÉDITE les réglages de guilde ({@code EditGuild}) sur {@code g.info}, selon les permissions du RÔLE du joueur
+   *  (logique du jeu {@code GuildHelper.canEdit*}). Renvoie true si au moins un champ a été modifié. */
+  public synchronized boolean editGuild(ServerGuild g, com.perblue.heroes.network.messages.EditGuild m) {
+    if (g == null || g.info == null) return false;
+    com.perblue.heroes.network.messages.GuildRole role = currentGuildRole();
+    com.perblue.heroes.network.messages.GuildInfo gi = g.info;
+    boolean changed = false;
+    if (com.perblue.heroes.game.logic.GuildHelper.canEditDescription(role)) {
+      gi.motto = m.motto == null ? "" : m.motto; changed = true;
+      gi.autoPostAidRequests = m.autoPostAidRequests;
+      gi.ignoreKickedPlayersList = m.ignoreKickedPlayersList;
+      gi.tacticiansSeeOfficerChat = m.tacticiansSeeOfficerChat;
+      if (m.avatar != null && gi.basicInfo != null) gi.basicInfo.avatar = m.avatar;
+    }
+    if (com.perblue.heroes.game.logic.GuildHelper.canEditMinTeamLevel(role)) { gi.minTeamLevel = m.minLevel; changed = true; }
+    if (com.perblue.heroes.game.logic.GuildHelper.canEditGuildPrivacy(role) && m.newMemberPolicy != null) { gi.newMemberPolicy = m.newMemberPolicy; changed = true; }
+    if (com.perblue.heroes.game.logic.GuildHelper.canEditCountry(role) && m.country != null) { gi.country = m.country; changed = true; }
+    if (com.perblue.heroes.game.logic.GuildHelper.canEditTimeZone(role) && m.timeZone != null) { gi.timeZone = m.timeZone; changed = true; }
+    return changed;
+  }
+
+  /** RENOMME la guilde ({@code SetGuildName}) si le rôle le permet ({@code GuildHelper.canRenameGuild}). */
+  public synchronized boolean renameGuild(ServerGuild g, String name) {
+    if (g == null || g.info == null || g.info.basicInfo == null || name == null || name.isEmpty()) return false;
+    if (!com.perblue.heroes.game.logic.GuildHelper.canRenameGuild(currentGuildRole())) return false;
+    g.info.basicInfo.previousName = g.info.basicInfo.name;
+    g.info.basicInfo.name = name;
+    return true;
+  }
+
   /** Retire le joueur de sa guilde (départ / dissolution). Efface l'appartenance persistée (userInfo). */
   public synchronized void leaveGuild() {
     if (userInfo.basicInfo == null) return;
