@@ -447,7 +447,11 @@ public final class ServerUser {
       catch (Throwable t2) { max = 7; System.out.println("[guild] getMaxDailyCheckIns indispo (parse perks) → défaut 7"); }
     }
     ci.maxCheckInsToday = max;
-    long lastReset = g == null ? 0L : com.perblue.heroes.game.logic.GuildCheckInHelper.getLastCheckinResetTime(g.guildID);
+    // nextDailyResetTime = PROCHAINE borne de reset. ⚠️ getLastCheckinResetTime(long) prend un TIMESTAMP de
+    // référence (le « maintenant »), PAS le guildID — lui passer guildID donne une valeur 1970 aberrante que le
+    // client relit ensuite (info.nextDailyResetTime) et qui casse son check-in. On passe donc serverTimeNow.
+    long nowRef = com.perblue.heroes.util.TimeUtil.serverTimeNow();
+    long lastReset = com.perblue.heroes.game.logic.GuildCheckInHelper.getLastCheckinResetTime(nowRef);
     ci.nextDailyResetTime = lastReset + 24L * 60L * 60L * 1000L;
     ci.totalCheckInsToday = g == null ? 0 : g.checkInsToday();
     ci.totalCheckInsYesterday = 0;
@@ -469,15 +473,14 @@ public final class ServerUser {
     IndividualUser iu = ClientNetworkStateConverter.getIndividualUser(
         individualUserExtra, userID, userInfo.diamonds, "guild");
     ServerContext.bind(user, iu);
-    // RESET QUOTIDIEN — borne de JOUR serveur (UTC). Le helper du jeu getLastCheckinResetTime dépend d'une infra
-    // de fuseau de guilde non disponible headless (renvoie une valeur négative aberrante → canCheckIn faux). On
-    // applique donc une garde quotidienne SERVEUR-AUTORITATIVE sur la frontière de jour UTC : une seule fois par
-    // jour et par membre (set checkedInToday, purgé au changement de jour). L'horloge serveur (CLOCK_OFFSET=0)
-    // interdit de contourner par la date du mobile — même principe que le cooldown des coffres.
+    // RESET QUOTIDIEN — borne du jeu {@code GuildCheckInHelper.getLastCheckinResetTime(now)} (reset à 5h dans le
+    // fuseau serveur). ⚠️ ce helper prend un TIMESTAMP de référence (le « maintenant »), PAS le guildID (le passer
+    // guildID donne une valeur 1970 aberrante — bug corrigé). Le set checkedInToday par guilde est purgé quand la
+    // borne de reset avance ; garde SERVEUR-AUTORITATIVE (horloge serveur CLOCK_OFFSET=0, non contournable par la
+    // date du mobile — même principe que le cooldown des coffres).
     long now = com.perblue.heroes.util.TimeUtil.serverTimeNow();
-    long dayNow = Math.floorDiv(now, 86400000L);
-    long dayLast = Math.floorDiv(g.lastCheckInResetTime, 86400000L);
-    if (g.lastCheckInResetTime == 0L || dayNow > dayLast) { g.checkedInToday.clear(); g.lastCheckInResetTime = now; }
+    long resetBoundary = com.perblue.heroes.game.logic.GuildCheckInHelper.getLastCheckinResetTime(now);
+    if (g.lastCheckInResetTime < resetBoundary) { g.checkedInToday.clear(); g.lastCheckInResetTime = resetBoundary; }
     if (g.checkedInToday.contains(userID)) return null;                 // déjà émargé aujourd'hui
     com.perblue.heroes.game.objects.GuildInfoPerkProvider perks =
         new com.perblue.heroes.game.objects.GuildInfoPerkProvider(g.info);

@@ -662,6 +662,24 @@ public final class TutorialDriver {
         } catch (Throwable t) { System.out.println("[fire] échec: " + t); return false; }
     }
 
+    /** DEV DIAGNOSTIC : imprime l'état CLIENT du check-in (les FAITS qui décident si le bouton s'envoie) —
+     *  guildID, dernier check-in, borne de reset, canCheckIn, horloge serveur. Invoqué via "checkinstate". */
+    public static void checkInState(GameMain game) {
+        try {
+            com.perblue.heroes.game.objects.User u = game.getYourUser();
+            long gid = u.getGuildID();
+            long last = u.getTime(com.perblue.heroes.network.messages.TimeType.LAST_GUILD_CHECK_IN);
+            long now = com.perblue.heroes.util.TimeUtil.serverTimeNow();
+            // ⚠️ getLastCheckinResetTime/canCheckIn prennent le TIMESTAMP « maintenant » en 2e arg, PAS le guildID.
+            long reset = com.perblue.heroes.game.logic.GuildCheckInHelper.getLastCheckinResetTime(now);
+            boolean can = com.perblue.heroes.game.logic.GuildCheckInHelper.canCheckIn(u, now);
+            com.perblue.heroes.network.messages.GuildInfo gi = game.getYourGuildInfo();
+            System.out.println("[checkinstate] guildID=" + gid + " lastCheckIn=" + last + " resetTime=" + reset
+                + " canCheckIn=" + can + " serverNow=" + now + " influence=" + (gi == null ? "?" : gi.influence)
+                + " guildTZ=" + (gi == null ? "?" : gi.timeZone));
+        } catch (Throwable t) { System.out.println("[checkinstate] échec: " + t); }
+    }
+
     /** DEV : déclenche le CHECK-IN de guilde via le CHEMIN D'ENVOI RÉEL du jeu ({@code GuildCheckInScreen.doCheckIn}
      *  → {@code ClientActionHelper.checkInToGuild}), en contournant la GARDE CLIENTE du bouton ({@code canCheckIn}
      *  s'appuie sur {@code getLastCheckinResetTime} qui dépend de l'infra de fuseau de guilde et peut renvoyer une

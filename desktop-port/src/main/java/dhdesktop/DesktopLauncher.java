@@ -298,6 +298,10 @@ public final class DesktopLauncher {
                     TutorialDriver.doGuildCheckIn(game);
                     continue;
                 }
+                if (low.equals("checkinstate")) {                // checkinstate — diagnostic état check-in client
+                    TutorialDriver.checkInState(game);
+                    continue;
+                }
                 // --- Ligne "dump" (sans tap) : juste enregistrer l'écran+acteurs sous un point ---
                 boolean dumpOnly = low.startsWith("dump");
                 if (dumpOnly) ln = ln.substring(4).trim();
