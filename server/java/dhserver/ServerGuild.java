@@ -80,23 +80,43 @@ public final class ServerGuild {
   /** Ajoute une demande d'aide (octets wire d'un {@link com.perblue.heroes.network.messages.GuildDonationRequestRow}). */
   public void addDonationRequestWire(byte[] wire) { donationRequestsWire.add(wire); }
 
-  /** Relit les demandes d'aide en objets du jeu, en PURGEANT au passage les demandes expirées/complétées
-   *  ({@code expiration <= now} ou {@code remainingDonations <= 0}) — l'écran n'affiche que les actives. */
-  public List<com.perblue.heroes.network.messages.GuildDonationRequestRow> donationRequests() {
-    long now = com.perblue.heroes.util.TimeUtil.serverTimeNow();
+  /** Relit TOUTES les demandes d'aide stockées en objets du jeu (sans retrait — le retrait des expirées/complétées
+   *  + la livraison de la récompense au demandeur sont gérés par le serveur qui a accès au store). */
+  public List<com.perblue.heroes.network.messages.GuildDonationRequestRow> allDonationRequests() {
     List<com.perblue.heroes.network.messages.GuildDonationRequestRow> out = new ArrayList<>();
     java.util.Iterator<byte[]> it = donationRequestsWire.iterator();
     while (it.hasNext()) {
-      byte[] w = it.next();
       try {
-        com.perblue.heroes.network.messages.GuildDonationRequestRow r =
-            (com.perblue.heroes.network.messages.GuildDonationRequestRow)
-                MessageFactory.getInstance().readMessage(new GruntInputStream(w));
-        if (r.expiration <= now || r.remainingDonations <= 0) { it.remove(); donationsByUser.remove(r.requestID); continue; }
-        out.add(r);
+        out.add((com.perblue.heroes.network.messages.GuildDonationRequestRow)
+            MessageFactory.getInstance().readMessage(new GruntInputStream(it.next())));
       } catch (Exception ignore) { it.remove(); }
     }
     return out;
+  }
+
+  /** Demandes ACTIVES pour l'affichage (non expirées, dons restants > 0). */
+  public List<com.perblue.heroes.network.messages.GuildDonationRequestRow> donationRequests() {
+    long now = com.perblue.heroes.util.TimeUtil.serverTimeNow();
+    List<com.perblue.heroes.network.messages.GuildDonationRequestRow> out = new ArrayList<>();
+    for (com.perblue.heroes.network.messages.GuildDonationRequestRow r : allDonationRequests())
+      if (r.expiration > now && r.remainingDonations > 0) out.add(r);
+    return out;
+  }
+
+  /** Remplace/supprime la demande {@code requestID} par sa version wire à jour ({@code null} = suppression). */
+  public void updateDonationRequest(long requestID, com.perblue.heroes.network.messages.GuildDonationRequestRow updated) {
+    for (int i = 0; i < donationRequestsWire.size(); i++) {
+      try {
+        com.perblue.heroes.network.messages.GuildDonationRequestRow r =
+            (com.perblue.heroes.network.messages.GuildDonationRequestRow)
+                MessageFactory.getInstance().readMessage(new GruntInputStream(donationRequestsWire.get(i)));
+        if (r.requestID != requestID) continue;
+        if (updated == null) { donationRequestsWire.remove(i); donationsByUser.remove(requestID); return; }
+        GruntOutputStream go = new GruntOutputStream(); updated.writeAll(go);
+        donationRequestsWire.set(i, go.getBytes());
+        return;
+      } catch (Exception ignore) {}
+    }
   }
 
   /** Relit l'historique en objets {@link com.perblue.heroes.network.messages.Chat} du jeu (pour resync/broadcast). */

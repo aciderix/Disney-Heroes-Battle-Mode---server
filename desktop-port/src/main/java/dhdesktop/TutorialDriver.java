@@ -813,6 +813,26 @@ public final class TutorialDriver {
         } catch (Throwable t) { System.out.println("[requeststamina] échec: " + t); }
     }
 
+    /** DEV : AIDE une demande d'aide (GUILD AID) en envoyant un {@code GuildDonation} réel (comme le bouton AID
+     *  via {@code GuildDonationHelper.tryDonation}), sans passer par le prompt UI. Args : requestID, memberID
+     *  (le demandeur). Don = 1 STAMINA_CONSUMABLE. Invoqué via clickfile "guilddonate &lt;reqID&gt; &lt;memberID&gt;". */
+    public static void guildDonate(GameMain game, long requestID, long memberID) {
+        try {
+            com.perblue.heroes.game.objects.User u = game.getYourUser();
+            if (u == null || !com.perblue.heroes.game.logic.GuildHelper.isInGuild(u)) {
+                System.out.println("[guilddonate] joueur sans guilde — ignoré"); return;
+            }
+            com.perblue.heroes.network.messages.GuildDonation gd = new com.perblue.heroes.network.messages.GuildDonation();
+            gd.requestID = requestID;
+            gd.memberID = memberID;
+            gd.donation = com.perblue.heroes.game.logic.RewardHelper.createDrop(
+                com.perblue.heroes.network.messages.ItemType.STAMINA_CONSUMABLE, 1L);
+            game.getNetworkProvider().sendMessage(gd);
+            System.out.println("[guilddonate] GuildDonation envoyé (demande #" + requestID + ", demandeur "
+                + memberID + ", 1 STAMINA_CONSUMABLE) [chemin réel]");
+        } catch (Throwable t) { System.out.println("[guilddonate] échec: " + t); }
+    }
+
     /** DEV : dumpe le contenu du salon de chat GUILD tel que le CLIENT le connaît
      *  ({@code SocialDataManager.getChatForRoom(GUILD)}) — prouve que le client a bien reçu/stocké les Chat
      *  (echo serveur + resync de boot). Invoqué via clickfile "chatdump". */

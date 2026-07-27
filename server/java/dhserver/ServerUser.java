@@ -583,6 +583,25 @@ public final class ServerUser {
     return sh;
   }
 
+  /** Outillage TEST : crédite un OBJET (ex. STAMINA_CONSUMABLE pour tester un don). Via la logique du jeu
+   *  ({@code IndividualUser.addItem} → {@code individualUserExtra.items}, auto-persisté). */
+  public synchronized void giveItem(com.perblue.heroes.network.messages.ItemType type, int amount) {
+    ServerContext.init();
+    User user = ClientNetworkStateConverter.getUser(userInfo, userExtra, "give");
+    IndividualUser iu = ClientNetworkStateConverter.getIndividualUser(
+        individualUserExtra, userID, userInfo.diamonds, "give");
+    ServerContext.bind(user, iu);
+    iu.addItem(type, amount, false, com.perblue.heroes.game.logic.RewardSourceType.NORMAL, "test");
+  }
+
+  /** Outillage TEST : quantité d'un objet en inventaire (pour vérifier un débit de don). */
+  public synchronized int itemAmount(com.perblue.heroes.network.messages.ItemType type) {
+    ServerContext.init();
+    IndividualUser iu = ClientNetworkStateConverter.getIndividualUser(
+        individualUserExtra, userID, userInfo.diamonds, "read");
+    return iu.getItemAmount(type);
+  }
+
   // ===================== DONS / GUILD AID (#55) =====================
   // Le client (ClientActionHelper.requestStamina) envoie Action{REQUEST_GUILD_DONATION, TYPE=STAMINA}. Le serveur
   // AUTORITATIF valide+charge via la logique du jeu (GuildDonationHelper.requestHelp) puis SYNTHÉTISE la demande
@@ -634,6 +653,48 @@ public final class ServerUser {
     g.addDonationRequestWire(gout.getBytes());
     g.donationsByUser.put(row.requestID, new java.util.LinkedHashMap<>());
     return row;
+  }
+
+  /** DON (#55b) — CE joueur (donateur) donne à la demande {@code row} (adossée à {@code byUser}). Exécute la
+   *  logique AUTORITATIVE du jeu {@code GuildDonationHelper.doDonation} : débite le donateur (useItem/removeItem/
+   *  chargeUser) + vérifie les gardes (pas soi-même, active, cap/utilisateur, assez à donner) + mute la demande
+   *  (dons restants−1, +1 pour le donateur). Renvoie le {@code RewardDrop} effectivement donné, ou lève une
+   *  {@code ClientErrorCodeException} (refus fidèle). {@code offered} = l'offre du client (peut être {@code null}). */
+  public synchronized com.perblue.heroes.network.messages.RewardDrop donateToGuildRequest(
+      com.perblue.heroes.network.messages.GuildDonationRequestRow row,
+      java.util.Map<Long, Integer> byUser,
+      com.perblue.heroes.network.messages.RewardDrop offered) {
+    ServerContext.init();
+    User user = ClientNetworkStateConverter.getUser(userInfo, userExtra, "donate");
+    IndividualUser iu = ClientNetworkStateConverter.getIndividualUser(
+        individualUserExtra, userID, userInfo.diamonds, "donate");
+    ServerContext.bind(user, iu);
+    ServerDonationRequest req = new ServerDonationRequest(row, byUser);
+    com.perblue.heroes.network.messages.RewardDrop given =
+        com.perblue.heroes.game.logic.GuildDonationHelper.doDonation(user, req, offered);
+    return given;
+  }
+
+  /** Livre au DEMANDEUR (CE joueur) la récompense d'aide accumulée, par COURRIER (comme le backend PerBlue) :
+   *  {@code GUILD_DONATION_SUCCESS} (rempli) ou {@code GUILD_DONATION_EXPIRED} (partiel). Pour STAMINA, le total =
+   *  nombre de dons reçus × {@code getStaminaConsumableReward()} points d'énergie. Renvoie le montant livré (0 = rien). */
+  public synchronized long deliverDonationResult(
+      com.perblue.heroes.network.messages.GuildDonationRequestRow row, boolean fulfilled) {
+    int donationsReceived = Math.max(0, row.totalRequestedDonations - row.remainingDonations);
+    if (donationsReceived <= 0) return 0L;
+    if (row.type != com.perblue.heroes.network.messages.GuildDonationRequestType.STAMINA) return 0L; // #55b : STAMINA
+    long amount = (long) donationsReceived * com.perblue.heroes.game.logic.ItemHelper.getStaminaConsumableReward();
+    com.perblue.heroes.network.messages.RewardDrop reward =
+        com.perblue.heroes.game.logic.RewardHelper.createDrop(
+            com.perblue.heroes.network.messages.ResourceType.STAMINA, amount);
+    com.perblue.heroes.network.messages.MailType type = fulfilled
+        ? com.perblue.heroes.network.messages.MailType.GUILD_DONATION_SUCCESS
+        : com.perblue.heroes.network.messages.MailType.GUILD_DONATION_EXPIRED;
+    deliverMail(type, "Guild Aid",
+        fulfilled ? "Stamina help fulfilled" : "Stamina help expired",
+        donationsReceived + " guildmate(s) donated stamina.",
+        java.util.Collections.singletonList(reward));
+    return amount;
   }
 
   /** Construit la réponse {@code GuildDonationRequests} (écran GUILD AID) à partir des demandes actives de la guilde,

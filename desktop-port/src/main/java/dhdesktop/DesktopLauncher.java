@@ -304,6 +304,12 @@ public final class DesktopLauncher {
                     TutorialDriver.requestStaminaAid(game);
                     continue;
                 }
+                if (low.startsWith("guilddonate ")) {            // guilddonate <reqID> <memberID> — aider une demande (GuildDonation réel)
+                    String[] gp = ln.substring(12).trim().split("[,;\\s]+");
+                    if (gp.length >= 2) TutorialDriver.guildDonate(game,
+                        Long.parseLong(gp[0].trim()), Long.parseLong(gp[1].trim()));
+                    continue;
+                }
                 if (low.startsWith("fire ")) {                   // fire x,y — clic robuste (InputEvent scene2d sur l'acteur)
                     String[] f = ln.substring(5).trim().split("[,;\\s]+");
                     if (f.length >= 2) TutorialDriver.fireClick(game,

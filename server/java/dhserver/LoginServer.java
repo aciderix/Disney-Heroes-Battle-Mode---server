@@ -810,13 +810,15 @@ public final class LoginServer {
                     + (ok ? " appliqué [persisté]" : " refusé (rôle)") + " ==> UserGuildUpdate(DEFAULT)");
               }
             } else if (m instanceof com.perblue.heroes.network.messages.GetGuildDonationRequests) {
-              // GUILD AID (#55) — liste des demandes d'aide ACTIVES de la guilde (purge des expirées/complétées).
+              // GUILD AID (#55) — liste des demandes d'aide ACTIVES de la guilde. On BALAIE d'abord les expirées :
+              // livraison du partiel au demandeur (courrier GUILD_DONATION_EXPIRED) + retrait.
               ServerGuild g = currentGuild(user);
+              if (g != null) sweepExpiredDonations(g);
               com.perblue.heroes.network.messages.GuildDonationRequests resp = g == null
                   ? new com.perblue.heroes.network.messages.GuildDonationRequests()
                   : user.buildGuildDonationRequests(g);
               if (g == null) { resp.guildID = user.currentGuildID(); resp.requests = new java.util.ArrayList<>(); }
-              else { store.saveGuild(g); }   // la purge des demandes expirées est persistée
+              else { store.saveGuild(g); }   // le balayage des demandes expirées est persisté
               resp.setAsReplyTo(m);
               c.send(resp);
               System.out.println("[login] <== GetGuildDonationRequests → ==> GuildDonationRequests ("
@@ -865,6 +867,46 @@ public final class LoginServer {
                   c.send(chat);   // renvoyé à l'expéditeur (affichage) ; broadcast multi-connexion = extension
                   System.out.println("[login] <== SendChat GUILD « " + chat.message + " » (#" + chat.chatID
                       + ") ==> Chat [archivé " + g.guildChatWire.size() + ", persisté]");
+                }
+              }
+            } else if (m instanceof com.perblue.heroes.network.messages.GuildDonation) {
+              // DON / GUILD AID (#55b) : un membre AIDE une demande. doDonation débite le donateur + décrémente la
+              // demande ; à saturation (dons restants=0) → demande REMPLIE : on livre la récompense au DEMANDEUR par
+              // COURRIER (GUILD_DONATION_SUCCESS) et on retire la demande. Réponse GuildDonationRequestUpdate au donateur.
+              com.perblue.heroes.network.messages.GuildDonation gd = (com.perblue.heroes.network.messages.GuildDonation) m;
+              ServerGuild g = currentGuild(user);
+              com.perblue.heroes.network.messages.GuildDonationRequestRow row = null;
+              if (g != null) for (com.perblue.heroes.network.messages.GuildDonationRequestRow r : g.allDonationRequests())
+                if (r.requestID == gd.requestID) { row = r; break; }
+              if (g == null || row == null) {
+                System.out.println("[login]     ⛔ GuildDonation : demande #" + gd.requestID + " introuvable");
+              } else {
+                java.util.Map<Long, Integer> byUser = g.donationsByUser.computeIfAbsent(gd.requestID, k -> new java.util.LinkedHashMap<>());
+                try {
+                  com.perblue.heroes.network.messages.RewardDrop given = user.donateToGuildRequest(row, byUser, gd.donation);
+                  boolean fulfilled = row.remainingDonations <= 0;
+                  g.updateDonationRequest(gd.requestID, fulfilled ? null : row);
+                  try { store.save(user); } catch (Exception e) { System.out.println("[login]     ! save donateur: " + e); }
+                  long delivered = 0;
+                  if (fulfilled) {
+                    // livre la récompense accumulée au DEMANDEUR (chargé du store ; hors ligne = courrier en attente).
+                    ServerUser req = row.member.iD == user.userID ? user : store.loadIfExists(row.member.iD, user.shardID);
+                    if (req != null) { delivered = req.deliverDonationResult(row, true);
+                      try { store.save(req); } catch (Exception e) { System.out.println("[login]     ! save demandeur: " + e); } }
+                  }
+                  store.saveGuild(g);
+                  com.perblue.heroes.network.messages.GuildDonationRequestUpdate up =
+                      new com.perblue.heroes.network.messages.GuildDonationRequestUpdate();
+                  up.requestID = gd.requestID; up.remainingDonations = fulfilled ? 0 : row.remainingDonations;
+                  up.setAsReplyTo(m);
+                  c.send(up);
+                  System.out.println("[login] <== GuildDonation #" + gd.requestID + " par " + user.userID
+                      + " (don " + (given == null ? "?" : given.itemType) + ") → restant " + up.remainingDonations
+                      + (fulfilled ? " REMPLIE → +" + delivered + " STAMINA au demandeur (courrier)" : "") + " [persisté]");
+                } catch (Throwable t) {
+                  if (t instanceof com.perblue.heroes.ClientErrorCodeException)
+                    System.out.println("[login]     ⛔ GuildDonation REFUSÉ (anti-triche) : " + t.getMessage());
+                  else { System.out.println("[login]     ! donateToGuildRequest échec: " + t); t.printStackTrace(); }
                 }
               }
             } else if (m instanceof Ping) {
@@ -959,6 +1001,25 @@ public final class LoginServer {
           catch (Throwable ignore) {}
         }
         return null;
+      }
+
+      /** DONS #55b — balaie les demandes EXPIRÉES d'une guilde : livre le partiel accumulé au demandeur par
+       *  courrier (GUILD_DONATION_EXPIRED) puis retire la demande. Le guilde n'est PAS persisté ici (l'appelant le fait). */
+      private void sweepExpiredDonations(ServerGuild g) {
+        long now = com.perblue.heroes.util.TimeUtil.serverTimeNow();
+        for (com.perblue.heroes.network.messages.GuildDonationRequestRow r :
+             new java.util.ArrayList<>(g.allDonationRequests())) {
+          if (r.expiration > now && r.remainingDonations > 0) continue;   // encore active
+          try {
+            if (r.remainingDonations < r.totalRequestedDonations) {   // au moins un don reçu → livrer le partiel
+              ServerUser req = store.loadIfExists(r.member.iD, g.shardID);
+              if (req != null) { req.deliverDonationResult(r, false); try { store.save(req); } catch (Exception e) {} }
+            }
+          } catch (Exception e) { System.out.println("[login]     ! livraison don expiré: " + e); }
+          g.updateDonationRequest(r.requestID, null);
+          System.out.println("[login]     ~ demande d'aide #" + r.requestID + " expirée → retirée"
+              + (r.remainingDonations < r.totalRequestedDonations ? " (+partiel au demandeur)" : ""));
+        }
       }
 
       /** GUILDES #7 — la guilde courante du joueur (ou {@code null} s'il n'en a pas / introuvable). */
