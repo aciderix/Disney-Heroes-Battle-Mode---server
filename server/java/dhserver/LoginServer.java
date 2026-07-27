@@ -665,6 +665,46 @@ public final class LoginServer {
                 System.out.println("[login] <== AcceptGuildMember #" + ag.userID + " ACCEPTÉ dans #" + g.guildID
                     + " [persisté] (" + g.memberCount() + " membre(s))");
               }
+            } else if (m instanceof com.perblue.heroes.network.messages.PromoteToOfficer
+                || m instanceof com.perblue.heroes.network.messages.DemoteFromOfficer) {
+              // GUILD — PROMOTION / RÉTROGRADATION d'un membre d'un cran (le libellé « to Veteran/Officer » dépend du
+              // rôle courant ; le rang cible = getNextHigher/LowerRole). Autoritatif : GuildHelper.canPromote/canDemote
+              // (monRôle, rôleCible). Persiste le rôle de la cible + répond GuildMemberRankChange (le client rafraîchit).
+              boolean promote = m instanceof com.perblue.heroes.network.messages.PromoteToOfficer;
+              long targetID = promote
+                  ? ((com.perblue.heroes.network.messages.PromoteToOfficer) m).userToPromote
+                  : ((com.perblue.heroes.network.messages.DemoteFromOfficer) m).userToDemote;
+              ServerGuild g = currentGuild(user);
+              ServerUser target = g == null ? null : store.loadIfExists(targetID, user.shardID);
+              com.perblue.heroes.network.messages.GuildRole myRole = user.currentGuildRole();
+              if (g == null || target == null || !g.memberIDs.contains(targetID)) {
+                System.out.println("[login]     ! " + (promote ? "Promote" : "Demote") + " : cible #" + targetID + " hors guilde");
+              } else {
+                com.perblue.heroes.network.messages.GuildRole targetRole = target.currentGuildRole();
+                boolean allowed = promote
+                    ? com.perblue.heroes.game.logic.GuildHelper.canPromote(myRole, targetRole)
+                    : com.perblue.heroes.game.logic.GuildHelper.canDemote(myRole, targetRole);
+                if (!allowed) {
+                  System.out.println("[login]     ⛔ " + (promote ? "Promote" : "Demote") + " REFUSÉ : " + myRole
+                      + (promote ? " ne peut promouvoir " : " ne peut rétrograder ") + targetRole);
+                } else {
+                  com.perblue.heroes.network.messages.GuildRole newRole = promote
+                      ? com.perblue.heroes.game.logic.GuildHelper.getNextHigherRole(targetRole)
+                      : com.perblue.heroes.game.logic.GuildHelper.getNextLowerRole(targetRole);
+                  target.setGuildRoleOnly(newRole);
+                  try { store.save(target); } catch (Exception e) {}
+                  com.perblue.heroes.network.messages.GuildMemberRankChange rc =
+                      new com.perblue.heroes.network.messages.GuildMemberRankChange();
+                  rc.guildID = g.guildID; rc.memberID = targetID; rc.guildRole = newRole;
+                  rc.newGuildMemberCount = g.memberCount();
+                  rc.reason = promote ? com.perblue.heroes.network.messages.GuildUpdateReason.PROMOTE
+                      : com.perblue.heroes.network.messages.GuildUpdateReason.DEMOTE;
+                  rc.setAsReplyTo(m);
+                  c.send(rc);
+                  System.out.println("[login] <== " + (promote ? "PromoteToOfficer" : "DemoteFromOfficer") + " #" + targetID
+                      + " : " + targetRole + " → " + newRole + " [persisté] ==> GuildMemberRankChange");
+                }
+              }
             } else if (m instanceof com.perblue.heroes.network.messages.EditGuild) {
               // GUILD SETTINGS — édition des réglages (motto, min level, politique, pays, fuseau, drapeaux). Autoritatif
               // selon le RÔLE (GuildHelper.canEdit*). Persiste + répond UserGuildUpdate(DEFAULT) pour rafraîchir le client.

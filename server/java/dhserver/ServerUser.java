@@ -403,6 +403,11 @@ public final class ServerUser {
     userExtra.guildJoinTime = 0L;
   }
 
+  /** Change UNIQUEMENT le rôle de guilde du joueur (promotion/rétrogradation), persisté via userInfo. */
+  public synchronized void setGuildRoleOnly(com.perblue.heroes.network.messages.GuildRole role) {
+    if (userInfo.basicInfo != null) userInfo.basicInfo.guildRole = role;
+  }
+
   /** Rejoint une guilde existante en tant que MEMBER (politique OPEN). Pose l'appartenance persistée. */
   public synchronized void joinGuildAs(long guildID, com.perblue.heroes.network.messages.GuildRole role) {
     userInfo.basicInfo.guildID = guildID;
