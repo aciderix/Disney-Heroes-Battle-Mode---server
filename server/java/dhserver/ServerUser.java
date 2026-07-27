@@ -320,6 +320,16 @@ public final class ServerUser {
     resyncDiamonds(user);
   }
 
+  /** Outillage TEST : lit le montant d'une ressource (logique du jeu {@code User.getResource}). */
+  public synchronized long resourceAmount(com.perblue.heroes.network.messages.ResourceType rt) {
+    ServerContext.init();
+    User user = ClientNetworkStateConverter.getUser(userInfo, userExtra, "read");
+    IndividualUser iu = ClientNetworkStateConverter.getIndividualUser(
+        individualUserExtra, userID, userInfo.diamonds, "read");
+    ServerContext.bind(user, iu);
+    return user.getResource(rt);
+  }
+
   // ===================== GUILDES #7 =====================
   // L'appartenance de guilde du joueur vit dans BasicUserInfo (guildID/guildRole), déjà persisté (userInfo BLOB)
   // et relu par le client au boot (ClientNetworkStateConverter → User.setGuildID/Role). L'état de la GUILDE
@@ -727,10 +737,33 @@ public final class ServerUser {
       md.ownerID = userID;
       md.ownerName = userInfo.basicInfo == null ? "" : userInfo.basicInfo.name;
       md.postTime = now;
-      md.cost = 0;                                       // l'emprunt est gratuit (le posteur gagne au reset)
+      md.cost = 0;                                       // coût GOLD à l'emprunt = MercenaryHeroData.cost fixé
+                                                          // à la construction du pool (opérateur) ; non simulé ici.
       out.add(md);
     }
     return out;
+  }
+
+  /**
+   * CRÉDITE le POSTEUR (ce joueur) quand SON mercenaire est loué (#57, correctif multi-serveur). Montant =
+   * logique du jeu {@code MercenaryHelper.getHiredMercenaryReward} (SocialBuckStats × bonus VIP). On respecte la
+   * mécanique du jeu : {@code getAndUpdateSocialBucks} remet le compteur hebdo à zéro au changement de semaine
+   * serveur ({@code UserFlag.MERCENARY_SOCIAL_BUCKS} = « earned this week »), puis on incrémente ce compteur ET on
+   * crédite la MONNAIE {@code ResourceType.SOCIAL_BUCKS}. Le montant vient des stats du jeu, jamais inventé (§4).
+   * Renvoie le montant crédité. */
+  public synchronized int creditMercenaryHireReward() {
+    ServerContext.init();
+    User user = ClientNetworkStateConverter.getUser(userInfo, userExtra, "merc-reward");
+    IndividualUser iu = ClientNetworkStateConverter.getIndividualUser(
+        individualUserExtra, userID, userInfo.diamonds, "merc-reward");
+    ServerContext.bind(user, iu);
+    int reward = com.perblue.heroes.game.logic.MercenaryHelper.getHiredMercenaryReward(user);
+    // Reset hebdo du compteur d'affichage si nouvelle semaine serveur (mécanique du jeu).
+    com.perblue.heroes.game.logic.MercenaryHelper.getAndUpdateSocialBucks(user);
+    com.perblue.heroes.game.objects.UserFlag flag = com.perblue.heroes.game.objects.UserFlag.MERCENARY_SOCIAL_BUCKS;
+    user.setCount(flag, user.getCount(flag) + reward);          // « earned this week » (auto-persisté this.extra)
+    giveResource(com.perblue.heroes.network.messages.ResourceType.SOCIAL_BUCKS, reward);   // monnaie réelle
+    return reward;
   }
 
   // ===================== DONS / GUILD AID (#55) =====================

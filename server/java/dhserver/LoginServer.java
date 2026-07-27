@@ -297,12 +297,15 @@ public final class LoginServer {
                 }
               } else if (act.command == com.perblue.heroes.network.messages.CommandType.HIRE_HERO) {
                 // MERCENAIRES (#57) — louer un héros du pool (Action HIRE_HERO : heroType, ID=ownerID, LEVEL=mode).
-                // L'emprunt est gratuit ; on renvoie HeroHired{hero} pour que le client l'utilise en combat.
+                // On renvoie HeroHired{hero} pour l'utiliser en combat ET on CRÉDITE le POSTEUR de ses Social Bucks
+                // (getHiredMercenaryReward), persisté — correctif multi-serveur (#64). Le coût GOLD à l'emprunt
+                // (MercenaryHeroData.cost) est fixé à la construction du pool (opérateur), non simulé ici.
                 com.perblue.heroes.network.messages.UnitType t = act.heroType;
                 long ownerID = extraLong(act, com.perblue.heroes.network.messages.ActionExtraType.ID, 0);
                 com.perblue.heroes.network.messages.MercenaryHeroData picked = null;
+                ServerUser owner = null;
                 try {
-                  ServerUser owner = ownerID == user.userID ? user : store.loadIfExists(ownerID, user.shardID);
+                  owner = ownerID == user.userID ? user : store.loadIfExists(ownerID, user.shardID);
                   if (owner != null) for (com.perblue.heroes.network.messages.MercenaryHeroData md : owner.postedMercenaries())
                     if (md.heroData != null && md.heroData.type == t) { picked = md; break; }
                 } catch (Exception e) { System.out.println("[login]     ! HIRE_HERO load owner: " + e); }
@@ -315,7 +318,14 @@ public final class LoginServer {
                   hh.hero = picked;
                   hh.setAsReplyTo(m);
                   c.send(hh);
-                  System.out.println("[login] <== HIRE_HERO " + t + " (owner " + ownerID + ") → ==> HeroHired");
+                  // Crédite le POSTEUR (Social Bucks) — sauf s'il se loue lui-même (owner == hirer).
+                  int mercReward = 0;
+                  if (owner != null && ownerID != user.userID) {
+                    try { mercReward = owner.creditMercenaryHireReward(); store.save(owner); }
+                    catch (Exception e) { System.out.println("[login]     ! crédit posteur merc: " + e); }
+                  }
+                  System.out.println("[login] <== HIRE_HERO " + t + " (owner " + ownerID + ") → ==> HeroHired"
+                      + (mercReward > 0 ? " (+"+mercReward+" Social Bucks au posteur [persisté])" : ""));
                 }
               } else if (act.command == com.perblue.heroes.network.messages.CommandType.GET_GUILD_RANKINGS) {
                 // CLASSEMENT DES GUILDES (#60) — leaderboard RÉEL du shard : toutes les guildes triées par la valeur
