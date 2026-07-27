@@ -538,6 +538,51 @@ public final class ServerUser {
     return cur + 1;
   }
 
+  // ===================== CHAT de guilde (#59) =====================
+  // Le client (ChatWindow.sendChatMessage) envoie un SendChat{message, room=GUILD, time, toUserID} SANS
+  // ajouter le message localement pour les salons de guilde (GUILD/GUILD_WALL/GUILD_OFFICER/GUILD_WAR) — il
+  // ATTEND que le serveur lui renvoie le Chat. Le serveur construit le Chat autoritatif (id, expéditeur, guilde,
+  // horodatage), l'ARCHIVE dans la guilde (octets wire, persisté) et le renvoie ; GameMain.addGruntListener(Chat)
+  // → SocialDataManager.addChat l'affiche. Broadcast aux autres membres connectés = extension multi-connexion.
+
+  /** Construit le Chat autoritatif d'un SendChat de guilde, l'archive dans {@code g} (wire, à persister par
+   *  l'appelant), et le renvoie pour diffusion. {@code null} si le message est vide/invalide. */
+  public synchronized com.perblue.heroes.network.messages.Chat buildAndStoreGuildChat(
+      ServerGuild g, com.perblue.heroes.network.messages.SendChat m) {
+    if (g == null || m == null) return null;
+    String msg = m.message == null ? "" : m.message.trim();
+    if (msg.isEmpty()) return null;
+    com.perblue.heroes.network.messages.Chat c = new com.perblue.heroes.network.messages.Chat();
+    c.chatID = g.nextChatID++;
+    c.room = m.room;
+    c.message = msg;
+    c.sender = userInfo.basicInfo;   // identité de l'expéditeur (id/nom/TL/avatar/guilde)
+    c.guildInfo = g.info == null ? null : g.info.basicInfo;
+    c.time = new java.util.Date(com.perblue.heroes.util.TimeUtil.serverTimeNow());
+    c.type = m.type != null ? m.type : com.perblue.heroes.network.messages.ChatType.NORMAL;
+    // Archive (octets wire de l'objet du jeu — PRINCIPLES §4/§6).
+    com.perblue.grunt.translate.util.GruntOutputStream gout = new com.perblue.grunt.translate.util.GruntOutputStream();
+    c.writeAll(gout);
+    g.addChatWire(gout.getBytes());
+    return c;
+  }
+
+  /** Historique social (chat de guilde) — envoyé au boot si en guilde. On utilise le message {@code SocialHistory}
+   *  DÉDIÉ du jeu (et non un ChatRoomResync brut) : le client le met en TAMPON ({@code delayedSocialHistory}) tant
+   *  que le BootData n'est pas traité, puis l'applique APRÈS ({@code checkForDelayedSocialHistory}) — sinon le
+   *  {@code socialDataManager.reset()} du BootData EFFACERAIT l'historique (race observée en jeu : 0 message).
+   *  {@code lastViewTime}=maintenant → aucun message archivé n'est marqué « nouveau ». */
+  public synchronized com.perblue.heroes.network.messages.SocialHistory buildGuildSocialHistory(ServerGuild g) {
+    com.perblue.heroes.network.messages.SocialHistory sh =
+        new com.perblue.heroes.network.messages.SocialHistory();
+    com.perblue.heroes.network.messages.ChatList list =
+        new com.perblue.heroes.network.messages.ChatList();
+    list.chats = new java.util.ArrayList<>(g == null ? java.util.Collections.emptyList() : g.chatHistory());
+    list.lastViewTime = com.perblue.heroes.util.TimeUtil.serverTimeNow();
+    sh.chatLists.put(com.perblue.heroes.network.messages.ChatRoomType.GUILD, list);
+    return sh;
+  }
+
   /** Une ligne de roster ({@code PlayerGuildRow}) pour CE joueur (écran membres, ExtendedGuildInfo). */
   public synchronized com.perblue.heroes.network.messages.PlayerGuildRow buildPlayerGuildRow() {
     com.perblue.heroes.network.messages.PlayerGuildRow row =

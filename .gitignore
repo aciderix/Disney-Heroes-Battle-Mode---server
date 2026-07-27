@@ -43,3 +43,4 @@ libs/spine-libgdx-perblue.jar
 *.db
 *.db-wal
 *.db-shm
+scratch_dec/

@@ -92,16 +92,27 @@ public final class LoginServer {
               // GUILDES #7 — si le joueur est en guilde, LIVRER son GuildInfo au boot (bd.guildInfo). Sans ça le
               // client sait « en guilde » (guildID>0 persisté) mais sans données de guilde → écran vide au
               // démarrage tant qu'il n'a pas re-demandé. Chargé depuis le store (état persistant multi-serveur).
+              ServerGuild bootGuild = null;
               if (user.inGuild()) {
                 try {
-                  ServerGuild g = store.loadGuild(user.shardID, user.currentGuildID());
-                  if (g != null) bd.guildInfo = g.info;
+                  bootGuild = store.loadGuild(user.shardID, user.currentGuildID());
+                  if (bootGuild != null) bd.guildInfo = bootGuild.info;
                 } catch (Exception e) { System.out.println("[login]     ! chargement guilde (boot) échoué: " + e); }
               }
               bd.setAsReplyTo(m);
               c.send(bd);
               System.out.println("[login] ==> BootData (reply) : "
                   + bd.individualUserExtra.tutorialActs.size() + " actes de tuto");
+              // CHAT de guilde (#59) : livrer l'historique du salon GUILD dès le boot via le message SocialHistory
+              // DÉDIÉ (le client le met en tampon jusqu'à la fin du BootData, évitant que son reset() l'efface).
+              if (bootGuild != null) {
+                try {
+                  com.perblue.heroes.network.messages.SocialHistory sh = user.buildGuildSocialHistory(bootGuild);
+                  c.send(sh);
+                  System.out.println("[login] ==> SocialHistory (GUILD chat) : "
+                      + bootGuild.guildChatWire.size() + " message(s) d'historique");
+                } catch (Exception e) { System.out.println("[login]     ! SocialHistory (boot) échoué: " + e); }
+              }
             } else if (m instanceof ChangeTutorialStep) {
               // Progression du tutoriel : le serveur est autoritaire → on met à jour l'état ET on
               // PERSISTE (SQLite, octets wire). Fire-and-forget côté client (aucune réponse attendue).
@@ -800,6 +811,31 @@ public final class LoginServer {
               resp.setAsReplyTo(m);
               c.send(resp);
               System.out.println("[login] <== GetUnlockedGuildAvatars → ==> UnlockedGuildAvatars (0)");
+            } else if (m instanceof com.perblue.heroes.network.messages.SendChat) {
+              // CHAT de guilde (#59) : le client (ChatWindow) envoie un SendChat pour le salon GUILD, SANS l'afficher
+              // localement (contrairement au chat global) → il attend que le serveur lui RENVOIE le Chat. Le serveur
+              // construit le Chat autoritatif, l'ARCHIVE dans la guilde (persisté), et le renvoie ; le listener
+              // GameMain(Chat) → SocialDataManager.addChat l'affiche. (Salons non-guilde : ignorés pour l'instant —
+              // GLOBAL/VIP nécessitent un bus inter-shard, cf. #59 note ; seul GUILD est natif ici.)
+              com.perblue.heroes.network.messages.SendChat sc = (com.perblue.heroes.network.messages.SendChat) m;
+              com.perblue.heroes.network.messages.ChatRoomType room = sc.room;
+              boolean guildRoom = room == com.perblue.heroes.network.messages.ChatRoomType.GUILD;
+              ServerGuild g = guildRoom ? currentGuild(user) : null;
+              if (!guildRoom) {
+                System.out.println("[login]     ~ SendChat salon " + room + " ignoré (seul GUILD est natif ici)");
+              } else if (g == null) {
+                System.out.println("[login]     ⛔ SendChat GUILD REFUSÉ : joueur sans guilde");
+              } else {
+                com.perblue.heroes.network.messages.Chat chat = user.buildAndStoreGuildChat(g, sc);
+                if (chat == null) {
+                  System.out.println("[login]     ~ SendChat GUILD : message vide, ignoré");
+                } else {
+                  store.saveGuild(g);
+                  c.send(chat);   // renvoyé à l'expéditeur (affichage) ; broadcast multi-connexion = extension
+                  System.out.println("[login] <== SendChat GUILD « " + chat.message + " » (#" + chat.chatID
+                      + ") ==> Chat [archivé " + g.guildChatWire.size() + ", persisté]");
+                }
+              }
             } else if (m instanceof Ping) {
               // Écho de latence/keepalive : le client mesure le RTT et surveille l'activité serveur.
               // Sans réponse, son chien de garde ferme la connexion (« Reconnecting… »).

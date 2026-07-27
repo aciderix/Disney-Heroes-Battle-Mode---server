@@ -46,9 +46,37 @@ public final class ServerGuild {
   /** Candidatures en attente (guildes APPLICATION_ONLY) : userID → nom. */
   public final java.util.LinkedHashMap<Long, String> applicants = new java.util.LinkedHashMap<>();
 
+  // --- CHAT de guilde (écran CHAT, salon GUILD ; #59) ---
+  /** Historique du chat de guilde : octets wire de chaque {@link com.perblue.heroes.network.messages.Chat}
+   *  (objet du jeu, jamais un schéma inventé — PRINCIPLES §4/§6). Le plus ANCIEN en tête, borné à
+   *  {@link #MAX_CHAT_HISTORY}. Le serveur PerBlue gardait cet historique côté opérateur (absent du jar client). */
+  public final List<byte[]> guildChatWire = new ArrayList<>();
+  /** Prochain identifiant de message (unique par guilde ; le client dédoublonne les Chat par (salon, chatID)). */
+  public long nextChatID = 1L;
+  /** Le client borne l'affichage du salon GUILD (SocialDataManager.MAX_HISTORY) ; on borne le stockage de même. */
+  public static final int MAX_CHAT_HISTORY = 100;
+
   public ServerGuild() {}
 
   public int checkInsToday() { return checkedInToday.size(); }
+
+  /** Ajoute un message au chat (octets wire), en bornant l'historique. */
+  public void addChatWire(byte[] wire) {
+    guildChatWire.add(wire);
+    while (guildChatWire.size() > MAX_CHAT_HISTORY) guildChatWire.remove(0);
+  }
+
+  /** Relit l'historique en objets {@link com.perblue.heroes.network.messages.Chat} du jeu (pour resync/broadcast). */
+  public List<com.perblue.heroes.network.messages.Chat> chatHistory() {
+    List<com.perblue.heroes.network.messages.Chat> out = new ArrayList<>();
+    for (byte[] w : guildChatWire) {
+      try {
+        out.add((com.perblue.heroes.network.messages.Chat)
+            MessageFactory.getInstance().readMessage(new GruntInputStream(w)));
+      } catch (Exception ignore) { /* message illisible → ignoré (jamais fatal pour l'écran) */ }
+    }
+    return out;
+  }
 
   /**
    * Crée une guilde à partir d'un {@link CreateGuild} (message du jeu) — fondateur = {@code founderID} (RULER).
@@ -91,7 +119,7 @@ public final class ServerGuild {
 
       ByteArrayOutputStream bos = new ByteArrayOutputStream();
       DataOutputStream o = new DataOutputStream(bos);
-      o.writeInt(2);                       // version (2 = + check-in + candidatures)
+      o.writeInt(3);                       // version (2 = + check-in + candidatures ; 3 = + chat)
       o.writeLong(guildID);
       o.writeInt(shardID);
       o.writeInt(infoWire.length);
@@ -107,6 +135,10 @@ public final class ServerGuild {
         o.writeLong(e.getKey());
         o.writeUTF(e.getValue() == null ? "" : e.getValue());
       }
+      // v3 : chat de guilde
+      o.writeLong(nextChatID);
+      o.writeInt(guildChatWire.size());
+      for (byte[] w : guildChatWire) { o.writeInt(w.length); o.write(w); }
       o.flush();
       return bos.toByteArray();
     } catch (Exception ex) {
@@ -134,6 +166,11 @@ public final class ServerGuild {
         for (int i = 0; i < c; i++) g.checkedInToday.add(in.readLong());
         int a = in.readInt();
         for (int i = 0; i < a; i++) { long id = in.readLong(); g.applicants.put(id, in.readUTF()); }
+      }
+      if (version >= 3) {
+        g.nextChatID = in.readLong();
+        int cc = in.readInt();
+        for (int i = 0; i < cc; i++) { byte[] w = new byte[in.readInt()]; in.readFully(w); g.guildChatWire.add(w); }
       }
       return g;
     } catch (Exception ex) {

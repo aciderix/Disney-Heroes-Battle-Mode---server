@@ -288,6 +288,18 @@ public final class DesktopLauncher {
                     TutorialDriver.createGuild(game, ln.substring(12).trim());
                     continue;
                 }
+                if (low.startsWith("guildchat ")) {              // guildchat <message> — envoyer un chat de guilde (SendChat réel)
+                    TutorialDriver.sendGuildChat(game, ln.substring(10).trim());
+                    continue;
+                }
+                if (low.equals("chatdump")) {                    // chatdump — dumper le salon GUILD côté client
+                    TutorialDriver.chatDump(game);
+                    continue;
+                }
+                if (low.equals("openchat")) {                    // openchat — ouvrir la fenêtre de chat (chemin réel)
+                    TutorialDriver.openChat(game);
+                    continue;
+                }
                 if (low.startsWith("fire ")) {                   // fire x,y — clic robuste (InputEvent scene2d sur l'acteur)
                     String[] f = ln.substring(5).trim().split("[,;\\s]+");
                     if (f.length >= 2) TutorialDriver.fireClick(game,

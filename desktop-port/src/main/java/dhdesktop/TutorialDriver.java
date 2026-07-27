@@ -778,6 +778,67 @@ public final class TutorialDriver {
         } catch (Throwable t) { System.out.println("[createguild] échec: " + t); }
     }
 
+    /** DEV : envoie un message dans le CHAT de guilde (salon GUILD) — même chemin d'envoi que
+     *  {@code ChatWindow.sendChatMessage} (construit un SendChat et l'envoie au serveur), en contournant le
+     *  clavier virtuel. Le serveur renvoie le Chat autoritatif que la ChatWindow affiche. Invoqué via
+     *  clickfile "guildchat &lt;message&gt;". */
+    public static void sendGuildChat(GameMain game, String message) {
+        try {
+            com.perblue.heroes.game.objects.User u = game.getYourUser();
+            if (u == null || !com.perblue.heroes.game.logic.GuildHelper.isInGuild(u)) {
+                System.out.println("[guildchat] joueur sans guilde — ignoré"); return;
+            }
+            com.perblue.heroes.network.messages.SendChat sc =
+                new com.perblue.heroes.network.messages.SendChat();
+            sc.message = message;
+            sc.room = com.perblue.heroes.network.messages.ChatRoomType.GUILD;
+            sc.time = new java.util.Date(com.perblue.heroes.util.TimeUtil.serverTimeNow());
+            sc.toUserID = 0L;
+            game.getNetworkProvider().sendMessage(sc);
+            System.out.println("[guildchat] envoyé « " + message + " » (salon GUILD) [chemin SendChat réel]");
+        } catch (Throwable t) { System.out.println("[guildchat] échec: " + t); }
+    }
+
+    /** DEV : dumpe le contenu du salon de chat GUILD tel que le CLIENT le connaît
+     *  ({@code SocialDataManager.getChatForRoom(GUILD)}) — prouve que le client a bien reçu/stocké les Chat
+     *  (echo serveur + resync de boot). Invoqué via clickfile "chatdump". */
+    public static void chatDump(GameMain game) {
+        try {
+            java.util.List<?> chats = game.getSocialDataManager()
+                .getChatForRoom(com.perblue.heroes.network.messages.ChatRoomType.GUILD);
+            System.out.println("[chatdump] salon GUILD : " + (chats == null ? 0 : chats.size()) + " message(s)");
+            if (chats != null) for (Object cc : chats) {
+                java.lang.reflect.Field cf = cc.getClass().getField("chat");
+                com.perblue.heroes.network.messages.Chat c =
+                    (com.perblue.heroes.network.messages.Chat) cf.get(cc);
+                System.out.println("[chatdump]   #" + c.chatID + " ["
+                    + (c.sender == null ? "?" : c.sender.name) + "] " + c.message);
+            }
+        } catch (Throwable t) { System.out.println("[chatdump] échec: " + t); }
+    }
+
+    /** DEV : ouvre la fenêtre de chat (drawer) sur le salon par défaut, en invoquant le CHEMIN RÉEL du jeu
+     *  ({@code UIScreen.chatStack.showChatWindow()} — exactement ce que fait le clic sur la bulle « … »).
+     *  Contourne l'incertitude du clic synthétique. Invoqué via clickfile "openchat". */
+    public static void openChat(GameMain game) {
+        try {
+            Object screen = game.getScreenManager().getScreen();
+            if (screen == null) { System.out.println("[openchat] pas d'écran"); return; }
+            java.lang.reflect.Field csf = null;
+            for (Class<?> c = screen.getClass(); c != null && csf == null; c = c.getSuperclass()) {
+                try { csf = c.getDeclaredField("chatStack"); } catch (NoSuchFieldException ignore) {}
+            }
+            if (csf == null) { System.out.println("[openchat] chatStack introuvable sur " + screen.getClass().getSimpleName()); return; }
+            csf.setAccessible(true);
+            Object stack = csf.get(screen);
+            if (stack == null) { System.out.println("[openchat] chatStack null"); return; }
+            java.lang.reflect.Method m = stack.getClass().getDeclaredMethod("showChatWindow");
+            m.setAccessible(true);
+            m.invoke(stack);
+            System.out.println("[openchat] showChatWindow() invoqué [chemin réel du jeu]");
+        } catch (Throwable t) { System.out.println("[openchat] échec: " + t); }
+    }
+
     /** DEV : dumpe les acteurs actionnables de l'ÉCRAN COURANT (bouton/label/tag tuto + position stage) —
      *  pour savoir quoi taper (méthode B-bis). Invoqué via dh.clickfile "dumpscreen". */
     public static void dumpScreen(GameMain game) {
