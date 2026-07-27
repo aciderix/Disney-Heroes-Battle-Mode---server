@@ -281,6 +281,31 @@ public final class LoginServer {
                 gc.setAsReplyTo(m);
                 c.send(gc);
                 System.out.println("[login] <== " + act.command + " → ==> GuildContestRankings (vide)");
+              } else if (act.command == com.perblue.heroes.network.messages.CommandType.CHECK_IN_TO_GUILD) {
+                // CHECK-IN — émargement quotidien : crédite l'influence de guilde + récompenses au joueur (autoritatif,
+                // 1×/jour horloge serveur). Persiste guilde + joueur. Répond GuildCheckInInfo (état mis à jour) +
+                // UserGuildUpdate(DEFAULT) (influence de guilde rafraîchie).
+                ServerGuild g = currentGuild(user);
+                if (g == null) {
+                  System.out.println("[login]     ! CHECK_IN_TO_GUILD : joueur sans guilde");
+                } else {
+                  java.util.List<com.perblue.heroes.network.messages.RewardDrop> rewards = user.checkInToGuild(g);
+                  if (rewards == null) {
+                    System.out.println("[login]     ⛔ CHECK_IN_TO_GUILD : déjà émargé aujourd'hui / non autorisé");
+                  } else {
+                    store.saveGuild(g);
+                    try { store.save(user); } catch (Exception e) {
+                      System.out.println("[login]     ! persistance joueur échouée: " + e); }
+                    com.perblue.heroes.network.messages.GuildCheckInInfo ci = user.buildGuildCheckInInfo(g);
+                    ci.setAsReplyTo(m);
+                    c.send(ci);
+                    com.perblue.heroes.network.messages.UserGuildUpdate up = user.buildUserGuildUpdate(
+                        g, user.currentGuildRole(), com.perblue.heroes.network.messages.GuildUpdateReason.DEFAULT);
+                    c.send(up);
+                    System.out.println("[login] <== CHECK_IN_TO_GUILD → émargé (" + ci.totalCheckInsToday + "/"
+                        + ci.maxCheckInsToday + ", influence " + g.info.influence + ") [persisté]");
+                  }
+                }
               } else if (act.command == com.perblue.heroes.network.messages.CommandType.DISBAND_GUILD) {
                 // DISSOLUTION — le RULER dissout la guilde (GuildHelper.canDisband). Efface l'appartenance de TOUS les
                 // membres (chargés du store) + supprime la guilde. Répond UserGuildUpdate(DISBAND) au dissolveur.

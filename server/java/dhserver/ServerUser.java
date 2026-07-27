@@ -450,6 +450,58 @@ public final class ServerUser {
     return ci;
   }
 
+  /**
+   * CHECK-IN de guilde ({@code CHECK_IN_TO_GUILD}) — le joueur émarge une fois par jour. AUTORITATIF via la
+   * logique du jeu : {@code GuildCheckInHelper.canCheckIn} (garde quotidienne, horloge serveur), {@code checkIn}
+   * (état individuel), {@code addIndividualRewards} (récompenses au joueur) ; côté GUILDE on enregistre le membre
+   * du jour et on crédite l'INFLUENCE ({@code getInfluenceReward}, plafonnée par {@code getMaxGuildInfluence}).
+   * Renvoie la liste des récompenses données, ou {@code null} si déjà émargé aujourd'hui / non autorisé.
+   */
+  public synchronized java.util.List<com.perblue.heroes.network.messages.RewardDrop> checkInToGuild(ServerGuild g) {
+    if (g == null) return null;
+    ServerContext.init();
+    User user = ClientNetworkStateConverter.getUser(userInfo, userExtra, "guild");
+    IndividualUser iu = ClientNetworkStateConverter.getIndividualUser(
+        individualUserExtra, userID, userInfo.diamonds, "guild");
+    ServerContext.bind(user, iu);
+    // RESET QUOTIDIEN — borne de JOUR serveur (UTC). Le helper du jeu getLastCheckinResetTime dépend d'une infra
+    // de fuseau de guilde non disponible headless (renvoie une valeur négative aberrante → canCheckIn faux). On
+    // applique donc une garde quotidienne SERVEUR-AUTORITATIVE sur la frontière de jour UTC : une seule fois par
+    // jour et par membre (set checkedInToday, purgé au changement de jour). L'horloge serveur (CLOCK_OFFSET=0)
+    // interdit de contourner par la date du mobile — même principe que le cooldown des coffres.
+    long now = com.perblue.heroes.util.TimeUtil.serverTimeNow();
+    long dayNow = Math.floorDiv(now, 86400000L);
+    long dayLast = Math.floorDiv(g.lastCheckInResetTime, 86400000L);
+    if (g.lastCheckInResetTime == 0L || dayNow > dayLast) { g.checkedInToday.clear(); g.lastCheckInResetTime = now; }
+    if (g.checkedInToday.contains(userID)) return null;                 // déjà émargé aujourd'hui
+    com.perblue.heroes.game.objects.GuildInfoPerkProvider perks =
+        new com.perblue.heroes.game.objects.GuildInfoPerkProvider(g.info);
+    g.checkedInToday.add(userID);
+    int count = g.checkInsToday();                                      // n-ième émargeur du jour
+    long infl;
+    try { infl = com.perblue.heroes.game.logic.GuildCheckInHelper.getInfluenceReward(perks, count); }
+    catch (Throwable t) { infl = 0; }
+    java.util.List<com.perblue.heroes.network.messages.RewardDrop> given = new java.util.ArrayList<>();
+    try { com.perblue.heroes.game.logic.GuildCheckInHelper.addIndividualRewards(user, perks, count, given); }
+    catch (Throwable t) { System.out.println("[guild] addIndividualRewards: " + t); }
+    // État individuel de check-in. NB : GuildCheckInHelper.checkIn() ré-valide via canCheckIn qui dépend de
+    // getLastCheckinResetTime (infra de fuseau de guilde indispo headless → lève ALREADY_CHECKED_IN à tort). On
+    // reproduit donc DIRECTEMENT les mêmes effets que checkIn() : horodatage LAST_GUILD_CHECK_IN + guildCheckInGuildID
+    // + suivi d'activité. La garde quotidienne autoritative est notre set checkedInToday (persisté dans la guilde).
+    user.setTime(com.perblue.heroes.network.messages.TimeType.LAST_GUILD_CHECK_IN, now);
+    try { com.perblue.heroes.game.logic.UserActivityTracker.onGuildCheckIn(user); } catch (Throwable t) {}
+    long max;
+    try { max = com.perblue.heroes.game.logic.GuildPerkHelper.getMaxGuildInfluence(perks); }
+    catch (Throwable t) { max = Long.MAX_VALUE; }
+    g.info.influence = Math.min(g.info.influence + infl, max);
+    // resync état joueur (récompenses + état individuel de check-in) vers le wire
+    resyncHeroes(user); resyncDiamonds(user); resyncCounts(user);
+    individualUserExtra.guildCheckInGuildID = g.guildID;   // checkIn() a posé guildCheckInGuildID = guildID
+    System.out.println("[guild] check-in : +" + infl + " influence guilde (total " + g.info.influence
+        + "/" + max + "), " + given.size() + " récompense(s) au joueur");
+    return given;
+  }
+
   /** Une ligne de roster ({@code PlayerGuildRow}) pour CE joueur (écran membres, ExtendedGuildInfo). */
   public synchronized com.perblue.heroes.network.messages.PlayerGuildRow buildPlayerGuildRow() {
     com.perblue.heroes.network.messages.PlayerGuildRow row =
