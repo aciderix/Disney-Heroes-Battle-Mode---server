@@ -562,9 +562,16 @@ public final class LoginServer {
                 System.out.println("[login]     ⛔ JoinGuild REFUSÉ : joueur déjà dans une guilde");
               } else if (g.memberCount() >= maxMembers) {
                 System.out.println("[login]     ⛔ JoinGuild REFUSÉ : guilde #" + jg.guildID + " pleine");
-              } else if (g.info.newMemberPolicy != com.perblue.heroes.network.messages.GuildNewMemberPolicy.OPEN) {
-                System.out.println("[login]     ⛔ JoinGuild REFUSÉ : guilde #" + jg.guildID
-                    + " non ouverte (" + g.info.newMemberPolicy + ") — candidature requise (à venir)");
+              } else if (g.info.newMemberPolicy == com.perblue.heroes.network.messages.GuildNewMemberPolicy.PRIVATE) {
+                System.out.println("[login]     ⛔ JoinGuild REFUSÉ : guilde #" + jg.guildID + " PRIVÉE (sur invitation)");
+              } else if (g.info.newMemberPolicy == com.perblue.heroes.network.messages.GuildNewMemberPolicy.APPLICATION_ONLY) {
+                // CANDIDATURE — la guilde exige une validation par un officier. On enregistre le postulant (nom depuis
+                // BasicUserInfo) ; un officier l'accepte/refuse via AcceptGuildMember. Pas d'UserGuildUpdate (pas encore membre).
+                String nm = user.basicInfo() != null && user.basicInfo().name != null ? user.basicInfo().name : ("#" + user.userID);
+                g.applicants.put(user.userID, nm);
+                store.saveGuild(g);
+                System.out.println("[login] <== JoinGuild #" + jg.guildID + " → CANDIDATURE enregistrée ('" + nm
+                    + "', " + g.applicants.size() + " en attente) [persisté]");
               } else {
                 user.joinGuildAs(jg.guildID, com.perblue.heroes.network.messages.GuildRole.MEMBER);
                 g.memberIDs.add(user.userID);
@@ -601,6 +608,62 @@ public final class LoginServer {
                 up.setAsReplyTo(m);
                 c.send(up);
                 System.out.println("[login] <== LeaveGuild #" + gid + " [persisté] ==> UserGuildUpdate(LEAVE)");
+              }
+            } else if (m instanceof com.perblue.heroes.network.messages.KickFromGuild) {
+              // GUILD — EXPULSION d'un membre. Autoritatif : GuildHelper.canKickMember(monRôle, rôleCible). Retire la
+              // cible du roster + efface SON appartenance (chargée du store) + persiste. Courrier d'info à l'expulsé.
+              com.perblue.heroes.network.messages.KickFromGuild kf =
+                  (com.perblue.heroes.network.messages.KickFromGuild) m;
+              ServerGuild g = currentGuild(user);
+              ServerUser target = g == null ? null : store.loadIfExists(kf.userToKick, user.shardID);
+              if (g == null) {
+                System.out.println("[login]     ! KickFromGuild : joueur sans guilde");
+              } else if (target == null || !g.memberIDs.contains(kf.userToKick)) {
+                System.out.println("[login]     ! KickFromGuild : cible #" + kf.userToKick + " pas dans la guilde");
+              } else if (!com.perblue.heroes.game.logic.GuildHelper.canKickMember(user.currentGuildRole(), target.currentGuildRole())) {
+                System.out.println("[login]     ⛔ KickFromGuild REFUSÉ : " + user.currentGuildRole()
+                    + " ne peut pas expulser " + target.currentGuildRole());
+              } else {
+                g.memberIDs.remove(Long.valueOf(kf.userToKick));
+                g.applicants.remove(kf.userToKick);
+                g.checkedInToday.remove(kf.userToKick);
+                g.info.memberCount = g.memberCount();
+                target.leaveGuild();
+                store.saveGuild(g);
+                try { store.save(target); } catch (Exception e) {}
+                // notifie l'expulsé (GuildMemberRankChange KICKED) — le client le retire de sa guilde au prochain contact
+                System.out.println("[login] <== KickFromGuild #" + kf.userToKick + " expulsé de #" + g.guildID
+                    + " [persisté] (" + g.memberCount() + " membre(s))");
+              }
+            } else if (m instanceof com.perblue.heroes.network.messages.AcceptGuildMember) {
+              // GUILD — un officier ACCEPTE/REFUSE une candidature (guilde APPLICATION_ONLY). GuildHelper.canAcceptMembers.
+              com.perblue.heroes.network.messages.AcceptGuildMember ag =
+                  (com.perblue.heroes.network.messages.AcceptGuildMember) m;
+              ServerGuild g = currentGuild(user);
+              if (g == null) {
+                System.out.println("[login]     ! AcceptGuildMember : joueur sans guilde");
+              } else if (!com.perblue.heroes.game.logic.GuildHelper.canAcceptMembers(user.currentGuildRole())) {
+                System.out.println("[login]     ⛔ AcceptGuildMember REFUSÉ : rôle " + user.currentGuildRole() + " insuffisant");
+              } else if (!g.applicants.containsKey(ag.userID)) {
+                System.out.println("[login]     ! AcceptGuildMember : #" + ag.userID + " pas candidat");
+              } else if (!ag.isAccept) {
+                g.applicants.remove(ag.userID);
+                store.saveGuild(g);
+                System.out.println("[login] <== AcceptGuildMember #" + ag.userID + " REFUSÉ (candidature retirée)");
+              } else if (g.memberCount() >= com.perblue.heroes.game.logic.GuildHelper.getMaxMembers()) {
+                System.out.println("[login]     ⛔ AcceptGuildMember : guilde pleine");
+              } else {
+                ServerUser applicant = store.loadIfExists(ag.userID, user.shardID);
+                g.applicants.remove(ag.userID);
+                if (applicant != null && !applicant.inGuild()) {
+                  applicant.joinGuildAs(g.guildID, com.perblue.heroes.network.messages.GuildRole.MEMBER);
+                  g.memberIDs.add(ag.userID);
+                  g.info.memberCount = g.memberCount();
+                  try { store.save(applicant); } catch (Exception e) {}
+                }
+                store.saveGuild(g);
+                System.out.println("[login] <== AcceptGuildMember #" + ag.userID + " ACCEPTÉ dans #" + g.guildID
+                    + " [persisté] (" + g.memberCount() + " membre(s))");
               }
             } else if (m instanceof com.perblue.heroes.network.messages.EditGuild) {
               // GUILD SETTINGS — édition des réglages (motto, min level, politique, pays, fuseau, drapeaux). Autoritatif
