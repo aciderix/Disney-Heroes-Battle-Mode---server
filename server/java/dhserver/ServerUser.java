@@ -602,6 +602,47 @@ public final class ServerUser {
     return iu.getItemAmount(type);
   }
 
+  // ===================== MERCENAIRES (#57) =====================
+  // Un membre POSTE des héros (Action POST_HERO) → stockés dans userExtra.recentlyPostedHeroes (auto-persisté),
+  // marqué mercenariesPostedAtGuildID. GET_HEROES_FOR_HIRE agrège les héros postés de TOUS les membres de la
+  // guilde. HIRE_HERO : un autre membre emprunte un héros pour un combat (gratuit ; le POSTEUR gagne des
+  // SOCIAL_BUCKS au reset — getHired/UnhiredMercenaryReward).
+
+  /** Poste un héros comme mercenaire (logique du jeu {@code User.addRecentlyPostedMercenary}, borné par
+   *  {@code getMaxPostedHeroesPerUser}). Le héros doit être possédé. */
+  public synchronized void postMercenary(com.perblue.heroes.network.messages.UnitType type) {
+    if (type == null) return;
+    ServerContext.init();
+    User user = ClientNetworkStateConverter.getUser(userInfo, userExtra, "merc");
+    IndividualUser iu = ClientNetworkStateConverter.getIndividualUser(
+        individualUserExtra, userID, userInfo.diamonds, "merc");
+    ServerContext.bind(user, iu);
+    if (user.getHero(type) == null) return;             // héros non possédé → ignoré (le client ne le poste pas)
+    user.addRecentlyPostedMercenary(type);              // mute userExtra.recentlyPostedHeroes (auto-persisté)
+    userExtra.mercenariesPostedAtGuildID = currentGuildID();
+  }
+
+  /** Les mercenaires postés par CE joueur (pour l'agrégation du pool de guilde). */
+  public synchronized java.util.List<com.perblue.heroes.network.messages.MercenaryHeroData> postedMercenaries() {
+    java.util.List<com.perblue.heroes.network.messages.MercenaryHeroData> out = new java.util.ArrayList<>();
+    if (userExtra.recentlyPostedHeroes == null || userExtra.mercenariesPostedAtGuildID != currentGuildID()) return out;
+    long now = com.perblue.heroes.util.TimeUtil.serverTimeNow();
+    for (Object o : userExtra.recentlyPostedHeroes) {
+      com.perblue.heroes.network.messages.UnitType t = (com.perblue.heroes.network.messages.UnitType) o;
+      Object hd = userExtra.heroes == null ? null : userExtra.heroes.get(t);
+      if (!(hd instanceof com.perblue.heroes.network.messages.HeroData)) continue;
+      com.perblue.heroes.network.messages.MercenaryHeroData md =
+          new com.perblue.heroes.network.messages.MercenaryHeroData();
+      md.heroData = (com.perblue.heroes.network.messages.HeroData) hd;
+      md.ownerID = userID;
+      md.ownerName = userInfo.basicInfo == null ? "" : userInfo.basicInfo.name;
+      md.postTime = now;
+      md.cost = 0;                                       // l'emprunt est gratuit (le posteur gagne au reset)
+      out.add(md);
+    }
+    return out;
+  }
+
   // ===================== DONS / GUILD AID (#55) =====================
   // Le client (ClientActionHelper.requestStamina) envoie Action{REQUEST_GUILD_DONATION, TYPE=STAMINA}. Le serveur
   // AUTORITATIF valide+charge via la logique du jeu (GuildDonationHelper.requestHelp) puis SYNTHÉTISE la demande

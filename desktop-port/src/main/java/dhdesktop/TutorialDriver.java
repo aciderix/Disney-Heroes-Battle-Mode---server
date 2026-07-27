@@ -813,6 +813,22 @@ public final class TutorialDriver {
         } catch (Throwable t) { System.out.println("[requeststamina] échec: " + t); }
     }
 
+    /** DEV : POSTE un héros comme mercenaire (Action POST_HERO), sans navigation MERCENARIES.
+     *  Invoqué via clickfile "postmerc &lt;UnitType&gt;". */
+    public static void postMerc(GameMain game, String heroName) {
+        try {
+            com.perblue.heroes.game.objects.User u = game.getYourUser();
+            if (u == null || !com.perblue.heroes.game.logic.GuildHelper.isInGuild(u)) {
+                System.out.println("[postmerc] joueur sans guilde — ignoré"); return;
+            }
+            com.perblue.heroes.network.messages.UnitType t =
+                com.perblue.heroes.network.messages.UnitType.valueOf(heroName.trim().toUpperCase());
+            com.perblue.heroes.game.ActionHelper.doAction(
+                com.perblue.heroes.network.messages.CommandType.POST_HERO, t, null, u, null, null);
+            System.out.println("[postmerc] Action POST_HERO " + t + " envoyée [chemin réel]");
+        } catch (Throwable tt) { System.out.println("[postmerc] échec: " + tt); }
+    }
+
     /** DEV : AIDE une demande d'aide (GUILD AID) en envoyant un {@code GuildDonation} réel (comme le bouton AID
      *  via {@code GuildDonationHelper.tryDonation}), sans passer par le prompt UI. Args : requestID, memberID
      *  (le demandeur). Don = 1 STAMINA_CONSUMABLE. Invoqué via clickfile "guilddonate &lt;reqID&gt; &lt;memberID&gt;". */

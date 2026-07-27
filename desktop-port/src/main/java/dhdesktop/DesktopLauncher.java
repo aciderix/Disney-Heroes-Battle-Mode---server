@@ -304,6 +304,10 @@ public final class DesktopLauncher {
                     TutorialDriver.requestStaminaAid(game);
                     continue;
                 }
+                if (low.startsWith("postmerc ")) {               // postmerc <hero> — poster un mercenaire (POST_HERO réel)
+                    TutorialDriver.postMerc(game, ln.substring(9).trim());
+                    continue;
+                }
                 if (low.startsWith("guilddonate ")) {            // guilddonate <reqID> <memberID> — aider une demande (GuildDonation réel)
                     String[] gp = ln.substring(12).trim().split("[,;\\s]+");
                     if (gp.length >= 2) TutorialDriver.guildDonate(game,

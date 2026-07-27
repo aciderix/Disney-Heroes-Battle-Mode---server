@@ -254,18 +254,56 @@ public final class LoginServer {
                 System.out.println("[login] <== GET_GUILD_CHECK_IN_INFO → ==> GuildCheckInInfo (today="
                     + ci.totalCheckInsToday + "/" + ci.maxCheckInsToday + ")");
               } else if (act.command == com.perblue.heroes.network.messages.CommandType.GET_HEROES_FOR_HIRE) {
-                // MERCENAIRES — héros à louer postés dans la guilde (écran MERCENARIES attend HeroesForHire).
-                ServerGuild g = currentGuild(user);
-                com.perblue.heroes.network.messages.HeroesForHire hf =
-                    new com.perblue.heroes.network.messages.HeroesForHire();
-                hf.guildID = user.currentGuildID();
-                hf.mercenaries = new java.util.ArrayList<>();
+                // MERCENAIRES (#57) — pool RÉEL : héros postés par tous les membres de la guilde.
                 Object ep = act.extra == null ? null
                     : act.extra.get(com.perblue.heroes.network.messages.ActionExtraType.ENTRY_POINT);
-                hf.forJobBoard = ep != null && Boolean.parseBoolean(ep.toString());
+                com.perblue.heroes.network.messages.HeroesForHire hf =
+                    buildHeroesForHire(user, ep != null && Boolean.parseBoolean(ep.toString()));
                 hf.setAsReplyTo(m);
                 c.send(hf);
-                System.out.println("[login] <== GET_HEROES_FOR_HIRE → ==> HeroesForHire (0 merc)");
+                System.out.println("[login] <== GET_HEROES_FOR_HIRE → ==> HeroesForHire (" + hf.mercenaries.size() + " merc)");
+              } else if (act.command == com.perblue.heroes.network.messages.CommandType.POST_HERO) {
+                // MERCENAIRES (#57) — poster un héros à louer (Action POST_HERO, heroType). Ajoute au pool, persiste,
+                // renvoie le pool à jour.
+                com.perblue.heroes.network.messages.UnitType t = act.heroType;
+                if (!user.inGuild()) {
+                  System.out.println("[login]     ⛔ POST_HERO : joueur sans guilde");
+                } else {
+                  try {
+                    user.postMercenary(t);
+                    try { store.save(user); } catch (Exception e) { System.out.println("[login]     ! save: " + e); }
+                    com.perblue.heroes.network.messages.HeroesForHire hf = buildHeroesForHire(user, false);
+                    hf.setAsReplyTo(m);
+                    c.send(hf);
+                    System.out.println("[login] <== POST_HERO " + t + " → pool " + hf.mercenaries.size() + " merc [persisté]");
+                  } catch (Throwable tt) {
+                    if (tt instanceof com.perblue.heroes.ClientErrorCodeException)
+                      System.out.println("[login]     ⛔ POST_HERO REFUSÉ : " + tt.getMessage());
+                    else { System.out.println("[login]     ! postMercenary échec: " + tt); tt.printStackTrace(); }
+                  }
+                }
+              } else if (act.command == com.perblue.heroes.network.messages.CommandType.HIRE_HERO) {
+                // MERCENAIRES (#57) — louer un héros du pool (Action HIRE_HERO : heroType, ID=ownerID, LEVEL=mode).
+                // L'emprunt est gratuit ; on renvoie HeroHired{hero} pour que le client l'utilise en combat.
+                com.perblue.heroes.network.messages.UnitType t = act.heroType;
+                long ownerID = act.iD;
+                com.perblue.heroes.network.messages.MercenaryHeroData picked = null;
+                try {
+                  ServerUser owner = ownerID == user.userID ? user : store.loadIfExists(ownerID, user.shardID);
+                  if (owner != null) for (com.perblue.heroes.network.messages.MercenaryHeroData md : owner.postedMercenaries())
+                    if (md.heroData != null && md.heroData.type == t) { picked = md; break; }
+                } catch (Exception e) { System.out.println("[login]     ! HIRE_HERO load owner: " + e); }
+                if (picked == null) {
+                  System.out.println("[login]     ⛔ HIRE_HERO : mercenaire " + t + " (owner " + ownerID + ") introuvable");
+                } else {
+                  picked.hireTime = com.perblue.heroes.util.TimeUtil.serverTimeNow();
+                  picked.hiredByName = user.basicInfo() == null ? "" : user.basicInfo().name;
+                  com.perblue.heroes.network.messages.HeroHired hh = new com.perblue.heroes.network.messages.HeroHired();
+                  hh.hero = picked;
+                  hh.setAsReplyTo(m);
+                  c.send(hh);
+                  System.out.println("[login] <== HIRE_HERO " + t + " (owner " + ownerID + ") → ==> HeroHired");
+                }
               } else if (act.command == com.perblue.heroes.network.messages.CommandType.GET_GUILD_RANKINGS) {
                 // CLASSEMENT DES GUILDES (#60) — leaderboard RÉEL du shard : toutes les guildes triées par la valeur
                 // de la métrique demandée (RankType → champ de GuildInfo), + ton rang/valeur.
@@ -1033,6 +1071,25 @@ public final class LoginServer {
           System.out.println("[login]     ~ demande d'aide #" + r.requestID + " expirée → retirée"
               + (r.remainingDonations < r.totalRequestedDonations ? " (+partiel au demandeur)" : ""));
         }
+      }
+
+      /** MERCENAIRES #57 — pool de la guilde : héros postés par CE joueur + tous les autres membres. */
+      private com.perblue.heroes.network.messages.HeroesForHire buildHeroesForHire(ServerUser u, boolean forJobBoard) {
+        com.perblue.heroes.network.messages.HeroesForHire hf =
+            new com.perblue.heroes.network.messages.HeroesForHire();
+        hf.guildID = u.currentGuildID();
+        hf.forJobBoard = forJobBoard;
+        hf.mercenaries = new java.util.ArrayList<>();
+        ServerGuild g = currentGuild(u);
+        if (g != null) {
+          for (Long mid : g.memberIDs) {
+            try {
+              ServerUser mu = (mid == u.userID) ? u : store.loadIfExists(mid, u.shardID);
+              if (mu != null) hf.mercenaries.addAll(mu.postedMercenaries());
+            } catch (Exception e) { System.out.println("[login]     ! merc membre " + mid + ": " + e); }
+          }
+        }
+        return hf;
       }
 
       /** CLASSEMENT #60 — valeur d'une guilde pour une métrique de classement (champ de {@code GuildInfo}). */
