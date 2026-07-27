@@ -16,9 +16,9 @@
 | A | Avatars calculés depuis le niveau de guilde | ✅ FAIT (test + push) | `5be06ee` |
 | C | Mercenaire — créditer Social Bucks au posteur | ✅ FAIT (test + push) | `cb58d5e` |
 | B | Dons SKILL_LEVEL (✅) + HERO_XP (opérateur §4) | ✅ SKILL FAIT + push | `daeb260` |
-| E | Génération serveur des cadeaux de crate | ✅ FAIT (test) | `<en cours>` |
+| E | Génération serveur des cadeaux de crate | ✅ FAIT (test + push) | `4632348` |
 | D | MULTI-USER + registre connexions + broadcast | ✅ FAIT (socle, compile-clean) | `0536a52` |
-| F | Contests — classements réels + scoring guilde | ✅ FAIT (test) | `<en cours>` |
+| F | Contests — classements réels + scoring guilde | ✅ FAIT (test + push) | `f6e831d` |
 
 ---
 
@@ -112,3 +112,20 @@ Le choisir = inventer une valeur → **INTERDIT (§4)**. Handler : journalise «
   `GUILD_CONTEST_POINTS` non réglable.
 - **Reste** : la PLANIFICATION d'un contest (fenêtre active, type, récompenses de fin) = live-ops opérateur (via
   le panneau admin #37 / évènements spéciaux) ; le scoring joueur temps réel dépend d'un contest actif hébergé.
+
+---
+
+## Conclusion — les 6 trous traités ✅
+
+Tous les trous multi-serveur de l'audit (g37) sont comblés, chacun avec test de régression et commit dédié
+(régression guilde 62 tests, seul échec toléré = flake `ChestWireTest`). **Ce qui reste est purement live-ops
+OPÉRATEUR** — des valeurs/déclencheurs que le vrai serveur PerBlue fixe et qui sont absents du jar client, donc
+NON inventables (§4) :
+- **HERO_XP** (dons) : quel `ItemType` d'XP + quantité par don (seul le plafond=4 est connu).
+- **Coût GOLD** d'emprunt de mercenaire (`MercenaryHeroData.cost`, fixé à la construction du pool).
+- **Déclencheur** des cadeaux de crate : le brancher sur un ACHAT réel (#15) ou le panneau admin (#37) —
+  le mécanisme (génération/persistance/réclamation) est fait, il ne manque que l'événement déclencheur.
+- **Planification** d'un contest (fenêtre/type/récompenses) + scoring joueur temps réel.
+
+**Vérif restante en jeu** : broadcast chat à **2 sessions simultanées** (le socle multi-user est fait + le pilote
+1-session boote OK ; il faut 2 clients pour voir le push temps réel).
