@@ -267,8 +267,8 @@ public final class LoginServer {
                 c.send(hf);
                 System.out.println("[login] <== GET_HEROES_FOR_HIRE → ==> HeroesForHire (0 merc)");
               } else if (act.command == com.perblue.heroes.network.messages.CommandType.GET_GUILD_RANKINGS) {
-                // CLASSEMENT DES GUILDES — bouton graphique de l'écran de guilde. Une seule guilde sur le shard →
-                // rang 1. topGuilds vide (le client affiche ta guilde via yourGuildRank/Value).
+                // CLASSEMENT DES GUILDES (#60) — leaderboard RÉEL du shard : toutes les guildes triées par la valeur
+                // de la métrique demandée (RankType → champ de GuildInfo), + ton rang/valeur.
                 com.perblue.heroes.network.messages.GuildRankings gr =
                     new com.perblue.heroes.network.messages.GuildRankings();
                 Object rt = act.extra == null ? null
@@ -276,13 +276,26 @@ public final class LoginServer {
                 try { gr.rankType = rt == null ? com.perblue.heroes.network.messages.RankType.TOTAL_POWER
                     : com.perblue.heroes.network.messages.RankType.valueOf(rt.toString()); }
                 catch (Throwable t) { gr.rankType = com.perblue.heroes.network.messages.RankType.TOTAL_POWER; }
+                final com.perblue.heroes.network.messages.RankType rkt = gr.rankType;
+                java.util.List<ServerGuild> all = store.listGuilds(user.shardID, null, 200);
+                all.sort((x, y) -> Long.compare(rankValue(y.info, rkt), rankValue(x.info, rkt)));   // décroissant
                 gr.topGuilds = new java.util.ArrayList<>();
-                gr.yourGuildRank = user.inGuild() ? 1 : 0;
-                gr.yourGuildValue = 0L;
+                gr.yourGuildRank = 0; gr.yourGuildValue = 0L;
+                long myGid = user.currentGuildID();
+                int idx = 0;
+                for (ServerGuild sg : all) {
+                  idx++;
+                  if (gr.topGuilds.size() < 100) {
+                    com.perblue.heroes.network.messages.GuildRow row = new com.perblue.heroes.network.messages.GuildRow();
+                    row.guildInfo = sg.info; gr.topGuilds.add(row);
+                  }
+                  if (sg.guildID == myGid) { gr.yourGuildRank = idx; gr.yourGuildValue = rankValue(sg.info, rkt); }
+                }
                 gr.setAsReplyTo(m);
                 c.send(gr);
-                System.out.println("[login] <== GET_GUILD_RANKINGS(" + gr.rankType + ") → ==> GuildRankings (rang "
-                    + gr.yourGuildRank + ")");
+                System.out.println("[login] <== GET_GUILD_RANKINGS(" + gr.rankType + ") → ==> GuildRankings ("
+                    + gr.topGuilds.size() + " guilde(s), ton rang " + gr.yourGuildRank + "/" + all.size()
+                    + " valeur " + gr.yourGuildValue + ")");
               } else if (act.command == com.perblue.heroes.network.messages.CommandType.GET_CONTEST_RANKINGS
                   || act.command == com.perblue.heroes.network.messages.CommandType.GET_GUILD_CONTEST_RANKINGS) {
                 // CONTESTS de guilde — aucun contest hébergé (cf. évènements) → classement vide (l'écran rend « pas de contest »).
@@ -1019,6 +1032,21 @@ public final class LoginServer {
           g.updateDonationRequest(r.requestID, null);
           System.out.println("[login]     ~ demande d'aide #" + r.requestID + " expirée → retirée"
               + (r.remainingDonations < r.totalRequestedDonations ? " (+partiel au demandeur)" : ""));
+        }
+      }
+
+      /** CLASSEMENT #60 — valeur d'une guilde pour une métrique de classement (champ de {@code GuildInfo}). */
+      private long rankValue(com.perblue.heroes.network.messages.GuildInfo gi,
+          com.perblue.heroes.network.messages.RankType rt) {
+        if (gi == null || rt == null) return 0L;
+        switch (rt) {
+          case TOTAL_POWER: case LEGACY_COLISEUM: return gi.totalPower;   // puissance totale (défaut)
+          case TEAM_POWER: return gi.teamPower;
+          case TOTAL_STARS: return gi.totalStars;
+          case FIGHT_PIT: case LEGACY_FIGHT_PIT: return gi.fightPitWins;
+          case COLISEUM: return gi.bestSurgeScore;                        // pas de champ colisée dédié → meilleur proxy
+          case CONTEST_RANK: return gi.contestPoints;
+          default: return gi.totalPower;
         }
       }
 
