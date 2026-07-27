@@ -819,6 +819,73 @@ public final class ServerUser {
     return row;
   }
 
+  /** Lit un ENTIER de {@code guild_constants.tab} par réflexion sur {@code GuildStats.CONSTANT_STATS.getStats()}
+   *  (le jeu ne fournit pas de getter pour {@code DONATIONS_PER_HELP_REQUEST}). VALEUR du jeu, jamais inventée
+   *  (§4) ; repli documenté si absent. */
+  private static int guildConstantInt(String field, int fallback) {
+    try {
+      java.lang.reflect.Field cs =
+          com.perblue.heroes.game.data.guild.GuildStats.class.getDeclaredField("CONSTANT_STATS");
+      cs.setAccessible(true);
+      Object constStats = cs.get(null);
+      Object stats = constStats.getClass().getMethod("getStats").invoke(constStats);
+      java.lang.reflect.Field f = stats.getClass().getField(field);
+      return ((Number) f.get(stats)).intValue();
+    } catch (Throwable t) {
+      System.out.println("[guild] constante " + field + " indispo → défaut " + fallback + " (" + t + ")");
+      return fallback;
+    }
+  }
+
+  /** Poste une demande d'aide SKILL_LEVEL (#55b/#63, autoritatif). Le donneur met en SÉQUESTRE un
+   *  {@code SKILL_POINT_CONSUMABLE} ({@code isDonationEscrowed(SKILL_LEVEL)=true}) qui ira au demandeur.
+   *  Validation/charge via la logique du jeu ({@code requestHelp} → {@code canRequestSkillLevelHelp} : héros
+   *  possédé, skill non au max, cap, ressource {@code GUILD_DONATION_REQUEST_SKILL}). Total de dons =
+   *  {@code DONATIONS_PER_HELP_REQUEST} (guild_constants). Lève {@code ClientErrorCodeException} = refus fidèle. */
+  public synchronized com.perblue.heroes.network.messages.GuildDonationRequestRow postGuildSkillRequest(
+      ServerGuild g, com.perblue.heroes.network.messages.UnitType unit,
+      com.perblue.heroes.network.messages.SkillSlot skill) {
+    if (g == null || unit == null || skill == null) return null;
+    ServerContext.init();
+    User user = ClientNetworkStateConverter.getUser(userInfo, userExtra, "skreq");
+    IndividualUser iu = ClientNetworkStateConverter.getIndividualUser(
+        individualUserExtra, userID, userInfo.diamonds, "skreq");
+    ServerContext.bind(user, iu);
+    // 1) VALIDATION + CHARGE (logique du jeu) — 1× GUILD_DONATION_REQUEST_SKILL.
+    com.perblue.heroes.game.logic.GuildDonationHelper.requestHelp(user,
+        com.perblue.heroes.network.messages.GuildDonationRequestType.SKILL_LEVEL, unit, skill);
+    // 2) Composition (valeurs du jeu). Le don = 1 SKILL_POINT_CONSUMABLE (séquestré → remis au demandeur).
+    int total = Math.max(1, guildConstantInt("DONATIONS_PER_HELP_REQUEST", 5));
+    long now = com.perblue.heroes.util.TimeUtil.serverTimeNow();
+    com.perblue.heroes.network.messages.GuildDonationRequestRow row =
+        new com.perblue.heroes.network.messages.GuildDonationRequestRow();
+    row.requestID = g.nextRequestID++;
+    row.member = userInfo.basicInfo;
+    row.type = com.perblue.heroes.network.messages.GuildDonationRequestType.SKILL_LEVEL;
+    row.skill = skill;
+    row.donation = com.perblue.heroes.game.logic.RewardHelper.createDrop(
+        com.perblue.heroes.network.messages.ItemType.SKILL_POINT_CONSUMABLE, 1L);
+    row.totalRequestedDonations = total;
+    row.remainingDonations = total;
+    row.yourDonations = 0;
+    row.expiration = now + com.perblue.heroes.game.data.guild.GuildStats.getHelpRequestDuration();
+    // 3) Marqueur côté demandeur (individu, auto-persisté) — le client interdit les doublons via ceci.
+    com.perblue.heroes.network.messages.GuildDonationRequestUserData ud =
+        new com.perblue.heroes.network.messages.GuildDonationRequestUserData();
+    ud.iD = row.requestID;
+    ud.type = com.perblue.heroes.network.messages.GuildDonationRequestType.SKILL_LEVEL;
+    ud.unit = unit;
+    ud.skill = skill;
+    ud.expiration = row.expiration;
+    iu.addGuildDonationRequest(ud);
+    // 4) Archive dans la guilde (octets wire).
+    com.perblue.grunt.translate.util.GruntOutputStream gout = new com.perblue.grunt.translate.util.GruntOutputStream();
+    row.writeAll(gout);
+    g.addDonationRequestWire(gout.getBytes());
+    g.donationsByUser.put(row.requestID, new java.util.LinkedHashMap<>());
+    return row;
+  }
+
   /** DON (#55b) — CE joueur (donateur) donne à la demande {@code row} (adossée à {@code byUser}). Exécute la
    *  logique AUTORITATIVE du jeu {@code GuildDonationHelper.doDonation} : débite le donateur (useItem/removeItem/
    *  chargeUser) + vérifie les gardes (pas soi-même, active, cap/utilisateur, assez à donner) + mute la demande
@@ -846,18 +913,33 @@ public final class ServerUser {
       com.perblue.heroes.network.messages.GuildDonationRequestRow row, boolean fulfilled) {
     int donationsReceived = Math.max(0, row.totalRequestedDonations - row.remainingDonations);
     if (donationsReceived <= 0) return 0L;
-    if (row.type != com.perblue.heroes.network.messages.GuildDonationRequestType.STAMINA) return 0L; // #55b : STAMINA
-    long amount = (long) donationsReceived * com.perblue.heroes.game.logic.ItemHelper.getStaminaConsumableReward();
-    com.perblue.heroes.network.messages.RewardDrop reward =
-        com.perblue.heroes.game.logic.RewardHelper.createDrop(
+    // Récompense selon le type (valeurs du jeu). STAMINA : dons × getStaminaConsumableReward() points d'énergie.
+    // SKILL_LEVEL (#63) : les SKILL_POINT_CONSUMABLE séquestrés des donneurs vont au demandeur (1/don).
+    long amount;
+    com.perblue.heroes.network.messages.RewardDrop reward;
+    String subject, body;
+    switch (row.type) {
+      case STAMINA:
+        amount = (long) donationsReceived * com.perblue.heroes.game.logic.ItemHelper.getStaminaConsumableReward();
+        reward = com.perblue.heroes.game.logic.RewardHelper.createDrop(
             com.perblue.heroes.network.messages.ResourceType.STAMINA, amount);
+        subject = fulfilled ? "Stamina help fulfilled" : "Stamina help expired";
+        body = donationsReceived + " guildmate(s) donated stamina.";
+        break;
+      case SKILL_LEVEL:
+        amount = donationsReceived;   // 1 SKILL_POINT_CONSUMABLE séquestré par don
+        reward = com.perblue.heroes.game.logic.RewardHelper.createDrop(
+            com.perblue.heroes.network.messages.ItemType.SKILL_POINT_CONSUMABLE, amount);
+        subject = fulfilled ? "Skill help fulfilled" : "Skill help expired";
+        body = donationsReceived + " guildmate(s) donated skill points.";
+        break;
+      default:
+        return 0L;   // HERO_XP : composition du don opérateur absente du jar (§4) — non livré
+    }
     com.perblue.heroes.network.messages.MailType type = fulfilled
         ? com.perblue.heroes.network.messages.MailType.GUILD_DONATION_SUCCESS
         : com.perblue.heroes.network.messages.MailType.GUILD_DONATION_EXPIRED;
-    deliverMail(type, "Guild Aid",
-        fulfilled ? "Stamina help fulfilled" : "Stamina help expired",
-        donationsReceived + " guildmate(s) donated stamina.",
-        java.util.Collections.singletonList(reward));
+    deliverMail(type, "Guild Aid", subject, body, java.util.Collections.singletonList(reward));
     return amount;
   }
 

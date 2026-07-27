@@ -426,11 +426,16 @@ public final class LoginServer {
                 ServerGuild g = currentGuild(user);
                 if (g == null) {
                   System.out.println("[login]     ! REQUEST_GUILD_DONATION : joueur sans guilde");
-                } else if (!"STAMINA".equals(reqType)) {
-                  System.out.println("[login]     ~ REQUEST_GUILD_DONATION type=" + reqType + " pas encore géré (#55b)");
-                } else {
+                } else if ("STAMINA".equals(reqType) || "SKILL_LEVEL".equals(reqType)) {
                   try {
-                    com.perblue.heroes.network.messages.GuildDonationRequestRow row = user.postGuildStaminaRequest(g);
+                    com.perblue.heroes.network.messages.GuildDonationRequestRow row;
+                    if ("STAMINA".equals(reqType)) {
+                      row = user.postGuildStaminaRequest(g);
+                    } else {
+                      // SKILL_LEVEL (#63) : cible = act.heroType + slot dans extra[SKILL] (SkillSlot ou son nom).
+                      com.perblue.heroes.network.messages.SkillSlot slot = parseSkillSlot(act);
+                      row = user.postGuildSkillRequest(g, act.heroType, slot);
+                    }
                     store.saveGuild(g);
                     try { store.save(user); } catch (Exception e) {
                       System.out.println("[login]     ! persistance joueur échouée: " + e); }
@@ -438,14 +443,19 @@ public final class LoginServer {
                     com.perblue.heroes.network.messages.GuildDonationRequests resp = user.buildGuildDonationRequests(g);
                     resp.setAsReplyTo(m);
                     c.send(resp);
-                    System.out.println("[login] <== REQUEST_GUILD_DONATION STAMINA → demande #" + row.requestID
+                    System.out.println("[login] <== REQUEST_GUILD_DONATION " + reqType + " → demande #" + row.requestID
                         + " (" + row.totalRequestedDonations + " dons attendus, expire " + row.expiration
                         + ") [persisté] ==> GuildDonationRequests(" + resp.requests.size() + ")");
                   } catch (Throwable t) {
                     if (t instanceof com.perblue.heroes.ClientErrorCodeException) {
-                      System.out.println("[login]     ⛔ REQUEST_GUILD_DONATION STAMINA REFUSÉ (anti-triche) : " + t.getMessage());
-                    } else { System.out.println("[login]     ! postGuildStaminaRequest échec: " + t); t.printStackTrace(); }
+                      System.out.println("[login]     ⛔ REQUEST_GUILD_DONATION " + reqType + " REFUSÉ (anti-triche) : " + t.getMessage());
+                    } else { System.out.println("[login]     ! postGuild"+reqType+"Request échec: " + t); t.printStackTrace(); }
                   }
+                } else {
+                  // HERO_XP : composition du don (ItemType d'XP + quantité) fixée à la construction de la demande
+                  // côté OPÉRATEUR, absente du jar client (seul HERO_XP_DONATION_MAX_QTY=4 est connu). La choisir =
+                  // inventer une valeur → refusé par §4. Documenté dans docs/GUILD_GAPS.md (gap B).
+                  System.out.println("[login]     ~ REQUEST_GUILD_DONATION type=" + reqType + " non géré (HERO_XP = donnée opérateur, §4)");
                 }
               } else if (act.command == com.perblue.heroes.network.messages.CommandType.CHECK_IN_TO_GUILD) {
                 // CHECK-IN — émargement quotidien : crédite l'influence de guilde + récompenses au joueur (autoritatif,
@@ -1136,6 +1146,18 @@ public final class LoginServer {
         Object v = act.extra.get(key);
         if (v == null) return dflt;
         try { return Long.parseLong(v.toString().trim()); } catch (Throwable t) { return dflt; }
+      }
+
+      /** DONS SKILL #63 — le slot de compétence ciblé, depuis {@code extra[SKILL]} (SkillSlot ou son nom).
+       *  Défaut {@code WHITE} (1ᵉ slot réel ; DEFAULT/RED sont exclus des demandes d'aide côté jeu). */
+      private com.perblue.heroes.network.messages.SkillSlot parseSkillSlot(com.perblue.heroes.network.messages.Action act) {
+        Object v = act.extra == null ? null : act.extra.get(com.perblue.heroes.network.messages.ActionExtraType.SKILL);
+        if (v instanceof com.perblue.heroes.network.messages.SkillSlot) return (com.perblue.heroes.network.messages.SkillSlot) v;
+        if (v != null) {
+          try { return com.perblue.heroes.network.messages.SkillSlot.valueOf(v.toString().trim()); }
+          catch (Throwable t) { /* repli ci-dessous */ }
+        }
+        return com.perblue.heroes.network.messages.SkillSlot.WHITE;
       }
 
       /** MERCENAIRES #57 — pool de la guilde : héros postés par CE joueur + tous les autres membres. */
