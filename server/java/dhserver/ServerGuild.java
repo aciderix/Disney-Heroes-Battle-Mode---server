@@ -67,6 +67,25 @@ public final class ServerGuild {
   public final java.util.LinkedHashMap<Long, java.util.LinkedHashMap<Long, Integer>> donationsByUser =
       new java.util.LinkedHashMap<>();
 
+  // ===== v5 : CADEAUX / GUILD CRATE (#58/#66) — état OPÉRATEUR (aucun GuildGiftHelper client) =====
+  /** Cadeaux de guilde accumulés (3 listes PARALLÈLES). Un cadeau = 1 offreur + 1 horodatage + N récompenses. */
+  public final List<byte[]> giftGifterWire = new ArrayList<>();     // BasicUserInfo (octets wire) par cadeau
+  public final List<Long> giftTimes = new ArrayList<>();            // horodatage serveur par cadeau
+  public final List<byte[]> giftRewardsBlob = new ArrayList<>();    // [int n][int len + RewardDrop wire]×n par cadeau
+  /** Suivi anti-double-réclamation : userID → horodatage du dernier cadeau réclamé. */
+  public final java.util.LinkedHashMap<Long, Long> giftClaimTimes = new java.util.LinkedHashMap<>();
+  /** Identifiant d'évènement cadeau (flux de la guilde). */
+  public long giftEventID = 1L;
+  public static final int MAX_GIFT_HISTORY = 100;
+
+  /** Ajoute un cadeau (offreur + récompenses) au flux de la guilde, borné à {@code MAX_GIFT_HISTORY}. */
+  public void addGift(byte[] gifterWire, long time, byte[] rewardsBlob) {
+    giftGifterWire.add(gifterWire); giftTimes.add(time); giftRewardsBlob.add(rewardsBlob);
+    while (giftGifterWire.size() > MAX_GIFT_HISTORY) {
+      giftGifterWire.remove(0); giftTimes.remove(0); giftRewardsBlob.remove(0);
+    }
+  }
+
   public ServerGuild() {}
 
   public int checkInsToday() { return checkedInToday.size(); }
@@ -172,7 +191,7 @@ public final class ServerGuild {
 
       ByteArrayOutputStream bos = new ByteArrayOutputStream();
       DataOutputStream o = new DataOutputStream(bos);
-      o.writeInt(4);                       // version (2 = check-in/candidatures ; 3 = chat ; 4 = dons/GUILD AID)
+      o.writeInt(5);                       // version (2 = check-in/candidatures ; 3 = chat ; 4 = dons ; 5 = cadeaux)
       o.writeLong(guildID);
       o.writeInt(shardID);
       o.writeInt(infoWire.length);
@@ -202,6 +221,17 @@ public final class ServerGuild {
         o.writeInt(e.getValue().size());
         for (java.util.Map.Entry<Long, Integer> d : e.getValue().entrySet()) { o.writeLong(d.getKey()); o.writeInt(d.getValue()); }
       }
+      // v5 : cadeaux / guild crate
+      o.writeLong(giftEventID);
+      o.writeInt(giftGifterWire.size());
+      for (int i = 0; i < giftGifterWire.size(); i++) {
+        byte[] gw = giftGifterWire.get(i), rb = giftRewardsBlob.get(i);
+        o.writeLong(giftTimes.get(i));
+        o.writeInt(gw.length); o.write(gw);
+        o.writeInt(rb.length); o.write(rb);
+      }
+      o.writeInt(giftClaimTimes.size());
+      for (java.util.Map.Entry<Long, Long> e : giftClaimTimes.entrySet()) { o.writeLong(e.getKey()); o.writeLong(e.getValue()); }
       o.flush();
       return bos.toByteArray();
     } catch (Exception ex) {
@@ -247,6 +277,18 @@ public final class ServerGuild {
           for (int j = 0; j < m; j++) { long uid = in.readLong(); byUser.put(uid, in.readInt()); }
           g.donationsByUser.put(reqID, byUser);
         }
+      }
+      if (version >= 5) {
+        g.giftEventID = in.readLong();
+        int ng = in.readInt();
+        for (int i = 0; i < ng; i++) {
+          long t = in.readLong();
+          byte[] gw = new byte[in.readInt()]; in.readFully(gw);
+          byte[] rb = new byte[in.readInt()]; in.readFully(rb);
+          g.giftGifterWire.add(gw); g.giftTimes.add(t); g.giftRewardsBlob.add(rb);
+        }
+        int nc = in.readInt();
+        for (int i = 0; i < nc; i++) { long uid = in.readLong(); g.giftClaimTimes.put(uid, in.readLong()); }
       }
       return g;
     } catch (Exception ex) {

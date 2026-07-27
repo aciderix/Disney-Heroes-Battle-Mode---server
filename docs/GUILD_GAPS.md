@@ -16,8 +16,8 @@
 | A | Avatars calculés depuis le niveau de guilde | ✅ FAIT (test + push) | `5be06ee` |
 | C | Mercenaire — créditer Social Bucks au posteur | ✅ FAIT (test + push) | `cb58d5e` |
 | B | Dons SKILL_LEVEL (✅) + HERO_XP (opérateur §4) | ✅ SKILL FAIT + push | `daeb260` |
-| E | Génération serveur des cadeaux de crate | ⏳ à faire | — |
-| D | MULTI-USER + registre connexions + broadcast | ✅ FAIT (socle, compile-clean) | `<en cours>` |
+| E | Génération serveur des cadeaux de crate | ✅ FAIT (test) | `<en cours>` |
+| D | MULTI-USER + registre connexions + broadcast | ✅ FAIT (socle, compile-clean) | `0536a52` |
 | F | Contests programmables (admin) | ⏳ à faire (live-ops) | — |
 
 ---
@@ -40,7 +40,7 @@ week », reset via `getAndUpdateSocialBucks`), persisté (sauf auto-location). `
 cumul, round-trip DB. **Reste** : coût GOLD à l'emprunt (`MercenaryHeroData.cost` via `chargeForMercenary`) = fixé
 à la construction du pool (opérateur), aucune formule dans le jar client → non simulé.
 
-## B — Dons HERO_XP + SKILL_LEVEL 🔨
+## B — Dons SKILL_LEVEL ✅ + HERO_XP (opérateur §4)
 
 Faits (bytecode `GuildDonationHelper` + `guild_constants.tab`) :
 - `requestHelp(user, type, unit, skill)` valide+charge `GUILD_DONATION_REQUEST_{STAMINA|SKILL|HERO_XP}`.
@@ -63,13 +63,20 @@ jeu câblée (refus héros sans skill), escrow débite le donneur, cap 1, livrai
 Le choisir = inventer une valeur → **INTERDIT (§4)**. Handler : journalise « non géré (donnée opérateur, §4) ».
 → HERO_XP documenté comme reste opérateur (comme le coût merc à l'emprunt).
 
-## E — Génération serveur des cadeaux de crate ⏳
+## E — Génération serveur des cadeaux de crate ✅
 
-Faits : aucun `GuildGiftHelper` client (génération 100 % opérateur) ; messages `GetGuildGiftRewards` /
-`GuildGiftRewards` / `GuildGiftRewardsUpdate`. Déclencheur = achat d'un membre (les coffres payants #15 existent).
-**Design** : quand un membre fait un achat qualifiant, générer un cadeau de guilde (persisté dans l'état de
-guilde), réclamable par tous via `CLAIM_GUILD_GIFT_REWARDS`. À concevoir : structure `GuildGiftRewards`
-(champs), condition d'achat qualifiant, anti-double-claim par joueur.
+**FAIT.** `GuildGiftRewards{eventID, gifters: List<BasicUserInfo>, lastGiftTime, rewards: List<RewardDrop>}`.
+- **Stockage** `ServerGuild` **v5** : 3 listes parallèles (giftGifterWire=BasicUserInfo, giftTimes, giftRewardsBlob
+  =`[n][len+RewardDrop]×n`) + `giftClaimTimes` (userID→dernier réclamé) + `giftEventID`. Persisté (toBytes/fromBytes v5).
+- **Génération** (`ServerUser.grantGuildGift(g, rewards, time)`) = capacité OPÉRATEUR/admin (aucun `GuildGiftHelper`
+  client ; dans le vrai jeu = déclenché par un ACHAT membre). Offreur = ce joueur, récompenses = pour tous.
+- **Lecture** `GetGuildGiftRewards` → `buildGuildGiftRewards` (offreurs + récompenses agrégées + dernier temps).
+- **Réclamation** `CLAIM_GUILD_GIFT_REWARDS` → `claimGuildGifts` : crédite les cadeaux plus récents que la marque
+  du joueur (`RewardHelper.giveRewards`, source `PURCHASE`), avance la marque (anti-double-claim), persiste,
+  répond `GuildGiftRewardsUpdate{newRewards}`.
+- `GuildGiftTest` : génère (500 GOLD + 3 STAMINA), build (1 offreur/2 récompenses), membre 2 réclame (+crédité),
+  2ᵉ claim = rien, round-trip DB (cadeaux + marques persistent, membre 3 réclame, membre 2 non).
+- **Reste** : brancher `grantGuildGift` sur un ACHAT réel (coffre payant #15) et/ou le panneau admin (#37).
 
 ## D — MULTI-USER + registre de connexions + broadcast ✅ (socle)
 

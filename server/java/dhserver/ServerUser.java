@@ -961,6 +961,104 @@ public final class ServerUser {
     return resp;
   }
 
+  // ===================== CADEAUX / GUILD CRATE (#58/#66) =====================
+  // Aucun GuildGiftHelper côté client → la génération est 100% OPÉRATEUR (comme le courrier admin #37). Un cadeau
+  // = 1 offreur (BasicUserInfo) + 1 horodatage + N récompenses (RewardDrop). Persisté dans ServerGuild (v5).
+  // Réclamation autoritative : chaque joueur reçoit les cadeaux plus récents que sa marque (anti-double-claim).
+
+  /** Encode une liste de {@code RewardDrop} en blob : [int n]([int len][octets wire])×n. */
+  private static byte[] encodeRewards(java.util.List<com.perblue.heroes.network.messages.RewardDrop> rewards) throws java.io.IOException {
+    java.io.ByteArrayOutputStream bos = new java.io.ByteArrayOutputStream();
+    java.io.DataOutputStream o = new java.io.DataOutputStream(bos);
+    o.writeInt(rewards.size());
+    for (com.perblue.heroes.network.messages.RewardDrop r : rewards) {
+      com.perblue.grunt.translate.util.GruntOutputStream go = new com.perblue.grunt.translate.util.GruntOutputStream();
+      r.writeAll(go);
+      byte[] w = go.getBytes();
+      o.writeInt(w.length); o.write(w);
+    }
+    o.flush();
+    return bos.toByteArray();
+  }
+
+  /** Décode le blob produit par {@link #encodeRewards} → liste de {@code RewardDrop} (objets du jeu). */
+  private static java.util.List<com.perblue.heroes.network.messages.RewardDrop> decodeRewards(byte[] blob) throws java.io.IOException {
+    java.util.List<com.perblue.heroes.network.messages.RewardDrop> out = new java.util.ArrayList<>();
+    if (blob == null || blob.length == 0) return out;
+    java.io.DataInputStream in = new java.io.DataInputStream(new java.io.ByteArrayInputStream(blob));
+    int n = in.readInt();
+    for (int i = 0; i < n; i++) {
+      byte[] w = new byte[in.readInt()]; in.readFully(w);
+      out.add((com.perblue.heroes.network.messages.RewardDrop)
+          com.perblue.heroes.network.messages.MessageFactory.getInstance().readMessage(
+              new com.perblue.grunt.translate.util.GruntInputStream(w)));
+    }
+    return out;
+  }
+
+  /** GÉNÈRE un cadeau de guilde (capacité OPÉRATEUR/admin, comme le courrier admin #37 ; dans le vrai jeu,
+   *  déclenché par un ACHAT d'un membre). L'offreur = CE joueur, les récompenses iront à TOUS les membres qui
+   *  réclament. Persiste dans {@code ServerGuild} (v5). */
+  public synchronized void grantGuildGift(ServerGuild g, java.util.List<com.perblue.heroes.network.messages.RewardDrop> rewards, long time) {
+    if (g == null || rewards == null || rewards.isEmpty()) return;
+    ServerContext.init();
+    try {
+      com.perblue.grunt.translate.util.GruntOutputStream go = new com.perblue.grunt.translate.util.GruntOutputStream();
+      userInfo.basicInfo.writeAll(go);
+      g.addGift(go.getBytes(), time, encodeRewards(rewards));
+    } catch (java.io.IOException e) { throw new RuntimeException("encodage cadeau guilde", e); }
+  }
+
+  /** Construit {@code GuildGiftRewards} (écran GUILD CRATE) : offreurs (BasicUserInfo) + récompenses AGRÉGÉES de
+   *  tous les cadeaux + dernier horodatage. */
+  public synchronized com.perblue.heroes.network.messages.GuildGiftRewards buildGuildGiftRewards(ServerGuild g) {
+    com.perblue.heroes.network.messages.GuildGiftRewards resp = new com.perblue.heroes.network.messages.GuildGiftRewards();
+    resp.gifters = new java.util.ArrayList<>();
+    resp.rewards = new java.util.ArrayList<>();
+    resp.eventID = g == null ? 0L : g.giftEventID;
+    resp.lastGiftTime = 0L;
+    if (g == null) return resp;
+    try {
+      for (int i = 0; i < g.giftGifterWire.size(); i++) {
+        resp.gifters.add(com.perblue.heroes.network.messages.MessageFactory.getInstance().readMessage(
+            new com.perblue.grunt.translate.util.GruntInputStream(g.giftGifterWire.get(i))));
+        resp.rewards.addAll(decodeRewards(g.giftRewardsBlob.get(i)));
+        resp.lastGiftTime = Math.max(resp.lastGiftTime, g.giftTimes.get(i));
+      }
+    } catch (Exception e) { System.out.println("[guild] buildGuildGiftRewards: " + e); }
+    return resp;
+  }
+
+  /** RÉCLAME les cadeaux (CLAIM_GUILD_GIFT_REWARDS) : crédite à CE joueur (logique du jeu {@code RewardHelper
+   *  .giveRewards}, source {@code PURCHASE}) les récompenses des cadeaux plus récents que sa marque
+   *  {@code giftClaimTimes[userID]} ; avance la marque ; renvoie les récompenses accordées (pour l'Update). */
+  public synchronized java.util.List<com.perblue.heroes.network.messages.RewardDrop> claimGuildGifts(ServerGuild g) {
+    java.util.List<com.perblue.heroes.network.messages.RewardDrop> granted = new java.util.ArrayList<>();
+    if (g == null) return granted;
+    long since = g.giftClaimTimes.getOrDefault(userID, 0L);
+    long newest = since;
+    try {
+      for (int i = 0; i < g.giftGifterWire.size(); i++) {
+        long t = g.giftTimes.get(i);
+        if (t <= since) continue;                      // déjà réclamé
+        granted.addAll(decodeRewards(g.giftRewardsBlob.get(i)));
+        newest = Math.max(newest, t);
+      }
+      if (!granted.isEmpty()) {
+        ServerContext.init();
+        User user = ClientNetworkStateConverter.getUser(userInfo, userExtra, "gift");
+        IndividualUser iu = ClientNetworkStateConverter.getIndividualUser(
+            individualUserExtra, userID, userInfo.diamonds, "gift");
+        ServerContext.bind(user, iu);
+        com.perblue.heroes.game.logic.RewardHelper.giveRewards(user, granted,
+            com.perblue.heroes.game.logic.RewardSourceType.PURCHASE, new String[]{"guild gift"});
+        resyncDiamonds(user); resyncHeroes(user);
+        g.giftClaimTimes.put(userID, newest);
+      }
+    } catch (Exception e) { System.out.println("[guild] claimGuildGifts: " + e); }
+    return granted;
+  }
+
   /** Une ligne de roster ({@code PlayerGuildRow}) pour CE joueur (écran membres, ExtendedGuildInfo). */
   public synchronized com.perblue.heroes.network.messages.PlayerGuildRow buildPlayerGuildRow() {
     com.perblue.heroes.network.messages.PlayerGuildRow row =

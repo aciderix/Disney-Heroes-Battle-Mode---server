@@ -445,19 +445,26 @@ public final class LoginServer {
                   System.out.println("[login]     ⛔ ACTIVATE_TIMED_GUILD_PERK refusé (type=" + type + ")");
                 }
               } else if (act.command == com.perblue.heroes.network.messages.CommandType.CLAIM_GUILD_GIFT_REWARDS) {
-                // CADEAUX DE GUILDE (#58) — réclamer les cadeaux disponibles. Sans achat de membre générant des
-                // cadeaux, il n'y a RIEN à réclamer (état fidèle) → on acquitte par un GuildGiftRewardsUpdate vide
-                // (le callback client se termine ; l'écran reste cohérent). L'accumulation (achats→cadeaux) est une
-                // dépendance d'économie live-ops, cf. note #58.
+                // CADEAUX DE GUILDE (#58/#66) — RÉCLAME les cadeaux non encore pris par ce joueur (autoritatif) :
+                // ServerUser.claimGuildGifts crédite les récompenses (RewardHelper.giveRewards) + avance la marque
+                // anti-double-claim, persisté. Réponse GuildGiftRewardsUpdate avec les récompenses accordées.
+                ServerGuild gg = currentGuild(user);
                 com.perblue.heroes.network.messages.GuildGiftRewardsUpdate up =
                     new com.perblue.heroes.network.messages.GuildGiftRewardsUpdate();
-                up.eventID = extraLong(act, com.perblue.heroes.network.messages.ActionExtraType.ID, 0);
+                up.eventID = gg == null ? extraLong(act, com.perblue.heroes.network.messages.ActionExtraType.ID, 0) : gg.giftEventID;
+                java.util.List<com.perblue.heroes.network.messages.RewardDrop> got =
+                    gg == null ? new java.util.ArrayList<>() : user.claimGuildGifts(gg);
+                if (gg != null && !got.isEmpty()) {
+                  try { store.saveGuild(gg); store.save(user); }
+                  catch (Exception e) { System.out.println("[login]     ! persistance cadeaux: " + e); }
+                }
                 up.lastGiftTime = com.perblue.heroes.util.TimeUtil.serverTimeNow();
                 up.newGifters = new java.util.ArrayList<>();
-                up.newRewards = new java.util.ArrayList<>();
+                up.newRewards = got;
                 up.setAsReplyTo(m);
                 c.send(up);
-                System.out.println("[login] <== CLAIM_GUILD_GIFT_REWARDS → ==> GuildGiftRewardsUpdate (0 cadeau)");
+                System.out.println("[login] <== CLAIM_GUILD_GIFT_REWARDS → ==> GuildGiftRewardsUpdate ("
+                    + got.size() + " récompense(s) créditée(s)" + (got.isEmpty() ? "" : " [persisté]") + ")");
               } else if (act.command == com.perblue.heroes.network.messages.CommandType.REQUEST_GUILD_DONATION) {
                 // DONS / GUILD AID (#55) — le joueur demande de l'aide. extra[TYPE] = HERO_XP|SKILL_LEVEL|STAMINA.
                 // #55a : STAMINA (pilotable sans navigation gear) ; HERO_XP/SKILL à venir (#55b, dérivation reward).
@@ -978,18 +985,15 @@ public final class LoginServer {
               System.out.println("[login] <== GetGuildDonationRequests → ==> GuildDonationRequests ("
                   + resp.requests.size() + " demande(s))");
             } else if (m instanceof com.perblue.heroes.network.messages.GetGuildGiftRewards) {
-              // GUILD CRATE / cadeaux de guilde — récompenses de cadeau en attente. Aucune → vide.
+              // GUILD CRATE / cadeaux de guilde (#58/#66) — cadeaux accumulés de la guilde (offreurs + récompenses).
               com.perblue.heroes.network.messages.GetGuildGiftRewards req =
                   (com.perblue.heroes.network.messages.GetGuildGiftRewards) m;
-              com.perblue.heroes.network.messages.GuildGiftRewards resp =
-                  new com.perblue.heroes.network.messages.GuildGiftRewards();
-              resp.eventID = req.eventID;
-              resp.gifters = new java.util.ArrayList<>();
-              resp.rewards = new java.util.ArrayList<>();
-              resp.lastGiftTime = 0L;
+              ServerGuild gg = currentGuild(user);
+              com.perblue.heroes.network.messages.GuildGiftRewards resp = user.buildGuildGiftRewards(gg);
               resp.setAsReplyTo(m);
               c.send(resp);
-              System.out.println("[login] <== GetGuildGiftRewards(" + req.eventID + ") → ==> GuildGiftRewards (0)");
+              System.out.println("[login] <== GetGuildGiftRewards(" + req.eventID + ") → ==> GuildGiftRewards ("
+                  + resp.rewards.size() + " récompense(s), " + resp.gifters.size() + " offreur(s))");
             } else if (m instanceof com.perblue.heroes.network.messages.GetUnlockedGuildAvatars) {
               // Avatars/bordures de guilde débloqués — CALCULÉS depuis le niveau de guilde (ServerUser
               // .unlockedGuildAvatars lit guild_avatars.tab via la table cumulative du jeu). Vide = guilde
