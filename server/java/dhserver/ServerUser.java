@@ -507,6 +507,34 @@ public final class ServerUser {
     return given;
   }
 
+  /**
+   * UPGRADE d'un perk de guilde ({@code UPGRADE_GUILD_PERK}) — AUTORITATIF via la logique du jeu :
+   * {@code GuildPerkHelper.getUpgradeError} (niveau max, influence suffisante…) puis débit de l'influence de
+   * guilde ({@code getUpgradeCost}) et incrément du niveau. Le {@code GuildInfoPerkProvider(g.info)} 1-arg mute
+   * DIRECTEMENT {@code g.info.perkLevels} (pas de clone). Renvoie le nouveau niveau, ou -1 si refusé.
+   */
+  public synchronized int upgradeGuildPerk(ServerGuild g, com.perblue.heroes.network.messages.GuildPerkType type) {
+    if (g == null || type == null) return -1;
+    ServerContext.init();
+    User user = ClientNetworkStateConverter.getUser(userInfo, userExtra, "guild");
+    IndividualUser iu = ClientNetworkStateConverter.getIndividualUser(
+        individualUserExtra, userID, userInfo.diamonds, "guild");
+    ServerContext.bind(user, iu);
+    com.perblue.heroes.game.objects.GuildInfoPerkProvider perks =
+        new com.perblue.heroes.game.objects.GuildInfoPerkProvider(g.info);
+    int cur = perks.getPerkLevel(type);
+    com.perblue.heroes.util.localization.ClientErrorCode err;
+    try { err = com.perblue.heroes.game.logic.GuildPerkHelper.getUpgradeError(user, perks, type, cur + 1); }
+    catch (Throwable t) { System.out.println("[guild] getUpgradeError: " + t); return -1; }
+    if (err != null) { System.out.println("[guild] upgrade " + type + " refusé: " + err); return -1; }
+    long cost = com.perblue.heroes.game.logic.GuildPerkHelper.getUpgradeCost(perks, type);
+    g.info.influence = Math.max(0, g.info.influence - cost);
+    perks.setPerkLevel(type, cur + 1);
+    System.out.println("[guild] perk " + type + " " + cur + "→" + (cur + 1) + " (-" + cost
+        + " influence, reste " + g.info.influence + ")");
+    return cur + 1;
+  }
+
   /** Une ligne de roster ({@code PlayerGuildRow}) pour CE joueur (écran membres, ExtendedGuildInfo). */
   public synchronized com.perblue.heroes.network.messages.PlayerGuildRow buildPlayerGuildRow() {
     com.perblue.heroes.network.messages.PlayerGuildRow row =

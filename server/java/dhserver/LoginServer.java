@@ -281,6 +281,28 @@ public final class LoginServer {
                 gc.setAsReplyTo(m);
                 c.send(gc);
                 System.out.println("[login] <== " + act.command + " → ==> GuildContestRankings (vide)");
+              } else if (act.command == com.perblue.heroes.network.messages.CommandType.UPGRADE_GUILD_PERK) {
+                // PERK — upgrade autoritatif (débit influence de guilde + niveau+1). Le type de perk est dans extra.
+                System.out.println("[login]     UPGRADE_GUILD_PERK extra=" + act.extra);
+                ServerGuild g = currentGuild(user);
+                com.perblue.heroes.network.messages.GuildPerkType type = parseGuildPerkType(act);
+                int newLvl = (g == null || type == null) ? -1 : user.upgradeGuildPerk(g, type);
+                if (newLvl < 0) {
+                  System.out.println("[login]     ⛔ UPGRADE_GUILD_PERK refusé (type=" + type + ")");
+                } else {
+                  store.saveGuild(g);
+                  com.perblue.heroes.network.messages.GuildPerkUpgraded up =
+                      new com.perblue.heroes.network.messages.GuildPerkUpgraded();
+                  up.guildID = g.guildID; up.perk = type; up.perkLevel = newLvl; up.influence = g.info.influence;
+                  up.setAsReplyTo(m);
+                  c.send(up);
+                  com.perblue.heroes.network.messages.GuildInfluenceDiff idf =
+                      new com.perblue.heroes.network.messages.GuildInfluenceDiff();
+                  idf.guildID = g.guildID; idf.influence = g.info.influence;
+                  c.send(idf);
+                  System.out.println("[login] <== UPGRADE_GUILD_PERK " + type + " → niv." + newLvl
+                      + " [persisté] ==> GuildPerkUpgraded + GuildInfluenceDiff");
+                }
               } else if (act.command == com.perblue.heroes.network.messages.CommandType.CHECK_IN_TO_GUILD) {
                 // CHECK-IN — émargement quotidien : crédite l'influence de guilde + récompenses au joueur (autoritatif,
                 // 1×/jour horloge serveur). Persiste guilde + joueur. Répond GuildCheckInInfo (état mis à jour) +
@@ -546,8 +568,15 @@ public final class LoginServer {
                 egi.newestGuildDonationRequest = 0L;
                 egi.setAsReplyTo(m);
                 c.send(egi);
+                // Synchronise l'INFLUENCE côté client (User.getGuildInfluence, séparé de guildInfo.influence) — sinon
+                // le compteur affiche 0 et le client BLOQUE les upgrades de perk. GuildInfluenceDiff = message dédié.
+                com.perblue.heroes.network.messages.GuildInfluenceDiff idf =
+                    new com.perblue.heroes.network.messages.GuildInfluenceDiff();
+                idf.guildID = g.guildID; idf.influence = g.info.influence;
+                c.send(idf);
                 System.out.println("[login] <== RequestExtendedGuildInfo #" + req.guildID
-                    + " → ==> ExtendedGuildInfo (" + egi.members.size() + " membre(s))");
+                    + " → ==> ExtendedGuildInfo (" + egi.members.size() + " membre(s)) + GuildInfluenceDiff("
+                    + g.info.influence + ")");
               }
             } else if (m instanceof com.perblue.heroes.network.messages.JoinGuild) {
               // GUILDES #7 — rejoindre une guilde OUVERTE (OPEN). Politiques APPLICATION_ONLY/PRIVATE = flux de
@@ -846,6 +875,24 @@ public final class LoginServer {
         }
       }
       private String arena(boolean coli) { return coli ? "Coliseum" : "Fight Pit"; }
+
+      /** GUILDES #7 — extrait le {@code GuildPerkType} d'une action UPGRADE/ACTIVATE (clé d'extra tolérante :
+       *  TYPE/INDEX/ID selon l'encodage client — on essaie chaque valeur comme nom d'enum). */
+      private com.perblue.heroes.network.messages.GuildPerkType parseGuildPerkType(
+          com.perblue.heroes.network.messages.Action act) {
+        if (act.extra == null) return null;
+        com.perblue.heroes.network.messages.ActionExtraType[] keys = {
+            com.perblue.heroes.network.messages.ActionExtraType.TYPE,
+            com.perblue.heroes.network.messages.ActionExtraType.INDEX,
+            com.perblue.heroes.network.messages.ActionExtraType.ID };
+        for (com.perblue.heroes.network.messages.ActionExtraType k : keys) {
+          Object v = act.extra.get(k);
+          if (v == null) continue;
+          try { return com.perblue.heroes.network.messages.GuildPerkType.valueOf(v.toString()); }
+          catch (Throwable ignore) {}
+        }
+        return null;
+      }
 
       /** GUILDES #7 — la guilde courante du joueur (ou {@code null} s'il n'en a pas / introuvable). */
       private ServerGuild currentGuild(ServerUser u) {
