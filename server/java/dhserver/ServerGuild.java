@@ -56,6 +56,17 @@ public final class ServerGuild {
   /** Le client borne l'affichage du salon GUILD (SocialDataManager.MAX_HISTORY) ; on borne le stockage de même. */
   public static final int MAX_CHAT_HISTORY = 100;
 
+  // --- DONS / GUILD AID (écran GUILD AID ; #55) ---
+  /** Demandes d'aide ACTIVES : octets wire de chaque {@link com.perblue.heroes.network.messages.GuildDonationRequestRow}
+   *  (objet du jeu). Le builder de demande n'existe PAS dans le jar client (comme ArenaInfo — état opérateur
+   *  PerBlue) → synthétisé et persisté ici (multi-serveur §5). */
+  public final List<byte[]> donationRequestsWire = new ArrayList<>();
+  /** Prochain identifiant de demande (unique par guilde). */
+  public long nextRequestID = 1L;
+  /** Suivi des dons par demande : requestID → (userID donateur → nombre de dons). État opérateur (#55b). */
+  public final java.util.LinkedHashMap<Long, java.util.LinkedHashMap<Long, Integer>> donationsByUser =
+      new java.util.LinkedHashMap<>();
+
   public ServerGuild() {}
 
   public int checkInsToday() { return checkedInToday.size(); }
@@ -64,6 +75,28 @@ public final class ServerGuild {
   public void addChatWire(byte[] wire) {
     guildChatWire.add(wire);
     while (guildChatWire.size() > MAX_CHAT_HISTORY) guildChatWire.remove(0);
+  }
+
+  /** Ajoute une demande d'aide (octets wire d'un {@link com.perblue.heroes.network.messages.GuildDonationRequestRow}). */
+  public void addDonationRequestWire(byte[] wire) { donationRequestsWire.add(wire); }
+
+  /** Relit les demandes d'aide en objets du jeu, en PURGEANT au passage les demandes expirées/complétées
+   *  ({@code expiration <= now} ou {@code remainingDonations <= 0}) — l'écran n'affiche que les actives. */
+  public List<com.perblue.heroes.network.messages.GuildDonationRequestRow> donationRequests() {
+    long now = com.perblue.heroes.util.TimeUtil.serverTimeNow();
+    List<com.perblue.heroes.network.messages.GuildDonationRequestRow> out = new ArrayList<>();
+    java.util.Iterator<byte[]> it = donationRequestsWire.iterator();
+    while (it.hasNext()) {
+      byte[] w = it.next();
+      try {
+        com.perblue.heroes.network.messages.GuildDonationRequestRow r =
+            (com.perblue.heroes.network.messages.GuildDonationRequestRow)
+                MessageFactory.getInstance().readMessage(new GruntInputStream(w));
+        if (r.expiration <= now || r.remainingDonations <= 0) { it.remove(); donationsByUser.remove(r.requestID); continue; }
+        out.add(r);
+      } catch (Exception ignore) { it.remove(); }
+    }
+    return out;
   }
 
   /** Relit l'historique en objets {@link com.perblue.heroes.network.messages.Chat} du jeu (pour resync/broadcast). */
@@ -119,7 +152,7 @@ public final class ServerGuild {
 
       ByteArrayOutputStream bos = new ByteArrayOutputStream();
       DataOutputStream o = new DataOutputStream(bos);
-      o.writeInt(3);                       // version (2 = + check-in + candidatures ; 3 = + chat)
+      o.writeInt(4);                       // version (2 = check-in/candidatures ; 3 = chat ; 4 = dons/GUILD AID)
       o.writeLong(guildID);
       o.writeInt(shardID);
       o.writeInt(infoWire.length);
@@ -139,6 +172,16 @@ public final class ServerGuild {
       o.writeLong(nextChatID);
       o.writeInt(guildChatWire.size());
       for (byte[] w : guildChatWire) { o.writeInt(w.length); o.write(w); }
+      // v4 : dons / GUILD AID
+      o.writeLong(nextRequestID);
+      o.writeInt(donationRequestsWire.size());
+      for (byte[] w : donationRequestsWire) { o.writeInt(w.length); o.write(w); }
+      o.writeInt(donationsByUser.size());
+      for (java.util.Map.Entry<Long, java.util.LinkedHashMap<Long, Integer>> e : donationsByUser.entrySet()) {
+        o.writeLong(e.getKey());
+        o.writeInt(e.getValue().size());
+        for (java.util.Map.Entry<Long, Integer> d : e.getValue().entrySet()) { o.writeLong(d.getKey()); o.writeInt(d.getValue()); }
+      }
       o.flush();
       return bos.toByteArray();
     } catch (Exception ex) {
@@ -171,6 +214,19 @@ public final class ServerGuild {
         g.nextChatID = in.readLong();
         int cc = in.readInt();
         for (int i = 0; i < cc; i++) { byte[] w = new byte[in.readInt()]; in.readFully(w); g.guildChatWire.add(w); }
+      }
+      if (version >= 4) {
+        g.nextRequestID = in.readLong();
+        int dr = in.readInt();
+        for (int i = 0; i < dr; i++) { byte[] w = new byte[in.readInt()]; in.readFully(w); g.donationRequestsWire.add(w); }
+        int nd = in.readInt();
+        for (int i = 0; i < nd; i++) {
+          long reqID = in.readLong();
+          int m = in.readInt();
+          java.util.LinkedHashMap<Long, Integer> byUser = new java.util.LinkedHashMap<>();
+          for (int j = 0; j < m; j++) { long uid = in.readLong(); byUser.put(uid, in.readInt()); }
+          g.donationsByUser.put(reqID, byUser);
+        }
       }
       return g;
     } catch (Exception ex) {

@@ -583,6 +583,77 @@ public final class ServerUser {
     return sh;
   }
 
+  // ===================== DONS / GUILD AID (#55) =====================
+  // Le client (ClientActionHelper.requestStamina) envoie Action{REQUEST_GUILD_DONATION, TYPE=STAMINA}. Le serveur
+  // AUTORITATIF valide+charge via la logique du jeu (GuildDonationHelper.requestHelp) puis SYNTHÉTISE la demande
+  // opérateur (GuildDonationRequestRow — builder absent du jar client, comme ArenaInfo) et la persiste dans la
+  // guilde. La composition STAMINA est dérivée des STATS DU JEU (pas inventée, §4) : chaque don = 1
+  // STAMINA_CONSUMABLE ; nombre total de dons = GuildStats.getStaminaHelpAmount(maxTL) (= le total d'aide attendu) ;
+  // expiration = now + GuildStats.getHelpRequestDuration().
+
+  /** Poste une demande d'aide STAMINA (autoritatif). Renvoie la {@code GuildDonationRequestRow} créée, ou lève une
+   *  {@code ClientErrorCodeException} (déjà une demande active, ressource épuisée, cap de niveau…) — refus fidèle. */
+  public synchronized com.perblue.heroes.network.messages.GuildDonationRequestRow postGuildStaminaRequest(ServerGuild g) {
+    if (g == null) return null;
+    ServerContext.init();
+    User user = ClientNetworkStateConverter.getUser(userInfo, userExtra, "donreq");
+    IndividualUser iu = ClientNetworkStateConverter.getIndividualUser(
+        individualUserExtra, userID, userInfo.diamonds, "donreq");
+    ServerContext.bind(user, iu);
+    // 1) VALIDATION + CHARGE (logique du jeu ; lève ClientErrorCodeException si illégitime) — 1× GUILD_DONATION_REQUEST_STAMINA.
+    com.perblue.heroes.game.logic.GuildDonationHelper.requestHelp(user,
+        com.perblue.heroes.network.messages.GuildDonationRequestType.STAMINA,
+        com.perblue.heroes.network.messages.UnitType.DEFAULT, com.perblue.heroes.network.messages.SkillSlot.DEFAULT);
+    // 2) Composition de la demande (valeurs des STATS du jeu).
+    int maxTL = com.perblue.heroes.game.data.content.ContentHelper.getCurrent(user).getMaxTeamLevel();
+    int total = Math.max(1, com.perblue.heroes.game.data.guild.GuildStats.getStaminaHelpAmount(maxTL));
+    long now = com.perblue.heroes.util.TimeUtil.serverTimeNow();
+    com.perblue.heroes.network.messages.GuildDonationRequestRow row =
+        new com.perblue.heroes.network.messages.GuildDonationRequestRow();
+    row.requestID = g.nextRequestID++;
+    row.member = userInfo.basicInfo;
+    row.type = com.perblue.heroes.network.messages.GuildDonationRequestType.STAMINA;
+    row.donation = com.perblue.heroes.game.logic.RewardHelper.createDrop(
+        com.perblue.heroes.network.messages.ItemType.STAMINA_CONSUMABLE, 1L);
+    row.totalRequestedDonations = total;
+    row.remainingDonations = total;
+    row.yourDonations = 0;
+    row.expiration = now + com.perblue.heroes.game.data.guild.GuildStats.getHelpRequestDuration();
+    // 3) Marqueur côté demandeur (individu, auto-persisté this.extra) — le client interdit les doublons via ceci.
+    com.perblue.heroes.network.messages.GuildDonationRequestUserData ud =
+        new com.perblue.heroes.network.messages.GuildDonationRequestUserData();
+    ud.iD = row.requestID;
+    ud.type = com.perblue.heroes.network.messages.GuildDonationRequestType.STAMINA;
+    ud.unit = com.perblue.heroes.network.messages.UnitType.DEFAULT;
+    ud.skill = com.perblue.heroes.network.messages.SkillSlot.DEFAULT;
+    ud.expiration = row.expiration;
+    iu.addGuildDonationRequest(ud);
+    // 4) Archive dans la guilde (octets wire).
+    com.perblue.grunt.translate.util.GruntOutputStream gout = new com.perblue.grunt.translate.util.GruntOutputStream();
+    row.writeAll(gout);
+    g.addDonationRequestWire(gout.getBytes());
+    g.donationsByUser.put(row.requestID, new java.util.LinkedHashMap<>());
+    return row;
+  }
+
+  /** Construit la réponse {@code GuildDonationRequests} (écran GUILD AID) à partir des demandes actives de la guilde,
+   *  en marquant {@code yourDonations} pour CE joueur. */
+  public synchronized com.perblue.heroes.network.messages.GuildDonationRequests buildGuildDonationRequests(ServerGuild g) {
+    com.perblue.heroes.network.messages.GuildDonationRequests resp =
+        new com.perblue.heroes.network.messages.GuildDonationRequests();
+    resp.guildID = g == null ? currentGuildID() : g.guildID;
+    java.util.List<com.perblue.heroes.network.messages.GuildDonationRequestRow> rows = new java.util.ArrayList<>();
+    if (g != null) {
+      for (com.perblue.heroes.network.messages.GuildDonationRequestRow r : g.donationRequests()) {
+        java.util.LinkedHashMap<Long, Integer> byUser = g.donationsByUser.get(r.requestID);
+        r.yourDonations = byUser == null ? 0 : byUser.getOrDefault(userID, 0);
+        rows.add(r);
+      }
+    }
+    resp.requests = rows;
+    return resp;
+  }
+
   /** Une ligne de roster ({@code PlayerGuildRow}) pour CE joueur (écran membres, ExtendedGuildInfo). */
   public synchronized com.perblue.heroes.network.messages.PlayerGuildRow buildPlayerGuildRow() {
     com.perblue.heroes.network.messages.PlayerGuildRow row =

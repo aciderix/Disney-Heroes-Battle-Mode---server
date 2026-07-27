@@ -314,6 +314,35 @@ public final class LoginServer {
                   System.out.println("[login] <== UPGRADE_GUILD_PERK " + type + " → niv." + newLvl
                       + " [persisté] ==> GuildPerkUpgraded + GuildInfluenceDiff");
                 }
+              } else if (act.command == com.perblue.heroes.network.messages.CommandType.REQUEST_GUILD_DONATION) {
+                // DONS / GUILD AID (#55) — le joueur demande de l'aide. extra[TYPE] = HERO_XP|SKILL_LEVEL|STAMINA.
+                // #55a : STAMINA (pilotable sans navigation gear) ; HERO_XP/SKILL à venir (#55b, dérivation reward).
+                Object tv = act.extra == null ? null : act.extra.get(com.perblue.heroes.network.messages.ActionExtraType.TYPE);
+                String reqType = tv == null ? "" : tv.toString();
+                ServerGuild g = currentGuild(user);
+                if (g == null) {
+                  System.out.println("[login]     ! REQUEST_GUILD_DONATION : joueur sans guilde");
+                } else if (!"STAMINA".equals(reqType)) {
+                  System.out.println("[login]     ~ REQUEST_GUILD_DONATION type=" + reqType + " pas encore géré (#55b)");
+                } else {
+                  try {
+                    com.perblue.heroes.network.messages.GuildDonationRequestRow row = user.postGuildStaminaRequest(g);
+                    store.saveGuild(g);
+                    try { store.save(user); } catch (Exception e) {
+                      System.out.println("[login]     ! persistance joueur échouée: " + e); }
+                    // Rafraîchit l'écran GUILD AID du demandeur (listener global GuildDonationRequests).
+                    com.perblue.heroes.network.messages.GuildDonationRequests resp = user.buildGuildDonationRequests(g);
+                    resp.setAsReplyTo(m);
+                    c.send(resp);
+                    System.out.println("[login] <== REQUEST_GUILD_DONATION STAMINA → demande #" + row.requestID
+                        + " (" + row.totalRequestedDonations + " dons attendus, expire " + row.expiration
+                        + ") [persisté] ==> GuildDonationRequests(" + resp.requests.size() + ")");
+                  } catch (Throwable t) {
+                    if (t instanceof com.perblue.heroes.ClientErrorCodeException) {
+                      System.out.println("[login]     ⛔ REQUEST_GUILD_DONATION STAMINA REFUSÉ (anti-triche) : " + t.getMessage());
+                    } else { System.out.println("[login]     ! postGuildStaminaRequest échec: " + t); t.printStackTrace(); }
+                  }
+                }
               } else if (act.command == com.perblue.heroes.network.messages.CommandType.CHECK_IN_TO_GUILD) {
                 // CHECK-IN — émargement quotidien : crédite l'influence de guilde + récompenses au joueur (autoritatif,
                 // 1×/jour horloge serveur). Persiste guilde + joueur. Répond GuildCheckInInfo (état mis à jour) +
@@ -781,15 +810,17 @@ public final class LoginServer {
                     + (ok ? " appliqué [persisté]" : " refusé (rôle)") + " ==> UserGuildUpdate(DEFAULT)");
               }
             } else if (m instanceof com.perblue.heroes.network.messages.GetGuildDonationRequests) {
-              // GUILD AID — liste des demandes de don en attente (écran GUILD AID). Aucune demande ouverte → liste
-              // vide = réponse autoritative (l'écran rend « aucune demande » au lieu de « LOADING… »).
-              com.perblue.heroes.network.messages.GuildDonationRequests resp =
-                  new com.perblue.heroes.network.messages.GuildDonationRequests();
-              resp.guildID = user.currentGuildID();
-              resp.requests = new java.util.ArrayList<>();
+              // GUILD AID (#55) — liste des demandes d'aide ACTIVES de la guilde (purge des expirées/complétées).
+              ServerGuild g = currentGuild(user);
+              com.perblue.heroes.network.messages.GuildDonationRequests resp = g == null
+                  ? new com.perblue.heroes.network.messages.GuildDonationRequests()
+                  : user.buildGuildDonationRequests(g);
+              if (g == null) { resp.guildID = user.currentGuildID(); resp.requests = new java.util.ArrayList<>(); }
+              else { store.saveGuild(g); }   // la purge des demandes expirées est persistée
               resp.setAsReplyTo(m);
               c.send(resp);
-              System.out.println("[login] <== GetGuildDonationRequests → ==> GuildDonationRequests (0 demande)");
+              System.out.println("[login] <== GetGuildDonationRequests → ==> GuildDonationRequests ("
+                  + resp.requests.size() + " demande(s))");
             } else if (m instanceof com.perblue.heroes.network.messages.GetGuildGiftRewards) {
               // GUILD CRATE / cadeaux de guilde — récompenses de cadeau en attente. Aucune → vide.
               com.perblue.heroes.network.messages.GetGuildGiftRewards req =

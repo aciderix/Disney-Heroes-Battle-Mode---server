@@ -799,6 +799,20 @@ public final class TutorialDriver {
         } catch (Throwable t) { System.out.println("[guildchat] échec: " + t); }
     }
 
+    /** DEV : poste une demande d'aide STAMINA (GUILD AID) via le CHEMIN RÉEL du jeu
+     *  ({@code ClientActionHelper.requestStamina()} → Action REQUEST_GUILD_DONATION), sans navigation gear.
+     *  Invoqué via clickfile "requeststamina". */
+    public static void requestStaminaAid(GameMain game) {
+        try {
+            com.perblue.heroes.game.objects.User u = game.getYourUser();
+            if (u == null || !com.perblue.heroes.game.logic.GuildHelper.isInGuild(u)) {
+                System.out.println("[requeststamina] joueur sans guilde — ignoré"); return;
+            }
+            com.perblue.heroes.game.ClientActionHelper.requestStamina();
+            System.out.println("[requeststamina] Action REQUEST_GUILD_DONATION(STAMINA) envoyée [chemin réel]");
+        } catch (Throwable t) { System.out.println("[requeststamina] échec: " + t); }
+    }
+
     /** DEV : dumpe le contenu du salon de chat GUILD tel que le CLIENT le connaît
      *  ({@code SocialDataManager.getChatForRoom(GUILD)}) — prouve que le client a bien reçu/stocké les Chat
      *  (echo serveur + resync de boot). Invoqué via clickfile "chatdump". */

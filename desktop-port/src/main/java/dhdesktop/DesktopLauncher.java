@@ -300,6 +300,10 @@ public final class DesktopLauncher {
                     TutorialDriver.openChat(game);
                     continue;
                 }
+                if (low.equals("requeststamina")) {              // requeststamina — poster une demande d'aide STAMINA (GUILD AID)
+                    TutorialDriver.requestStaminaAid(game);
+                    continue;
+                }
                 if (low.startsWith("fire ")) {                   // fire x,y — clic robuste (InputEvent scene2d sur l'acteur)
                     String[] f = ln.substring(5).trim().split("[,;\\s]+");
                     if (f.length >= 2) TutorialDriver.fireClick(game,
