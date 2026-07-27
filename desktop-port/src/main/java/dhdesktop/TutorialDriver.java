@@ -625,6 +625,67 @@ public final class TutorialDriver {
         } catch (Throwable t) { System.out.println("[clicdump] err " + t); }
     }
 
+    /** DEV : CLIC ROBUSTE — trouve l'acteur scene2d au point (comme dumpClickTarget) et lui envoie une séquence
+     *  d'{@code InputEvent} touchDown+touchUp CORRECTE (stage/coords/pointer/bouton) via {@code actor.fire()}, ce qui
+     *  déclenche à coup sûr les {@code ClickListener}/{@code ChangeListener} — indépendamment de quel {@code Stage}
+     *  est enregistré comme {@code InputProcessor} courant (certains sous-écrans ont un stage propre non branché sur
+     *  {@code Gdx.input}, d'où des taps « perdus » via le chemin processor). Log l'acteur touché + ses listeners.
+     *  Renvoie true si un acteur a été touché. Invoqué via dh.clickfile "fire x,y". */
+    public static boolean fireClick(GameMain game, int cx, int cy) {
+        try {
+            Object screen = game.getScreenManager().getScreen();
+            Stage st = null;
+            try { Group root = (Group) screen.getClass().getMethod("getRootStack").invoke(screen);
+                  if (root != null) st = root.getStage(); } catch (Throwable ignore) {}
+            if (st == null) {
+                List<?> ws = screenWindows(screen);
+                if (ws != null) for (Object w : ws) if (w instanceof Actor && ((Actor) w).getStage() != null) { st = ((Actor) w).getStage(); break; }
+            }
+            if (st == null) { System.out.println("[fire] pas de stage"); return false; }
+            Vector2 sc = st.screenToStageCoordinates(new Vector2(cx, cy));
+            Actor hit = st.hit(sc.x, sc.y, true);
+            if (hit == null) { System.out.println("[fire] aucun acteur en (" + cx + "," + cy + ")"); return false; }
+            java.util.List<String> ls = new java.util.ArrayList<>();
+            for (com.badlogic.gdx.scenes.scene2d.EventListener l : hit.getListeners()) ls.add(l.getClass().getSimpleName());
+            System.out.println("[fire] cible=" + hit.getClass().getSimpleName() + " stage(" + (int) sc.x + "," + (int) sc.y
+                + ") listeners=" + ls);
+            com.badlogic.gdx.scenes.scene2d.InputEvent down = new com.badlogic.gdx.scenes.scene2d.InputEvent();
+            down.setType(com.badlogic.gdx.scenes.scene2d.InputEvent.Type.touchDown);
+            down.setStage(st); down.setStageX(sc.x); down.setStageY(sc.y); down.setPointer(0); down.setButton(0);
+            hit.fire(down);
+            com.badlogic.gdx.scenes.scene2d.InputEvent up = new com.badlogic.gdx.scenes.scene2d.InputEvent();
+            up.setType(com.badlogic.gdx.scenes.scene2d.InputEvent.Type.touchUp);
+            up.setStage(st); up.setStageX(sc.x); up.setStageY(sc.y); up.setPointer(0); up.setButton(0);
+            hit.fire(up);
+            System.out.println("[fire] touchDown+touchUp envoyés sur " + hit.getClass().getSimpleName());
+            return true;
+        } catch (Throwable t) { System.out.println("[fire] échec: " + t); return false; }
+    }
+
+    /** DEV : déclenche le CHECK-IN de guilde via le CHEMIN D'ENVOI RÉEL du jeu ({@code GuildCheckInScreen.doCheckIn}
+     *  → {@code ClientActionHelper.checkInToGuild}), en contournant la GARDE CLIENTE du bouton ({@code canCheckIn}
+     *  s'appuie sur {@code getLastCheckinResetTime} qui dépend de l'infra de fuseau de guilde et peut renvoyer une
+     *  valeur aberrante → bouton no-op) — le SERVEUR reste autoritatif (sa propre garde quotidienne décide). Invoqué
+     *  via dh.clickfile "docheckin". */
+    public static void doGuildCheckIn(GameMain game) {
+        try {
+            Object screen = game.getScreenManager().getScreen();
+            if (screen == null || !screen.getClass().getSimpleName().contains("GuildCheckIn")) {
+                System.out.println("[docheckin] écran courant = "
+                    + (screen == null ? "null" : screen.getClass().getSimpleName()) + " (pas GuildCheckInScreen)");
+                return;
+            }
+            java.lang.reflect.Method mth = null;
+            for (Class<?> c = screen.getClass(); c != null && mth == null; c = c.getSuperclass()) {
+                try { mth = c.getDeclaredMethod("doCheckIn"); } catch (NoSuchMethodException ignore) {}
+            }
+            if (mth == null) { System.out.println("[docheckin] doCheckIn introuvable"); return; }
+            mth.setAccessible(true);
+            mth.invoke(screen);
+            System.out.println("[docheckin] doCheckIn() invoqué [chemin d'envoi réel du jeu]");
+        } catch (Throwable t) { System.out.println("[docheckin] échec: " + t); }
+    }
+
     /** DEV : navigue vers une destination du hub via l'API DU JEU (UINavHelper.navigateTo), en RESPECTANT le
      *  verrou de nav (canNavigateTo=false = tuto/unlockable non levé → on n'ouvre pas ; fidèle, §2). */
     public static void navTo(GameMain game, com.perblue.heroes.ui.UINavHelper.Destination dest) {

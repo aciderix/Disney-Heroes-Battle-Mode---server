@@ -288,6 +288,16 @@ public final class DesktopLauncher {
                     TutorialDriver.createGuild(game, ln.substring(12).trim());
                     continue;
                 }
+                if (low.startsWith("fire ")) {                   // fire x,y — clic robuste (InputEvent scene2d sur l'acteur)
+                    String[] f = ln.substring(5).trim().split("[,;\\s]+");
+                    if (f.length >= 2) TutorialDriver.fireClick(game,
+                        Integer.parseInt(f[0].trim()), Integer.parseInt(f[1].trim()));
+                    continue;
+                }
+                if (low.equals("docheckin")) {                   // docheckin — check-in de guilde (chemin d'envoi réel)
+                    TutorialDriver.doGuildCheckIn(game);
+                    continue;
+                }
                 // --- Ligne "dump" (sans tap) : juste enregistrer l'écran+acteurs sous un point ---
                 boolean dumpOnly = low.startsWith("dump");
                 if (dumpOnly) ln = ln.substring(4).trim();
