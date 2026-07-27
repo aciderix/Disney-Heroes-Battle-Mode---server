@@ -931,13 +931,16 @@ public final class LoginServer {
               c.send(resp);
               System.out.println("[login] <== GetGuildGiftRewards(" + req.eventID + ") → ==> GuildGiftRewards (0)");
             } else if (m instanceof com.perblue.heroes.network.messages.GetUnlockedGuildAvatars) {
-              // Avatars/emblèmes de guilde débloqués — liste (vide = aucun débloqué).
+              // Avatars/bordures de guilde débloqués — CALCULÉS depuis le niveau de guilde (ServerUser
+              // .unlockedGuildAvatars lit guild_avatars.tab via la table cumulative du jeu). Vide = guilde
+              // sans avatar au niveau courant (la table est cumulative, aucun accès manuel aux données).
+              ServerGuild ag = user.inGuild() ? store.loadGuild(user.shardID, user.currentGuildID()) : null;
               com.perblue.heroes.network.messages.UnlockedGuildAvatars resp =
                   new com.perblue.heroes.network.messages.UnlockedGuildAvatars();
-              resp.avatars = new java.util.ArrayList<>();
+              resp.avatars = user.unlockedGuildAvatars(ag);
               resp.setAsReplyTo(m);
               c.send(resp);
-              System.out.println("[login] <== GetUnlockedGuildAvatars → ==> UnlockedGuildAvatars (0)");
+              System.out.println("[login] <== GetUnlockedGuildAvatars → ==> UnlockedGuildAvatars (" + resp.avatars.size() + ")");
             } else if (m instanceof com.perblue.heroes.network.messages.SendChat) {
               // CHAT de guilde (#59) : le client (ChatWindow) envoie un SendChat pour le salon GUILD, SANS l'afficher
               // localement (contrairement au chat global) → il attend que le serveur lui RENVOIE le Chat. Le serveur

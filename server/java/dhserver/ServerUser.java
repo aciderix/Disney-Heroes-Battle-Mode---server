@@ -460,6 +460,48 @@ public final class ServerUser {
   }
 
   /**
+   * AVATARS de guilde débloqués ({@code GetUnlockedGuildAvatars}) — calculés depuis le NIVEAU de guilde
+   * ({@code GuildHelper.getGuildLevel} = le plus haut perk {@code GLn} acheté : GL1→1 … GL6→6, aucun→0) et la
+   * table {@code guild_avatars.tab} (colonne {@code REQUIRED_GUILD_LEVEL}). La table du jeu ({@code GuildStats
+   * .GUILD_AVATAR_STATS.avatars[]}, indexée par niveau 0..99) est CUMULATIVE : {@code avatars[L]} contient déjà
+   * tous les avatars de niveau ≤ L (le parse post-traite en ajoutant les niveaux inférieurs, et pose
+   * {@code avatars[0]=avatars[1]}). Donc un seul accès {@code avatars[level].getList()} suffit. On lit la table
+   * du jeu par réflexion (champ statique privé), aucune donnée réécrite (§4). Renvoie la liste vide si la table
+   * n'est pas chargée (jamais d'échec d'écran). */
+  public synchronized java.util.List<com.perblue.heroes.network.messages.Avatar> unlockedGuildAvatars(ServerGuild g) {
+    ServerContext.init();
+    java.util.List<com.perblue.heroes.network.messages.Avatar> out = new java.util.ArrayList<>();
+    if (g == null) return out;
+    com.perblue.heroes.game.objects.GuildInfoPerkProvider perks =
+        new com.perblue.heroes.game.objects.GuildInfoPerkProvider(g.info);
+    int level;
+    try { level = com.perblue.heroes.game.logic.GuildHelper.getGuildLevel(perks); }
+    catch (Throwable t) { level = 0; }
+    try {
+      java.lang.reflect.Field statsF =
+          com.perblue.heroes.game.data.guild.GuildStats.class.getDeclaredField("GUILD_AVATAR_STATS");
+      statsF.setAccessible(true);
+      Object stats = statsF.get(null);
+      java.lang.reflect.Field arrF = stats.getClass().getDeclaredField("avatars");
+      arrF.setAccessible(true);
+      Object[] arr = (Object[]) arrF.get(stats);   // GuildStats.GuildAvatarSet[]
+      int idx = Math.max(0, Math.min(level, arr.length - 1));
+      Object set = arr[idx];
+      if (set != null) {
+        java.lang.reflect.Method getList = set.getClass().getMethod("getList");
+        getList.setAccessible(true);   // méthode publique sur classe imbriquée non publique
+        @SuppressWarnings("unchecked")
+        java.util.List<com.perblue.heroes.network.messages.Avatar> list =
+            (java.util.List<com.perblue.heroes.network.messages.Avatar>) getList.invoke(set);
+        if (list != null) out.addAll(list);
+      }
+    } catch (Throwable t) {
+      System.out.println("[guild] unlockedGuildAvatars indispo (table avatars) : " + t);
+    }
+    return out;
+  }
+
+  /**
    * CHECK-IN de guilde ({@code CHECK_IN_TO_GUILD}) — le joueur émarge une fois par jour. AUTORITATIF via la
    * logique du jeu : {@code GuildCheckInHelper.canCheckIn} (garde quotidienne, horloge serveur), {@code checkIn}
    * (état individuel), {@code addIndividualRewards} (récompenses au joueur) ; côté GUILDE on enregistre le membre
