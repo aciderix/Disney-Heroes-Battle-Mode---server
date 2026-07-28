@@ -352,6 +352,17 @@ public final class ServerUser {
     return g == null ? 0L : g.contestPointsByUser.getOrDefault(userID, 0L);
   }
 
+  /** CLÔTURE DE SAISON (#67) — livre à CE joueur les récompenses du palier atteint par SA guilde, par COURRIER
+   *  (canal autoritatif, comme les dons et l'admin). Renvoie le nombre de récompenses livrées. */
+  public synchronized int deliverContestSeasonReward(String seasonName, int guildRank, ServerContest.Tier tier) {
+    if (tier == null || tier.rewards.isEmpty()) return 0;
+    deliverMail(com.perblue.heroes.network.messages.MailType.SYSTEM_MESSAGE, "Guild Contest",
+        "Contest results: rank #" + guildRank,
+        "Your guild finished #" + guildRank + " in « " + seasonName + " ». Congratulations!",
+        new java.util.ArrayList<>(tier.rewards));
+    return tier.rewards.size();
+  }
+
   // ===================== GUILDES #7 =====================
   // L'appartenance de guilde du joueur vit dans BasicUserInfo (guildID/guildRole), déjà persisté (userInfo BLOB)
   // et relu par le client au boot (ClientNetworkStateConverter → User.setGuildID/Role). L'état de la GUILDE

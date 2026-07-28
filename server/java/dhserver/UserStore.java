@@ -48,6 +48,38 @@ public final class UserStore implements AutoCloseable {
       s.execute("CREATE TABLE IF NOT EXISTS guilds ("
           + "shardID INTEGER NOT NULL, guildID INTEGER NOT NULL, guild BLOB NOT NULL, "
           + "name TEXT, updatedAt INTEGER NOT NULL, PRIMARY KEY (shardID, guildID))");
+      // ÉTAT SHARD générique (clé → BLOB) : état opérateur qui n'appartient à AUCUN joueur ni guilde —
+      // saison de contest (#67), et à venir les états INVASION/WAR (ligues, boss). Même esprit qu'arena_ladder,
+      // mais générique pour éviter une table par fonctionnalité.
+      s.execute("CREATE TABLE IF NOT EXISTS shard_state ("
+          + "shardID INTEGER NOT NULL, key TEXT NOT NULL, value BLOB NOT NULL, "
+          + "updatedAt INTEGER NOT NULL, PRIMARY KEY (shardID, key))");
+    }
+  }
+
+  /** ÉTAT SHARD — lit la valeur brute de {@code (shard, key)}, ou {@code null} si absente. */
+  public synchronized byte[] loadShardState(int shardID, String key) throws SQLException {
+    try (PreparedStatement ps = conn.prepareStatement(
+        "SELECT value FROM shard_state WHERE shardID=? AND key=?")) {
+      ps.setInt(1, shardID);
+      ps.setString(2, key);
+      try (ResultSet rs = ps.executeQuery()) {
+        if (rs.next()) return rs.getBytes(1);
+      }
+    }
+    return null;
+  }
+
+  /** ÉTAT SHARD — écrit (upsert) la valeur de {@code (shard, key)}. */
+  public synchronized void saveShardState(int shardID, String key, byte[] value) throws SQLException {
+    try (PreparedStatement ps = conn.prepareStatement(
+        "INSERT INTO shard_state (shardID, key, value, updatedAt) VALUES (?,?,?,?) "
+        + "ON CONFLICT(shardID, key) DO UPDATE SET value=excluded.value, updatedAt=excluded.updatedAt")) {
+      ps.setInt(1, shardID);
+      ps.setString(2, key);
+      ps.setBytes(3, value);
+      ps.setLong(4, System.currentTimeMillis());
+      ps.executeUpdate();
     }
   }
 
