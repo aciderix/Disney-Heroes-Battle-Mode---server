@@ -392,15 +392,15 @@ public final class ServerWar {
               com.perblue.heroes.game.data.misc.Unlockable.WAR, actor.gameUser());
     }
     if (g.currentWarID > 0) return "une guerre est déjà en cours";
-    g.warQueueState = desired;
+    g.setWarQueueState(desired);              // écrit dans GuildInfo — ce que le client relit
     g.warQueuedTime = leaving ? 0L : now;
     return null;
   }
 
   /** La guilde est-elle en attente d'un appariement ? */
   public static boolean isQueued(ServerGuild g) {
-    return g.warQueueState == com.perblue.heroes.network.messages.WarQueueState.QUEUED_SINGLE
-        || g.warQueueState == com.perblue.heroes.network.messages.WarQueueState.QUEUED_PERSISTENT;
+    return g.warQueueState() == com.perblue.heroes.network.messages.WarQueueState.QUEUED_SINGLE
+        || g.warQueueState() == com.perblue.heroes.network.messages.WarQueueState.QUEUED_PERSISTENT;
   }
 
   /**

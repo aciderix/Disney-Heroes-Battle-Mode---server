@@ -101,10 +101,45 @@ public final class ServerGuild {
   // Une GUERRE (l'appariement de deux guildes) vit dans sa propre table `wars` ({@link ServerWarState}) ;
   // ici on ne garde que ce qui appartient DURABLEMENT à la guilde et lui survit d'une guerre à l'autre.
 
-  /** File d'attente : {@code NOT_QUEUED} / {@code QUEUED_SINGLE} / {@code QUEUED_PERSISTENT}. */
-  public com.perblue.heroes.network.messages.WarQueueState warQueueState =
-      com.perblue.heroes.network.messages.WarQueueState.NOT_QUEUED;
-  /** Instant de mise en file (horloge serveur) — sert à l'ordre d'appariement. */
+  // ⚠️ NE PAS dupliquer ici ce que porte DÉJÀ l'objet du jeu {@link GuildInfo} : il a ses propres champs
+  // `warQueueState`, `warStartTime`, `warEndTime`, `warExtraAttackRank`, `warExtraAttacksRemaining` et
+  // `warMembers`, persistés en octets wire ET LUS PAR LE CLIENT (p. ex. `WarHelper.isWarActive` teste
+  // `getYourGuildInfo().warEndTime`, `GuildHelper.canUseExtraWarAttacks` lit `warExtraAttackRank`).
+  // Les redéfinir côté serveur créerait deux sources de vérité — exactement ce qu'interdit PRINCIPLES §4/§6.
+  // On les expose donc par des accesseurs qui pointent sur `info`.
+
+  /** File d'attente — stockée dans l'objet du jeu {@code GuildInfo.warQueueState}. */
+  public com.perblue.heroes.network.messages.WarQueueState warQueueState() {
+    com.perblue.heroes.network.messages.WarQueueState q = info != null ? info.warQueueState : null;
+    return q == null ? com.perblue.heroes.network.messages.WarQueueState.NOT_QUEUED : q;
+  }
+
+  public void setWarQueueState(com.perblue.heroes.network.messages.WarQueueState q) {
+    if (info != null) info.warQueueState = q;
+  }
+
+  /** Rang minimal autorisé aux attaques supplémentaires — {@code GuildInfo.warExtraAttackRank}, lu par
+   *  {@code GuildHelper.canUseExtraWarAttacks}. */
+  public com.perblue.heroes.network.messages.GuildRole warExtraAttackRank() {
+    com.perblue.heroes.network.messages.GuildRole r = info != null ? info.warExtraAttackRank : null;
+    return r == null ? com.perblue.heroes.network.messages.GuildRole.OFFICER : r;
+  }
+
+  public void setWarExtraAttackRank(com.perblue.heroes.network.messages.GuildRole r) {
+    if (info != null) info.warExtraAttackRank = r;
+  }
+
+  /** Fenêtre de la guerre en cours, telle que le CLIENT la lit ({@code WarHelper.isWarActive} compare
+   *  {@code warEndTime} à l'heure serveur). Le serveur DOIT la renseigner, sinon le client ne voit
+   *  aucune guerre active. */
+  public void setWarWindow(long startTime, long endTime) {
+    if (info == null) return;
+    info.warStartTime = startTime;
+    info.warEndTime = endTime;
+  }
+
+  /** Instant de mise en file (horloge serveur) — sert à l'ordre d'appariement. Purement opérateur :
+   *  le jeu ne le transporte pas. */
   public long warQueuedTime;
   /** Note de matchmaking courante. {@code warSeasonID == 0} ⇒ jamais initialisée (guilde neuve). */
   public int warMMR;
@@ -118,11 +153,6 @@ public final class ServerGuild {
   /** Adversaires récents, le plus RÉCENT en tête, borné par {@code MAX_PREVIOUS_WARS} — anti-rematch.
    *  C'est ce que le jeu appelle {@code WarMatchmakingGuildInfo.previousOpponents}. */
   public final List<Long> previousWarOpponents = new ArrayList<>();
-  /** Rang minimal autorisé à consommer une attaque supplémentaire ({@code EditGuildWarSettings
-   *  .extraAttackRank} — « The Guild Leader may change the settings to allow any Guild members to use
-   *  Extra Attacks »). */
-  public com.perblue.heroes.network.messages.GuildRole warExtraAttackRank =
-      com.perblue.heroes.network.messages.GuildRole.OFFICER;
   /** Bilan de la saison EN COURS. */
   public int warsWon, warsLost, warsCompleted;
   /** Saisons ACHEVÉES : octets wire de chaque {@link com.perblue.heroes.network.messages.WarSeasonSummary}
@@ -387,13 +417,13 @@ public final class ServerGuild {
         o.writeLong(e.getKey()); o.writeLong(e.getValue()[0]); o.writeLong(e.getValue()[1]);
       }
       // v8 : guild war (état propre à la guilde ; la guerre elle-même est dans la table `wars`)
-      o.writeUTF(warQueueState == null ? "NOT_QUEUED" : warQueueState.name());
+      // (warQueueState / warExtraAttackRank / warStartTime / warEndTime vivent dans `info`, déjà sérialisé
+      //  plus haut en octets wire du GuildInfo du jeu — on ne les duplique PAS ici.)
       o.writeLong(warQueuedTime);
       o.writeInt(warMMR);
       o.writeInt(warSeasonID);
       o.writeInt(warPromotionMask);
       o.writeLong(currentWarID);
-      o.writeUTF(warExtraAttackRank == null ? "OFFICER" : warExtraAttackRank.name());
       o.writeInt(warsWon); o.writeInt(warsLost); o.writeInt(warsCompleted);
       o.writeInt(previousWarOpponents.size());
       for (Long id : previousWarOpponents) o.writeLong(id);
@@ -472,15 +502,11 @@ public final class ServerGuild {
         }
       }
       if (version >= 8) {
-        g.warQueueState = enumOr(com.perblue.heroes.network.messages.WarQueueState.class, in.readUTF(),
-            com.perblue.heroes.network.messages.WarQueueState.NOT_QUEUED);
         g.warQueuedTime = in.readLong();
         g.warMMR = in.readInt();
         g.warSeasonID = in.readInt();
         g.warPromotionMask = in.readInt();
         g.currentWarID = in.readLong();
-        g.warExtraAttackRank = enumOr(com.perblue.heroes.network.messages.GuildRole.class, in.readUTF(),
-            com.perblue.heroes.network.messages.GuildRole.OFFICER);
         g.warsWon = in.readInt(); g.warsLost = in.readInt(); g.warsCompleted = in.readInt();
         int no = in.readInt();
         for (int i = 0; i < no; i++) g.previousWarOpponents.add(in.readLong());

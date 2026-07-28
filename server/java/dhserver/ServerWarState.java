@@ -85,6 +85,14 @@ public final class ServerWarState {
     }
   }
 
+  /**
+   * ⚠️ <b>Sémantique d'INSTANTANÉ — à connaître.</b> {@link #sideOf} DÉCODE les octets et rend un objet
+   * NEUF ; {@link #putSide} RE-ENCODE et fige l'état à cet instant. Muter l'objet rendu par {@code sideOf}
+   * ne modifie donc RIEN tant qu'on n'a pas rappelé {@code putSide}. C'est volontaire (l'état canonique
+   * reste les octets wire, PRINCIPLES §6) mais c'est un piège : oublier le {@code putSide} final perd la
+   * mutation SANS erreur. Le motif correct est toujours
+   * « {@code side = sideOf(id)} → muter → {@code putSide(id, side)} ».
+   */
   /** Le côté de {@code guildID}, relu en objet du jeu ({@code null} si la guilde n'est pas dans la guerre). */
   public WarGuildInfo sideOf(long guildID) {
     if (guildID == guildAID) return read(guildAWire);

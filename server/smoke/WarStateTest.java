@@ -97,9 +97,12 @@ public final class WarStateTest {
       err = ServerWar.changeQueueState(ga, rulerA, WarQueueState.QUEUED_SINGLE, now);
       check(err == null, "le chef au bon niveau doit pouvoir inscrire : " + err);
       check(ServerWar.isQueued(ga) && ga.warQueuedTime == now, "l'inscription doit être horodatée");
+      // L'état de file doit vivre dans l'objet du jeu GuildInfo (c'est lui que le client relit).
+      check(ga.info.warQueueState == WarQueueState.QUEUED_SINGLE,
+          "la file doit être écrite dans GuildInfo.warQueueState, obtenu " + ga.info.warQueueState);
       err = ServerWar.changeQueueState(gb, rulerB, WarQueueState.QUEUED_PERSISTENT, now + 1);
       check(err == null, "inscription persistante refusée : " + err);
-      System.out.println("[war] file : A=" + ga.warQueueState + " B=" + gb.warQueueState);
+      System.out.println("[war] file : A=" + ga.warQueueState() + " B=" + gb.warQueueState());
 
       // Après appariement : simple → sort de la file ; persistante → y reste.
       check(ServerWar.queueStateAfterMatch(WarQueueState.QUEUED_SINGLE) == WarQueueState.NOT_QUEUED,
@@ -200,7 +203,7 @@ public final class WarStateTest {
       // ---------------------------------------------------------------------------------------
       ga.currentWarID = w.warID;
       ga.rememberWarOpponent(gb.guildID, ServerWar.maxPreviousWars());
-      ga.warExtraAttackRank = GuildRole.MEMBER;      // le chef ouvre les attaques bonus à tous
+      ga.setWarExtraAttackRank(GuildRole.MEMBER);   // le chef ouvre les attaques bonus à tous
       ServerWar.applyWarResult(ga, ServerWar.ratingChange(ga.warMMR, gb.warMMR, WarSummaryState.VICTORY),
           WarSummaryState.VICTORY);
       int mmrAfterWin = ga.warMMR;
@@ -209,11 +212,14 @@ public final class WarStateTest {
       store.saveGuild(ga);
 
       ServerGuild rg = store.loadGuild(1, ga.guildID);
-      check(rg.warQueueState == ga.warQueueState, "l'état de file doit persister");
+      check(rg.warQueueState() == ga.warQueueState(), "l'état de file doit persister");
       check(rg.warMMR == mmrAfterWin && rg.warSeasonID == season, "le MMR et la saison doivent persister");
       check(rg.warPromotionMask == ga.warPromotionMask, "le plancher de ligue doit persister");
       check(rg.currentWarID == w.warID, "la guerre en cours doit persister");
-      check(rg.warExtraAttackRank == GuildRole.MEMBER, "le réglage d'attaques bonus doit persister");
+      check(rg.warExtraAttackRank() == GuildRole.MEMBER,
+          "le réglage d'attaques bonus doit persister (il vit dans GuildInfo, lu par canUseExtraWarAttacks)");
+      check(com.perblue.heroes.game.logic.GuildHelper.canUseExtraWarAttacks(GuildRole.MEMBER, rg.info),
+          "avec le rang ouvert à MEMBER, la logique DU JEU doit autoriser l'attaque supplémentaire");
       check(rg.warsWon == 1 && rg.warsCompleted == 1, "le bilan doit persister");
       check(rg.previousWarOpponents.size() == 1 && rg.previousWarOpponents.get(0) == gb.guildID,
           "l'historique d'adversaires doit persister");

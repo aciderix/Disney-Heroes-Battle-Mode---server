@@ -150,7 +150,7 @@ Les **lineups de défense de guerre** arrivent déjà par `HeroLineupUpdate` ave
 | 1 | **Calendrier de saison + ligues + modèle MMR** (`ServerWar`) | ✅ FAIT |
 | 2 | **État de guerre persisté (`ServerWarState`, table `wars`) + file d'attente** | ✅ FAIT |
 | 3 | **Matchmaking (appariement par MMR, anti-rematch, BYE) + phases** | ✅ FAIT |
-| 4 | Phases (queue → sabotage 24 h / ban 12 h → bataille) + voitures/affectations | ⬜ |
+| 4 | **Voitures : affectations, étoiles, portes de garage** | ✅ FAIT |
 | 5 | Attaques + scoring + logs | ⬜ |
 | 6 | Fin de guerre : issue, delta MMR, remboursements, boîtes | ⬜ |
 | 7 | Fin de saison : reset MMR (top 10 → Gold, autres ≤ 599), récompenses | ⬜ |
@@ -289,3 +289,52 @@ identique, A(500) évite B(500) affronté juste avant et prend C(480) ; 3 guilde
 ouverture SABOTAGE 24 h (ban les 12 premières) puis ACTIVE à +48 h ; transition conforme au client ;
 file `QUEUED_SINGLE` → `NOT_QUEUED` ; guerre relue avec les deux vues correctes et les ligues tenant
 compte du plancher de saison ; BYE persisté sans adversaire mémorisé.
+
+### Étape 4 — voitures, affectations, étoiles, portes ✅
+
+**`dhserver.ServerWarCars`**. Tout vient du client, rien n'est déduit :
+
+* **Source de vérité** : le client reconstruit lui-même `cars[].members` depuis
+  `members[].assignedCar` (`WarClientHelper.collectWarInfoCarMembers`). L'état canonique du serveur est
+  donc la carte `members` ; `rebuildCars` en **dérive** les voitures de la même façon, ce qui rend toute
+  divergence impossible.
+* **Étoile = lineup** : `WarHelper.hasRemainingLineups` et `getDefeatedEnemyCarTypes` testent tous deux
+  `starsEarned >= starsTotal`. Donc `starsTotal` = lineups postés dans la salle, `starsEarned` = lineups
+  battus — cohérent avec `POINTS_PER_LINEUP=1` et `POINTS_PER_CAR=100`. Corollaire **vérifié** : une
+  salle **sans défenseur** satisfait `0 >= 0` et compte comme prise, ce qui est exactement la phrase de
+  l'aide « Rooms that have no defenders are automatically defeated ».
+* **Portes de garage** : miroir de `WarClientHelper.getClosedGarageDoors` — étage 1 toujours ouvert,
+  étage 2 ouvert dès qu'**une** voiture de l'étage 1 est prise, étage 3 dès qu'une de l'étage 2 l'est
+  (« You must steal a car to open the next floor »). Pendant `SABOTAGE`, son **propre** garage est
+  entièrement fermé, celui de l'ennemi non.
+* **Ordre du garage** : `GARAGE_ORDER` relevé dans le client, et **vérifié** cohérent avec
+  `WarHelper.getFloorNumber` (0-2 étage 1, 3-5 étage 2, 6-8 étage 3).
+* **`ASSIGN_WAR_CAR`** : capacité = `WarHelper.getMaxCarSize` (= `BASE_CAR_SIZE` + perk de taille).
+
+**🔎 Règle de permission corrigée par les faits.** J'avais gaté l'auto-placement sur
+`GuildHelper.canMoveWarLineups`. Deux faits l'ont invalidé : (1) `WarCarLineupsTable:579` teste
+`if (isNextWarState && (c'estVous || canMoveWarLineups(rôle)))` — on édite donc **toujours** sa propre
+place, cette permission n'étant que le droit *supplémentaire* d'éditer la carte d'un autre ; (2) sonde
+de la table de permissions : **`WAR_MOVE_LINEUPS` n'est accordé à AUCUN rôle** dans ce build, pas même
+`RULER` — le gate aurait rendu l'auto-placement impossible pour tout le monde. Seul
+`canMoveOthersWarLineups` (RULER/OFFICER/CHAMPION) gate le déplacement d'autrui. Assertion dédiée dans
+le test pour que le jour où ce fait change, il se voie.
+
+**🐛 Double source de vérité — corrigée.** `GuildInfo`, l'objet **du jeu**, porte déjà
+`warQueueState`, `warStartTime`, `warEndTime`, `warExtraAttackRank`, `warExtraAttacksRemaining` et
+`warMembers` — persistés en octets wire **et lus par le client** (`WarHelper.isWarActive` compare
+`getYourGuildInfo().warEndTime` à l'heure serveur ; `GuildHelper.canUseExtraWarAttacks` lit
+`warExtraAttackRank`). Ma v8 les avait **dupliqués** côté serveur : deux sources de vérité, exactement
+ce qu'interdisent §4/§6 — et surtout, sans écrire `warEndTime` dans le `GuildInfo`, **le client
+n'aurait jamais vu de guerre active**. v8 ne les stocke plus ; `ServerGuild` les expose par des
+accesseurs pointant sur `info`, et `openWar` renseigne la fenêtre. Vérifié : aucun blob v8 n'existait
+en base (la base réelle est en v4), la correction est donc sans migration.
+
+**⚠️ Piège d'API documenté** : `sideOf` **décode** (objet neuf) et `putSide` **fige un instantané**.
+Muter l'objet rendu sans rappeler `putSide` perd la mutation **sans erreur** — le test l'a rencontré.
+Motif imposé : « `sideOf` → muter → `putSide` ».
+
+Test : `server/smoke/WarCarsTest`. Sortie : ordre/étages conformes au jeu, salle vide comptée prise,
+auto-placement autorisé, déplacement d'autrui refusé à un MEMBER, capacité 3 respectée, 3 membres × 3
+lineups = 9 étoiles puis salle prise à 9/9, étage 2 puis 3 ouverts par vol de voiture, garage propre
+fermé en SABOTAGE, round-trip DB reconstituant affectations, étoiles et portes.

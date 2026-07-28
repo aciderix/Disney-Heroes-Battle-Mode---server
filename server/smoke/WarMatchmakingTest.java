@@ -39,7 +39,7 @@ public final class WarMatchmakingTest {
     ServerGuild g = ruler.createGuild(mk(name), store.nextGuildID(1));
     ServerWar.rollOverSeason(g, ServerWar.seasonIDAt(com.perblue.heroes.util.TimeUtil.serverTimeNow()), 0);
     g.warMMR = mmr;
-    g.warQueueState = q;
+    g.setWarQueueState(q);
     g.warQueuedTime = queuedAt;
     store.saveGuild(g);
     store.save(ruler);
@@ -160,14 +160,18 @@ public final class WarMatchmakingTest {
       check(ra.warsSinceOpponent(rb.guildID) == 0 && rb.warsSinceOpponent(ra.guildID) == 0,
           "chaque camp doit mémoriser l'autre comme adversaire le plus récent");
       check(ra.warQueuedTime == 0 && rb.warQueuedTime == 0, "l'horodatage de file doit être effacé");
+      // La fenêtre de guerre doit être écrite dans le GuildInfo DU JEU : `WarHelper.isWarActive` la lit.
+      check(ra.info.warEndTime == w.endTime && ra.info.warStartTime == w.startTime,
+          "GuildInfo.warStartTime/warEndTime doivent porter la fenêtre (le client s'en sert)");
+      check(ra.info.warEndTime > now, "le client doit voir la guerre comme ACTIVE (warEndTime futur)");
       for (ServerGuild g : new ServerGuild[]{ra, rb}) {
         WarQueueState before = g.guildID == g1000.guildID ? WarQueueState.QUEUED_SINGLE
             : g.guildID == g990.guildID ? WarQueueState.QUEUED_SINGLE
             : g.guildID == g400.guildID ? WarQueueState.QUEUED_SINGLE : WarQueueState.QUEUED_PERSISTENT;
-        check(g.warQueueState == ServerWar.queueStateAfterMatch(before),
+        check(g.warQueueState() == ServerWar.queueStateAfterMatch(before),
             "l'état de file après appariement doit suivre la règle SIMPLE/PERSISTANT pour " + g.guildID);
       }
-      System.out.println("[war] après appariement : file A=" + ra.warQueueState + " B=" + rb.warQueueState);
+      System.out.println("[war] après appariement : file A=" + ra.warQueueState() + " B=" + rb.warQueueState());
 
       // Les deux guildes lisent la MÊME guerre, chacune de son côté.
       ServerWarState rw = store.loadWar(1, w.warID);

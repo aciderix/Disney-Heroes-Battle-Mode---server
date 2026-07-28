@@ -193,8 +193,12 @@ public final class ServerWarMatchmaker {
 
   private static void applyToGuild(ServerGuild g, ServerWarState w, long opponentID) {
     g.currentWarID = w.warID;
-    g.warQueueState = ServerWar.queueStateAfterMatch(g.warQueueState);
+    g.setWarQueueState(ServerWar.queueStateAfterMatch(g.warQueueState()));
     g.warQueuedTime = 0L;
+    // La fenêtre de guerre doit être écrite dans le GuildInfo DU JEU : c'est elle que le client relit
+    // (`WarHelper.isWarActive` compare `getYourGuildInfo().warEndTime` à l'heure serveur). Sans ça, le
+    // client considérerait qu'aucune guerre n'est en cours.
+    g.setWarWindow(w.startTime, w.endTime);
     if (opponentID > 0) g.rememberWarOpponent(opponentID, ServerWar.maxPreviousWars());
   }
 
@@ -224,7 +228,7 @@ public final class ServerWarMatchmaker {
     List<ServerGuild> out = new ArrayList<>();
     for (ServerGuild g : store.listGuilds(shardID, null, 10_000)) {
       if (g.currentWarID > 0) continue;                                  // déjà en guerre
-      if (g.warQueueState == WarQueueState.NOT_QUEUED) continue;
+      if (g.warQueueState() == WarQueueState.NOT_QUEUED) continue;
       out.add(g);
     }
     out.sort(Comparator.comparingLong(g -> g.warQueuedTime));
