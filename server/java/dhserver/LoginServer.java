@@ -1025,6 +1025,42 @@ public final class LoginServer {
               c.send(resp);
               System.out.println("[login] <== GetGuildDonationRequests → ==> GuildDonationRequests ("
                   + resp.requests.size() + " demande(s))");
+            } else if (m instanceof com.perblue.heroes.network.messages.ClaimInactiveGuild) {
+              // GUILD #70 — reprise d'une guilde dont le CHEF est inactif. Seuil = logique du jeu
+              // (GuildHelper.getClaimLeaderInactiveTime : CHAMPION 7 j, OFFICER 21 j, autres interdits),
+              // inactivité mesurée sur BasicUserInfo.userLastActive du chef.
+              com.perblue.heroes.network.messages.ClaimInactiveGuild ci =
+                  (com.perblue.heroes.network.messages.ClaimInactiveGuild) m;
+              long clnow = com.perblue.heroes.util.TimeUtil.serverTimeNow();
+              ServerGuild clg = currentGuild(user);
+              String refus = null;
+              ServerUser oldLeader = null;
+              if (clg == null || clg.guildID != ci.guildID) {
+                refus = "guilde inconnue";
+              } else {
+                try {
+                  oldLeader = clg.memberIDs.isEmpty() ? null
+                      : store.loadIfExists(clg.memberIDs.get(0), user.shardID);
+                } catch (Exception e) { refus = "chef illisible : " + e; }
+                if (refus == null) refus = user.claimInactiveGuild(clg, oldLeader, clnow);
+              }
+              if (refus == null) {
+                try {
+                  store.saveGuild(clg); store.save(user);
+                  if (oldLeader != null) store.save(oldLeader);
+                } catch (Exception e) { System.out.println("[login]     ! persistance reprise : " + e); }
+                // L'écran de guilde du demandeur doit refléter son nouveau rôle.
+                com.perblue.heroes.network.messages.UserGuildUpdate ug =
+                    new com.perblue.heroes.network.messages.UserGuildUpdate();
+                ug.guildInfo = clg.info;
+                ug.setAsReplyTo(m);
+                c.send(ug);
+                System.out.println("[login] <== ClaimInactiveGuild guilde=" + ci.guildID
+                    + " → " + user.userID + " devient RULER (ancien chef "
+                    + (oldLeader == null ? "?" : oldLeader.userID) + " rétrogradé) [persisté]");
+              } else {
+                System.out.println("[login]     ⛔ ClaimInactiveGuild REFUSÉ : " + refus);
+              }
             } else if (m instanceof com.perblue.heroes.network.messages.GetUserInvasionLeagueInfo
                 || m instanceof com.perblue.heroes.network.messages.GetGuildInvasionLeagueInfo) {
               // INVASION #69 — CLASSEMENTS de ligue. Score joueur = points d'invasion (table user_invasion) ;

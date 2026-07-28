@@ -162,7 +162,7 @@ par membre). **Tout est autoritatif, persisté et testé.**
 |------|---------|------|
 | **GUILD WAR** | **0 / 68 messages** | Mode complet : matchmaking, lineups de défense, attaques, voitures + bonus, sabotage, logs, saisons/ligues, récompenses. Le plus gros reste du jeu. |
 | **INVASION** | **0 / 50 messages** | Mode complet : boss, breakers, ligues, rangs de membres, récompenses. |
-| `ClaimInactiveGuild` | 1 message | Reprendre une guilde dont le chef est inactif. Isolé, petit. |
+| ~~`ClaimInactiveGuild`~~ | ✅ **FAIT** | Reprise d'une guilde au chef inactif — seuils du jeu (CHAMPION 7 j, OFFICER 21 j, autres interdits). |
 | `EditGuildWarSettings` | 1 message | Réglages de guerre — dépend de WAR. |
 
 > `CommandType.CREATE_GUILD` n'est pas câblé, mais la création de guilde **fonctionne et est vérifiée en jeu**

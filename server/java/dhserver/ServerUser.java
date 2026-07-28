@@ -332,6 +332,40 @@ public final class ServerUser {
     ServerContext.bind(user, iu);
   }
 
+  /** REPRISE D'UNE GUILDE INACTIVE (#70) — un gradé peut prendre la direction si le CHEF est resté inactif
+   *  assez longtemps. Le seuil vient de la LOGIQUE DU JEU : {@code GuildHelper.getClaimLeaderInactiveTime(rôle)}
+   *  — CHAMPION 7 jours, OFFICER 21 jours, les autres rôles {@code -1} (interdit). L'inactivité est mesurée sur
+   *  {@code BasicUserInfo.userLastActive} du chef (mis à jour à chaque connexion).
+   *
+   *  <p>Renvoie {@code null} si la reprise est accordée (le demandeur devient RULER, l'ancien chef redevient
+   *  MEMBER, le roster est réordonné), sinon un motif de refus lisible. L'appelant persiste guilde + joueurs. */
+  public synchronized String claimInactiveGuild(ServerGuild g, ServerUser leader, long now) {
+    if (g == null) return "guilde introuvable";
+    if (!inGuild() || currentGuildID() != g.guildID) return "vous n'êtes pas membre de cette guilde";
+    com.perblue.heroes.network.messages.GuildRole myRole = currentGuildRole();
+    long need = com.perblue.heroes.game.logic.GuildHelper.getClaimLeaderInactiveTime(myRole);
+    if (need <= 0) return "votre rôle (" + myRole + ") ne permet pas de reprendre la guilde";
+    if (leader == null) return "chef introuvable";
+    if (leader.userID == userID) return "vous êtes déjà le chef";
+    if (leader.currentGuildRole() != com.perblue.heroes.network.messages.GuildRole.RULER)
+      return "le joueur visé n'est pas le chef";
+    long lastActive = leader.basicInfo() == null ? 0L : leader.basicInfo().userLastActive;
+    long idle = now - lastActive;
+    if (idle < need)
+      return "le chef n'est pas assez inactif (" + (idle / 86400000L) + " j < " + (need / 86400000L) + " j)";
+    // Transfert de direction.
+    leader.setGuildRoleDirect(com.perblue.heroes.network.messages.GuildRole.MEMBER);
+    userInfo.basicInfo.guildRole = com.perblue.heroes.network.messages.GuildRole.RULER;
+    g.memberIDs.remove(userID);
+    g.memberIDs.add(0, userID);                  // le CHEF est en tête du roster (convention ServerGuild)
+    return null;
+  }
+
+  /** Force le rôle de guilde de CE joueur (transferts de direction, promotions autoritatives). */
+  public synchronized void setGuildRoleDirect(com.perblue.heroes.network.messages.GuildRole role) {
+    if (userInfo.basicInfo != null && role != null) userInfo.basicInfo.guildRole = role;
+  }
+
   /** CRÉDITE des récompenses à CE joueur via la logique du jeu ({@code RewardHelper.giveRewards}) et
    *  resynchronise l'état wire. Utilisé par les réclamations autoritatives (boss d'invasion…). */
   public synchronized void grantRewards(java.util.List<com.perblue.heroes.network.messages.RewardDrop> rewards) {
