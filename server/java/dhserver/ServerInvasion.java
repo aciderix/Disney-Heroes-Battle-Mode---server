@@ -190,9 +190,38 @@ public final class ServerInvasion {
                 new com.perblue.grunt.translate.util.GruntInputStream(persisted));
       } catch (Exception e) { System.out.println("[invasion] état joueur illisible, réinitialisé : " + e); }
     }
-    if (d == null || d.invasionID != invasionID) return newUserData(userID, guildID, invasionID);
+    if (d == null || d.invasionID != invasionID) {
+      // BASCULE DE ROTATION : état neuf, mais la LIGUE et les récompenses de rang en attente sont REPORTÉES
+      // depuis l'invasion qui vient de se terminer (le rang final n'est pas connu ici — il est appliqué par
+      // l'appelant qui a accès au classement ; à défaut, la ligue est simplement conservée).
+      com.perblue.heroes.network.messages.UserInvasionData fresh = newUserData(userID, guildID, invasionID);
+      carryOverLeague(d, fresh, 0);
+      return fresh;
+    }
     d.guildID = guildID;                                   // la guilde peut avoir changé en cours de semaine
     return d;
+  }
+
+  /** CLÔTURE D'INVASION (#69) — reporte la LIGUE d'une semaine sur l'autre. À la bascule de rotation, l'état
+   *  du joueur repart à zéro (comme {@code InvasionHelper.resetUserInvasion}) MAIS sa ligue doit SURVIVRE, mise
+   *  à jour selon son rang final ({@link #leagueAfterRank} : promotion ≤5, relégation ≥60, sinon maintien).
+   *  Arme aussi les drapeaux de récompense de rang pour que le joueur puisse réclamer.
+   *
+   *  @param previous l'état de l'invasion QUI SE TERMINE (peut être {@code null} = joueur nouveau)
+   *  @param fresh    l'état NEUF de la nouvelle invasion, modifié en place
+   *  @param finalRank rang final du joueur dans l'invasion précédente (0 = non classé) */
+  public static void carryOverLeague(
+      com.perblue.heroes.network.messages.UserInvasionData previous,
+      com.perblue.heroes.network.messages.UserInvasionData fresh, int finalRank) {
+    if (fresh == null) return;
+    com.perblue.heroes.network.messages.InvasionLeague prevLeague = previous == null || previous.league == null
+        ? com.perblue.heroes.network.messages.InvasionLeague.UNRANKED : previous.league;
+    fresh.league = finalRank > 0 ? leagueAfterRank(prevLeague, finalRank) : prevLeague;
+    if (previous != null && finalRank > 0) {
+      // Le joueur a participé et est classé → il a des récompenses de rang à réclamer.
+      fresh.hasUserRankRewards = true;
+      if (previous.guildID > 0) fresh.hasGuildRankRewards = true;
+    }
   }
 
   /** LECTURE SEULE d'un état d'invasion persisté — contrairement à {@link #loadOrResetUserData}, n'écrase NI

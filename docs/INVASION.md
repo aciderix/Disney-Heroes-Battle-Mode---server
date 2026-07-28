@@ -154,8 +154,11 @@ delta victoire +25, durée 60 s), plafonds quotidiens de guilde, etc.
      adaptateur au-dessus du `UserInvasionData` persisté (le client a son `ClientInvasionUser`, adossé à `DH.app`).
    - Couvert par `InvasionBossTest` : refus sans drapeau, réclamation unique, drapeau désarmé, 2ᵉ tentative
      refusée, round-trip DB.
-   - ⏳ **Reste** : la persistance de la LIGUE d'un joueur d'une semaine sur l'autre (le champ
-     `UserInvasionData.league` existe ; `leagueAfterRank` calcule déjà la ligue d'arrivée — il reste à l'appliquer
-     à la clôture d'une invasion).
+   - ✅ **REPORT DE LIGUE d'une semaine sur l'autre** : `carryOverLeague(précédent, neuf, rangFinal)`. À la
+     bascule de rotation, l'état repart à zéro (comme `resetUserInvasion`) MAIS la ligue SURVIT, mise à jour par
+     `leagueAfterRank` selon le rang final (promotion ≤5, relégation ≥60, sinon maintien), et les drapeaux de
+     récompense de rang sont ARMÉS pour un joueur classé. Appelé automatiquement par `loadOrResetUserData`.
+     Vérifié : points remis à zéro + SILVER conservé ; rang 2 → SILVER promu GOLD (récompenses armées) ;
+     rang 90 → rétrogradé BRONZE.
 5. **État partagé de guilde** : dégâts au boss par membre, plafonds quotidiens de guilde
    (`GUILD_DAILY_BOSS_LIMIT=100`, `BOSS_GUILD_DAILY_LIMIT=2400`) → table `shard_state` / `ServerGuild`.

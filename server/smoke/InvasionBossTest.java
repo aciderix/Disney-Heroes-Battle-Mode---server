@@ -232,6 +232,39 @@ public final class InvasionBossTest {
         System.out.println("[invasion] round-trip DB : drapeau de réclamation persisté");
       }
 
+      // ---- REPORT DE LIGUE d'une invasion à la suivante ----
+      {
+        long invID = ServerInvasion.rotation(ServerInvasion.invasionStart(wed));
+        // Semaine N : le joueur est en SILVER avec des points.
+        UserInvasionData wk1 = ServerInvasion.newUserData(401L, g.guildID, invID);
+        wk1.league = InvasionLeague.SILVER;
+        wk1.points = 5000;
+        store.saveUserInvasion(1, 401L, ServerInvasion.userDataToBytes(wk1));
+
+        // Semaine N+1 (rotation suivante) : état neuf MAIS la ligue est conservée.
+        UserInvasionData wk2 = ServerInvasion.loadOrResetUserData(
+            store.loadUserInvasion(1, 401L), 401L, g.guildID, invID + 1);
+        if (wk2.points != 0) throw new AssertionError("les points doivent repartir à zéro");
+        if (wk2.league != InvasionLeague.SILVER)
+          throw new AssertionError("la ligue doit être REPORTÉE, obtenu " + wk2.league);
+        System.out.println("[invasion] report de ligue : points remis à zéro, ligue SILVER conservée");
+
+        // Avec un RANG final : promotion (rang 2 ≤ seuil 5) et récompenses de rang armées.
+        UserInvasionData wk3 = ServerInvasion.newUserData(401L, g.guildID, invID + 1);
+        ServerInvasion.carryOverLeague(wk1, wk3, 2);
+        if (wk3.league != InvasionLeague.GOLD)
+          throw new AssertionError("rang 2 depuis SILVER devrait promouvoir en GOLD, obtenu " + wk3.league);
+        if (!wk3.hasUserRankRewards || !wk3.hasGuildRankRewards)
+          throw new AssertionError("les récompenses de rang devraient être ARMÉES pour un joueur classé");
+        // Rang faible → relégation.
+        UserInvasionData wk4 = ServerInvasion.newUserData(401L, g.guildID, invID + 1);
+        ServerInvasion.carryOverLeague(wk1, wk4, 90);
+        if (wk4.league != InvasionLeague.BRONZE)
+          throw new AssertionError("rang 90 depuis SILVER devrait rétrograder en BRONZE, obtenu " + wk4.league);
+        System.out.println("[invasion] rang final : rang 2 → SILVER promu GOLD (récompenses armées), "
+            + "rang 90 → rétrogradé BRONZE");
+      }
+
       System.out.println("INVASION BOSS TEST OK");
     }
   }
