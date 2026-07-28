@@ -10,7 +10,12 @@ export JAVA_TOOL_OPTIONS=
 FRAMED="$ROOT/libs/game-framed.jar"; [ -f "$FRAMED" ] || FRAMED="$ROOT/libs/game.jar"
 CPF="$FRAMED:$ROOT/libs/commons-logging.jar:$ROOT/libs/sqlite-jdbc.jar:$ROOT/libs/slf4j-api.jar:$ROOT/libs/joda-time.jar"
 SMOKE="$ROOT/server/smoke"
-OUT="$SMOKE/out"; rm -rf "$OUT"; mkdir -p "$OUT"
+# Répertoire de classes ISOLÉ par exécution. Historiquement c'était "$SMOKE/out" — le même dossier que celui
+# utilisé pour les compilations manuelles pendant le développement. Une compilation manuelle lancée PENDANT une
+# régression écrasait ses .class en cours de route et produisait une avalanche d'échecs FANTÔMES (16 tests
+# « rouges » sans même de fichier de log). L'isolation rend ce faux positif impossible.
+OUT="$(mktemp -d "${TMPDIR:-/tmp}/dh-reg-XXXXXX")"
+trap 'rm -rf "$OUT"' EXIT
 
 # Suite de régression (tests assertifs, exécutables sans argument).
 TESTS=(
