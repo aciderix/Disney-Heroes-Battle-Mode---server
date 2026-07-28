@@ -110,6 +110,47 @@ public final class InvasionScheduleTest {
       System.out.println("[invasion] nouvelle rotation → état joueur remis à zéro ✔");
     }
 
+    // ---- COMBAT DE BREAKER : coût + récompenses = formules du jeu ----
+    {
+      dhserver.ServerUser p = dhserver.ServerUser.newPlayer(9L, 1);
+      UserInvasionData ud = ServerInvasion.newUserData(9L, 0L, r1);
+      long stam0 = p.resourceAmount(ResourceType.INVASION_STAMINA);
+      long gold0 = p.resourceAmount(ResourceType.GOLD);
+      int room = 10;
+      // La fenêtre : on résout à un instant DANS l'invasion (mercredi).
+      ServerInvasion.BreakerOutcome win = ServerInvasion.resolveBreakerFight(p, ud, room, true, wed);
+      if (!win.accepted) throw new AssertionError("combat refusé : " + win.refusal);
+      // Valeurs attendues = celles des données (BREAKER_FIGHT_* de invasion_constants).
+      int expGold = com.perblue.heroes.game.data.invasion.InvasionStats.getBreakerFightGoldReward(room);
+      int expLvl = com.perblue.heroes.game.data.invasion.InvasionStats.getBreakerFightLevel(room);
+      int expCost = com.perblue.heroes.game.data.invasion.InvasionStats.getBreakerFightStaminaCost();
+      if (win.gold != expGold || win.level != expLvl || win.staminaCost != expCost)
+        throw new AssertionError("récompenses hors données du jeu : " + win);
+      if (p.resourceAmount(ResourceType.INVASION_STAMINA) != stam0 - expCost)
+        throw new AssertionError("énergie d'invasion non débitée");
+      if (p.resourceAmount(ResourceType.GOLD) != gold0 + expGold)
+        throw new AssertionError("or non crédité");
+      if (ud.breakerBattlesWon != 1 || ud.points != win.points)
+        throw new AssertionError("compteurs d'état joueur non mis à jour");
+      System.out.println("[invasion] breaker room " + room + " GAGNÉ → " + win);
+
+      // Défaite : l'énergie est débitée, aucun gain.
+      long g1 = p.resourceAmount(ResourceType.GOLD);
+      ServerInvasion.BreakerOutcome loss = ServerInvasion.resolveBreakerFight(p, ud, room, false, wed);
+      if (!loss.accepted || loss.gold != 0 || loss.points != 0)
+        throw new AssertionError("défaite : aucun gain attendu, obtenu " + loss);
+      if (p.resourceAmount(ResourceType.GOLD) != g1) throw new AssertionError("or crédité malgré la défaite");
+      if (ud.breakerBattlesFought != 2 || ud.breakerBattlesWon != 1)
+        throw new AssertionError("compteurs incorrects après défaite");
+      System.out.println("[invasion] breaker PERDU → énergie débitée, aucun gain (compteurs "
+          + ud.breakerBattlesWon + "/" + ud.breakerBattlesFought + ")");
+
+      // Hors fenêtre d'invasion → refusé.
+      ServerInvasion.BreakerOutcome off = ServerInvasion.resolveBreakerFight(p, ud, room, true, sun);
+      if (off.accepted) throw new AssertionError("un combat hors invasion doit être refusé");
+      System.out.println("[invasion] combat hors fenêtre → refusé (" + off.refusal + ")");
+    }
+
     System.out.println("INVASION SCHEDULE TEST OK");
   }
 }

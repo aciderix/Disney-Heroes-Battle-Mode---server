@@ -220,6 +220,47 @@ public final class ServerInvasion {
     return info;
   }
 
+  /** Résultat autoritatif d'un combat de BREAKER : ce qui a été débité et accordé. */
+  public static final class BreakerOutcome {
+    public boolean accepted;              // faux = refusé (énergie insuffisante, invasion inactive…)
+    public String refusal = "";
+    public int staminaCost;
+    public int gold, breakers, points, level;
+    @Override public String toString() {
+      return accepted ? ("−" + staminaCost + " énergie, +" + gold + " or, +" + breakers
+          + " BREAKER, +" + points + " pts (niveau " + level + ")") : ("REFUSÉ : " + refusal);
+    }
+  }
+
+  /** RÉSOUT un combat de breaker de façon autoritative, avec les FORMULES DU JEU :
+   *  coût {@code BREAKER_FIGHT_STAMINA_COST}, niveau {@code BREAKER_FIGHT_LEVEL(room)},
+   *  or {@code BREAKER_FIGHT_GOLD_REWARD(room)}, points {@code BREAKER_FIGHT_POINT_REWARD},
+   *  gain {@code BREAKER_FIGHT_BREAKER_REWARD} — toutes lues via {@code InvasionStats}.
+   *  Le débit d'énergie s'applique même en cas de défaite (comme le jeu) ; les gains sont réservés à la victoire. */
+  public static BreakerOutcome resolveBreakerFight(ServerUser u,
+      com.perblue.heroes.network.messages.UserInvasionData ud, int room, boolean victory, long now) {
+    BreakerOutcome o = new BreakerOutcome();
+    if (!isActive(now)) { o.refusal = "invasion inactive"; return o; }
+    if (room < 0) { o.refusal = "room invalide"; return o; }
+    o.staminaCost = com.perblue.heroes.game.data.invasion.InvasionStats.getBreakerFightStaminaCost();
+    long stamina = u.resourceAmount(com.perblue.heroes.network.messages.ResourceType.INVASION_STAMINA);
+    if (stamina < o.staminaCost) { o.refusal = "énergie d'invasion insuffisante (" + stamina + "<" + o.staminaCost + ")"; return o; }
+    o.accepted = true;
+    u.giveResource(com.perblue.heroes.network.messages.ResourceType.INVASION_STAMINA, -o.staminaCost);
+    o.level = com.perblue.heroes.game.data.invasion.InvasionStats.getBreakerFightLevel(room);
+    ud.breakerBattlesFought++;
+    if (!victory) return o;
+    ud.breakerBattlesWon++;
+    o.gold = com.perblue.heroes.game.data.invasion.InvasionStats.getBreakerFightGoldReward(room);
+    o.breakers = com.perblue.heroes.game.data.invasion.InvasionStats.getBreakerFightBreakerReward();
+    o.points = com.perblue.heroes.game.data.invasion.InvasionStats.getBreakerFightPoints(room, 1, 1);
+    u.giveResource(com.perblue.heroes.network.messages.ResourceType.GOLD, o.gold);
+    u.giveResource(com.perblue.heroes.network.messages.ResourceType.BREAKER, o.breakers);
+    ud.breakersGained += o.breakers;
+    ud.points += o.points;
+    return o;
+  }
+
   /** Résumé lisible (journal serveur / admin). */
   public static String describe(long now) {
     long s = invasionStart(now);

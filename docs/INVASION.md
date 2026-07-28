@@ -56,8 +56,18 @@ delta victoire +25, durée 60 s), plafonds quotidiens de guilde, etc.
 ## Reste à faire
 
 1. ~~État joueur~~ ✅ (ci-dessus)
-2. **Breakers** : `GetInvasionBosses`/pages de breakers, `InvasionBreakerAttack`, `recordBreakerFightOutcome`
-   (récompenses = données du jeu), gains de points.
+2. **Breakers** — 🔨 boucle de récompense FAITE, composition à générer :
+   - ✅ `ServerInvasion.resolveBreakerFight(user, userData, room, victoire, now)` : résolution autoritative avec
+     les FORMULES DU JEU via `InvasionStats` — coût `BREAKER_FIGHT_STAMINA_COST`=10, niveau
+     `BREAKER_FIGHT_LEVEL(room)`, or `BREAKER_FIGHT_GOLD_REWARD(room)`, points `BREAKER_FIGHT_POINT_REWARD`,
+     gain `BREAKER_FIGHT_BREAKER_REWARD`. Débit d'énergie même en défaite, gains réservés à la victoire, refus
+     hors fenêtre d'invasion. Vérifié : room 41 → niveau 675 = `(12+3·41)*5`, or 1410 = `1000+10·41`.
+   - ⏳ **Reste** : générer la COMPOSITION des breakers. Bonne nouvelle :
+     `invasion_breaker_fight_comp.tab` est une **table de drop** (`ROOT → <BREAKER>, <WARD_1..4>` avec
+     `RoomTest(16)`/`RoomTest(41)` qui font varier les wards selon la room) et le jeu fournit le contexte
+     `UserInvasionDTContext` + `InvasionHelper.makeBreakerDefender` → réutiliser la machinerie de drop-tables
+     déjà employée pour le loot. Puis câbler `InvasionBreakerAttackStart` / `InvasionBreakerAttack`
+     (mêmes formes que `CampaignAttack`, déjà géré).
 3. **Boss** : `GetInvasionBosses` → `InvasionBosses`, `StartInvasionBossAttack`, `InvasionBossAttack`,
    HP partagés de guilde, verrou d'attaque (`ATTACK_LOCK_DURATION=5m`), `ClaimInvasionBossRewards`
    (via `rollBossRewardLoot` + tables `invasion_boss_rewards*`).
