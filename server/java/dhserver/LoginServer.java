@@ -990,6 +990,16 @@ public final class LoginServer {
               c.send(resp);
               System.out.println("[login] <== GetGuildDonationRequests → ==> GuildDonationRequests ("
                   + resp.requests.size() + " demande(s))");
+            } else if (m instanceof com.perblue.heroes.network.messages.GetInvasionInfo) {
+              // INVASION (#69) — calendrier + identité de l'invasion courante, CALCULÉS depuis les données du jeu
+              // (invasion_constants : START/END jour+heure, INVASION_BASE_DATE/ROTATION ; UnitStats.getTeam pour
+              // les héros de l'équipe vedette). Le client enveloppe ça dans son ClientInvasion.
+              com.perblue.heroes.network.messages.InvasionInfo ii =
+                  ServerInvasion.buildInfo(com.perblue.heroes.util.TimeUtil.serverTimeNow());
+              ii.setAsReplyTo(m);
+              c.send(ii);
+              System.out.println("[login] <== GetInvasionInfo → ==> InvasionInfo : "
+                  + ServerInvasion.describe(com.perblue.heroes.util.TimeUtil.serverTimeNow()));
             } else if (m instanceof com.perblue.heroes.network.messages.GetGuildGiftRewards) {
               // GUILD CRATE / cadeaux de guilde (#58/#66) — cadeaux accumulés de la guilde (offreurs + récompenses).
               com.perblue.heroes.network.messages.GetGuildGiftRewards req =
