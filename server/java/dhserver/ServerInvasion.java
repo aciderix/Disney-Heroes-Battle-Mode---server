@@ -225,12 +225,19 @@ public final class ServerInvasion {
    *  {@code ROOT → <BREAKER>, <WARD_1..4>}, avec des conditions {@code RoomTest(n)} qui font varier les wards
    *  selon la salle). Rien n'est inventé : les unités, niveaux, étoiles et wards viennent des données.
    *
+   *  <p><b>Le JOUEUR compte</b> (vérifié) : la table consulte l'utilisateur courant du contexte de jeu. Avec un
+   *  joueur lié, elle produit de VRAIS héros (ex. {@code BO_PEEP{level=25}}, {@code CHEF_SKINNER{level=735}}) —
+   *  ce que fait le jeu, cf. {@code InvasionHelper.makeBreakerDefender(IInvasion, IHero)}. Sans joueur lié, elle
+   *  retombe sur des mobs génériques {@code SOULLESS_*} : un mode DÉGRADÉ qu'il ne faut pas servir. D'où le
+   *  paramètre {@code user} obligatoire, qui rend le contexte explicite.
+   *
    *  <p>Le tirage est DÉTERMINISTE pour une graine donnée → un même joueur revoit la même composition tant que
    *  la salle et l'invasion ne changent pas (graine dérivée de invasionID+room côté appelant).
    *
    *  @return la liste d'objets {@code DropItem} du jeu (unité + modificateurs), vide en cas d'échec. */
-  public static java.util.List<?> rollBreakerComposition(int room, IInvasionProvider inv, long seed) {
+  public static java.util.List<?> rollBreakerComposition(ServerUser user, int room, IInvasionProvider inv, long seed) {
     try {
+      if (user != null) user.bindGameContext();     // contexte EXPLICITE (sinon composition dégradée)
       Class<?> st = Class.forName("com.perblue.heroes.game.data.invasion.InvasionStats");
       java.lang.reflect.Field f = st.getDeclaredField("BREAKER_FIGHT_COMP");
       f.setAccessible(true);

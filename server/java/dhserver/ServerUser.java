@@ -320,6 +320,18 @@ public final class ServerUser {
     resyncDiamonds(user);
   }
 
+  /** Lie CE joueur au contexte de jeu ({@code DH.app}) pour les appels de logique du jeu qui consultent
+   *  l'utilisateur courant de façon implicite — notamment les TABLES DE DROP (le tirage des compositions de
+   *  breakers d'invasion produit de vrais héros du joueur si un utilisateur est lié, des mobs génériques sinon).
+   *  Rend le contexte EXPLICITE au lieu de dépendre du dernier appel effectué. */
+  public synchronized void bindGameContext() {
+    ServerContext.init();
+    User user = ClientNetworkStateConverter.getUser(userInfo, userExtra, "bind");
+    IndividualUser iu = ClientNetworkStateConverter.getIndividualUser(
+        individualUserExtra, userID, userInfo.diamonds, "bind");
+    ServerContext.bind(user, iu);
+  }
+
   /** Outillage TEST : lit le montant d'une ressource (logique du jeu {@code User.getResource}). */
   public synchronized long resourceAmount(com.perblue.heroes.network.messages.ResourceType rt) {
     ServerContext.init();

@@ -151,24 +151,44 @@ public final class InvasionScheduleTest {
       System.out.println("[invasion] combat hors fenêtre → refusé (" + off.refusal + ")");
     }
 
-    // ---- COMPOSITION DES BREAKERS : tirée de la table de drop DU JEU ----
+    // ---- COMPOSITION DES BREAKERS : tirée de la table de drop DU JEU, dans le contexte du JOUEUR ----
     {
       dhserver.ServerInvasionObject inv = dhserver.ServerInvasionObject.at(wed);
-      java.util.List<?> c1 = ServerInvasion.rollBreakerComposition(1, inv, 42L);
-      java.util.List<?> c20 = ServerInvasion.rollBreakerComposition(20, inv, 42L);
-      java.util.List<?> c45 = ServerInvasion.rollBreakerComposition(45, inv, 42L);
+      dhserver.ServerUser pc = dhserver.ServerUser.newPlayer(11L, 1);
+      java.util.List<?> c1 = ServerInvasion.rollBreakerComposition(pc, 1, inv, 42L);
+      java.util.List<?> c20 = ServerInvasion.rollBreakerComposition(pc, 20, inv, 42L);
+      java.util.List<?> c45 = ServerInvasion.rollBreakerComposition(pc, 45, inv, 42L);
       if (c1.isEmpty() || c20.isEmpty() || c45.isEmpty())
         throw new AssertionError("composition vide (table de drop non exploitée)");
-      // ⚠️ ANOMALIE NON RÉSOLUE (documentée dans docs/INVASION.md) : en PROCESSUS ISOLÉ ce tirage rend des
-      // compositions correctes et distinctes (room 1 → 6 unités niv 25, room 20 → 9 niv 360, room 45 → 14 niv 735,
-      // conformes à BREAKER_FIGHT_LEVEL et aux conditions RoomTest). Dans CE test complet, les trois rooms rendent
-      // la même taille (25) — un état partagé/caché du moteur de drop-tables est probablement en cause. Tant que
-      // ce n'est pas élucidé, on n'affirme ICI que ce qui est stable dans les deux contextes : tirage non vide et
-      // DÉTERMINISTE à graine égale. Les assertions de niveau/ward/progression sont volontairement retirées.
-      if (!ServerInvasion.rollBreakerComposition(20, inv, 42L).toString().equals(c20.toString()))
-        throw new AssertionError("le tirage doit être déterministe à graine égale");
-      System.out.println("[invasion] compositions tirées de invasion_breaker_fight_comp.tab (non vides, "
-          + "déterministes) — voir docs/INVASION.md pour l'anomalie de taille restant à élucider");
+
+      // Le NIVEAU des unités doit être exactement BREAKER_FIGHT_LEVEL(room) — donnée du jeu.
+      int[] rooms = {1, 20, 45};
+      java.util.List<?>[] comps = {c1, c20, c45};
+      for (int i = 0; i < rooms.length; i++) {
+        int expected = com.perblue.heroes.game.data.invasion.InvasionStats.getBreakerFightLevel(rooms[i]);
+        if (!comps[i].get(0).toString().contains("level=" + expected))
+          throw new AssertionError("room " + rooms[i] + " : niveau attendu " + expected
+              + ", obtenu " + comps[i].get(0));
+      }
+
+      // Les salles produisent des compositions DIFFÉRENTES (la table dépend bien de la room).
+      if (c1.toString().equals(c45.toString()))
+        throw new AssertionError("room 1 et room 45 ne devraient pas donner la même composition");
+
+      // Déterminisme : même joueur + même graine → même composition.
+      if (!ServerInvasion.rollBreakerComposition(pc, 20, inv, 42L).toString().equals(c20.toString()))
+        throw new AssertionError("le tirage doit être déterministe (même joueur, même graine)");
+
+      // Le contexte JOUEUR est bien pris en compte : le BREAKER (1ᵉ élément) est un VRAI héros du jeu.
+      // NB : la composition MÉLANGE le breaker (héros) et ses wards (sbires SOULLESS_*) — c'est normal ;
+      // seul le mode dégradé (sans joueur lié) met un SOULLESS_* en tête.
+      if (c1.get(0).toString().startsWith("SOULLESS_"))
+        throw new AssertionError("composition dégradée : le breaker devrait être un vrai héros, obtenu " + c1.get(0));
+      System.out.println("[invasion] compositions (contexte joueur) : room 1 → " + c1.size()
+          + " unités niv " + com.perblue.heroes.game.data.invasion.InvasionStats.getBreakerFightLevel(1)
+          + ", room 45 → " + c45.size() + " niv "
+          + com.perblue.heroes.game.data.invasion.InvasionStats.getBreakerFightLevel(45)
+          + " ; vrais héros, distinctes, déterministes");
     }
 
     System.out.println("INVASION SCHEDULE TEST OK");

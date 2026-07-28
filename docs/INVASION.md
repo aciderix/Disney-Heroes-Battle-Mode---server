@@ -74,13 +74,20 @@ delta victoire +25, durée 60 s), plafonds quotidiens de guilde, etc.
      - **🐛 Bug corrigé au passage** : `DropTable.roll` renvoie une liste RÉUTILISÉE d'un tirage à l'autre
        (tampon interne) → sans copie, trois compositions distinctes finissaient identiques. `rollBreakerComposition`
        en prend désormais une copie.
-     - **⚠️ ANOMALIE OUVERTE** : dans le test complet (après DB + autres appels invasion), les trois rooms
-       rendent la même taille (25) au lieu de 6/9/14. Un état partagé ou un cache du moteur de drop-tables est
-       probablement en cause (`InvasionStats.clearProgressRewardCache()` existe → il y a bien du cache).
-       **Tant que ce n'est pas élucidé, le test n'affirme que le stable** (tirage non vide + déterministe) ;
-       les assertions de niveau/ward/progression ont été retirées plutôt que rendues « chanceuses ».
-       *Prochaine action* : isoler la cause (ordre d'appel ? cache ? `getProgressRewards` ?) avant de câbler
-       `InvasionBreakerAttackStart`/`InvasionBreakerAttack`.
+     - **✅ ANOMALIE ÉLUCIDÉE (le tirage dépend du JOUEUR)** : la divergence 6/9/14 vs 25/25/25 venait du
+       CONTEXTE DE JEU. Bisection : le basculement se produit exactement à `ServerUser.newPlayer(...)`, qui LIE un
+       utilisateur à `DH.app`. La table de composition consulte cet utilisateur courant :
+         * **avec** joueur lié → de VRAIS héros du jeu (`BO_PEEP{level=25}`, `CHEF_SKINNER{level=735}`), 25 unités
+           = le breaker + ses wards — cohérent avec `WARDS_PER_BREAKER=4` et avec
+           `InvasionHelper.makeBreakerDefender(IInvasion, IHero)` qui prend bien un HÉROS ;
+         * **sans** joueur lié → repli dégradé sur des mobs génériques `SOULLESS_*` (6/9/14).
+       Autrement dit **c'est le cas « isolé » qui était faux**, pas le cas complet. Correction : la méthode prend
+       désormais le `ServerUser` en paramètre et appelle `ServerUser.bindGameContext()` — contexte EXPLICITE au
+       lieu de dépendre du dernier appel effectué.
+     - **Assertions fortes rétablies** dans `InvasionScheduleTest` : niveau exact = `BREAKER_FIGHT_LEVEL(room)`
+       (25 en room 1, 735 en room 45), compositions DIFFÉRENTES entre salles, tirage DÉTERMINISTE (même joueur +
+       même graine), et le breaker (1ᵉ élément) est un vrai héros — pas un `SOULLESS_*` du mode dégradé.
+       *(La composition MÉLANGE légitimement le breaker héros et ses wards `SOULLESS_*` : seule la tête compte.)*
    - ⏳ **Reste ensuite** : câbler les messages d'attaque. Rappel :
      `invasion_breaker_fight_comp.tab` est une **table de drop** (`ROOT → <BREAKER>, <WARD_1..4>` avec
      `RoomTest(16)`/`RoomTest(41)` qui font varier les wards selon la room) et le jeu fournit le contexte
