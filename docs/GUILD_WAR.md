@@ -240,9 +240,12 @@ Test : `server/smoke/WarStateTest`. Sortie : refus MEMBER, refus par le gate TL4
 round-trip DB de la guerre et de la guilde v8, anti-rematch borné à 20 sans doublon, bascule
 saison 103→104 avec MMR 110 → 700 (GOLD, rang 1) et archive `1V @ MMR 110` persistée.
 
-**🐛 Défaut trouvé PAR ce test (hors périmètre WAR, suivi à part)** : `UserStore.nextGuildID` lit
-`MAX(guildID)+1` **avant** l'insertion. Allouer deux identifiants sans enregistrer entre les deux les
-rend identiques — et le handler `CreateGuild` de `LoginServer` a exactement ce motif
-(`nextGuildID` puis `createGuild` puis `saveGuild` en trois temps), donc deux créations concurrentes
-peuvent collisionner. Les guerres n'y sont pas exposées (`saveWar` alloue sous verrou). À corriger sur
-le chemin guilde.
+**🐛 Défaut trouvé PAR ce test — CORRIGÉ** : `UserStore.nextGuildID` se contentait de LIRE
+`MAX(guildID)+1`. Or le handler `CreateGuild` enchaîne « lire l'identifiant », « créer la guilde »,
+« enregistrer » en trois temps : deux créations concurrentes lisaient donc le **même** identifiant, et
+la seconde **écrasait** la première (`upsert` sur la clé primaire) — une guilde disparaissait et son
+fondateur se retrouvait pointé sur celle d'un autre. La méthode **alloue** désormais réellement, en
+persistant un compteur dans `shard_state` **dans le même bloc synchronisé** que la lecture ; elle est
+monotone et reprend au-delà du `MAX` existant, donc aucune migration n'est nécessaire. Les guerres
+n'ont jamais été exposées (`saveWar` attribue le `warID` sous le même verrou que l'insertion).
+Couvert par `WarStateTest` : deux allocations **sans enregistrement intercalé** doivent différer.

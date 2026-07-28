@@ -272,14 +272,38 @@ public final class UserStore implements AutoCloseable {
     return out;
   }
 
-  /** GUILDES #7 — prochain guildID libre du shard (max+1, base 1). guildID>0 = « en guilde » côté client. */
+  /** Clé du compteur d'identifiants de guilde dans {@code shard_state}. */
+  private static final String GUILD_ID_SEQ = "guild_id_seq";
+
+  /**
+   * GUILDES #7 — <b>ALLOUE</b> le prochain guildID du shard. {@code guildID > 0} = « en guilde » côté client.
+   *
+   * <p><b>Correctif de concurrence (défaut trouvé par {@code WarStateTest})</b> : cette méthode se contentait
+   * de LIRE {@code MAX(guildID)+1}. Or le handler {@code CreateGuild} enchaîne « lire l'identifiant », « créer
+   * la guilde », « enregistrer » en trois temps : deux créations concurrentes lisaient donc le MÊME
+   * identifiant et la seconde ÉCRASAIT la première (l'{@code upsert} sur la clé primaire), faisant disparaître
+   * une guilde et laissant son fondateur pointer vers celle d'un autre. Elle ALLOUE désormais réellement, en
+   * persistant un compteur dans {@code shard_state} <b>dans le même bloc synchronisé</b> que la lecture :
+   * deux appels successifs ne peuvent plus rendre la même valeur, même sans enregistrement intercalé.
+   *
+   * <p>Le compteur est initialisé sur le {@code MAX} existant, donc une base déjà peuplée reprend la suite
+   * sans migration, et il ne recule jamais (on prend le maximum des deux sources).
+   */
   public synchronized long nextGuildID(int shardID) throws SQLException {
+    long fromTable = 0L;
     try (PreparedStatement ps = conn.prepareStatement(
-        "SELECT COALESCE(MAX(guildID),0)+1 FROM guilds WHERE shardID=?")) {
+        "SELECT COALESCE(MAX(guildID),0) FROM guilds WHERE shardID=?")) {
       ps.setInt(1, shardID);
-      try (ResultSet rs = ps.executeQuery()) { if (rs.next()) return rs.getLong(1); }
+      try (ResultSet rs = ps.executeQuery()) { if (rs.next()) fromTable = rs.getLong(1); }
     }
-    return 1L;
+    long fromCounter = 0L;
+    byte[] raw = loadShardState(shardID, GUILD_ID_SEQ);
+    if (raw != null && raw.length == 8) {
+      fromCounter = java.nio.ByteBuffer.wrap(raw).getLong();
+    }
+    long allocated = Math.max(fromTable, fromCounter) + 1L;
+    saveShardState(shardID, GUILD_ID_SEQ, java.nio.ByteBuffer.allocate(8).putLong(allocated).array());
+    return allocated;
   }
 
   /** ARÈNE #41 — charge le classement persisté de {@code (shard, type)}, ou {@code null} s'il n'existe pas encore. */

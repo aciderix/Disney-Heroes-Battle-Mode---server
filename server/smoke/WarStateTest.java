@@ -39,18 +39,20 @@ public final class WarStateTest {
       // Deux guildes, chacune avec son chef.
       ServerUser rulerA = ServerUser.newPlayer(1L, 1);
       rulerA.giveResource(ResourceType.GOLD, 5000);
+      // Les deux identifiants sont alloués AVANT tout enregistrement — c'est exactement la situation qui
+      // faisait collisionner deux créations concurrentes (défaut trouvé par ce test, corrigé depuis :
+      // `nextGuildID` ALLOUE sous verrou au lieu de simplement lire MAX+1).
       ServerGuild ga = rulerA.createGuild(mk("Alpha Legion"), store.nextGuildID(1));
-      store.saveGuild(ga);          // enregistrer AVANT d'allouer l'ID suivant (cf. note ci-dessous)
       ServerUser rulerB = ServerUser.newPlayer(2L, 1);
       rulerB.giveResource(ResourceType.GOLD, 5000);
       ServerGuild gb = rulerB.createGuild(mk("Bravo Legion"), store.nextGuildID(1));
-      store.saveGuild(gb);
+      check(ga.guildID != gb.guildID,
+          "deux allocations SANS enregistrement intercalé doivent différer (obtenu " + ga.guildID
+              + " et " + gb.guildID + ")");
+      store.saveGuild(ga); store.saveGuild(gb);
       store.save(rulerA); store.save(rulerB);
-      // NOTE (défaut trouvé PAR ce test) : `nextGuildID` = « MAX(guildID)+1 » lu AVANT l'insertion. Allouer
-      // deux identifiants sans enregistrer entre les deux les rend IDENTIQUES. Le même motif existe dans le
-      // handler CreateGuild → défaut de concurrence réel, suivi à part. Les guerres n'y sont PAS exposées :
-      // `UserStore.saveWar` attribue le warID sous le MÊME verrou que l'insertion.
-      check(ga.guildID != gb.guildID, "deux guildes ne peuvent pas partager un identifiant");
+      // Et l'allocation ne recule jamais : le compteur reprend au-delà du MAX déjà enregistré.
+      check(store.nextGuildID(1) > Math.max(ga.guildID, gb.guildID), "l'allocation doit être monotone");
       System.out.println("[war] guildes " + ga.guildID + " (" + ga.info.basicInfo.name + ") et "
           + gb.guildID + " (" + gb.info.basicInfo.name + ")");
 
