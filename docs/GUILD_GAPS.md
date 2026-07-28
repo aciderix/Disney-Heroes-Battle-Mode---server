@@ -144,17 +144,36 @@ jamais lues, y compris pour SKILL). Corrigé en `getDeclaredField` + `setAccessi
 
 ---
 
-## Conclusion — les 6 trous traités ✅
+## Conclusion — périmètre RÉELLEMENT couvert (audit 2026-07-28)
 
-Tous les trous multi-serveur de l'audit (g37) sont comblés, chacun avec test de régression et commit dédié
-(régression guilde 62 tests, seul échec toléré = flake `ChestWireTest`). **Ce qui reste est purement live-ops
-OPÉRATEUR** — des valeurs/déclencheurs que le vrai serveur PerBlue fixe et qui sont absents du jar client, donc
-NON inventables (§4) :
-- **HERO_XP** (dons) : quel `ItemType` d'XP + quantité par don (seul le plafond=4 est connu).
-- **Coût GOLD** d'emprunt de mercenaire (`MercenaryHeroData.cost`, fixé à la construction du pool).
-- **Déclencheur** des cadeaux de crate : le brancher sur un ACHAT réel (#15) ou le panneau admin (#37) —
-  le mécanisme (génération/persistance/réclamation) est fait, il ne manque que l'événement déclencheur.
-- **Planification** d'un contest (fenêtre/type/récompenses) + scoring joueur temps réel.
+Les 6 trous A–F portaient sur les fonctionnalités de guilde **déjà branchées**. Un audit exhaustif
+(tous les messages `*Guild*` + toutes les `CommandType` `*GUILD*` du jar, confrontés à `LoginServer`)
+donne l'image honnête suivante.
 
-**Vérif restante en jeu** : broadcast chat à **2 sessions simultanées** (le socle multi-user est fait + le pilote
-1-session boote OK ; il faut 2 clients pour voir le push temps réel).
+### ✅ Couvert (le « social » de guilde, de bout en bout)
+Créer / chercher / rejoindre / quitter / dissoudre · candidatures · roster étendu · gestion des membres
+(kick, promote, demote) · réglages + renommage · perks (permanents et temporisés) · check-in · dons GUILD AID
+(STAMINA, SKILL_LEVEL, HERO_XP) · mercenaires (poster, louer, Social Bucks, coût GOLD) · cadeaux / GUILD CRATE ·
+chat + wall (avec broadcast temps réel) · avatars · classements de guilde · contests (classements + ventilation
+par membre). **Tout est autoritatif, persisté et testé.**
+
+### ❌ NON couvert — 2 modes de jeu entiers + 2 petits trous
+| Trou | Ampleur | Note |
+|------|---------|------|
+| **GUILD WAR** | **0 / 68 messages** | Mode complet : matchmaking, lineups de défense, attaques, voitures + bonus, sabotage, logs, saisons/ligues, récompenses. Le plus gros reste du jeu. |
+| **INVASION** | **0 / 50 messages** | Mode complet : boss, breakers, ligues, rangs de membres, récompenses. |
+| `ClaimInactiveGuild` | 1 message | Reprendre une guilde dont le chef est inactif. Isolé, petit. |
+| `EditGuildWarSettings` | 1 message | Réglages de guerre — dépend de WAR. |
+
+> `CommandType.CREATE_GUILD` n'est pas câblé, mais la création de guilde **fonctionne et est vérifiée en jeu**
+> via le message `CreateGuild` (#49) : ce chemin de commande semble hérité/annexe (à re-vérifier si un écran
+> de création se bloque un jour).
+
+### Ce qui reste « opérateur » sur le couvert
+Ce ne sont PAS des trous techniques mais des **décisions éditoriales** (le mécanisme est codé et testé) :
+- **quelle règle** déclenche un cadeau de guilde sur un achat réel (le jar ne la contient pas — c'était une règle
+  de monétisation serveur) ; la génération manuelle/admin fonctionne déjà ;
+- **le calendrier** d'un contest (fenêtre, thème, récompenses de fin de saison) ; l'attribution et les classements
+  fonctionnent déjà.
+
+Suivi : tâches **#68 (WAR)**, **#69 (INVASION)**, **#70 (ClaimInactiveGuild)**.
