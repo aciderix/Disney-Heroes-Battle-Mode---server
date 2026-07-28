@@ -310,6 +310,112 @@ public final class ServerInvasion {
     return o;
   }
 
+  // ===================== BOSS (#69) =====================
+
+  /** Durée de vie d'un boss trouvé ({@code BOSS_FIGHT_TIME_LIMIT}, 24 h par défaut). */
+  public static long bossTimeLimit() { return constLong("BOSS_FIGHT_TIME_LIMIT", 86_400_000L); }
+  /** Durée du verrou d'attaque ({@code ATTACK_LOCK_DURATION}, 5 min). */
+  public static long attackLockDuration() { return constLong("ATTACK_LOCK_DURATION", 300_000L); }
+  /** Niveau du premier boss ({@code BOSS_FIGHT_INITAL_LEVEL}). */
+  public static int bossInitialLevel() { return (int) constLong("BOSS_FIGHT_INITAL_LEVEL", 450L); }
+  /** Progression de niveau après une victoire ({@code BOSS_FIGHT_WIN_LEVEL_DELTA}). */
+  public static int bossWinLevelDelta() { return (int) constLong("BOSS_FIGHT_WIN_LEVEL_DELTA", 25L); }
+
+  /** FAIT APPARAÎTRE un boss pour la guilde : il est « trouvé » par {@code finder} et devient attaquable par
+   *  tous les membres jusqu'à {@code BOSS_FIGHT_TIME_LIMIT}. Niveau et échéance viennent des DONNÉES du jeu. */
+  public static com.perblue.heroes.network.messages.InvasionBossInfo spawnBoss(
+      ServerGuild g, ServerUser finder, int level, long now) {
+    if (g == null) return null;
+    com.perblue.heroes.network.messages.InvasionBossInfo b =
+        new com.perblue.heroes.network.messages.InvasionBossInfo();
+    b.bossID = g.nextBossID++;
+    b.bossLevel = level > 0 ? level : bossInitialLevel();
+    b.foundTime = now;
+    b.endTime = now + bossTimeLimit();
+    b.damageDone = new java.util.HashMap<>();
+    b.augments = new java.util.ArrayList<>();
+    b.breakpoints = new java.util.ArrayList<>();
+    if (finder != null) {
+      b.foundByUser = finder.basicInfo();
+      b.finderTeamLevelSnapshot = finder.basicInfo() == null ? 1 : finder.basicInfo().teamLevel;
+    }
+    if (g.info != null) b.foundByGuild = g.info.basicInfo;
+    com.perblue.grunt.translate.util.GruntOutputStream go = new com.perblue.grunt.translate.util.GruntOutputStream();
+    b.writeAll(go);
+    g.addInvasionBoss(go.getBytes());
+    return b;
+  }
+
+  /** Les boss ENCORE ACTIFS de la guilde (échéance non atteinte). Les expirés sont retirés. */
+  public static java.util.List<com.perblue.heroes.network.messages.InvasionBossInfo> activeBosses(
+      ServerGuild g, long now) {
+    java.util.List<com.perblue.heroes.network.messages.InvasionBossInfo> out = new java.util.ArrayList<>();
+    if (g == null) return out;
+    for (com.perblue.heroes.network.messages.InvasionBossInfo b : g.invasionBosses()) {
+      if (b.endTime <= now) { g.replaceInvasionBoss(b.bossID, null); continue; }
+      out.add(b);
+    }
+    return out;
+  }
+
+  /** Résultat d'une attaque de boss. */
+  public static final class BossOutcome {
+    public boolean accepted;
+    public String refusal = "";
+    public int keyCost;
+    public long damage, totalDamage;
+    public boolean defeated;
+    @Override public String toString() {
+      return accepted ? ("−" + keyCost + " clé(s), " + damage + " dégâts (cumul joueur " + totalDamage + ")"
+          + (defeated ? " → BOSS VAINCU" : "")) : ("REFUSÉ : " + refusal);
+    }
+  }
+
+  /** ATTAQUE de boss, autoritative : vérifie le VERROU (un attaquant à la fois, {@code ATTACK_LOCK_DURATION}),
+   *  débite les clés ({@code BREAKER}, coût {@code BOSS_FIGHT_{1X,5X}_KEY_COST} selon le multiplicateur),
+   *  cumule les dégâts DU JOUEUR dans {@code damageDone} (état partagé de la guilde) et persiste l'objet du jeu. */
+  public static BossOutcome attackBoss(ServerGuild g, ServerUser u,
+      com.perblue.heroes.network.messages.UserInvasionData ud,
+      long bossID, int damageMultiplier, long damage, long now) {
+    BossOutcome o = new BossOutcome();
+    if (g == null || u == null) { o.refusal = "guilde ou joueur absent"; return o; }
+    if (!isActive(now)) { o.refusal = "invasion inactive"; return o; }
+    com.perblue.heroes.network.messages.InvasionBossInfo boss = null;
+    for (com.perblue.heroes.network.messages.InvasionBossInfo b : activeBosses(g, now))
+      if (b.bossID == bossID) boss = b;
+    if (boss == null) { o.refusal = "boss inconnu ou expiré"; return o; }
+    if (!g.lockBoss(bossID, u.userID, now, attackLockDuration())) {
+      o.refusal = "boss déjà attaqué par un autre membre"; return o;
+    }
+    o.keyCost = damageMultiplier > 1
+        ? (int) constLong("BOSS_FIGHT_5X_KEY_COST", 3L)
+        : (int) constLong("BOSS_FIGHT_1X_KEY_COST", 1L);
+    long keys = u.resourceAmount(com.perblue.heroes.network.messages.ResourceType.BREAKER);
+    if (keys < o.keyCost) {
+      g.unlockBoss(bossID, u.userID);
+      o.refusal = "clés insuffisantes (" + keys + "<" + o.keyCost + ")"; return o;
+    }
+    o.accepted = true;
+    u.giveResource(com.perblue.heroes.network.messages.ResourceType.BREAKER, -o.keyCost);
+    o.damage = Math.max(0L, damage);
+    if (boss.damageDone == null) boss.damageDone = new java.util.HashMap<>();
+    // La valeur doit être l'OBJET DU JEU InvasionBossDamageData{damage, lastAttackTime} — un Long brut n'est
+    // pas sérialisable par le format wire (la carte est typée Map<Long, InvasionBossDamageData>).
+    Object prev = boss.damageDone.get(u.userID);
+    com.perblue.heroes.network.messages.InvasionBossDamageData dd =
+        prev instanceof com.perblue.heroes.network.messages.InvasionBossDamageData
+            ? (com.perblue.heroes.network.messages.InvasionBossDamageData) prev
+            : new com.perblue.heroes.network.messages.InvasionBossDamageData();
+    dd.damage += o.damage;
+    dd.lastAttackTime = now;
+    ((java.util.Map<Object, Object>) boss.damageDone).put(u.userID, dd);
+    o.totalDamage = dd.damage;
+    if (ud != null) { ud.bossBattlesFought++; }
+    g.replaceInvasionBoss(bossID, boss);
+    g.unlockBoss(bossID, u.userID);
+    return o;
+  }
+
   /** Résumé lisible (journal serveur / admin). */
   public static String describe(long now) {
     long s = invasionStart(now);

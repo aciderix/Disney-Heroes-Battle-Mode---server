@@ -85,6 +85,66 @@ public final class ServerGuild {
    *  membre n'existe QUE côté serveur (le client ne la calcule pas) → elle alimente {@code ContestRankings}. */
   public final java.util.LinkedHashMap<Long, Long> contestPointsByUser = new java.util.LinkedHashMap<>();
 
+  // ===== v7 : INVASION (#69) — BOSS partagés de la guilde =====
+  /** Boss d'invasion actifs de la guilde : octets wire de chaque
+   *  {@link com.perblue.heroes.network.messages.InvasionBossInfo} (objet du jeu, qui porte lui-même les dégâts
+   *  par joueur, le niveau, l'échéance…). Le boss est de l'état OPÉRATEUR partagé : trouvé par un membre, il est
+   *  attaquable par toute la guilde jusqu'à {@code BOSS_FIGHT_TIME_LIMIT}. */
+  public final List<byte[]> invasionBossWire = new ArrayList<>();
+  /** Verrou d'attaque (`ATTACK_LOCK_DURATION`=5 min) : bossID → (userID, expiration). Empêche deux membres
+   *  d'attaquer le même boss simultanément ({@code BOSS_SIMULTANEOUS_ATTACKS_COUNT}=1). */
+  public final java.util.LinkedHashMap<Long, long[]> bossAttackLocks = new java.util.LinkedHashMap<>();
+  /** Prochain identifiant de boss (unique par guilde). */
+  public long nextBossID = 1L;
+
+  /** Ajoute un boss (octets wire) au pool de la guilde. */
+  public void addInvasionBoss(byte[] wire) { invasionBossWire.add(wire); }
+
+  /** Relit les boss stockés en objets du jeu (les illisibles sont écartés). */
+  public List<com.perblue.heroes.network.messages.InvasionBossInfo> invasionBosses() {
+    List<com.perblue.heroes.network.messages.InvasionBossInfo> out = new ArrayList<>();
+    java.util.Iterator<byte[]> it = invasionBossWire.iterator();
+    while (it.hasNext()) {
+      try {
+        out.add((com.perblue.heroes.network.messages.InvasionBossInfo)
+            MessageFactory.getInstance().readMessage(new GruntInputStream(it.next())));
+      } catch (Exception ignore) { it.remove(); }
+    }
+    return out;
+  }
+
+  /** Remplace (ou supprime si {@code null}) le boss {@code bossID} par sa version wire à jour. */
+  public void replaceInvasionBoss(long bossID, com.perblue.heroes.network.messages.InvasionBossInfo updated) {
+    for (int i = 0; i < invasionBossWire.size(); i++) {
+      try {
+        com.perblue.heroes.network.messages.InvasionBossInfo b =
+            (com.perblue.heroes.network.messages.InvasionBossInfo)
+                MessageFactory.getInstance().readMessage(new GruntInputStream(invasionBossWire.get(i)));
+        if (b.bossID != bossID) continue;
+        if (updated == null) { invasionBossWire.remove(i); bossAttackLocks.remove(bossID); return; }
+        GruntOutputStream go = new GruntOutputStream();
+        updated.writeAll(go);
+        invasionBossWire.set(i, go.getBytes());
+        return;
+      } catch (Exception ignore) { }
+    }
+  }
+
+  /** Tente de POSER le verrou d'attaque sur un boss pour {@code userID}. {@code false} = déjà verrouillé
+   *  par quelqu'un d'autre (verrou expiré = repris). */
+  public boolean lockBoss(long bossID, long userID, long now, long lockDuration) {
+    long[] cur = bossAttackLocks.get(bossID);
+    if (cur != null && cur[1] > now && cur[0] != userID) return false;
+    bossAttackLocks.put(bossID, new long[]{userID, now + lockDuration});
+    return true;
+  }
+
+  /** Lève le verrou d'attaque si {@code userID} le détient. */
+  public void unlockBoss(long bossID, long userID) {
+    long[] cur = bossAttackLocks.get(bossID);
+    if (cur != null && cur[0] == userID) bossAttackLocks.remove(bossID);
+  }
+
   /** Ajoute un cadeau (offreur + récompenses) au flux de la guilde, borné à {@code MAX_GIFT_HISTORY}. */
   public void addGift(byte[] gifterWire, long time, byte[] rewardsBlob) {
     giftGifterWire.add(gifterWire); giftTimes.add(time); giftRewardsBlob.add(rewardsBlob);
@@ -198,7 +258,7 @@ public final class ServerGuild {
 
       ByteArrayOutputStream bos = new ByteArrayOutputStream();
       DataOutputStream o = new DataOutputStream(bos);
-      o.writeInt(6);                       // version (2 check-in ; 3 chat ; 4 dons ; 5 cadeaux ; 6 contest/membre)
+      o.writeInt(7);                       // version (…5 cadeaux ; 6 contest/membre ; 7 boss d'invasion)
       o.writeLong(guildID);
       o.writeInt(shardID);
       o.writeInt(infoWire.length);
@@ -242,6 +302,14 @@ public final class ServerGuild {
       // v6 : contribution de contest par membre
       o.writeInt(contestPointsByUser.size());
       for (java.util.Map.Entry<Long, Long> e : contestPointsByUser.entrySet()) { o.writeLong(e.getKey()); o.writeLong(e.getValue()); }
+      // v7 : boss d'invasion partagés + verrous d'attaque
+      o.writeLong(nextBossID);
+      o.writeInt(invasionBossWire.size());
+      for (byte[] w : invasionBossWire) { o.writeInt(w.length); o.write(w); }
+      o.writeInt(bossAttackLocks.size());
+      for (java.util.Map.Entry<Long, long[]> e : bossAttackLocks.entrySet()) {
+        o.writeLong(e.getKey()); o.writeLong(e.getValue()[0]); o.writeLong(e.getValue()[1]);
+      }
       o.flush();
       return bos.toByteArray();
     } catch (Exception ex) {
@@ -303,6 +371,16 @@ public final class ServerGuild {
       if (version >= 6) {
         int np = in.readInt();
         for (int i = 0; i < np; i++) { long uid = in.readLong(); g.contestPointsByUser.put(uid, in.readLong()); }
+      }
+      if (version >= 7) {
+        g.nextBossID = in.readLong();
+        int nb = in.readInt();
+        for (int i = 0; i < nb; i++) { byte[] w = new byte[in.readInt()]; in.readFully(w); g.invasionBossWire.add(w); }
+        int nl = in.readInt();
+        for (int i = 0; i < nl; i++) {
+          long bid = in.readLong();
+          g.bossAttackLocks.put(bid, new long[]{in.readLong(), in.readLong()});
+        }
       }
       return g;
     } catch (Exception ex) {

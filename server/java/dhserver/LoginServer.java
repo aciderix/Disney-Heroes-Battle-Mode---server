@@ -990,6 +990,24 @@ public final class LoginServer {
               c.send(resp);
               System.out.println("[login] <== GetGuildDonationRequests → ==> GuildDonationRequests ("
                   + resp.requests.size() + " demande(s))");
+            } else if (m instanceof com.perblue.heroes.network.messages.GetInvasionBosses) {
+              // INVASION #69 — boss PARTAGÉS de la guilde (état opérateur persisté, v7) : les expirés
+              // (au-delà de BOSS_FIGHT_TIME_LIMIT) sont retirés à la lecture.
+              com.perblue.heroes.network.messages.GetInvasionBosses gb =
+                  (com.perblue.heroes.network.messages.GetInvasionBosses) m;
+              long bnow2 = com.perblue.heroes.util.TimeUtil.serverTimeNow();
+              ServerGuild bg = currentGuild(user);
+              com.perblue.heroes.network.messages.InvasionBosses ib =
+                  new com.perblue.heroes.network.messages.InvasionBosses();
+              ib.invasionID = gb.invasionID != 0 ? gb.invasionID
+                  : ServerInvasion.rotation(ServerInvasion.invasionStart(bnow2));
+              ib.bosses = new java.util.ArrayList<>(ServerInvasion.activeBosses(bg, bnow2));
+              ib.bossFeed = new java.util.ArrayList<>();
+              if (bg != null) { try { store.saveGuild(bg); } catch (Exception ignore) {} }
+              ib.setAsReplyTo(m);
+              c.send(ib);
+              System.out.println("[login] <== GetInvasionBosses → ==> InvasionBosses ("
+                  + ib.bosses.size() + " boss actif(s))");
             } else if (m instanceof com.perblue.heroes.network.messages.InvasionBreakerAttackStart) {
               // INVASION #69 — le client OUVRE un combat de breaker : le serveur lui renvoie la COMPOSITION
               // adverse, tirée de la table de drop DU JEU (invasion_breaker_fight_comp.tab) DANS LE CONTEXTE
