@@ -78,6 +78,13 @@ public final class ServerGuild {
   public long giftEventID = 1L;
   public static final int MAX_GIFT_HISTORY = 100;
 
+  // ===== v6 : CONTEST (#67) — contribution PAR MEMBRE (état OPÉRATEUR) =====
+  /** Points de contest apportés par chaque membre : userID → points. Le TOTAL de la guilde est
+   *  {@code info.contestPoints} (= ce que le jeu appelle « guild contest points » : {@code User
+   *  .getGuildContestPoints()} retourne {@code getYourGuildInfo().contestPoints}). La ventilation par
+   *  membre n'existe QUE côté serveur (le client ne la calcule pas) → elle alimente {@code ContestRankings}. */
+  public final java.util.LinkedHashMap<Long, Long> contestPointsByUser = new java.util.LinkedHashMap<>();
+
   /** Ajoute un cadeau (offreur + récompenses) au flux de la guilde, borné à {@code MAX_GIFT_HISTORY}. */
   public void addGift(byte[] gifterWire, long time, byte[] rewardsBlob) {
     giftGifterWire.add(gifterWire); giftTimes.add(time); giftRewardsBlob.add(rewardsBlob);
@@ -191,7 +198,7 @@ public final class ServerGuild {
 
       ByteArrayOutputStream bos = new ByteArrayOutputStream();
       DataOutputStream o = new DataOutputStream(bos);
-      o.writeInt(5);                       // version (2 = check-in/candidatures ; 3 = chat ; 4 = dons ; 5 = cadeaux)
+      o.writeInt(6);                       // version (2 check-in ; 3 chat ; 4 dons ; 5 cadeaux ; 6 contest/membre)
       o.writeLong(guildID);
       o.writeInt(shardID);
       o.writeInt(infoWire.length);
@@ -232,6 +239,9 @@ public final class ServerGuild {
       }
       o.writeInt(giftClaimTimes.size());
       for (java.util.Map.Entry<Long, Long> e : giftClaimTimes.entrySet()) { o.writeLong(e.getKey()); o.writeLong(e.getValue()); }
+      // v6 : contribution de contest par membre
+      o.writeInt(contestPointsByUser.size());
+      for (java.util.Map.Entry<Long, Long> e : contestPointsByUser.entrySet()) { o.writeLong(e.getKey()); o.writeLong(e.getValue()); }
       o.flush();
       return bos.toByteArray();
     } catch (Exception ex) {
@@ -289,6 +299,10 @@ public final class ServerGuild {
         }
         int nc = in.readInt();
         for (int i = 0; i < nc; i++) { long uid = in.readLong(); g.giftClaimTimes.put(uid, in.readLong()); }
+      }
+      if (version >= 6) {
+        int np = in.readInt();
+        for (int i = 0; i < np; i++) { long uid = in.readLong(); g.contestPointsByUser.put(uid, in.readLong()); }
       }
       return g;
     } catch (Exception ex) {

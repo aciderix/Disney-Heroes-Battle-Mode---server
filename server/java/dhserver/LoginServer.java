@@ -479,11 +479,14 @@ public final class LoginServer {
                 ServerGuild g = currentGuild(user);
                 if (g == null) {
                   System.out.println("[login]     ! REQUEST_GUILD_DONATION : joueur sans guilde");
-                } else if ("STAMINA".equals(reqType) || "SKILL_LEVEL".equals(reqType)) {
+                } else if ("STAMINA".equals(reqType) || "SKILL_LEVEL".equals(reqType) || "HERO_XP".equals(reqType)) {
                   try {
                     com.perblue.heroes.network.messages.GuildDonationRequestRow row;
                     if ("STAMINA".equals(reqType)) {
                       row = user.postGuildStaminaRequest(g);
+                    } else if ("HERO_XP".equals(reqType)) {
+                      // HERO_XP (#63) : cible = act.heroType ; le don est dérivé de l'XP manquant du héros.
+                      row = user.postGuildHeroXPRequest(g, act.heroType);
                     } else {
                       // SKILL_LEVEL (#63) : cible = act.heroType + slot dans extra[SKILL] (SkillSlot ou son nom).
                       com.perblue.heroes.network.messages.SkillSlot slot = parseSkillSlot(act);
@@ -505,10 +508,7 @@ public final class LoginServer {
                     } else { System.out.println("[login]     ! postGuild"+reqType+"Request échec: " + t); t.printStackTrace(); }
                   }
                 } else {
-                  // HERO_XP : composition du don (ItemType d'XP + quantité) fixée à la construction de la demande
-                  // côté OPÉRATEUR, absente du jar client (seul HERO_XP_DONATION_MAX_QTY=4 est connu). La choisir =
-                  // inventer une valeur → refusé par §4. Documenté dans docs/GUILD_GAPS.md (gap B).
-                  System.out.println("[login]     ~ REQUEST_GUILD_DONATION type=" + reqType + " non géré (HERO_XP = donnée opérateur, §4)");
+                  System.out.println("[login]     ~ REQUEST_GUILD_DONATION type=" + reqType + " inconnu");
                 }
               } else if (act.command == com.perblue.heroes.network.messages.CommandType.CHECK_IN_TO_GUILD) {
                 // CHECK-IN — émargement quotidien : crédite l'influence de guilde + récompenses au joueur (autoritatif,
@@ -1294,7 +1294,9 @@ public final class LoginServer {
             com.perblue.heroes.network.messages.PlayerRow pr = new com.perblue.heroes.network.messages.PlayerRow();
             pr.info = mu.basicInfo();
             row.playerRow = pr;
-            row.points = mu.resourceAmount(com.perblue.heroes.network.messages.ResourceType.GUILD_CONTEST_POINTS);
+            // Points = ventilation SERVEUR par membre (#67). La ressource GUILD_CONTEST_POINTS n'est PAS un
+            // stock (getGuildContestPoints() lit GuildInfo.contestPoints) → la lire donnerait toujours 0.
+            row.points = mu.contestPointsIn(g);
             rows.add(row);
           } catch (Exception e) { System.out.println("[login]     ! contest membre " + mid + ": " + e); }
         }

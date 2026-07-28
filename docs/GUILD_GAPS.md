@@ -14,11 +14,11 @@
 | Gap | Sujet | Statut | Commit |
 |-----|-------|--------|--------|
 | A | Avatars calculés depuis le niveau de guilde | ✅ FAIT (test + push) | `5be06ee` |
-| C | Mercenaire — créditer Social Bucks au posteur | ✅ FAIT (test + push) | `cb58d5e` |
-| B | Dons SKILL_LEVEL (✅) + HERO_XP (opérateur §4) | ✅ SKILL FAIT + push | `daeb260` |
-| E | Génération serveur des cadeaux de crate | ✅ FAIT (test + push) | `4632348` |
+| C | Mercenaire — Social Bucks + **coût GOLD** (formule du jeu) | ✅ FAIT (2ᵉ passe) | `cb58d5e`+ |
+| B | Dons SKILL_LEVEL + **HERO_XP** (dérivé du jeu) | ✅ LES DEUX FAITS (2ᵉ passe) | `daeb260`+ |
+| E | Cadeaux de crate + **déclencheur admin** (`AdminGuild`) | ✅ FAIT (2ᵉ passe) | `4632348`+ |
 | D | MULTI-USER + registre connexions + broadcast | ✅ FAIT (socle, compile-clean) | `0536a52` |
-| F | Contests — classements réels + scoring guilde | ✅ FAIT (test + push) | `f6e831d` |
+| F | Contests — classements + **ventilation par membre** (v6) + admin | ✅ FAIT (2ᵉ passe) | `f6e831d`+ |
 
 ---
 
@@ -38,7 +38,13 @@ lue par réflexion ; indexée 0..99 par `REQUIRED_GUILD_LEVEL` ; **CUMULATIVE** 
 VIP, =100 à VIP 0) → `SOCIAL_BUCKS` + incrément `UserFlag.MERCENARY_SOCIAL_BUCKS` (compteur hebdo « earned this
 week », reset via `getAndUpdateSocialBucks`), persisté (sauf auto-location). `GuildMercRewardTest` : +100/location,
 cumul, round-trip DB. **Reste** : coût GOLD à l'emprunt (`MercenaryHeroData.cost` via `chargeForMercenary`) = fixé
-à la construction du pool (opérateur), aucune formule dans le jar client → non simulé.
+à la construction du pool. **2ᵉ passe (vérification demandée) : CORRIGÉ — la formule EXISTE bien dans les données
+du jeu !** `user_values.tab` → `MERCENARY_COST = min(2500+(0.5*P), 2000000000)` (P = puissance du héros). Scan du
+pool de constantes de TOUT le jar : **aucune classe cliente** ne référence `MERCENARY_COST` → l'expression est
+faite pour être évaluée par le SERVEUR, qui remplit `MercenaryHeroData.cost`. Implémenté :
+`ServerUser.mercenaryCost(power)` évalue l'expression avec l'évaluateur DU JEU (`SimpleExpressionContext`,
+variable `P`) ; `postedMercenaries()` renseigne `md.cost` avec la puissance réelle du héros (`IHero.getPower(0)`).
+Vérifié : P=0→2500, P=1000→3000, P=100k→52500, P=5M→2502500.
 
 ## B — Dons SKILL_LEVEL ✅ + HERO_XP (opérateur §4)
 
@@ -58,10 +64,23 @@ total = `DONATIONS_PER_HELP_REQUEST` lu par réflexion). Handler `REQUEST_GUILD_
 nbDons × `SKILL_POINT_CONSUMABLE` par courrier `GUILD_DONATION_SUCCESS`. `GuildSkillDonationTest` : validation du
 jeu câblée (refus héros sans skill), escrow débite le donneur, cap 1, livraison + round-trip DB.
 
-**HERO_XP** = le `RewardDrop` de don (quel `ItemType` d'XP parmi EXP_VIAL/FLASK/… et quelle quantité) est fixé
-à la construction de la demande côté OPÉRATEUR — **absent du jar client** (seul le plafond de quantité=4 est connu).
-Le choisir = inventer une valeur → **INTERDIT (§4)**. Handler : journalise « non géré (donnée opérateur, §4) ».
-→ HERO_XP documenté comme reste opérateur (comme le coût merc à l'emprunt).
+**HERO_XP** ✅ **FAIT** (2ᵉ passe — vérification demandée : « les valeurs existent-elles vraiment ? »).
+Balayage EXHAUSTIF (274 `.tab` + `user_values.tab` + UI `ui/donations/*` + tuto `DonationActV1`) : aucune table ne
+donne l'item/quantité du don. **MAIS** la dérivation, elle, est 100 % dans le jeu :
+- `canRequestHeroXPHelp` REFUSE la demande si `hero.getEXP() == UnitStats.getEXPToNextLevel(level)` → **preuve que
+  la demande porte sur l'XP MANQUANT** du héros pour son prochain niveau ;
+- `ItemHelper.convertHeroXPToItems(xp, mode)` convertit un montant d'XP en items RÉELS via les données
+  `ItemStats.EXP_ITEMS_LARGE_TO_SMALL` + stat `EXP_GIVEN` ;
+- `DONATIONS_PER_HELP_REQUEST`=5 dons remplissent la demande ; `HERO_XP_DONATION_MAX_QTY`=4 plafonne la quantité.
+
+→ `postGuildHeroXPRequest(g, unit)` : don = `convertHeroXPToItems(XPmanquant / 5)`, plus grosse dénomination,
+quantité plafonnée à 4. **Seule lecture structurelle** (documentée, non issue d'une table) : « part = XP manquant ÷
+nombre de dons ». Livraison : nbDons × le drop, par courrier. `GuildHeroXPDonationTest` : don dérivé = item d'XP
+réel du jeu (≤ plafond), donneurs débités, demande remplie, livraison, round-trip DB.
+
+**🐛 Bug corrigé au passage** : `guildConstantInt` utilisait `getField` alors que les champs de
+`GuildStats$Constants` sont **package-private** → il retombait TOUJOURS sur les défauts (les constantes n'étaient
+jamais lues, y compris pour SKILL). Corrigé en `getDeclaredField` + `setAccessible`.
 
 ## E — Génération serveur des cadeaux de crate ✅
 
@@ -76,7 +95,10 @@ Le choisir = inventer une valeur → **INTERDIT (§4)**. Handler : journalise «
   répond `GuildGiftRewardsUpdate{newRewards}`.
 - `GuildGiftTest` : génère (500 GOLD + 3 STAMINA), build (1 offreur/2 récompenses), membre 2 réclame (+crédité),
   2ᵉ claim = rien, round-trip DB (cadeaux + marques persistent, membre 3 réclame, membre 2 non).
-- **Reste** : brancher `grantGuildGift` sur un ACHAT réel (coffre payant #15) et/ou le panneau admin (#37).
+- **DÉCLENCHEUR ADMIN ✅ (2ᵉ passe)** : `AdminGuild --gift --from <userID> --reward TYPE:qté ...` génère le cadeau
+  (accepte ResourceType ET ItemType), persisté en base → réclamable en jeu. Vérifié de bout en bout : cadeau
+  (GOLD:50000 + STAMINA_CONSUMABLE:3) → un membre réclame → **GOLD 0→50000, STAMINA 0→3**.
+- **Reste** : le brancher aussi sur un ACHAT réel (coffre payant #15) si tu veux le déclenchement automatique.
 
 ## D — MULTI-USER + registre de connexions + broadcast ✅ (socle)
 
@@ -104,14 +126,21 @@ Le choisir = inventer une valeur → **INTERDIT (§4)**. Handler : journalise «
   classe les membres de la guilde par leurs points de contest.
 - **Scoring GUILDE** : `ServerUser.awardGuildContestPoints(g, points)` → `GuildInfo.contestPoints` (persisté).
   Capacité opérateur (le contest = planifié par l'admin, comme #37).
-- **FAIT VÉRIFIÉ** : les points de contest du JOUEUR (ressource `GUILD_CONTEST_POINTS`) sont une ressource
-  **SPÉCIALE NON réglable** par `setResource` (le jeu la calcule depuis l'état du contest — `giveResource` est un
-  no-op pour ce type, contrairement à GOLD/SOCIAL_BUCKS). Donc points joueur = **opérateur/contest-calculés** ; le
-  classement des joueurs LIT la ressource (0 hors contest actif = fidèle). Pas de scoring joueur inventé (§4).
-- `GuildContestTest` : 3 guildes (100/200/300) → tri 300>200>100, round-trip DB ; confirme
-  `GUILD_CONTEST_POINTS` non réglable.
-- **Reste** : la PLANIFICATION d'un contest (fenêtre active, type, récompenses de fin) = live-ops opérateur (via
-  le panneau admin #37 / évènements spéciaux) ; le scoring joueur temps réel dépend d'un contest actif hébergé.
+- **« Les points de contest sont-ils bien gérés par le serveur ? » — OUI, et le bytecode le prouve** :
+  `User.getGuildContestPoints() { return DH.app.getYourGuildInfo().contestPoints; }` et
+  `setGuildContestPoints(n) { getYourGuildInfo().contestPoints = n; }`. **La source de vérité est donc
+  `GuildInfo.contestPoints`** — un champ que le SERVEUR (nous) remplit, persiste et envoie dans `GuildInfo`.
+  La ressource `ResourceType.GUILD_CONTEST_POINTS` n'est **pas un stock** mais un canal d'ÉVÉNEMENT UI
+  (`UserProperty.get(...)`) : d'où le no-op de `setResource`. Rien n'est donc « perdu » côté serveur.
+- **🐛 Défaut corrigé** : `buildContestRankings` lisait cette ressource → il aurait TOUJOURS renvoyé 0. La
+  ventilation par membre n'existe nulle part côté client → **état serveur (ServerGuild v6)** :
+  `contestPointsByUser` (userID → points), alimenté par `awardGuildContestPoints` (qui incrémente AUSSI le total
+  guilde), lu par `ContestRankings`, persisté.
+- `GuildContestTest` : 3 guildes (100/200/300) → tri 300>200>100 ; ventilation 120+80 cohérente avec le total ;
+  round-trip DB v6 ; confirme que la ressource joueur n'est pas un stock.
+- **PLANIFICATION = admin** (confirmé) : `AdminGuild --contest-points <n> [--member <id>]` attribue les points
+  (guilde + membre), persistés et immédiatement visibles dans les deux classements. La fenêtre temporelle /
+  récompenses de fin d'un contest restent du live-ops à programmer si tu veux des saisons.
 
 ---
 

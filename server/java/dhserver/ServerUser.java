@@ -330,17 +330,26 @@ public final class ServerUser {
     return user.getResource(rt);
   }
 
-  // NB (#67) : les points de contest du JOUEUR (ressource GUILD_CONTEST_POINTS) sont une ressource SPÉCIALE
-  // NON réglable par setResource (le jeu la calcule depuis l'état du contest — vérifié : giveResource est un
-  // no-op pour ce type, contrairement à GOLD/SOCIAL_BUCKS). Ils sont donc opérateur/contest-calculés ; le
-  // classement des joueurs (GET_CONTEST_RANKINGS) LIT la ressource (0 hors contest actif = fidèle). Seul le
-  // scoring de la GUILDE (GuildInfo.contestPoints, champ réglable) est exposé ci-dessous.
+  // FAIT ÉTABLI (#67, bytecode User) : les « points de contest » du joueur NE sont PAS un stock séparé —
+  //   getGuildContestPoints() { return DH.app.getYourGuildInfo().contestPoints; }
+  //   setGuildContestPoints(n,…) { DH.app.getYourGuildInfo().contestPoints = n; }
+  // La SOURCE DE VÉRITÉ est donc GuildInfo.contestPoints, envoyé par le SERVEUR (nous) dans GuildInfo et
+  // persisté ici. La ressource ResourceType.GUILD_CONTEST_POINTS n'est qu'un canal d'ÉVÉNEMENT UI
+  // (UserProperty.get(...)), pas un stock : c'est pourquoi setResource dessus est un no-op.
+  // La VENTILATION par membre (qui a apporté quoi) n'existe nulle part côté client → état serveur (v6).
 
-  /** SCORING contest (#67) — ajoute des points de contest à la GUILDE ({@code GuildInfo.contestPoints},
-   *  persisté via {@code store.saveGuild}). Base du classement des guildes en contest. */
+  /** SCORING contest (#67) — ajoute des points de contest à la GUILDE ({@code GuildInfo.contestPoints} = la
+   *  valeur que le jeu lit comme « guild contest points ») ET les impute à CE joueur dans la ventilation par
+   *  membre ({@code contestPointsByUser}, qui alimente {@code ContestRankings}). Persisté via {@code saveGuild}. */
   public synchronized void awardGuildContestPoints(ServerGuild g, int points) {
     if (g == null || points <= 0) return;
     g.info.contestPoints += points;
+    g.contestPointsByUser.merge(userID, (long) points, Long::sum);
+  }
+
+  /** Points de contest apportés par CE joueur à sa guilde (ventilation serveur). */
+  public synchronized long contestPointsIn(ServerGuild g) {
+    return g == null ? 0L : g.contestPointsByUser.getOrDefault(userID, 0L);
   }
 
   // ===================== GUILDES #7 =====================
@@ -735,10 +744,36 @@ public final class ServerUser {
     userExtra.mercenariesPostedAtGuildID = currentGuildID();
   }
 
+  /** COÛT GOLD d'emprunt d'un mercenaire — FORMULE DU JEU : {@code user_values.tab} →
+   *  {@code MERCENARY_COST = min(2500+(0.5*P), 2000000000)}, avec {@code P} = puissance du héros.
+   *  VÉRIFIÉ : AUCUNE classe cliente n'évalue cette expression (seul {@code UserValue} la déclare, scan du pool
+   *  de constantes de tout le jar) → elle est faite pour être évaluée par le SERVEUR, qui remplit
+   *  {@code MercenaryHeroData.cost}. On l'évalue avec l'évaluateur d'expressions DU JEU (aucune valeur codée). */
+  public static long mercenaryCost(long power) {
+    com.perblue.common.bycep.SimpleExpressionContext ctx =
+        com.perblue.common.bycep.SimpleExpressionContext.get(true);
+    try {
+      ctx.setVariable("P", (double) Math.max(0L, power));
+      return (long) com.perblue.heroes.game.data.misc.UserValues.getExpression(
+          com.perblue.heroes.game.data.misc.UserValue.MERCENARY_COST)
+          .evaluate((com.perblue.common.bycep.EvaluationState) ctx);
+    } catch (Throwable t) {
+      System.out.println("[merc] évaluation MERCENARY_COST échouée: " + t);
+      return 0L;
+    } finally {
+      try { ctx.reset(true); } catch (Throwable ignore) {}
+    }
+  }
+
   /** Les mercenaires postés par CE joueur (pour l'agrégation du pool de guilde). */
   public synchronized java.util.List<com.perblue.heroes.network.messages.MercenaryHeroData> postedMercenaries() {
     java.util.List<com.perblue.heroes.network.messages.MercenaryHeroData> out = new java.util.ArrayList<>();
     if (userExtra.recentlyPostedHeroes == null || userExtra.mercenariesPostedAtGuildID != currentGuildID()) return out;
+    ServerContext.init();
+    User user = ClientNetworkStateConverter.getUser(userInfo, userExtra, "merc");
+    IndividualUser iu = ClientNetworkStateConverter.getIndividualUser(
+        individualUserExtra, userID, userInfo.diamonds, "merc");
+    ServerContext.bind(user, iu);
     long now = com.perblue.heroes.util.TimeUtil.serverTimeNow();
     for (Object o : userExtra.recentlyPostedHeroes) {
       com.perblue.heroes.network.messages.UnitType t = (com.perblue.heroes.network.messages.UnitType) o;
@@ -750,8 +785,13 @@ public final class ServerUser {
       md.ownerID = userID;
       md.ownerName = userInfo.basicInfo == null ? "" : userInfo.basicInfo.name;
       md.postTime = now;
-      md.cost = 0;                                       // coût GOLD à l'emprunt = MercenaryHeroData.cost fixé
-                                                          // à la construction du pool (opérateur) ; non simulé ici.
+      // COÛT (#57/#64) : puissance du héros (logique du jeu getPower) → formule MERCENARY_COST du jeu.
+      long power = 0L;
+      try {
+        com.perblue.heroes.game.objects.IHero h = user.getHero(t);
+        if (h != null) power = Math.max(0L, h.getPower(0));
+      } catch (Throwable ignore) {}
+      md.cost = (int) Math.min(Integer.MAX_VALUE, mercenaryCost(power));
       out.add(md);
     }
     return out;
@@ -842,7 +882,10 @@ public final class ServerUser {
       cs.setAccessible(true);
       Object constStats = cs.get(null);
       Object stats = constStats.getClass().getMethod("getStats").invoke(constStats);
-      java.lang.reflect.Field f = stats.getClass().getField(field);
+      // Les champs de GuildStats$Constants sont PACKAGE-PRIVATE → getDeclaredField + setAccessible
+      // (getField ne voit que les publics et échouerait silencieusement sur le défaut).
+      java.lang.reflect.Field f = stats.getClass().getDeclaredField(field);
+      f.setAccessible(true);
       return ((Number) f.get(stats)).intValue();
     } catch (Throwable t) {
       System.out.println("[guild] constante " + field + " indispo → défaut " + fallback + " (" + t + ")");
@@ -876,6 +919,7 @@ public final class ServerUser {
     row.member = userInfo.basicInfo;
     row.type = com.perblue.heroes.network.messages.GuildDonationRequestType.SKILL_LEVEL;
     row.skill = skill;
+    row.hero = heroSummary(user.getHero(unit), unit);    // l'UI affiche le héros ciblé (niveau/rareté/étoiles)
     row.donation = com.perblue.heroes.game.logic.RewardHelper.createDrop(
         com.perblue.heroes.network.messages.ItemType.SKILL_POINT_CONSUMABLE, 1L);
     row.totalRequestedDonations = total;
@@ -895,6 +939,113 @@ public final class ServerUser {
     com.perblue.grunt.translate.util.GruntOutputStream gout = new com.perblue.grunt.translate.util.GruntOutputStream();
     row.writeAll(gout);
     g.addDonationRequestWire(gout.getBytes());
+    g.donationsByUser.put(row.requestID, new java.util.LinkedHashMap<>());
+    return row;
+  }
+
+  /** Résumé du héros ciblé par une demande d'aide ({@code GuildDonationRequestRow.hero}) — l'UI y lit
+   *  type/niveau/rareté/étoiles pour dessiner la vignette. */
+  private static com.perblue.heroes.network.messages.HeroSummary heroSummary(
+      com.perblue.heroes.game.objects.IHero h, com.perblue.heroes.network.messages.UnitType unit) {
+    com.perblue.heroes.network.messages.HeroSummary hs = new com.perblue.heroes.network.messages.HeroSummary();
+    hs.type = unit;
+    if (h != null) {
+      hs.level = h.getLevel();
+      hs.rarity = h.getRarity();
+      hs.stars = h.getStars();
+    }
+    return hs;
+  }
+
+  /** Le DON attendu pour une demande HERO_XP, DÉRIVÉ des fonctions + données du jeu (#63) :
+   *  <ul><li>la demande porte sur l'XP qui MANQUE au héros pour son prochain niveau — prouvé par
+   *  {@code canRequestHeroXPHelp}, qui REFUSE la demande quand {@code hero.getEXP() == getEXPToNextLevel(level)} ;</li>
+   *  <li>{@code DONATIONS_PER_HELP_REQUEST} (=5) dons remplissent la demande → part par don ;</li>
+   *  <li>{@code ItemHelper.convertHeroXPToItems} (données {@code ItemStats.EXP_ITEMS_LARGE_TO_SMALL} +
+   *  {@code EXP_GIVEN}) convertit cette part en items d'XP RÉELS ;</li>
+   *  <li>quantité plafonnée par {@code HERO_XP_DONATION_MAX_QTY} (=4) de guild_constants.</li></ul>
+   *  Toutes les valeurs viennent du jeu ; la seule LECTURE STRUCTURELLE est « la part = XP manquant / nb de dons »
+   *  (aucune table du jar ne l'énonce — balayage exhaustif des 274 .tab). Documenté dans docs/GUILD_GAPS.md. */
+  private static com.perblue.heroes.network.messages.RewardDrop heroXPDonationDrop(
+      com.perblue.heroes.game.objects.IHero h) {
+    int perDonationCap = Math.max(1, guildConstantInt("HERO_XP_DONATION_MAX_QTY", 4));
+    int donations = Math.max(1, guildConstantInt("DONATIONS_PER_HELP_REQUEST", 5));
+    long missing = 0L;
+    if (h != null) {
+      long toNext = com.perblue.heroes.game.data.unit.UnitStats.getEXPToNextLevel(h.getLevel());
+      missing = Math.max(0L, toNext - h.getEXP());
+    }
+    long share = missing / donations;
+    java.util.List<?> items = java.util.Collections.emptyList();
+    try {
+      items = com.perblue.heroes.game.logic.ItemHelper.convertHeroXPToItems(share, java.math.RoundingMode.DOWN);
+    } catch (Throwable t) { System.out.println("[guild] convertHeroXPToItems: " + t); }
+    for (Object o : items) {                      // 1ᵉ = plus GROSSE dénomination (EXP_ITEMS_LARGE_TO_SMALL)
+      if (!(o instanceof com.perblue.heroes.network.messages.RewardDrop)) continue;
+      com.perblue.heroes.network.messages.RewardDrop d = (com.perblue.heroes.network.messages.RewardDrop) o;
+      if (d.quantity <= 0) continue;
+      return com.perblue.heroes.game.logic.RewardHelper.createDrop(
+          d.itemType, Math.min(d.quantity, perDonationCap));
+    }
+    // Part trop petite pour la plus petite dénomination → 1 item d'XP le plus petit (donnée du jeu).
+    return com.perblue.heroes.game.logic.RewardHelper.createDrop(smallestEXPItem(), 1L);
+  }
+
+  /** Le plus PETIT item d'XP selon les données du jeu ({@code ItemStats.EXP_ITEMS_LARGE_TO_SMALL}, dernier). */
+  private static com.perblue.heroes.network.messages.ItemType smallestEXPItem() {
+    try {
+      java.lang.reflect.Field f =
+          com.perblue.heroes.game.data.item.ItemStats.class.getDeclaredField("EXP_ITEMS_LARGE_TO_SMALL");
+      f.setAccessible(true);
+      java.util.List<?> l = (java.util.List<?>) f.get(null);
+      if (l != null && !l.isEmpty())
+        return (com.perblue.heroes.network.messages.ItemType) l.get(l.size() - 1);
+    } catch (Throwable t) { System.out.println("[guild] EXP_ITEMS_LARGE_TO_SMALL: " + t); }
+    return com.perblue.heroes.network.messages.ItemType.EXP_FLASK;
+  }
+
+  /** Poste une demande d'aide HERO_XP (#63, autoritatif). Validation/charge par la logique du jeu
+   *  ({@code requestHelp} → {@code canRequestHeroXPHelp} : héros possédé, niveau sous plafond, XP non plein,
+   *  pas de doublon, ressource {@code GUILD_DONATION_REQUEST_HERO_XP}). Don dérivé par
+   *  {@link #heroXPDonationDrop}. Lève {@code ClientErrorCodeException} = refus fidèle. */
+  public synchronized com.perblue.heroes.network.messages.GuildDonationRequestRow postGuildHeroXPRequest(
+      ServerGuild g, com.perblue.heroes.network.messages.UnitType unit) {
+    if (g == null || unit == null) return null;
+    ServerContext.init();
+    User user = ClientNetworkStateConverter.getUser(userInfo, userExtra, "xpreq");
+    IndividualUser iu = ClientNetworkStateConverter.getIndividualUser(
+        individualUserExtra, userID, userInfo.diamonds, "xpreq");
+    ServerContext.bind(user, iu);
+    // 1) VALIDATION + CHARGE (logique du jeu) — 1× GUILD_DONATION_REQUEST_HERO_XP.
+    com.perblue.heroes.game.logic.GuildDonationHelper.requestHelp(user,
+        com.perblue.heroes.network.messages.GuildDonationRequestType.HERO_XP, unit, null);
+    // 2) Composition (dérivée des données du jeu).
+    com.perblue.heroes.game.objects.IHero hero = user.getHero(unit);
+    int total = Math.max(1, guildConstantInt("DONATIONS_PER_HELP_REQUEST", 5));
+    long now = com.perblue.heroes.util.TimeUtil.serverTimeNow();
+    com.perblue.heroes.network.messages.GuildDonationRequestRow row =
+        new com.perblue.heroes.network.messages.GuildDonationRequestRow();
+    row.requestID = g.nextRequestID++;
+    row.member = userInfo.basicInfo;
+    row.type = com.perblue.heroes.network.messages.GuildDonationRequestType.HERO_XP;
+    row.hero = heroSummary(hero, unit);
+    row.donation = heroXPDonationDrop(hero);
+    row.totalRequestedDonations = total;
+    row.remainingDonations = total;
+    row.yourDonations = 0;
+    row.expiration = now + com.perblue.heroes.game.data.guild.GuildStats.getHelpRequestDuration();
+    // 3) Marqueur côté demandeur (anti-doublon côté client).
+    com.perblue.heroes.network.messages.GuildDonationRequestUserData ud =
+        new com.perblue.heroes.network.messages.GuildDonationRequestUserData();
+    ud.iD = row.requestID;
+    ud.type = com.perblue.heroes.network.messages.GuildDonationRequestType.HERO_XP;
+    ud.unit = unit;
+    ud.expiration = row.expiration;
+    iu.addGuildDonationRequest(ud);
+    // 4) Archive dans la guilde (octets wire).
+    com.perblue.grunt.translate.util.GruntOutputStream xout = new com.perblue.grunt.translate.util.GruntOutputStream();
+    row.writeAll(xout);
+    g.addDonationRequestWire(xout.getBytes());
     g.donationsByUser.put(row.requestID, new java.util.LinkedHashMap<>());
     return row;
   }
@@ -946,8 +1097,17 @@ public final class ServerUser {
         subject = fulfilled ? "Skill help fulfilled" : "Skill help expired";
         body = donationsReceived + " guildmate(s) donated skill points.";
         break;
+      case HERO_XP:
+        // Le don HERO_XP n'est PAS séquestré (isDonationEscrowed(HERO_XP)=false → useItem chez le donneur) :
+        // le demandeur reçoit l'équivalent en items d'XP, nbDons × le drop de la demande (dérivé du jeu).
+        if (row.donation == null) return 0L;
+        amount = (long) donationsReceived * Math.max(1L, row.donation.quantity);
+        reward = com.perblue.heroes.game.logic.RewardHelper.createDrop(row.donation.itemType, amount);
+        subject = fulfilled ? "Hero XP help fulfilled" : "Hero XP help expired";
+        body = donationsReceived + " guildmate(s) donated hero XP.";
+        break;
       default:
-        return 0L;   // HERO_XP : composition du don opérateur absente du jar (§4) — non livré
+        return 0L;
     }
     com.perblue.heroes.network.messages.MailType type = fulfilled
         ? com.perblue.heroes.network.messages.MailType.GUILD_DONATION_SUCCESS

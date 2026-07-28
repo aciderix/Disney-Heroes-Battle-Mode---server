@@ -50,16 +50,37 @@ public final class GuildContestTest {
       if (rg2.info.contestPoints != 300) throw new AssertionError("contestPoints guilde non persistés : " + rg2.info.contestPoints);
       System.out.println("[guild] round-trip DB OK : contestPoints guilde persistés (" + rg2.info.contestPoints + ")");
 
-      // Points de contest du JOUEUR = ressource GUILD_CONTEST_POINTS, SPÉCIALE (non réglable par setResource :
-      // le jeu la calcule depuis l'état du contest). On VÉRIFIE ce FAIT : giveResource est un no-op ici (≠ GOLD).
+      // FAIT du jeu (bytecode User) : getGuildContestPoints() = GuildInfo.contestPoints. La ressource
+      // ResourceType.GUILD_CONTEST_POINTS n'est PAS un stock (simple canal d'événement UI) → setResource = no-op.
       ServerUser p = ServerUser.newPlayer(10L, 1);
       p.giveResource(ResourceType.GOLD, 500);
       if (p.resourceAmount(ResourceType.GOLD) != 500) throw new AssertionError("GOLD devrait être réglable");
       p.giveResource(ResourceType.GUILD_CONTEST_POINTS, 75);
       if (p.resourceAmount(ResourceType.GUILD_CONTEST_POINTS) != 0)
-        throw new AssertionError("GUILD_CONTEST_POINTS devrait être NON réglable (opérateur/contest-calculé), obtenu "
+        throw new AssertionError("GUILD_CONTEST_POINTS n'est pas un stock : setResource doit être un no-op, obtenu "
             + p.resourceAmount(ResourceType.GUILD_CONTEST_POINTS));
-      System.out.println("[guild] GUILD_CONTEST_POINTS confirmé SPÉCIAL (non réglable) → points joueur = opérateur/contest");
+      System.out.println("[guild] confirmé : les points de contest vivent dans GuildInfo.contestPoints (serveur), "
+          + "pas dans la ressource joueur");
+
+      // VENTILATION PAR MEMBRE (v6) — ce que sert GET_CONTEST_RANKINGS (le client ne la calcule pas).
+      ServerUser m1 = ServerUser.newPlayer(20L, 1);
+      ServerUser m2 = ServerUser.newPlayer(21L, 1);
+      long totalBefore = g2.info.contestPoints;
+      m1.awardGuildContestPoints(g2, 120);
+      m2.awardGuildContestPoints(g2, 80);
+      if (m1.contestPointsIn(g2) != 120 || m2.contestPointsIn(g2) != 80)
+        throw new AssertionError("ventilation par membre incorrecte");
+      if (g2.info.contestPoints != totalBefore + 200)
+        throw new AssertionError("total guilde incohérent avec la somme des membres");
+      System.out.println("[guild] ventilation membres : 120 + 80 → total guilde " + g2.info.contestPoints
+          + " (cohérent)");
+
+      // Round-trip DB v6 : la ventilation persiste.
+      store.saveGuild(g2);
+      ServerGuild rg = store.loadGuild(1, g2.guildID);
+      if (m1.contestPointsIn(rg) != 120 || m2.contestPointsIn(rg) != 80)
+        throw new AssertionError("ventilation par membre non persistée (v6)");
+      System.out.println("[guild] round-trip DB v6 OK : contribution par membre persistée");
 
       System.out.println("GUILD CONTEST TEST OK");
     }
