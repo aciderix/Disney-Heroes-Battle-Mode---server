@@ -97,6 +97,77 @@ public final class ServerGuild {
   /** Prochain identifiant de boss (unique par guilde). */
   public long nextBossID = 1L;
 
+  // ===== v8 : GUILD WAR (#68) — état de guerre PROPRE À LA GUILDE =====
+  // Une GUERRE (l'appariement de deux guildes) vit dans sa propre table `wars` ({@link ServerWarState}) ;
+  // ici on ne garde que ce qui appartient DURABLEMENT à la guilde et lui survit d'une guerre à l'autre.
+
+  /** File d'attente : {@code NOT_QUEUED} / {@code QUEUED_SINGLE} / {@code QUEUED_PERSISTENT}. */
+  public com.perblue.heroes.network.messages.WarQueueState warQueueState =
+      com.perblue.heroes.network.messages.WarQueueState.NOT_QUEUED;
+  /** Instant de mise en file (horloge serveur) — sert à l'ordre d'appariement. */
+  public long warQueuedTime;
+  /** Note de matchmaking courante. {@code warSeasonID == 0} ⇒ jamais initialisée (guilde neuve). */
+  public int warMMR;
+  /** Saison à laquelle {@link #warMMR} se rapporte : un changement déclenche la remise à zéro de saison. */
+  public int warSeasonID;
+  /** Masque des ligues ATTEINTES dans la saison (encodage {@code WarHelper.updatePromotionFlag}) :
+   *  implémente « une guilde ne peut pas être rétrogradée d'une ligue déjà atteinte ». */
+  public int warPromotionMask;
+  /** Guerre en cours ({@code 0} = aucune). */
+  public long currentWarID;
+  /** Adversaires récents, le plus RÉCENT en tête, borné par {@code MAX_PREVIOUS_WARS} — anti-rematch.
+   *  C'est ce que le jeu appelle {@code WarMatchmakingGuildInfo.previousOpponents}. */
+  public final List<Long> previousWarOpponents = new ArrayList<>();
+  /** Rang minimal autorisé à consommer une attaque supplémentaire ({@code EditGuildWarSettings
+   *  .extraAttackRank} — « The Guild Leader may change the settings to allow any Guild members to use
+   *  Extra Attacks »). */
+  public com.perblue.heroes.network.messages.GuildRole warExtraAttackRank =
+      com.perblue.heroes.network.messages.GuildRole.OFFICER;
+  /** Bilan de la saison EN COURS. */
+  public int warsWon, warsLost, warsCompleted;
+  /** Saisons ACHEVÉES : octets wire de chaque {@link com.perblue.heroes.network.messages.WarSeasonSummary}
+   *  (objet du jeu, jamais un schéma inventé — PRINCIPLES §4/§6). Alimente {@code GetWarSeasonsList}. */
+  public final List<byte[]> warSeasonHistoryWire = new ArrayList<>();
+  /** Le client borne l'affichage de l'historique ; on borne le stockage de même. */
+  public static final int MAX_WAR_SEASON_HISTORY = 24;
+
+  /** Mémorise un adversaire (le plus récent en tête, sans doublon, borné). */
+  public void rememberWarOpponent(long opponentGuildID, int maxPrevious) {
+    previousWarOpponents.remove(opponentGuildID);
+    previousWarOpponents.add(0, opponentGuildID);
+    while (previousWarOpponents.size() > Math.max(1, maxPrevious)) {
+      previousWarOpponents.remove(previousWarOpponents.size() - 1);
+    }
+  }
+
+  /** Nombre de guerres écoulées depuis la dernière rencontre avec {@code opponentGuildID}
+   *  ({@code -1} = jamais rencontré). 0 = adversaire de la guerre précédente. */
+  public int warsSinceOpponent(long opponentGuildID) {
+    int i = previousWarOpponents.indexOf(opponentGuildID);
+    return i;
+  }
+
+  /** Ajoute un résumé de saison achevée (octets wire), borné. */
+  public void addWarSeasonSummary(byte[] wire) {
+    warSeasonHistoryWire.add(0, wire);
+    while (warSeasonHistoryWire.size() > MAX_WAR_SEASON_HISTORY) {
+      warSeasonHistoryWire.remove(warSeasonHistoryWire.size() - 1);
+    }
+  }
+
+  /** Relit l'historique de saisons en objets du jeu (les illisibles sont écartés). */
+  public List<com.perblue.heroes.network.messages.WarSeasonSummary> warSeasonHistory() {
+    List<com.perblue.heroes.network.messages.WarSeasonSummary> out = new ArrayList<>();
+    java.util.Iterator<byte[]> it = warSeasonHistoryWire.iterator();
+    while (it.hasNext()) {
+      try {
+        out.add((com.perblue.heroes.network.messages.WarSeasonSummary)
+            MessageFactory.getInstance().readMessage(new GruntInputStream(it.next())));
+      } catch (Exception ignore) { it.remove(); }
+    }
+    return out;
+  }
+
   /** Ajoute un boss (octets wire) au pool de la guilde. */
   public void addInvasionBoss(byte[] wire) { invasionBossWire.add(wire); }
 
@@ -249,6 +320,11 @@ public final class ServerGuild {
 
   public int memberCount() { return memberIDs.size(); }
 
+  /** Relit un enum du jeu par son nom, avec repli si la valeur n'existe plus (tolérance de version). */
+  private static <E extends Enum<E>> E enumOr(Class<E> type, String name, E dflt) {
+    try { return Enum.valueOf(type, name); } catch (Exception ignore) { return dflt; }
+  }
+
   /** Sérialise : octets wire de {@link GuildInfo} (objet du jeu) + roster (état opérateur). */
   public byte[] toBytes() {
     try {
@@ -258,7 +334,7 @@ public final class ServerGuild {
 
       ByteArrayOutputStream bos = new ByteArrayOutputStream();
       DataOutputStream o = new DataOutputStream(bos);
-      o.writeInt(7);                       // version (…5 cadeaux ; 6 contest/membre ; 7 boss d'invasion)
+      o.writeInt(8);                       // version (…6 contest/membre ; 7 boss d'invasion ; 8 guild war)
       o.writeLong(guildID);
       o.writeInt(shardID);
       o.writeInt(infoWire.length);
@@ -310,6 +386,19 @@ public final class ServerGuild {
       for (java.util.Map.Entry<Long, long[]> e : bossAttackLocks.entrySet()) {
         o.writeLong(e.getKey()); o.writeLong(e.getValue()[0]); o.writeLong(e.getValue()[1]);
       }
+      // v8 : guild war (état propre à la guilde ; la guerre elle-même est dans la table `wars`)
+      o.writeUTF(warQueueState == null ? "NOT_QUEUED" : warQueueState.name());
+      o.writeLong(warQueuedTime);
+      o.writeInt(warMMR);
+      o.writeInt(warSeasonID);
+      o.writeInt(warPromotionMask);
+      o.writeLong(currentWarID);
+      o.writeUTF(warExtraAttackRank == null ? "OFFICER" : warExtraAttackRank.name());
+      o.writeInt(warsWon); o.writeInt(warsLost); o.writeInt(warsCompleted);
+      o.writeInt(previousWarOpponents.size());
+      for (Long id : previousWarOpponents) o.writeLong(id);
+      o.writeInt(warSeasonHistoryWire.size());
+      for (byte[] w : warSeasonHistoryWire) { o.writeInt(w.length); o.write(w); }
       o.flush();
       return bos.toByteArray();
     } catch (Exception ex) {
@@ -381,6 +470,22 @@ public final class ServerGuild {
           long bid = in.readLong();
           g.bossAttackLocks.put(bid, new long[]{in.readLong(), in.readLong()});
         }
+      }
+      if (version >= 8) {
+        g.warQueueState = enumOr(com.perblue.heroes.network.messages.WarQueueState.class, in.readUTF(),
+            com.perblue.heroes.network.messages.WarQueueState.NOT_QUEUED);
+        g.warQueuedTime = in.readLong();
+        g.warMMR = in.readInt();
+        g.warSeasonID = in.readInt();
+        g.warPromotionMask = in.readInt();
+        g.currentWarID = in.readLong();
+        g.warExtraAttackRank = enumOr(com.perblue.heroes.network.messages.GuildRole.class, in.readUTF(),
+            com.perblue.heroes.network.messages.GuildRole.OFFICER);
+        g.warsWon = in.readInt(); g.warsLost = in.readInt(); g.warsCompleted = in.readInt();
+        int no = in.readInt();
+        for (int i = 0; i < no; i++) g.previousWarOpponents.add(in.readLong());
+        int nh = in.readInt();
+        for (int i = 0; i < nh; i++) { byte[] w = new byte[in.readInt()]; in.readFully(w); g.warSeasonHistoryWire.add(w); }
       }
       return g;
     } catch (Exception ex) {

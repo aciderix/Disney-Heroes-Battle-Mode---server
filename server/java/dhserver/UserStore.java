@@ -59,7 +59,90 @@ public final class UserStore implements AutoCloseable {
       s.execute("CREATE TABLE IF NOT EXISTS user_invasion ("
           + "shardID INTEGER NOT NULL, userID INTEGER NOT NULL, data BLOB NOT NULL, "
           + "updatedAt INTEGER NOT NULL, PRIMARY KEY (shardID, userID))");
+      // GUILD WAR #68 : une GUERRE par (shard, warID). Table dédiée plutôt que `shard_state` parce qu'on doit
+      // l'INTERROGER — « la guerre en cours de la guilde X », « les N dernières guerres de X » — d'où les deux
+      // colonnes de guilde indexées. BLOB = octets wire des deux WarGuildInfo du jeu + scalaires d'appariement.
+      s.execute("CREATE TABLE IF NOT EXISTS wars ("
+          + "shardID INTEGER NOT NULL, warID INTEGER NOT NULL, guildA INTEGER NOT NULL, "
+          + "guildB INTEGER NOT NULL, seasonID INTEGER NOT NULL, startTime INTEGER NOT NULL, "
+          + "endTime INTEGER NOT NULL, state TEXT NOT NULL, data BLOB NOT NULL, "
+          + "updatedAt INTEGER NOT NULL, PRIMARY KEY (shardID, warID))");
+      s.execute("CREATE INDEX IF NOT EXISTS wars_by_guildA ON wars (shardID, guildA, startTime DESC)");
+      s.execute("CREATE INDEX IF NOT EXISTS wars_by_guildB ON wars (shardID, guildB, startTime DESC)");
     }
+  }
+
+  /**
+   * GUILD WAR #68 — enregistre (ou met à jour) une guerre.
+   *
+   * <p>Si {@code w.warID == 0}, l'identifiant est ATTRIBUÉ ICI, sous le même verrou que l'insertion : la
+   * séquence « lire max+1 » puis « insérer » est ainsi atomique. Le faire en deux appels séparés laisserait
+   * deux appariements concurrents obtenir le même identifiant (PRINCIPLES §5, multi-serveur).
+   */
+  public synchronized void saveWar(ServerWarState w) throws SQLException {
+    if (w.warID <= 0) w.warID = nextWarID(w.shardID);
+    try (PreparedStatement ps = conn.prepareStatement(
+        "INSERT INTO wars (shardID, warID, guildA, guildB, seasonID, startTime, endTime, state, data, updatedAt) "
+            + "VALUES (?,?,?,?,?,?,?,?,?,?) "
+            + "ON CONFLICT(shardID, warID) DO UPDATE SET guildA=excluded.guildA, guildB=excluded.guildB, "
+            + "seasonID=excluded.seasonID, startTime=excluded.startTime, endTime=excluded.endTime, "
+            + "state=excluded.state, data=excluded.data, updatedAt=excluded.updatedAt")) {
+      ps.setInt(1, w.shardID);
+      ps.setLong(2, w.warID);
+      ps.setLong(3, w.guildAID);
+      ps.setLong(4, w.guildBID);
+      ps.setInt(5, w.seasonID);
+      ps.setLong(6, w.startTime);
+      ps.setLong(7, w.endTime);
+      ps.setString(8, w.state == null ? "DEFAULT" : w.state.name());
+      ps.setBytes(9, w.toBytes());
+      ps.setLong(10, System.currentTimeMillis());
+      ps.executeUpdate();
+    }
+  }
+
+  /** GUILD WAR #68 — charge une guerre, ou {@code null}. */
+  public synchronized ServerWarState loadWar(int shardID, long warID) throws SQLException {
+    try (PreparedStatement ps = conn.prepareStatement(
+        "SELECT data FROM wars WHERE shardID=? AND warID=?")) {
+      ps.setInt(1, shardID);
+      ps.setLong(2, warID);
+      try (ResultSet rs = ps.executeQuery()) {
+        if (rs.next()) return ServerWarState.fromBytes(rs.getBytes(1));
+      }
+    }
+    return null;
+  }
+
+  /** GUILD WAR #68 — les {@code limit} dernières guerres de {@code guildID}, la plus RÉCENTE en tête
+   *  ({@code GetWarsList}, {@code WarMoments}). Une guilde peut être d'un côté comme de l'autre. */
+  public synchronized java.util.List<ServerWarState> listWarsForGuild(int shardID, long guildID, int limit)
+      throws SQLException {
+    java.util.List<ServerWarState> out = new java.util.ArrayList<>();
+    try (PreparedStatement ps = conn.prepareStatement(
+        "SELECT data FROM wars WHERE shardID=? AND (guildA=? OR guildB=?) ORDER BY startTime DESC LIMIT ?")) {
+      ps.setInt(1, shardID);
+      ps.setLong(2, guildID);
+      ps.setLong(3, guildID);
+      ps.setInt(4, limit);
+      try (ResultSet rs = ps.executeQuery()) {
+        while (rs.next()) {
+          ServerWarState w = ServerWarState.fromBytes(rs.getBytes(1));
+          if (w != null) out.add(w);
+        }
+      }
+    }
+    return out;
+  }
+
+  /** GUILD WAR #68 — prochain warID libre du shard (max+1, base 1). */
+  public synchronized long nextWarID(int shardID) throws SQLException {
+    try (PreparedStatement ps = conn.prepareStatement(
+        "SELECT COALESCE(MAX(warID),0)+1 FROM wars WHERE shardID=?")) {
+      ps.setInt(1, shardID);
+      try (ResultSet rs = ps.executeQuery()) { if (rs.next()) return rs.getLong(1); }
+    }
+    return 1L;
   }
 
   /** INVASION #69 — octets wire du {@code UserInvasionData} de {@code (shard, userID)}, ou {@code null}. */

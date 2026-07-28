@@ -148,7 +148,7 @@ Les **lineups de défense de guerre** arrivent déjà par `HeroLineupUpdate` ave
 | # | Étape | Statut |
 |---|---|---|
 | 1 | **Calendrier de saison + ligues + modèle MMR** (`ServerWar`) | ✅ FAIT |
-| 2 | État de guerre persisté (`ServerWarState` / `shard_state`) + file d'attente | ⬜ |
+| 2 | **État de guerre persisté (`ServerWarState`, table `wars`) + file d'attente** | ✅ FAIT |
 | 3 | Matchmaking (appariement par MMR, anti-rematch, BYE) | ⬜ |
 | 4 | Phases (queue → sabotage 24 h / ban 12 h → bataille) + voitures/affectations | ⬜ |
 | 5 | Attaques + scoring + logs | ⬜ |
@@ -202,3 +202,47 @@ cohérence des constantes, reset de saison (top 10 → GOLD, autres écrêtés a
 égal à `NORMALIZE_RATING_TO`**), plancher de ligue non rétrogradable avec l'encodage de bits du jeu,
 propriétés du delta de MMR + point de bascule dérivé + bornage au plancher de la table de ligues.
 Sortie : shard 1 activé, saison 103 (2026/7), top 10 → 700..610 (tout GOLD), bascule à 352.
+
+### Étape 2 — état de guerre persisté + file d'attente ✅
+
+**`dhserver.ServerWarState`** — une GUERRE = l'appariement de deux guildes.
+
+* Stockage conforme à PRINCIPLES §4/§6 : les deux camps sont des `WarGuildInfo`, **objets du jeu rangés
+  en octets wire** ; on n'invente aucun schéma pour voitures, membres, bans/protections, cooldowns,
+  points ni attaques supplémentaires. Seuls les scalaires d'appariement sont en format compact versionné.
+* **État symétrique, deux lectures.** On ne stocke PAS un `WarInfo` tel quel : ce message est *relatif au
+  spectateur* (`yourGuild`/`enemyGuild`). L'état canonique est donc côté A / côté B, et `toWarInfo(guildID)`
+  produit la vue du demandeur. Un seul état ⇒ aucune divergence possible entre les deux guildes. Prouvé
+  par le test : A voit `137 vs 42`, B voit `42 vs 137`, scalaires identiques.
+* `toSummary(guildID)` pour `WarsList`/`WarMoments` ; `isBye()` pour une guerre sans adversaire.
+
+**Table `wars`** (`shardID, warID, guildA, guildB, seasonID, startTime, endTime, state, data`) avec deux
+index `(shard, guilde, startTime DESC)` — table dédiée plutôt que `shard_state` parce qu'on doit
+l'*interroger* (« la guerre en cours de X », « les N dernières de X »).
+`saveWar` **attribue le `warID` sous le même verrou que l'insertion** : la séquence « lire max+1 » puis
+« insérer » est atomique.
+
+**`ServerGuild` v8** — ce qui appartient durablement à la guilde : `warQueueState` + `warQueuedTime`,
+`warMMR` + `warSeasonID`, `warPromotionMask` (plancher de ligue), `currentWarID`,
+`previousWarOpponents` (anti-rematch, borné par `MAX_PREVIOUS_WARS`), `warExtraAttackRank`
+(`EditGuildWarSettings`), bilan `warsWon/Lost/Completed`, et l'historique des saisons achevées en
+**octets wire de `WarSeasonSummary`** (objet du jeu).
+
+**File d'attente** (`ServerWar.changeQueueState`) : ré-exécute exactement les contrôles du client —
+`GuildHelper.canQueueForWar` / `canUnQueueForWar` selon le sens, puis `Unlockables.isUnlocked(WAR)`.
+`queueStateAfterMatch` distingue `QUEUED_SINGLE` (sort de la file) de `QUEUED_PERSISTENT` (y reste) —
+c'est la différence que portent les noms mêmes de l'enum.
+
+**Bascule de saison** (`rollOverSeason`) : idempotente, archive le bilan écoulé en `WarSeasonSummary`,
+re-sème le MMR via `seasonResetMMR`, remet les compteurs à zéro et repositionne le plancher de ligue.
+
+Test : `server/smoke/WarStateTest`. Sortie : refus MEMBER, refus par le gate TL45 du jeu, vues miroir,
+round-trip DB de la guerre et de la guilde v8, anti-rematch borné à 20 sans doublon, bascule
+saison 103→104 avec MMR 110 → 700 (GOLD, rang 1) et archive `1V @ MMR 110` persistée.
+
+**🐛 Défaut trouvé PAR ce test (hors périmètre WAR, suivi à part)** : `UserStore.nextGuildID` lit
+`MAX(guildID)+1` **avant** l'insertion. Allouer deux identifiants sans enregistrer entre les deux les
+rend identiques — et le handler `CreateGuild` de `LoginServer` a exactement ce motif
+(`nextGuildID` puis `createGuild` puis `saveGuild` en trois temps), donc deux créations concurrentes
+peuvent collisionner. Les guerres n'y sont pas exposées (`saveWar` alloue sous verrou). À corriger sur
+le chemin guilde.

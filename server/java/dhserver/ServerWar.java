@@ -289,4 +289,129 @@ public final class ServerWar {
     if (c <= 0 || c >= 1) return Integer.MAX_VALUE;
     return (int) Math.round(eloN() * Math.log10((1 - c) / c));
   }
+
+  // ---------------------------------------------------------------------------------------------
+  // MMR de guilde : amorçage et bascule de saison.
+  // ---------------------------------------------------------------------------------------------
+
+  /**
+   * MMR courant de la guilde, en amorçant {@code STARTING_MMR} si elle n'a jamais fait la guerre
+   * ({@code warSeasonID == 0}). Sans cet amorçage une guilde neuve serait à 0 = {@code UNRANKED}, alors que
+   * les données prévoient explicitement une valeur de départ.
+   */
+  public static int currentMMR(ServerGuild g) {
+    if (g.warSeasonID == 0) return startingMMR();
+    return g.warMMR;
+  }
+
+  /**
+   * Aligne la guilde sur la saison {@code seasonID}, en appliquant la remise à zéro si la saison a changé.
+   *
+   * <p>Idempotent : appelé à chaque accès au mode, il ne fait rien tant que la saison ne bouge pas. Le
+   * bilan de la saison écoulée ({@code warsWon/Lost/Completed}, ligue atteinte) est d'abord archivé en
+   * {@link com.perblue.heroes.network.messages.WarSeasonSummary} — objet DU JEU en octets wire — puis les
+   * compteurs repartent à zéro et le MMR est re-semé par {@link #seasonResetMMR}.
+   *
+   * @param finalRank rang final de la guilde dans la saison écoulée (1 = premier ; ≤ 0 = non classée)
+   * @return {@code true} si une bascule a réellement eu lieu
+   */
+  public static boolean rollOverSeason(ServerGuild g, int seasonID, int finalRank) {
+    if (g.warSeasonID == seasonID) return false;
+
+    if (g.warSeasonID == 0) {                       // guilde neuve : amorçage, rien à archiver
+      g.warMMR = startingMMR();
+      g.warSeasonID = seasonID;
+      g.warPromotionMask = markLeagueReached(0, leagueForMMR(g.warMMR));
+      return true;
+    }
+
+    // Archivage de la saison écoulée, avec l'objet du jeu.
+    com.perblue.heroes.network.messages.WarSeasonSummary s =
+        new com.perblue.heroes.network.messages.WarSeasonSummary();
+    s.seasonID = g.warSeasonID;
+    s.seasonStartTime = seasonStartTime(g.warSeasonID);
+    s.seasonEndTime = seasonEndTime(g.warSeasonID);
+    s.mMR = g.warMMR;
+    s.achievedLeague = highestLeagueReached(g.warPromotionMask);
+    s.warsWon = g.warsWon;
+    s.warsLost = g.warsLost;
+    s.warsCompleted = g.warsCompleted;
+    s.inProgress = false;
+    try {
+      com.perblue.grunt.translate.util.GruntOutputStream out =
+          new com.perblue.grunt.translate.util.GruntOutputStream();
+      s.writeAll(out);
+      g.addWarSeasonSummary(out.getBytes());
+    } catch (Exception ex) {
+      System.out.println("[war] archivage de saison impossible pour la guilde " + g.guildID + " : " + ex);
+    }
+
+    g.warMMR = seasonResetMMR(finalRank, g.warMMR);
+    g.warSeasonID = seasonID;
+    g.warPromotionMask = markLeagueReached(0, leagueForMMR(g.warMMR));  // le plancher repart de la ligue semée
+    g.warsWon = g.warsLost = g.warsCompleted = 0;
+    return true;
+  }
+
+  /**
+   * Enregistre le MMR après une guerre, en tenant à jour le plancher de ligue.
+   * (« Once a Guild reaches a League within a season, it cannot be demoted from that League ».)
+   */
+  public static void applyWarResult(ServerGuild g, int delta, WarSummaryState outcome) {
+    g.warMMR = applyRatingChange(currentMMR(g), delta);
+    g.warPromotionMask = markLeagueReached(g.warPromotionMask, leagueForMMR(g.warMMR));
+    g.warsCompleted++;
+    if (outcome == WarSummaryState.VICTORY) g.warsWon++;
+    else if (outcome == WarSummaryState.DEFEAT) g.warsLost++;
+  }
+
+  // ---------------------------------------------------------------------------------------------
+  // File d'attente — validations RÉ-EXÉCUTÉES depuis la logique du jeu.
+  // ---------------------------------------------------------------------------------------------
+
+  /**
+   * Change l'état de file d'attente de la guilde, avec les MÊMES contrôles que le client
+   * ({@code WarClientHelper.doChangeQueueState}) : rôle habilité ({@code GuildHelper.canQueueForWar} pour
+   * s'inscrire, {@code canUnQueueForWar} pour se retirer) et mode débloqué ({@code Unlockable.WAR}, TL 45).
+   *
+   * @return {@code null} si l'opération est acceptée, sinon le motif de refus
+   */
+  public static String changeQueueState(ServerGuild g, ServerUser actor,
+      com.perblue.heroes.network.messages.WarQueueState desired, long now) {
+    if (!enabledForShard(g.shardID)) return "la guerre n'est pas activée sur ce shard";
+    com.perblue.heroes.network.messages.GuildRole role = actor.currentGuildRole();
+    boolean leaving = desired == com.perblue.heroes.network.messages.WarQueueState.NOT_QUEUED;
+    boolean allowed = leaving
+        ? com.perblue.heroes.game.logic.GuildHelper.canUnQueueForWar(role)
+        : com.perblue.heroes.game.logic.GuildHelper.canQueueForWar(role, desired);
+    if (!allowed) return "votre rôle (" + role + ") ne permet pas cette opération sur la file de guerre";
+    if (!leaving && !com.perblue.heroes.game.data.misc.Unlockables.isUnlocked(
+        com.perblue.heroes.game.data.misc.Unlockable.WAR, actor.gameUser())) {
+      return "la guerre se débloque au niveau d'équipe "
+          + com.perblue.heroes.game.data.misc.Unlockables.getTeamLevelReq(
+              com.perblue.heroes.game.data.misc.Unlockable.WAR, actor.gameUser());
+    }
+    if (g.currentWarID > 0) return "une guerre est déjà en cours";
+    g.warQueueState = desired;
+    g.warQueuedTime = leaving ? 0L : now;
+    return null;
+  }
+
+  /** La guilde est-elle en attente d'un appariement ? */
+  public static boolean isQueued(ServerGuild g) {
+    return g.warQueueState == com.perblue.heroes.network.messages.WarQueueState.QUEUED_SINGLE
+        || g.warQueueState == com.perblue.heroes.network.messages.WarQueueState.QUEUED_PERSISTENT;
+  }
+
+  /**
+   * État de file APRÈS un appariement : une inscription simple retombe en {@code NOT_QUEUED}, une
+   * inscription <b>persistante</b> reste inscrite — c'est la différence même que porte le nom des deux
+   * valeurs de {@code WarQueueState}.
+   */
+  public static com.perblue.heroes.network.messages.WarQueueState queueStateAfterMatch(
+      com.perblue.heroes.network.messages.WarQueueState before) {
+    return before == com.perblue.heroes.network.messages.WarQueueState.QUEUED_PERSISTENT
+        ? com.perblue.heroes.network.messages.WarQueueState.QUEUED_PERSISTENT
+        : com.perblue.heroes.network.messages.WarQueueState.NOT_QUEUED;
+  }
 }
