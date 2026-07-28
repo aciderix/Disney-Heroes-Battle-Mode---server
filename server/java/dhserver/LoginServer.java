@@ -990,6 +990,53 @@ public final class LoginServer {
               c.send(resp);
               System.out.println("[login] <== GetGuildDonationRequests → ==> GuildDonationRequests ("
                   + resp.requests.size() + " demande(s))");
+            } else if (m instanceof com.perblue.heroes.network.messages.ClaimInvasionBossRewards) {
+              // INVASION #69 — réclamation des récompenses de boss. Le RÔLE du joueur sur ce boss est déterminé
+              // par l'état PARTAGÉ de la guilde (a-t-il trouvé le boss ? a-t-il infligé des dégâts ?), puis les
+              // récompenses sont tirées par la LOGIQUE DU JEU (tables invasion_boss_rewards*) et créditées.
+              com.perblue.heroes.network.messages.ClaimInvasionBossRewards cb =
+                  (com.perblue.heroes.network.messages.ClaimInvasionBossRewards) m;
+              long cnow = com.perblue.heroes.util.TimeUtil.serverTimeNow();
+              ServerGuild cg = currentGuild(user);
+              java.util.List<com.perblue.heroes.network.messages.RewardDrop> given = new java.util.ArrayList<>();
+              com.perblue.heroes.network.messages.InvasionBossInfo target = null;
+              if (cg != null)
+                for (com.perblue.heroes.network.messages.InvasionBossInfo b : ServerInvasion.activeBosses(cg, cnow))
+                  if (b.bossID == cb.bossID) target = b;
+              if (target == null) {
+                System.out.println("[login]     ⛔ ClaimInvasionBossRewards : boss " + cb.bossID + " inconnu/expiré");
+              } else {
+                // RÔLE : FINDER si le joueur a trouvé le boss, sinon PARTICIPANT s'il a infligé des dégâts.
+                boolean isFinder = target.foundByUser != null && target.foundByUser.iD == user.userID;
+                Object dd = target.damageDone == null ? null : target.damageDone.get(user.userID);
+                boolean participated = dd instanceof com.perblue.heroes.network.messages.InvasionBossDamageData
+                    && ((com.perblue.heroes.network.messages.InvasionBossDamageData) dd).damage > 0;
+                if (!isFinder && !participated) {
+                  System.out.println("[login]     ⛔ ClaimInvasionBossRewards : aucune participation à ce boss");
+                } else {
+                  com.perblue.heroes.network.messages.InvasionBossRewardType role = isFinder
+                      ? com.perblue.heroes.network.messages.InvasionBossRewardType.FINDER
+                      : com.perblue.heroes.network.messages.InvasionBossRewardType.PARTICIPANT;
+                  ServerInvasionObject sio = ServerInvasionObject.at(cnow);
+                  for (Object o : user.rollInvasionBossRewards(sio, target.bossLevel, 1, role,
+                      com.perblue.heroes.network.messages.InvasionBossType.MEGA_VIRUS))
+                    if (o instanceof com.perblue.heroes.network.messages.RewardDrop)
+                      given.add((com.perblue.heroes.network.messages.RewardDrop) o);
+                  if (!given.isEmpty()) {
+                    user.grantRewards(given);
+                    try { store.save(user); } catch (Exception e) {
+                      System.out.println("[login]     ! persistance récompenses boss : " + e); }
+                  }
+                  System.out.println("[login] <== ClaimInvasionBossRewards boss=" + cb.bossID + " rôle=" + role
+                      + " → " + given.size() + " récompense(s) créditée(s) [persisté]");
+                }
+              }
+              com.perblue.heroes.network.messages.ClaimInvasionBossRewards resp =
+                  new com.perblue.heroes.network.messages.ClaimInvasionBossRewards();
+              resp.bossID = cb.bossID;
+              resp.rewards = new java.util.HashMap<>();
+              resp.setAsReplyTo(m);
+              c.send(resp);
             } else if (m instanceof com.perblue.heroes.network.messages.GetInvasionBosses) {
               // INVASION #69 — boss PARTAGÉS de la guilde (état opérateur persisté, v7) : les expirés
               // (au-delà de BOSS_FIGHT_TIME_LIMIT) sont retirés à la lecture.

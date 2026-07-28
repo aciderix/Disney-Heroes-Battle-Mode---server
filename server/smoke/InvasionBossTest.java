@@ -123,6 +123,35 @@ public final class InvasionBossTest {
         throw new AssertionError("le boss devrait avoir expiré");
       System.out.println("[invasion] au-delà de la limite → boss expiré et retiré");
 
+      // ---- RÉCOMPENSES DE BOSS : déléguées aux tables du jeu (invasion_boss_rewards*) ----
+      {
+        dhserver.ServerInvasionObject inv = dhserver.ServerInvasionObject.at(wed);
+        ServerUser p = ServerUser.newPlayer(50L, 1);
+        java.util.List<?> loot = p.rollInvasionBossRewards(
+            inv, 450, 1, InvasionBossRewardType.PARTICIPANT, InvasionBossType.MEGA_VIRUS);
+        if (loot.isEmpty())
+          throw new AssertionError("récompenses PARTICIPANT vides (snapshot d'évènements null ?)");
+        // Les quantités doivent être CELLES DE LA TABLE (lues via l'objet de récompense du jeu).
+        Object rw = com.perblue.heroes.game.data.invasion.InvasionStats.getBossReward(
+            InvasionBossRewardType.PARTICIPANT, InvasionBossType.MEGA_VIRUS);
+        int expStam = (Integer) rw.getClass().getMethod("getInvasionStamina").invoke(rw);
+        int expTech = (Integer) rw.getClass().getMethod("getBossTech").invoke(rw);
+        long stam = 0, tech = 0;
+        for (Object o : loot) {
+          RewardDrop d = (RewardDrop) o;
+          if (d.resourceType == ResourceType.INVASION_STAMINA) stam = d.quantity;
+          if (d.resourceType == ResourceType.BOSS_TECH) tech = d.quantity;
+        }
+        if (stam != expStam) throw new AssertionError("INVASION_STAMINA " + stam + " ≠ table " + expStam);
+        if (tech != expTech) throw new AssertionError("BOSS_TECH " + tech + " ≠ table " + expTech);
+        // Le rôle change les récompenses (FINDER ≠ PARTICIPANT selon la table).
+        java.util.List<?> finder = p.rollInvasionBossRewards(
+            inv, 450, 1, InvasionBossRewardType.FINDER, InvasionBossType.MEGA_VIRUS);
+        if (finder.isEmpty()) throw new AssertionError("récompenses FINDER vides");
+        System.out.println("[invasion] récompenses de boss (tables du jeu) : PARTICIPANT → " + loot.size()
+            + " drops (" + stam + " STAMINA, " + tech + " BOSS_TECH), FINDER → " + finder.size() + " drops");
+      }
+
       System.out.println("INVASION BOSS TEST OK");
     }
   }

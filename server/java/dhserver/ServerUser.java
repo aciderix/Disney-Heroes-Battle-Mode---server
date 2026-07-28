@@ -332,6 +332,22 @@ public final class ServerUser {
     ServerContext.bind(user, iu);
   }
 
+  /** CRÉDITE des récompenses à CE joueur via la logique du jeu ({@code RewardHelper.giveRewards}) et
+   *  resynchronise l'état wire. Utilisé par les réclamations autoritatives (boss d'invasion…). */
+  public synchronized void grantRewards(java.util.List<com.perblue.heroes.network.messages.RewardDrop> rewards) {
+    if (rewards == null || rewards.isEmpty()) return;
+    ServerContext.init();
+    User user = ClientNetworkStateConverter.getUser(userInfo, userExtra, "grantrw");
+    IndividualUser iu = ClientNetworkStateConverter.getIndividualUser(
+        individualUserExtra, userID, userInfo.diamonds, "grantrw");
+    ServerContext.bind(user, iu);
+    try {
+      com.perblue.heroes.game.logic.RewardHelper.giveRewards(user, rewards,
+          com.perblue.heroes.game.logic.RewardSourceType.NORMAL, new String[]{"invasion boss"});
+      resyncDiamonds(user); resyncHeroes(user);
+    } catch (Throwable t) { System.out.println("[invasion] grantRewards : " + t); }
+  }
+
   /** RÉCOMPENSES DE BOSS D'INVASION (#69) — tirées par la LOGIQUE DU JEU
    *  ({@code InvasionHelper.rollBossRewardLoot}, adossée aux tables {@code invasion_boss_rewards*}) selon le
    *  RÔLE du joueur sur ce boss ({@code PARTICIPANT}, {@code FINDER}, {@code FINISHER}, {@code MOST_DAMAGE}…).
@@ -346,8 +362,12 @@ public final class ServerUser {
         individualUserExtra, userID, userInfo.diamonds, "bossloot");
     ServerContext.bind(user, iu);
     try {
+      // Le snapshot d'évènements spéciaux NE PEUT PAS être null : createDrop appelle
+      // getLootResourceMultiplier() dessus (NPE sinon, silencieuse pour l'appelant). SpecialEventSnapshot.NONE
+      // = « aucun évènement actif », le neutre déjà utilisé ailleurs (achats de coffres).
       java.util.List<?> loot = com.perblue.heroes.game.logic.InvasionHelper.rollBossRewardLoot(
-          inv, user, bossLevel, multiplier, type, bossType, null);
+          inv, user, bossLevel, multiplier, type, bossType,
+          com.perblue.heroes.game.specialevent.SpecialEventSnapshot.NONE);
       return loot == null ? java.util.Collections.emptyList() : loot;
     } catch (Throwable t) {
       Throwable c = t.getCause() != null ? t.getCause() : t;
