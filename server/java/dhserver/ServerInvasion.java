@@ -161,6 +161,47 @@ public final class ServerInvasion {
     return d;
   }
 
+  /** État d'invasion NEUF pour un joueur (début d'une nouvelle rotation). Les compteurs partent à zéro ;
+   *  les empowerments initiaux viennent des données ({@code FEATURED_TEAM_EMPOWER}). */
+  public static com.perblue.heroes.network.messages.UserInvasionData newUserData(long userID, long guildID, long invasionID) {
+    com.perblue.heroes.network.messages.UserInvasionData d =
+        new com.perblue.heroes.network.messages.UserInvasionData();
+    d.userID = userID;
+    d.guildID = guildID;
+    d.invasionID = invasionID;
+    d.initalized = true;
+    d.league = com.perblue.heroes.network.messages.InvasionLeague.values()[0];
+    d.bossClaimStatus = new java.util.HashMap<>();
+    d.unitEmpowerment = new java.util.HashMap<>();
+    d.teamEmpowerments = (int) constLong("FEATURED_TEAM_EMPOWER", 2);
+    d.bossSpawnLevel = (int) constLong("BOSS_FIGHT_INITAL_LEVEL", 450);
+    return d;
+  }
+
+  /** Relit l'état persisté d'un joueur et le REMET À ZÉRO si l'invasion a changé de rotation
+   *  (le jeu fait de même via {@code InvasionHelper.resetUserInvasion}). Renvoie toujours un état exploitable. */
+  public static com.perblue.heroes.network.messages.UserInvasionData loadOrResetUserData(
+      byte[] persisted, long userID, long guildID, long invasionID) {
+    com.perblue.heroes.network.messages.UserInvasionData d = null;
+    if (persisted != null && persisted.length > 0) {
+      try {
+        d = (com.perblue.heroes.network.messages.UserInvasionData)
+            com.perblue.heroes.network.messages.MessageFactory.getInstance().readMessage(
+                new com.perblue.grunt.translate.util.GruntInputStream(persisted));
+      } catch (Exception e) { System.out.println("[invasion] état joueur illisible, réinitialisé : " + e); }
+    }
+    if (d == null || d.invasionID != invasionID) return newUserData(userID, guildID, invasionID);
+    d.guildID = guildID;                                   // la guilde peut avoir changé en cours de semaine
+    return d;
+  }
+
+  /** Octets wire d'un {@code UserInvasionData} (pour la persistance). */
+  public static byte[] userDataToBytes(com.perblue.heroes.network.messages.UserInvasionData d) {
+    com.perblue.grunt.translate.util.GruntOutputStream go = new com.perblue.grunt.translate.util.GruntOutputStream();
+    d.writeAll(go);
+    return go.getBytes();
+  }
+
   /** Réponse {@code InvasionInfo} pour un joueur : invasion courante (si active) + prochaine échéance. */
   public static InvasionInfo buildInfo(long now) {
     InvasionInfo info = new InvasionInfo();

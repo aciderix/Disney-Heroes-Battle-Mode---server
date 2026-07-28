@@ -80,6 +80,36 @@ public final class InvasionScheduleTest {
     System.out.println("[invasion] InvasionInfo cohérent (rotation #" + d.rotationNumber + ", équipe " + d.team
         + ", " + d.teamHeroes.size() + " héros, prochaine le " + new java.util.Date(info.nextInvasionStartTime) + ")");
 
+    // ---- ÉTAT JOUEUR : persistance + remise à zéro au changement de rotation ----
+    java.io.File tmp = java.io.File.createTempFile("dh-invasion", ".db");
+    tmp.deleteOnExit();
+    try (dhserver.UserStore store = new dhserver.UserStore(tmp.getAbsolutePath())) {
+      long invID = r1;
+      // 1ᵉ visite : état neuf (aucun persisté).
+      UserInvasionData ud = ServerInvasion.loadOrResetUserData(null, 7L, 42L, invID);
+      if (!ud.initalized || ud.invasionID != invID || ud.userID != 7L || ud.guildID != 42L)
+        throw new AssertionError("état neuf incorrect");
+      if (ud.teamEmpowerments <= 0) throw new AssertionError("empowerment initial doit venir des données");
+      // Progression puis persistance.
+      ud.points = 1234;
+      ud.breakerBattlesWon = 3;
+      store.saveUserInvasion(1, 7L, ServerInvasion.userDataToBytes(ud));
+
+      // Relecture MÊME rotation → la progression est conservée.
+      UserInvasionData same = ServerInvasion.loadOrResetUserData(store.loadUserInvasion(1, 7L), 7L, 42L, invID);
+      if (same.points != 1234 || same.breakerBattlesWon != 3)
+        throw new AssertionError("progression perdue sur la même invasion (" + same.points + ")");
+      System.out.println("[invasion] état joueur persisté et relu (points=" + same.points
+          + ", breakers gagnés=" + same.breakerBattlesWon + ")");
+
+      // Relecture NOUVELLE rotation → remise à zéro (comme InvasionHelper.resetUserInvasion).
+      UserInvasionData next = ServerInvasion.loadOrResetUserData(store.loadUserInvasion(1, 7L), 7L, 42L, invID + 1);
+      if (next.points != 0 || next.breakerBattlesWon != 0)
+        throw new AssertionError("l'état doit repartir à zéro à la nouvelle invasion");
+      if (next.invasionID != invID + 1) throw new AssertionError("invasionID non mis à jour");
+      System.out.println("[invasion] nouvelle rotation → état joueur remis à zéro ✔");
+    }
+
     System.out.println("INVASION SCHEDULE TEST OK");
   }
 }

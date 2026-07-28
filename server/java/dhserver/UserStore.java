@@ -54,6 +54,37 @@ public final class UserStore implements AutoCloseable {
       s.execute("CREATE TABLE IF NOT EXISTS shard_state ("
           + "shardID INTEGER NOT NULL, key TEXT NOT NULL, value BLOB NOT NULL, "
           + "updatedAt INTEGER NOT NULL, PRIMARY KEY (shardID, key))");
+      // INVASION #69 : état d'invasion PAR JOUEUR (octets wire du UserInvasionData du jeu). Séparé de la ligne
+      // `users` car il est remis à zéro à chaque nouvelle invasion (rotation hebdomadaire).
+      s.execute("CREATE TABLE IF NOT EXISTS user_invasion ("
+          + "shardID INTEGER NOT NULL, userID INTEGER NOT NULL, data BLOB NOT NULL, "
+          + "updatedAt INTEGER NOT NULL, PRIMARY KEY (shardID, userID))");
+    }
+  }
+
+  /** INVASION #69 — octets wire du {@code UserInvasionData} de {@code (shard, userID)}, ou {@code null}. */
+  public synchronized byte[] loadUserInvasion(int shardID, long userID) throws SQLException {
+    try (PreparedStatement ps = conn.prepareStatement(
+        "SELECT data FROM user_invasion WHERE shardID=? AND userID=?")) {
+      ps.setInt(1, shardID);
+      ps.setLong(2, userID);
+      try (ResultSet rs = ps.executeQuery()) {
+        if (rs.next()) return rs.getBytes(1);
+      }
+    }
+    return null;
+  }
+
+  /** INVASION #69 — écrit (upsert) l'état d'invasion de {@code (shard, userID)}. */
+  public synchronized void saveUserInvasion(int shardID, long userID, byte[] data) throws SQLException {
+    try (PreparedStatement ps = conn.prepareStatement(
+        "INSERT INTO user_invasion (shardID, userID, data, updatedAt) VALUES (?,?,?,?) "
+        + "ON CONFLICT(shardID, userID) DO UPDATE SET data=excluded.data, updatedAt=excluded.updatedAt")) {
+      ps.setInt(1, shardID);
+      ps.setLong(2, userID);
+      ps.setBytes(3, data);
+      ps.setLong(4, System.currentTimeMillis());
+      ps.executeUpdate();
     }
   }
 

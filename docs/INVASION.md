@@ -41,10 +41,21 @@ delta victoire +25, durée 60 s), plafonds quotidiens de guilde, etc.
 > Le cycle à 3 est le choix minimal cohérent ; il est isolé dans `ServerInvasion.teamForRotation()` pour être
 > corrigé en un seul point si une preuve apparaît.
 
+### ✅ État joueur (`UserInvasionData`, 34 champs)
+- **Énergie d'invasion** : VÉRIFIÉ — `INVASION_STAMINA` (et `BREAKER`, `INVASION_POINTS`) sont de vraies
+  ressources du jeu, **réglables** (contrairement à `GUILD_CONTEST_POINTS`) et déjà initialisées à leur capacité
+  (80). La régénération est donc assurée par la mécanique de ressources existante — rien à réimplémenter.
+- **Persistance** : nouvelle table `user_invasion` (shardID, userID → octets wire du `UserInvasionData`),
+  séparée de `users` car remise à zéro chaque semaine.
+- **Reset de rotation** : `ServerInvasion.loadOrResetUserData` renvoie un état neuf dès que l'`invasionID` change
+  (équivalent de `InvasionHelper.resetUserInvasion`) ; sinon la progression est conservée. La guilde est
+  rafraîchie à chaque lecture (un joueur peut changer de guilde en cours de semaine).
+- Handler `GetInvasionInfo` : remplit `currentInvasion.yourData` et persiste.
+- Couvert par `InvasionScheduleTest` (progression conservée sur la même rotation, remise à zéro à la suivante).
+
 ## Reste à faire
 
-1. **État joueur** (`UserInvasionData`) : énergie d'invasion (40/80, régén 12 min), empowerments, progression,
-   reset quotidien (`InvasionHelper.invasionDailyReset`). Persistance dans `individualUserExtra` ou `shard_state`.
+1. ~~État joueur~~ ✅ (ci-dessus)
 2. **Breakers** : `GetInvasionBosses`/pages de breakers, `InvasionBreakerAttack`, `recordBreakerFightOutcome`
    (récompenses = données du jeu), gains de points.
 3. **Boss** : `GetInvasionBosses` → `InvasionBosses`, `StartInvasionBossAttack`, `InvasionBossAttack`,

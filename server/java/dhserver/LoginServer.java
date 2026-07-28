@@ -994,8 +994,21 @@ public final class LoginServer {
               // INVASION (#69) — calendrier + identité de l'invasion courante, CALCULÉS depuis les données du jeu
               // (invasion_constants : START/END jour+heure, INVASION_BASE_DATE/ROTATION ; UnitStats.getTeam pour
               // les héros de l'équipe vedette). Le client enveloppe ça dans son ClientInvasion.
-              com.perblue.heroes.network.messages.InvasionInfo ii =
-                  ServerInvasion.buildInfo(com.perblue.heroes.util.TimeUtil.serverTimeNow());
+              long inow = com.perblue.heroes.util.TimeUtil.serverTimeNow();
+              com.perblue.heroes.network.messages.InvasionInfo ii = ServerInvasion.buildInfo(inow);
+              // État JOUEUR : relu depuis la base, REMIS À ZÉRO si la rotation a changé (comme
+              // InvasionHelper.resetUserInvasion), puis re-persisté. L'énergie d'invasion elle-même est une
+              // ressource du jeu (INVASION_STAMINA, régén gérée par la mécanique existante).
+              if (ii.currentInvasion != null && ii.currentInvasion.invasion != null) {
+                try {
+                  long invID = ii.currentInvasion.invasion.invasionID;
+                  byte[] prev = store.loadUserInvasion(user.shardID, user.userID);
+                  com.perblue.heroes.network.messages.UserInvasionData ud =
+                      ServerInvasion.loadOrResetUserData(prev, user.userID, user.currentGuildID(), invID);
+                  ii.currentInvasion.yourData = ud;
+                  store.saveUserInvasion(user.shardID, user.userID, ServerInvasion.userDataToBytes(ud));
+                } catch (Exception e) { System.out.println("[login]     ! état invasion joueur : " + e); }
+              }
               ii.setAsReplyTo(m);
               c.send(ii);
               System.out.println("[login] <== GetInvasionInfo → ==> InvasionInfo : "
