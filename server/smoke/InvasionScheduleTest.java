@@ -191,6 +191,45 @@ public final class InvasionScheduleTest {
           + " ; vrais héros, distinctes, déterministes");
     }
 
+    // ---- FLUX COMPLET : ouverture du combat → issue → persistance de l'état d'invasion ----
+    {
+      java.io.File db2 = java.io.File.createTempFile("dh-inv-flow", ".db");
+      db2.deleteOnExit();
+      try (dhserver.UserStore store = new dhserver.UserStore(db2.getAbsolutePath())) {
+        dhserver.ServerUser p = dhserver.ServerUser.newPlayer(21L, 1);
+        dhserver.ServerInvasionObject inv = dhserver.ServerInvasionObject.at(wed);
+        long invID = ServerInvasion.rotation(ServerInvasion.invasionStart(wed));
+        int room = 7;
+
+        // 1) Ouverture : la composition adverse est tirée (contexte joueur) et STABLE pour une même graine.
+        long seed = inv.getID() * 1_000_003L + room * 31L + p.userID;
+        java.util.List<?> comp = ServerInvasion.rollBreakerComposition(p, room, inv, seed);
+        if (comp.isEmpty()) throw new AssertionError("ouverture : composition vide");
+        if (!ServerInvasion.rollBreakerComposition(p, room, inv, seed).toString().equals(comp.toString()))
+          throw new AssertionError("la composition doit être stable pour un même (joueur, salle, invasion)");
+
+        // 2) Issue VICTOIRE : état chargé/réinitialisé, résolu, persisté — comme le fait le handler.
+        UserInvasionData ud = ServerInvasion.loadOrResetUserData(
+            store.loadUserInvasion(1, 21L), 21L, 0L, invID);
+        long gold0 = p.resourceAmount(ResourceType.GOLD);
+        ServerInvasion.BreakerOutcome bo = ServerInvasion.resolveBreakerFight(p, ud, room, true, wed);
+        if (!bo.accepted) throw new AssertionError("combat refusé : " + bo.refusal);
+        store.saveUserInvasion(1, 21L, ServerInvasion.userDataToBytes(ud));
+
+        // 3) Relecture : la progression a bien été persistée.
+        UserInvasionData reread = ServerInvasion.loadOrResetUserData(
+            store.loadUserInvasion(1, 21L), 21L, 0L, invID);
+        if (reread.breakerBattlesWon != 1 || reread.points != bo.points)
+          throw new AssertionError("progression d'invasion non persistée (" + reread.breakerBattlesWon
+              + " victoire(s), " + reread.points + " pts)");
+        if (p.resourceAmount(ResourceType.GOLD) != gold0 + bo.gold)
+          throw new AssertionError("or non crédité par le flux complet");
+        System.out.println("[invasion] flux complet room " + room + " : composition " + comp.size()
+            + " unités (stable) → victoire " + bo + " → relu depuis la base ("
+            + reread.breakerBattlesWon + " victoire, " + reread.points + " pts)");
+      }
+    }
+
     System.out.println("INVASION SCHEDULE TEST OK");
   }
 }

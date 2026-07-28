@@ -88,7 +88,16 @@ delta victoire +25, durée 60 s), plafonds quotidiens de guilde, etc.
        (25 en room 1, 735 en room 45), compositions DIFFÉRENTES entre salles, tirage DÉTERMINISTE (même joueur +
        même graine), et le breaker (1ᵉ élément) est un vrai héros — pas un `SOULLESS_*` du mode dégradé.
        *(La composition MÉLANGE légitimement le breaker héros et ses wards `SOULLESS_*` : seule la tête compte.)*
-   - ⏳ **Reste ensuite** : câbler les messages d'attaque. Rappel :
+   - ✅ **MESSAGES D'ATTAQUE CÂBLÉS** :
+     * `InvasionBreakerAttackStart` → le serveur tire la composition adverse **dans le contexte du joueur**
+       (graine dérivée de invasion+salle+joueur ⇒ composition STABLE tant que la salle et l'invasion ne changent
+       pas) et répond `BreakerUserFightData`.
+     * `InvasionBreakerAttack` → résolution AUTORITATIVE (`resolveBreakerFight`) : énergie débitée, or/points/
+       BREAKER accordés selon les formules du jeu, `UserInvasionData` mis à jour et PERSISTÉ — même schéma que
+       `CampaignAttack` (victoire = `CombatOutcome.WIN`).
+     * `InvasionScheduleTest` couvre le flux complet : ouverture (composition stable) → victoire → relecture
+       depuis la base (progression et or conformes).
+   - ⏳ **Note** : rappel du fonctionnement de la table pour la suite —
      `invasion_breaker_fight_comp.tab` est une **table de drop** (`ROOT → <BREAKER>, <WARD_1..4>` avec
      `RoomTest(16)`/`RoomTest(41)` qui font varier les wards selon la room) et le jeu fournit le contexte
      `UserInvasionDTContext` + `InvasionHelper.makeBreakerDefender` → réutiliser la machinerie de drop-tables

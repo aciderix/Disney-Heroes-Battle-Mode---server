@@ -990,6 +990,48 @@ public final class LoginServer {
               c.send(resp);
               System.out.println("[login] <== GetGuildDonationRequests → ==> GuildDonationRequests ("
                   + resp.requests.size() + " demande(s))");
+            } else if (m instanceof com.perblue.heroes.network.messages.InvasionBreakerAttackStart) {
+              // INVASION #69 — le client OUVRE un combat de breaker : le serveur lui renvoie la COMPOSITION
+              // adverse, tirée de la table de drop DU JEU (invasion_breaker_fight_comp.tab) DANS LE CONTEXTE
+              // DU JOUEUR (sans quoi la table retombe sur des mobs génériques). Graine dérivée de
+              // (invasion, room, joueur) → composition STABLE tant que la salle et l'invasion ne changent pas.
+              com.perblue.heroes.network.messages.InvasionBreakerAttackStart bs =
+                  (com.perblue.heroes.network.messages.InvasionBreakerAttackStart) m;
+              long bnow = com.perblue.heroes.util.TimeUtil.serverTimeNow();
+              ServerInvasionObject sinv = ServerInvasionObject.at(bnow);
+              long seed = sinv.getID() * 1_000_003L + bs.room * 31L + user.userID;
+              java.util.List<?> comp = ServerInvasion.rollBreakerComposition(user, bs.room, sinv, seed);
+              com.perblue.heroes.network.messages.BreakerUserFightData bd =
+                  new com.perblue.heroes.network.messages.BreakerUserFightData();
+              bd.index = bs.room;
+              bd.breakerDefenders = new java.util.ArrayList<>();
+              bd.wardLineups = new java.util.ArrayList<>();
+              bd.setAsReplyTo(m);
+              c.send(bd);
+              System.out.println("[login] <== InvasionBreakerAttackStart room=" + bs.room + " ward=" + bs.ward
+                  + " → ==> BreakerUserFightData (composition " + comp.size() + " unité(s) tirée des données)");
+            } else if (m instanceof com.perblue.heroes.network.messages.InvasionBreakerAttack) {
+              // INVASION #69 — issue d'un combat de breaker. Le serveur AUTORITATIF débite l'énergie
+              // d'invasion et accorde or/points/BREAKER selon les FORMULES DU JEU, met à jour l'état
+              // d'invasion du joueur et persiste (comme CampaignAttack).
+              com.perblue.heroes.network.messages.InvasionBreakerAttack ba =
+                  (com.perblue.heroes.network.messages.InvasionBreakerAttack) m;
+              long anow = com.perblue.heroes.util.TimeUtil.serverTimeNow();
+              boolean won = ba.base != null
+                  && ba.base.outcome == com.perblue.heroes.network.messages.CombatOutcome.WIN;
+              try {
+                long invID = ServerInvasion.rotation(ServerInvasion.invasionStart(anow));
+                com.perblue.heroes.network.messages.UserInvasionData ud = ServerInvasion.loadOrResetUserData(
+                    store.loadUserInvasion(user.shardID, user.userID), user.userID, user.currentGuildID(), invID);
+                ServerInvasion.BreakerOutcome bo =
+                    ServerInvasion.resolveBreakerFight(user, ud, ba.room, won, anow);
+                store.saveUserInvasion(user.shardID, user.userID, ServerInvasion.userDataToBytes(ud));
+                store.save(user);
+                System.out.println("[login] <== InvasionBreakerAttack room=" + ba.room
+                    + " outcome=" + (ba.base == null ? "?" : ba.base.outcome) + " → " + bo + " [persisté]");
+              } catch (Exception e) {
+                System.out.println("[login]     ! InvasionBreakerAttack : " + e);
+              }
             } else if (m instanceof com.perblue.heroes.network.messages.GetInvasionInfo) {
               // INVASION (#69) — calendrier + identité de l'invasion courante, CALCULÉS depuis les données du jeu
               // (invasion_constants : START/END jour+heure, INVASION_BASE_DATE/ROTATION ; UnitStats.getTeam pour
