@@ -149,7 +149,7 @@ Les **lineups de défense de guerre** arrivent déjà par `HeroLineupUpdate` ave
 |---|---|---|
 | 1 | **Calendrier de saison + ligues + modèle MMR** (`ServerWar`) | ✅ FAIT |
 | 2 | **État de guerre persisté (`ServerWarState`, table `wars`) + file d'attente** | ✅ FAIT |
-| 3 | Matchmaking (appariement par MMR, anti-rematch, BYE) | ⬜ |
+| 3 | **Matchmaking (appariement par MMR, anti-rematch, BYE) + phases** | ✅ FAIT |
 | 4 | Phases (queue → sabotage 24 h / ban 12 h → bataille) + voitures/affectations | ⬜ |
 | 5 | Attaques + scoring + logs | ⬜ |
 | 6 | Fin de guerre : issue, delta MMR, remboursements, boîtes | ⬜ |
@@ -249,3 +249,43 @@ persistant un compteur dans `shard_state` **dans le même bloc synchronisé** qu
 monotone et reprend au-delà du `MAX` existant, donc aucune migration n'est nécessaire. Les guerres
 n'ont jamais été exposées (`saveWar` attribue le `warID` sous le même verrou que l'insertion).
 Couvert par `WarStateTest` : deux allocations **sans enregistrement intercalé** doivent différer.
+
+### Étape 3 — appariement, ouverture des guerres, phases ✅
+
+**`dhserver.ServerWarMatchmaker`**. L'appariement est du traitement **purement opérateur** : le jar
+client n'en a aucune trace (il affiche la guerre qu'il reçoit), et les constantes qui le pilotent ne
+sont référencées par aucune classe cliente (§1.4).
+
+**Chronologie des phases : reprise EXACTE du client, pas une invention.** Deux méthodes du client la
+fixent mot pour mot :
+* `WarClientHelper.checkForEndOfSabotage` — « si `state == SABOTAGE` et `stateEndTime` dépassé →
+  `state = ACTIVE` et `stateEndTime = endTime` » ;
+* `WarHelper.isBanPhase` — « `state == SABOTAGE` et `extraStateEndTime` non dépassé ».
+
+D'où l'ouverture en `SABOTAGE` avec `stateEndTime = début + SABOTAGE_PHASE_LENGTH` (24 h) et
+`extraStateEndTime = début + SABOTAGE_BAN_PHASE_LENGTH` (12 h), puis `ACTIVE` jusqu'à `endTime` —
+ce qui reproduit exactement l'aide du jeu (« sabotage throughout the full 24 hours. During the first
+12 hours … set the Guild's Bans », puis « Day Two is all about clearing rooms »).
+`WarHelper.isProtectPhase == isQueued` confirme de son côté que la protection se joue pendant la file
+d'attente (« During the Queue Phase, Protect your Heroes »).
+
+**Seul point non nommé par une constante** : la durée du jour 2. Elle se déduit de « two-day long
+Wars » et du jour 1 à 24 h → `warDuration() = 2 × SABOTAGE_PHASE_LENGTH`, isolée en une méthode.
+
+**Appariement** : coût = |ΔMMR| + pénalité d'anti-rematch **des deux côtés**. Déterministe (tri MMR
+décroissant, identifiant pour départager, puis coût minimal). Effectif impair → **BYE**, enregistré
+comme une vraie guerre en état `BYE` (les données prévoient explicitement `BYE_RATING_GAIN`).
+
+**⚠️ LECTURE STRUCTURELLE ASSUMÉE (isolée)** : `rematchPenalty`. `REMATCH_THRESHOLD=7` délimite
+« adversaire récent », `REMATCH_COST=200` est le prix d'un re-match, et `WORST_REMATCH_SCALE=1` /
+`BEST_REMATCH_SCALE=0` encadrent visiblement une **échelle** appliquée à ce prix — mais aucune table
+n'écrit la formule. La lecture retenue est la seule qui utilise les quatre : interpolation par
+ancienneté, l'adversaire de la guerre précédente au prix plein (200), celui d'il y a 7 guerres à zéro,
+rien au-delà. Mesuré : rang 0 → 200, rang 1 → 167, rang 6 → 0.
+
+Test : `server/smoke/WarMatchmakingTest`. Sortie : `Mille(1000)` vs `NeufCentQuatreVingtDix(990)` et
+`QuatreCentDix(410)` vs `QuatreCents(400)` (coût 10 chacun) ; **anti-rematch effectif** — à MMR
+identique, A(500) évite B(500) affronté juste avant et prend C(480) ; 3 guildes → 1 paire + 1 BYE ;
+ouverture SABOTAGE 24 h (ban les 12 premières) puis ACTIVE à +48 h ; transition conforme au client ;
+file `QUEUED_SINGLE` → `NOT_QUEUED` ; guerre relue avec les deux vues correctes et les ligues tenant
+compte du plancher de saison ; BYE persisté sans adversaire mémorisé.
