@@ -220,6 +220,48 @@ public final class ServerInvasion {
     return info;
   }
 
+  /** GÉNÈRE la COMPOSITION d'un breaker (le breaker + ses wards) pour une {@code room}, en tirant la
+   *  TABLE DE DROP DU JEU {@code InvasionStats.BREAKER_FIGHT_COMP} (fichier {@code invasion_breaker_fight_comp.tab} :
+   *  {@code ROOT → <BREAKER>, <WARD_1..4>}, avec des conditions {@code RoomTest(n)} qui font varier les wards
+   *  selon la salle). Rien n'est inventé : les unités, niveaux, étoiles et wards viennent des données.
+   *
+   *  <p>Le tirage est DÉTERMINISTE pour une graine donnée → un même joueur revoit la même composition tant que
+   *  la salle et l'invasion ne changent pas (graine dérivée de invasionID+room côté appelant).
+   *
+   *  @return la liste d'objets {@code DropItem} du jeu (unité + modificateurs), vide en cas d'échec. */
+  public static java.util.List<?> rollBreakerComposition(int room, IInvasionProvider inv, long seed) {
+    try {
+      Class<?> st = Class.forName("com.perblue.heroes.game.data.invasion.InvasionStats");
+      java.lang.reflect.Field f = st.getDeclaredField("BREAKER_FIGHT_COMP");
+      f.setAccessible(true);
+      Object comp = f.get(null);
+      Object table = comp.getClass().getMethod("getTable").invoke(comp);
+      Class<?> ctxC = Class.forName("com.perblue.heroes.game.data.invasion.InvasionStats$BreakerDTContext");
+      java.lang.reflect.Constructor<?> ctor = ctxC.getDeclaredConstructor(
+          int.class, Class.forName("com.perblue.heroes.game.objects.IInvasion"));
+      ctor.setAccessible(true);
+      Object ctx = ctor.newInstance(room, inv.asGameInvasion());
+      java.lang.reflect.Method roll = table.getClass().getMethod("roll",
+          Class.forName("com.perblue.common.droptable.DTContext"), java.util.Random.class);
+      Object out = roll.invoke(table, ctx, new java.util.Random(seed));
+      // IMPORTANT : la liste rendue par DropTable.roll est RÉUTILISÉE d'un tirage à l'autre (tampon interne du
+      // moteur de drop-tables). On en prend donc une COPIE, sinon deux tirages successifs « deviennent » le
+      // même résultat — bug observé : trois compositions distinctes finissaient toutes identiques.
+      return out instanceof java.util.List
+          ? new java.util.ArrayList<>((java.util.List<?>) out)
+          : java.util.Collections.emptyList();
+    } catch (Throwable t) {
+      Throwable c = t.getCause() != null ? t.getCause() : t;
+      System.out.println("[invasion] tirage composition breaker (room " + room + ") : " + c);
+      return java.util.Collections.emptyList();
+    }
+  }
+
+  /** Fournit l'objet {@code IInvasion} du jeu attendu par les contextes de drop-table. */
+  public interface IInvasionProvider {
+    com.perblue.heroes.game.objects.IInvasion asGameInvasion();
+  }
+
   /** Résultat autoritatif d'un combat de BREAKER : ce qui a été débité et accordé. */
   public static final class BreakerOutcome {
     public boolean accepted;              // faux = refusé (énergie insuffisante, invasion inactive…)

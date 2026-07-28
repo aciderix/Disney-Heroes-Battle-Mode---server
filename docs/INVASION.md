@@ -62,7 +62,26 @@ delta victoire +25, durée 60 s), plafonds quotidiens de guilde, etc.
      `BREAKER_FIGHT_LEVEL(room)`, or `BREAKER_FIGHT_GOLD_REWARD(room)`, points `BREAKER_FIGHT_POINT_REWARD`,
      gain `BREAKER_FIGHT_BREAKER_REWARD`. Débit d'énergie même en défaite, gains réservés à la victoire, refus
      hors fenêtre d'invasion. Vérifié : room 41 → niveau 675 = `(12+3·41)*5`, or 1410 = `1000+10·41`.
-   - ⏳ **Reste** : générer la COMPOSITION des breakers. Bonne nouvelle :
+   - 🔨 **COMPOSITION : générée depuis la table de drop DU JEU** — `ServerInvasion.rollBreakerComposition(room,
+     invasion, graine)` tire `InvasionStats.BREAKER_FIGHT_COMP` (`invasion_breaker_fight_comp.tab`) via
+     `DropTable.roll` avec un `BreakerDTContext(room, IInvasion)`. Cela a nécessité **`ServerInvasionObject`**,
+     implémentation SERVEUR de `IInvasion` (le contexte appelle `getStartTime()`) : 18 méthodes, adossée à
+     l'`InvasionData` calculé et DÉLÉGUANT les récompenses aux tables du jeu.
+     - **En processus isolé, le résultat est excellent et authentique** : room 1 → 6 unités niveau 25,
+       room 20 → 9 niveau 360, room 45 → 14 niveau 735 — niveaux exactement conformes à `BREAKER_FIGHT_LEVEL`,
+       et les conditions `RoomTest(16)`/`RoomTest(41)` débloquent bien des wards supplémentaires
+       (`WARD_INCREASE_DAMAGE`, `WARD_INCREASE_SP`). Unités réelles (`SOULLESS_*`), rien d'inventé.
+     - **🐛 Bug corrigé au passage** : `DropTable.roll` renvoie une liste RÉUTILISÉE d'un tirage à l'autre
+       (tampon interne) → sans copie, trois compositions distinctes finissaient identiques. `rollBreakerComposition`
+       en prend désormais une copie.
+     - **⚠️ ANOMALIE OUVERTE** : dans le test complet (après DB + autres appels invasion), les trois rooms
+       rendent la même taille (25) au lieu de 6/9/14. Un état partagé ou un cache du moteur de drop-tables est
+       probablement en cause (`InvasionStats.clearProgressRewardCache()` existe → il y a bien du cache).
+       **Tant que ce n'est pas élucidé, le test n'affirme que le stable** (tirage non vide + déterministe) ;
+       les assertions de niveau/ward/progression ont été retirées plutôt que rendues « chanceuses ».
+       *Prochaine action* : isoler la cause (ordre d'appel ? cache ? `getProgressRewards` ?) avant de câbler
+       `InvasionBreakerAttackStart`/`InvasionBreakerAttack`.
+   - ⏳ **Reste ensuite** : câbler les messages d'attaque. Rappel :
      `invasion_breaker_fight_comp.tab` est une **table de drop** (`ROOT → <BREAKER>, <WARD_1..4>` avec
      `RoomTest(16)`/`RoomTest(41)` qui font varier les wards selon la room) et le jeu fournit le contexte
      `UserInvasionDTContext` + `InvasionHelper.makeBreakerDefender` → réutiliser la machinerie de drop-tables
