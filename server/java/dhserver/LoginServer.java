@@ -450,6 +450,41 @@ public final class LoginServer {
                 } else {
                   System.out.println("[login]     ⛔ ACTIVATE_TIMED_GUILD_PERK refusé (type=" + type + ")");
                 }
+              } else if (act.command == com.perblue.heroes.network.messages.CommandType.INVASION_CLAIM_GUILD_RANK_REWARD) {
+                // INVASION #69 — récompenses de RANG DE LIGUE (fin d'invasion). Le rang vient du classement
+                // SERVEUR (somme des points des membres pour la guilde) ; les récompenses sont tirées par la
+                // logique du jeu (tables invasion_guild_rank_league_rewards). Anti-double-réclamation via le
+                // drapeau hasGuildRankRewards de UserInvasionData, re-persisté après l'appel.
+                long rnow = com.perblue.heroes.util.TimeUtil.serverTimeNow();
+                long rinv = ServerInvasion.rotation(ServerInvasion.invasionStart(rnow));
+                try {
+                  com.perblue.heroes.network.messages.UserInvasionData rud = ServerInvasion.loadOrResetUserData(
+                      store.loadUserInvasion(user.shardID, user.userID), user.userID, user.currentGuildID(), rinv);
+                  // Rang de MA guilde dans le classement d'invasion.
+                  int myRank = 0;
+                  long myGid = user.currentGuildID();
+                  for (com.perblue.heroes.network.messages.InvasionRankingRow row
+                      : ServerInvasion.guildRanking(store, user.shardID, rinv, 10000)) {
+                    if (row.guild != null && row.guild.iD == myGid) { myRank = row.rank; break; }
+                  }
+                  if (myRank <= 0) {
+                    System.out.println("[login]     ⛔ INVASION_CLAIM_GUILD_RANK_REWARD : guilde non classée");
+                  } else {
+                    com.perblue.heroes.network.messages.InvasionLeague lg =
+                        rud.league == null ? com.perblue.heroes.network.messages.InvasionLeague.BRONZE : rud.league;
+                    boolean ok = user.claimInvasionRankRewards(
+                        ServerInvasionObject.at(rnow), rud, lg, myRank, true);
+                    if (ok) {
+                      store.saveUserInvasion(user.shardID, user.userID, ServerInvasion.userDataToBytes(rud));
+                      store.save(user);
+                    }
+                    System.out.println("[login] <== INVASION_CLAIM_GUILD_RANK_REWARD rang=" + myRank
+                        + " ligue=" + lg + " → " + (ok ? "récompenses créditées [persisté]"
+                        : "rien à réclamer (déjà pris ou aucune récompense)"));
+                  }
+                } catch (Exception e) {
+                  System.out.println("[login]     ! INVASION_CLAIM_GUILD_RANK_REWARD : " + e);
+                }
               } else if (act.command == com.perblue.heroes.network.messages.CommandType.CLAIM_GUILD_GIFT_REWARDS) {
                 // CADEAUX DE GUILDE (#58/#66) — RÉCLAME les cadeaux non encore pris par ce joueur (autoritatif) :
                 // ServerUser.claimGuildGifts crédite les récompenses (RewardHelper.giveRewards) + avance la marque

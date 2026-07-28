@@ -199,6 +199,39 @@ public final class InvasionBossTest {
             + ServerInvasion.leagueDemoteThreshold() + " des données)");
       }
 
+      // ---- RÉCOMPENSES DE RANG DE LIGUE (fin d'invasion) ----
+      {
+        long invID = ServerInvasion.rotation(ServerInvasion.invasionStart(wed));
+        dhserver.ServerInvasionObject inv = dhserver.ServerInvasionObject.at(wed);
+        ServerUser p = ServerUser.newPlayer(301L, 1);
+        UserInvasionData ud = ServerInvasion.newUserData(301L, g.guildID, invID);
+
+        // Drapeau NON armé → aucune réclamation possible (anti-double-claim du jeu).
+        ud.hasGuildRankRewards = false;
+        if (p.claimInvasionRankRewards(inv, ud, InvasionLeague.BRONZE, 3, true))
+          throw new AssertionError("sans drapeau armé, la réclamation doit être refusée");
+
+        // Drapeau armé → la logique du jeu s'exécute et DÉSARME le drapeau (anti-double-claim).
+        ud.hasGuildRankRewards = true;
+        boolean ok = p.claimInvasionRankRewards(inv, ud, InvasionLeague.BRONZE, 3, true);
+        if (!ok) throw new AssertionError("réclamation de rang refusée alors que le drapeau était armé");
+        if (ud.hasGuildRankRewards)
+          throw new AssertionError("le drapeau doit être DÉSARMÉ après réclamation (anti-double-claim)");
+        // 2ᵉ tentative → refusée.
+        if (p.claimInvasionRankRewards(inv, ud, InvasionLeague.BRONZE, 3, true))
+          throw new AssertionError("2ᵉ réclamation de rang doit être refusée");
+        System.out.println("[invasion] récompenses de rang : réclamées une fois (drapeau désarmé), "
+            + "2ᵉ tentative refusée");
+
+        // Round-trip : le drapeau désarmé survit à la persistance.
+        store.saveUserInvasion(1, 301L, ServerInvasion.userDataToBytes(ud));
+        UserInvasionData re = ServerInvasion.loadOrResetUserData(
+            store.loadUserInvasion(1, 301L), 301L, g.guildID, invID);
+        if (re.hasGuildRankRewards)
+          throw new AssertionError("drapeau de réclamation non persisté");
+        System.out.println("[invasion] round-trip DB : drapeau de réclamation persisté");
+      }
+
       System.out.println("INVASION BOSS TEST OK");
     }
   }

@@ -348,6 +348,41 @@ public final class ServerUser {
     } catch (Throwable t) { System.out.println("[invasion] grantRewards : " + t); }
   }
 
+  /** RÉCOMPENSES DE RANG DE LIGUE (#69) — fin d'invasion. Délègue à la LOGIQUE DU JEU
+   *  ({@code InvasionHelper.claimGuildRankRewards} / {@code claimUserRankRewards}, adossées aux tables
+   *  {@code invasion_{guild,user}_rank_league_rewards}). Le drapeau anti-double-réclamation vit dans
+   *  {@code UserInvasionData} ({@code hasGuildRankRewards}/{@code hasUserRankRewards}) : l'appelant DOIT
+   *  re-persister l'état après l'appel. Renvoie {@code true} si une réclamation a bien eu lieu. */
+  public synchronized boolean claimInvasionRankRewards(
+      com.perblue.heroes.game.objects.IInvasion inv,
+      com.perblue.heroes.network.messages.UserInvasionData ud,
+      com.perblue.heroes.network.messages.InvasionLeague league, int rank, boolean guildSide) {
+    if (inv == null || ud == null || league == null || rank <= 0) return false;
+    // Anti-double-réclamation : le drapeau du jeu doit être ARMÉ (récompense en attente).
+    if (guildSide ? !ud.hasGuildRankRewards : !ud.hasUserRankRewards) return false;
+    ServerContext.init();
+    User user = ClientNetworkStateConverter.getUser(userInfo, userExtra, "rankrw");
+    IndividualUser iu = ClientNetworkStateConverter.getIndividualUser(
+        individualUserExtra, userID, userInfo.diamonds, "rankrw");
+    ServerContext.bind(user, iu);
+    ServerInvasionUser siu = new ServerInvasionUser(ud);
+    try {
+      if (guildSide) {
+        com.perblue.heroes.game.logic.InvasionHelper.claimGuildRankRewards(inv, user, siu, league, rank,
+            com.perblue.heroes.game.specialevent.SpecialEventSnapshot.NONE);
+      } else {
+        com.perblue.heroes.game.logic.InvasionHelper.claimUserRankRewards(inv, user, siu, league, rank,
+            com.perblue.heroes.game.specialevent.SpecialEventSnapshot.NONE);
+      }
+      resyncDiamonds(user); resyncHeroes(user);
+      return true;
+    } catch (Throwable t) {
+      Throwable c = t.getCause() != null ? t.getCause() : t;
+      System.out.println("[invasion] claim" + (guildSide ? "Guild" : "User") + "RankRewards : " + c);
+      return false;
+    }
+  }
+
   /** RÉCOMPENSES DE BOSS D'INVASION (#69) — tirées par la LOGIQUE DU JEU
    *  ({@code InvasionHelper.rollBossRewardLoot}, adossée aux tables {@code invasion_boss_rewards*}) selon le
    *  RÔLE du joueur sur ce boss ({@code PARTICIPANT}, {@code FINDER}, {@code FINISHER}, {@code MOST_DAMAGE}…).

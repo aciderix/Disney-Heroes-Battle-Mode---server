@@ -145,8 +145,17 @@ delta victoire +25, durée 60 s), plafonds quotidiens de guilde, etc.
      guildes ressortait VIDE. D'où `readUserData(bytes)`, lecture seule, utilisée par les classements.
    - Couvert par `InvasionBossTest` : ordre des joueurs (1500>900>700>500), score de guilde = somme des membres
      (joueur sans guilde exclu), seuils de promotion/relégation/maintien.
-   - ⏳ **Reste** : `INVASION_CLAIM_GUILD_RANK_REWARD` (via `claimGuildRankRewards`/`claimUserRankRewards` +
-     tables `invasion_{guild,user}_rank_league_rewards`) et la persistance de la ligue d'un joueur d'une semaine
-     sur l'autre (`UserInvasionData.league` existe déjà).
+   - ✅ **`INVASION_CLAIM_GUILD_RANK_REWARD` CÂBLÉ** : le rang vient du classement SERVEUR (somme des points des
+     membres) ; `ServerUser.claimInvasionRankRewards(...)` délègue à `InvasionHelper.claimGuildRankRewards` /
+     `claimUserRankRewards` (tables `invasion_{guild,user}_rank_league_rewards`). L'anti-double-réclamation
+     utilise les drapeaux DU JEU `UserInvasionData.hasGuildRankRewards`/`hasUserRankRewards` : la réclamation
+     n'a lieu que si le drapeau est ARMÉ, la logique du jeu le DÉSARME, et l'état est re-persisté.
+     Cela a nécessité **`ServerInvasionUser`** — implémentation SERVEUR de `IInvasionUser` (34 méthodes), simple
+     adaptateur au-dessus du `UserInvasionData` persisté (le client a son `ClientInvasionUser`, adossé à `DH.app`).
+   - Couvert par `InvasionBossTest` : refus sans drapeau, réclamation unique, drapeau désarmé, 2ᵉ tentative
+     refusée, round-trip DB.
+   - ⏳ **Reste** : la persistance de la LIGUE d'un joueur d'une semaine sur l'autre (le champ
+     `UserInvasionData.league` existe ; `leagueAfterRank` calcule déjà la ligue d'arrivée — il reste à l'appliquer
+     à la clôture d'une invasion).
 5. **État partagé de guilde** : dégâts au boss par membre, plafonds quotidiens de guilde
    (`GUILD_DAILY_BOSS_LIMIT=100`, `BOSS_GUILD_DAILY_LIMIT=2400`) → table `shard_state` / `ServerGuild`.
