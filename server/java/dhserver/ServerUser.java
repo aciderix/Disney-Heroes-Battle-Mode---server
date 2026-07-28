@@ -332,6 +332,30 @@ public final class ServerUser {
     ServerContext.bind(user, iu);
   }
 
+  /** RÉCOMPENSES DE BOSS D'INVASION (#69) — tirées par la LOGIQUE DU JEU
+   *  ({@code InvasionHelper.rollBossRewardLoot}, adossée aux tables {@code invasion_boss_rewards*}) selon le
+   *  RÔLE du joueur sur ce boss ({@code PARTICIPANT}, {@code FINDER}, {@code FINISHER}, {@code MOST_DAMAGE}…).
+   *  Aucune table n'est relue ici : on délègue. */
+  public synchronized java.util.List<?> rollInvasionBossRewards(
+      com.perblue.heroes.game.objects.IInvasion inv, int bossLevel, int multiplier,
+      com.perblue.heroes.network.messages.InvasionBossRewardType type,
+      com.perblue.heroes.network.messages.InvasionBossType bossType) {
+    ServerContext.init();
+    User user = ClientNetworkStateConverter.getUser(userInfo, userExtra, "bossloot");
+    IndividualUser iu = ClientNetworkStateConverter.getIndividualUser(
+        individualUserExtra, userID, userInfo.diamonds, "bossloot");
+    ServerContext.bind(user, iu);
+    try {
+      java.util.List<?> loot = com.perblue.heroes.game.logic.InvasionHelper.rollBossRewardLoot(
+          inv, user, bossLevel, multiplier, type, bossType, null);
+      return loot == null ? java.util.Collections.emptyList() : loot;
+    } catch (Throwable t) {
+      Throwable c = t.getCause() != null ? t.getCause() : t;
+      System.out.println("[invasion] rollBossRewardLoot(" + type + ") : " + c);
+      return java.util.Collections.emptyList();
+    }
+  }
+
   /** Outillage TEST : lit le montant d'une ressource (logique du jeu {@code User.getResource}). */
   public synchronized long resourceAmount(com.perblue.heroes.network.messages.ResourceType rt) {
     ServerContext.init();
