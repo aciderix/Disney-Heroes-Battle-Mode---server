@@ -990,6 +990,39 @@ public final class LoginServer {
               c.send(resp);
               System.out.println("[login] <== GetGuildDonationRequests → ==> GuildDonationRequests ("
                   + resp.requests.size() + " demande(s))");
+            } else if (m instanceof com.perblue.heroes.network.messages.GetUserInvasionLeagueInfo
+                || m instanceof com.perblue.heroes.network.messages.GetGuildInvasionLeagueInfo) {
+              // INVASION #69 — CLASSEMENTS de ligue. Score joueur = points d'invasion (table user_invasion) ;
+              // score guilde = somme des points de ses membres. Divisions/seuils viennent des données
+              // (LEAGUE_DESIRED_SIZE=50, promotion ≤5, relégation ≥60).
+              long lnow = com.perblue.heroes.util.TimeUtil.serverTimeNow();
+              long linv = ServerInvasion.rotation(ServerInvasion.invasionStart(lnow));
+              boolean guildSide = m instanceof com.perblue.heroes.network.messages.GetGuildInvasionLeagueInfo;
+              if (guildSide) {
+                com.perblue.heroes.network.messages.GuildInvasionLeagueInfo gi =
+                    new com.perblue.heroes.network.messages.GuildInvasionLeagueInfo();
+                gi.invasionID = linv;
+                gi.division = 1;
+                gi.league = com.perblue.heroes.network.messages.InvasionLeague.BRONZE;
+                gi.guilds = new java.util.ArrayList<>(
+                    ServerInvasion.guildRanking(store, user.shardID, linv, ServerInvasion.leagueDesiredSize()));
+                gi.setAsReplyTo(m);
+                c.send(gi);
+                System.out.println("[login] <== GetGuildInvasionLeagueInfo → ==> GuildInvasionLeagueInfo ("
+                    + gi.guilds.size() + " guilde(s))");
+              } else {
+                com.perblue.heroes.network.messages.UserInvasionLeagueInfo ui =
+                    new com.perblue.heroes.network.messages.UserInvasionLeagueInfo();
+                ui.invasionID = linv;
+                ui.division = 1;
+                ui.league = com.perblue.heroes.network.messages.InvasionLeague.BRONZE;
+                ui.users = new java.util.ArrayList<>(
+                    ServerInvasion.userRanking(store, user.shardID, linv, ServerInvasion.leagueDesiredSize()));
+                ui.setAsReplyTo(m);
+                c.send(ui);
+                System.out.println("[login] <== GetUserInvasionLeagueInfo → ==> UserInvasionLeagueInfo ("
+                    + ui.users.size() + " joueur(s))");
+              }
             } else if (m instanceof com.perblue.heroes.network.messages.ClaimInvasionBossRewards) {
               // INVASION #69 — réclamation des récompenses de boss. Le RÔLE du joueur sur ce boss est déterminé
               // par l'état PARTAGÉ de la guilde (a-t-il trouvé le boss ? a-t-il infligé des dégâts ?), puis les

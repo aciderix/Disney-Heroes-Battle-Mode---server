@@ -195,6 +195,18 @@ public final class ServerInvasion {
     return d;
   }
 
+  /** LECTURE SEULE d'un état d'invasion persisté — contrairement à {@link #loadOrResetUserData}, n'écrase NI
+   *  la guilde NI rien d'autre. Indispensable aux CLASSEMENTS, qui lisent en masse des états dont on ne connaît
+   *  pas la guilde a priori (la passer à 0 effacerait l'appartenance et viderait le classement des guildes). */
+  public static com.perblue.heroes.network.messages.UserInvasionData readUserData(byte[] persisted) {
+    if (persisted == null || persisted.length == 0) return null;
+    try {
+      return (com.perblue.heroes.network.messages.UserInvasionData)
+          com.perblue.heroes.network.messages.MessageFactory.getInstance().readMessage(
+              new com.perblue.grunt.translate.util.GruntInputStream(persisted));
+    } catch (Exception e) { return null; }
+  }
+
   /** Octets wire d'un {@code UserInvasionData} (pour la persistance). */
   public static byte[] userDataToBytes(com.perblue.heroes.network.messages.UserInvasionData d) {
     com.perblue.grunt.translate.util.GruntOutputStream go = new com.perblue.grunt.translate.util.GruntOutputStream();
@@ -414,6 +426,103 @@ public final class ServerInvasion {
     g.replaceInvasionBoss(bossID, boss);
     g.unlockBoss(bossID, u.userID);
     return o;
+  }
+
+  // ===================== LIGUES ET CLASSEMENTS (#69) =====================
+
+  /** Seuils de ligue lus des données ({@code LEAGUE_PROMOTE_THRESHOLD} / {@code LEAGUE_DEMOTE_THRESHOLD} :
+   *  rang ≤ 5 → promotion, rang ≥ 60 → relégation ; {@code LEAGUE_DESIRED_SIZE}=50 par division). */
+  public static int leaguePromoteThreshold() { return (int) constLong("LEAGUE_PROMOTE_THRESHOLD", 5L); }
+  public static int leagueDemoteThreshold()  { return (int) constLong("LEAGUE_DEMOTE_THRESHOLD", 60L); }
+  public static int leagueDesiredSize()      { return (int) constLong("LEAGUE_DESIRED_SIZE", 50L); }
+
+  /** La ligue SUIVANTE (promotion) ou PRÉCÉDENTE (relégation) dans l'ordre du jeu
+   *  {@code UNRANKED → BRONZE → SILVER → GOLD → PLATINUM → CHALLENGER}. */
+  public static com.perblue.heroes.network.messages.InvasionLeague shiftLeague(
+      com.perblue.heroes.network.messages.InvasionLeague cur, boolean up) {
+    com.perblue.heroes.network.messages.InvasionLeague[] order = {
+        com.perblue.heroes.network.messages.InvasionLeague.UNRANKED,
+        com.perblue.heroes.network.messages.InvasionLeague.BRONZE,
+        com.perblue.heroes.network.messages.InvasionLeague.SILVER,
+        com.perblue.heroes.network.messages.InvasionLeague.GOLD,
+        com.perblue.heroes.network.messages.InvasionLeague.PLATINUM,
+        com.perblue.heroes.network.messages.InvasionLeague.CHALLENGER };
+    int i = 0;
+    for (int k = 0; k < order.length; k++) if (order[k] == cur) i = k;
+    int j = Math.max(0, Math.min(order.length - 1, i + (up ? 1 : -1)));
+    return order[j];
+  }
+
+  /** Ligue d'arrivée d'après le RANG final, selon les seuils des données : ≤ promote → montée,
+   *  ≥ demote → descente, sinon maintien. */
+  public static com.perblue.heroes.network.messages.InvasionLeague leagueAfterRank(
+      com.perblue.heroes.network.messages.InvasionLeague cur, int rank) {
+    if (rank > 0 && rank <= leaguePromoteThreshold()) return shiftLeague(cur, true);
+    if (rank >= leagueDemoteThreshold()) return shiftLeague(cur, false);
+    return cur;
+  }
+
+  /** CLASSEMENT DES JOUEURS de l'invasion courante : tous les états d'invasion du shard, triés par points
+   *  décroissants. Les noms sont résolus depuis le store. */
+  public static java.util.List<com.perblue.heroes.network.messages.InvasionRankingRow> userRanking(
+      UserStore store, int shardID, long invasionID, int limit) {
+    java.util.List<com.perblue.heroes.network.messages.InvasionRankingRow> rows = new java.util.ArrayList<>();
+    try {
+      java.util.LinkedHashMap<Long, byte[]> all = store.listUserInvasions(shardID);
+      for (java.util.Map.Entry<Long, byte[]> e : all.entrySet()) {
+        com.perblue.heroes.network.messages.UserInvasionData ud = readUserData(e.getValue());
+        if (ud == null || ud.invasionID != invasionID || ud.points <= 0) continue;   // hors invasion / sans score
+        com.perblue.heroes.network.messages.InvasionRankingRow r =
+            new com.perblue.heroes.network.messages.InvasionRankingRow();
+        r.score = ud.points;
+        try {
+          ServerUser su = store.loadIfExists(e.getKey(), shardID);
+          if (su != null) r.user = su.basicInfo();
+        } catch (Exception ignore) {}
+        rows.add(r);
+      }
+    } catch (Exception ex) { System.out.println("[invasion] userRanking : " + ex); }
+    rows.sort((x, y) -> Long.compare(y.score, x.score));
+    int rank = 0;
+    java.util.List<com.perblue.heroes.network.messages.InvasionRankingRow> out = new java.util.ArrayList<>();
+    for (com.perblue.heroes.network.messages.InvasionRankingRow r : rows) {
+      r.rank = ++rank;
+      if (out.size() < limit) out.add(r);
+    }
+    return out;
+  }
+
+  /** CLASSEMENT DES GUILDES : score d'une guilde = SOMME des points d'invasion de ses membres. */
+  public static java.util.List<com.perblue.heroes.network.messages.InvasionRankingRow> guildRanking(
+      UserStore store, int shardID, long invasionID, int limit) {
+    java.util.List<com.perblue.heroes.network.messages.InvasionRankingRow> rows = new java.util.ArrayList<>();
+    try {
+      java.util.LinkedHashMap<Long, byte[]> all = store.listUserInvasions(shardID);
+      java.util.LinkedHashMap<Long, Long> byGuild = new java.util.LinkedHashMap<>();
+      for (java.util.Map.Entry<Long, byte[]> e : all.entrySet()) {
+        com.perblue.heroes.network.messages.UserInvasionData ud = readUserData(e.getValue());
+        if (ud == null || ud.invasionID != invasionID || ud.guildID <= 0 || ud.points <= 0) continue;
+        byGuild.merge(ud.guildID, ud.points, Long::sum);
+      }
+      for (java.util.Map.Entry<Long, Long> e : byGuild.entrySet()) {
+        com.perblue.heroes.network.messages.InvasionRankingRow r =
+            new com.perblue.heroes.network.messages.InvasionRankingRow();
+        r.score = e.getValue();
+        try {
+          ServerGuild g = store.loadGuild(shardID, e.getKey());
+          if (g != null && g.info != null) r.guild = g.info.basicInfo;
+        } catch (Exception ignore) {}
+        rows.add(r);
+      }
+    } catch (Exception ex) { System.out.println("[invasion] guildRanking : " + ex); }
+    rows.sort((x, y) -> Long.compare(y.score, x.score));
+    int rank = 0;
+    java.util.List<com.perblue.heroes.network.messages.InvasionRankingRow> out = new java.util.ArrayList<>();
+    for (com.perblue.heroes.network.messages.InvasionRankingRow r : rows) {
+      r.rank = ++rank;
+      if (out.size() < limit) out.add(r);
+    }
+    return out;
   }
 
   /** Résumé lisible (journal serveur / admin). */

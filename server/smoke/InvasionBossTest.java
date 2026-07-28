@@ -152,6 +152,53 @@ public final class InvasionBossTest {
             + " drops (" + stam + " STAMINA, " + tech + " BOSS_TECH), FINDER → " + finder.size() + " drops");
       }
 
+      // ---- LIGUES ET CLASSEMENTS : joueurs par points, guildes par somme des membres ----
+      {
+        long invID = ServerInvasion.rotation(ServerInvasion.invasionStart(wed));
+        // 3 joueurs de la guilde avec des scores distincts + 1 joueur sans guilde.
+        long[] ids = {201L, 202L, 203L, 204L};
+        long[] pts = {500L, 1500L, 900L, 700L};
+        long[] gids = {g.guildID, g.guildID, g.guildID, 0L};
+        for (int i = 0; i < ids.length; i++) {
+          ServerUser u = ServerUser.newPlayer(ids[i], 1);
+          store.save(u);
+          UserInvasionData ud = ServerInvasion.newUserData(ids[i], gids[i], invID);
+          ud.points = pts[i];
+          store.saveUserInvasion(1, ids[i], ServerInvasion.userDataToBytes(ud));
+        }
+        java.util.List<InvasionRankingRow> ur = ServerInvasion.userRanking(store, 1, invID, 50);
+        if (ur.size() < 4) throw new AssertionError("classement joueurs incomplet : " + ur.size());
+        if (ur.get(0).score != 1500L || ur.get(0).rank != 1)
+          throw new AssertionError("tête du classement joueurs incorrecte : " + ur.get(0).score);
+        if (ur.get(1).score != 900L || ur.get(2).score != 700L || ur.get(3).score != 500L)
+          throw new AssertionError("ordre du classement joueurs incorrect");
+        System.out.println("[invasion] classement joueurs : " + ur.get(0).score + " > " + ur.get(1).score
+            + " > " + ur.get(2).score + " > " + ur.get(3).score + " (rangs 1..4)");
+
+        // Guilde : 500+1500+900 = 2900 (le joueur sans guilde est exclu).
+        java.util.List<InvasionRankingRow> gr = ServerInvasion.guildRanking(store, 1, invID, 50);
+        if (gr.isEmpty()) throw new AssertionError("classement guildes vide");
+        if (gr.get(0).score != 2900L)
+          throw new AssertionError("score de guilde attendu 2900 (somme des membres), obtenu " + gr.get(0).score);
+        System.out.println("[invasion] classement guildes : " + gr.get(0).score
+            + " = somme des membres (joueur sans guilde exclu)");
+
+        // Seuils de ligue : promotion si rang ≤ 5, relégation si rang ≥ 60 (données du jeu).
+        InvasionLeague bronze = InvasionLeague.BRONZE;
+        if (ServerInvasion.leagueAfterRank(bronze, 1) != InvasionLeague.SILVER)
+          throw new AssertionError("rang 1 devrait promouvoir BRONZE→SILVER");
+        if (ServerInvasion.leagueAfterRank(bronze, 100) != InvasionLeague.UNRANKED)
+          throw new AssertionError("rang 100 devrait rétrograder BRONZE→UNRANKED");
+        if (ServerInvasion.leagueAfterRank(bronze, 30) != bronze)
+          throw new AssertionError("rang intermédiaire devrait maintenir la ligue");
+        // La ligue max ne déborde pas.
+        if (ServerInvasion.leagueAfterRank(InvasionLeague.CHALLENGER, 1) != InvasionLeague.CHALLENGER)
+          throw new AssertionError("CHALLENGER ne doit pas déborder");
+        System.out.println("[invasion] ligues : rang 1 → promotion, rang 100 → relégation, rang 30 → maintien"
+            + " (seuils " + ServerInvasion.leaguePromoteThreshold() + "/"
+            + ServerInvasion.leagueDemoteThreshold() + " des données)");
+      }
+
       System.out.println("INVASION BOSS TEST OK");
     }
   }

@@ -131,7 +131,22 @@ delta victoire +25, durée 60 s), plafonds quotidiens de guilde, etc.
    - ⏳ **Reste** : handlers `StartInvasionBossAttack`/`InvasionBossAttack` (les dégâts se dérivent du combat
      rapporté par le client — pas de champ explicite dans le message, à établir factuellement). Le broadcast est
      prêt : `InvasionBossAttacked{attackerID, damageDone, mostDamageUser, guildPoints…}` via `pushToGuild`.
-4. **Ligues et rangs** : `GetUserInvasionLeagueInfo` / `GetGuildInvasionLeagueInfo`, classements, et
-   `INVASION_CLAIM_GUILD_RANK_REWARD` (via `claimGuildRankRewards` / `claimUserRankRewards` + tables de ligue).
+4. **Ligues et rangs** — ✅ CLASSEMENTS FAITS :
+   - `UserStore.listUserInvasions(shard)` : tous les états d'invasion du shard (base des classements).
+   - `ServerInvasion.userRanking(...)` : joueurs triés par points d'invasion (rangs 1..N).
+   - `ServerInvasion.guildRanking(...)` : score d'une guilde = SOMME des points de ses membres.
+   - `leagueAfterRank(ligue, rang)` : promotion si rang ≤ `LEAGUE_PROMOTE_THRESHOLD`=5, relégation si
+     rang ≥ `LEAGUE_DEMOTE_THRESHOLD`=60, sinon maintien ; ordre du jeu UNRANKED→BRONZE→SILVER→GOLD→
+     PLATINUM→CHALLENGER, sans débordement aux extrémités.
+   - Handlers `GetUserInvasionLeagueInfo` / `GetGuildInvasionLeagueInfo` → `UserInvasionLeagueInfo` /
+     `GuildInvasionLeagueInfo` (taille de division = `LEAGUE_DESIRED_SIZE`=50).
+   - **🐛 Bug corrigé** : `loadOrResetUserData` ÉCRASE le `guildID` persisté par son paramètre — correct dans le
+     chemin « handler » (on connaît la guilde courante), mais faux pour une lecture EN MASSE : le classement des
+     guildes ressortait VIDE. D'où `readUserData(bytes)`, lecture seule, utilisée par les classements.
+   - Couvert par `InvasionBossTest` : ordre des joueurs (1500>900>700>500), score de guilde = somme des membres
+     (joueur sans guilde exclu), seuils de promotion/relégation/maintien.
+   - ⏳ **Reste** : `INVASION_CLAIM_GUILD_RANK_REWARD` (via `claimGuildRankRewards`/`claimUserRankRewards` +
+     tables `invasion_{guild,user}_rank_league_rewards`) et la persistance de la ligue d'un joueur d'une semaine
+     sur l'autre (`UserInvasionData.league` existe déjà).
 5. **État partagé de guilde** : dégâts au boss par membre, plafonds quotidiens de guilde
    (`GUILD_DAILY_BOSS_LIMIT=100`, `BOSS_GUILD_DAILY_LIMIT=2400`) → table `shard_state` / `ServerGuild`.

@@ -75,6 +75,20 @@ public final class UserStore implements AutoCloseable {
     return null;
   }
 
+  /** INVASION #69 — TOUS les états d'invasion d'un shard (userID → octets wire), pour les CLASSEMENTS.
+   *  Le classement d'invasion se calcule sur les points de chaque joueur, stockés dans {@code user_invasion}. */
+  public synchronized java.util.LinkedHashMap<Long, byte[]> listUserInvasions(int shardID) throws SQLException {
+    java.util.LinkedHashMap<Long, byte[]> out = new java.util.LinkedHashMap<>();
+    try (PreparedStatement ps = conn.prepareStatement(
+        "SELECT userID, data FROM user_invasion WHERE shardID=?")) {
+      ps.setInt(1, shardID);
+      try (ResultSet rs = ps.executeQuery()) {
+        while (rs.next()) out.put(rs.getLong(1), rs.getBytes(2));
+      }
+    }
+    return out;
+  }
+
   /** INVASION #69 — écrit (upsert) l'état d'invasion de {@code (shard, userID)}. */
   public synchronized void saveUserInvasion(int shardID, long userID, byte[] data) throws SQLException {
     try (PreparedStatement ps = conn.prepareStatement(
