@@ -103,9 +103,34 @@ delta victoire +25, durée 60 s), plafonds quotidiens de guilde, etc.
      `UserInvasionDTContext` + `InvasionHelper.makeBreakerDefender` → réutiliser la machinerie de drop-tables
      déjà employée pour le loot. Puis câbler `InvasionBreakerAttackStart` / `InvasionBreakerAttack`
      (mêmes formes que `CampaignAttack`, déjà géré).
-3. **Boss** : `GetInvasionBosses` → `InvasionBosses`, `StartInvasionBossAttack`, `InvasionBossAttack`,
-   HP partagés de guilde, verrou d'attaque (`ATTACK_LOCK_DURATION=5m`), `ClaimInvasionBossRewards`
-   (via `rollBossRewardLoot` + tables `invasion_boss_rewards*`).
+3. **Boss** — ✅ FAIT (état partagé, attaque, récompenses, réclamation) :
+   - **État partagé** `ServerGuild` **v7** : `invasionBossWire` (octets wire des `InvasionBossInfo` du jeu),
+     `bossAttackLocks` (bossID → userID+expiration), `nextBossID`. Persisté.
+   - `spawnBoss` : niveau `BOSS_FIGHT_INITAL_LEVEL`=450, échéance `BOSS_FIGHT_TIME_LIMIT`=24 h,
+     `foundByUser`/`foundByGuild` renseignés. `activeBosses` purge les expirés.
+   - `attackBoss` : VERROU exclusif (`ATTACK_LOCK_DURATION`=5 min, repris à expiration —
+     `BOSS_SIMULTANEOUS_ATTACKS_COUNT`=1), clés `BOSS_FIGHT_1X/5X_KEY_COST`=1/3 débitées sur la ressource
+     `BREAKER`, dégâts CUMULÉS par joueur, refus si clés insuffisantes / boss expiré / invasion inactive.
+   - **Récompenses** : `ServerUser.rollInvasionBossRewards(...)` DÉLÈGUE à `InvasionHelper.rollBossRewardLoot`
+     (tables `invasion_boss_rewards{,_guild,_solo}`). Conforme à la table pour PARTICIPANT/MEGA_VIRUS :
+     5 INVASION_STAMINA, 20 BOSS_TECH, 90 INVASION_POINTS, 100 CODEBASE_CHEST_1X + 1 consommable aléatoire.
+   - Handlers `GetInvasionBosses` et `ClaimInvasionBossRewards` (rôle FINDER/PARTICIPANT déduit de l'état
+     partagé, refus sans participation, crédit via `RewardHelper.giveRewards`, persisté).
+   - `InvasionBossTest` : 11 vérifications (apparition, cumul par joueur, coût 5×>1×, état partagé 2 membres,
+     verrou exclusif puis expiré, refus sans clés, round-trip DB v7, expiration, récompenses = table, rôles).
+
+   **🐛 Deux pièges résolus** :
+   1. `InvasionBossInfo.damageDone` est un `Map<Long, InvasionBossDamageData>` — y mettre un `Long` brut fait
+      DISPARAÎTRE SILENCIEUSEMENT les dégâts au passage wire (carte vide après round-trip, aucune erreur).
+   2. **Diagnostic corrigé** : j'avais noté « récompenses vides pour un TL1, sans doute conditionnées par l'état
+      du joueur ». **Faux — c'était mon bug** : `SpecialEventSnapshot` passé à `null`, `createDrop` appelle
+      `getLootResourceMultiplier()` dessus → NPE **avalée par mon propre `catch`**, d'où une liste vide sans
+      erreur. Le TL n'y était pour rien (identique à TL1/30/100). Corrigé par `SpecialEventSnapshot.NONE`.
+      *Leçon : un `catch` trop large a transformé une NPE en « comportement métier » plausible.*
+
+   - ⏳ **Reste** : handlers `StartInvasionBossAttack`/`InvasionBossAttack` (les dégâts se dérivent du combat
+     rapporté par le client — pas de champ explicite dans le message, à établir factuellement). Le broadcast est
+     prêt : `InvasionBossAttacked{attackerID, damageDone, mostDamageUser, guildPoints…}` via `pushToGuild`.
 4. **Ligues et rangs** : `GetUserInvasionLeagueInfo` / `GetGuildInvasionLeagueInfo`, classements, et
    `INVASION_CLAIM_GUILD_RANK_REWARD` (via `claimGuildRankRewards` / `claimUserRankRewards` + tables de ligue).
 5. **État partagé de guilde** : dégâts au boss par membre, plafonds quotidiens de guilde
