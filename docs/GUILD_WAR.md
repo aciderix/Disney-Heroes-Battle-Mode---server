@@ -606,8 +606,16 @@ attribuée jusqu'ici (chargement de `GuildStats`) était fausse : cette exceptio
 **absorbée** par le warm-up de `ServerContext`.
 
 Le **vrai client n'y est pas exposé** : son `/login` HTTP précède l'ouverture du socket de jeu, ce qui laisse
-la fenêtre passer largement. Le test, lui, enchaînait connexion et envoi dans la même milliseconde. Correctif :
-`LoginServer` expose `connectionsAccepted` (compteur de connexions acceptées, utile aussi en exploitation) et
-le test **attend ce point de rendez-vous** avant d'émettre — une synchronisation réelle, pas un `sleep`
-magique. Résultat : `ChestWireTest` vert 5/5 en isolation, et **régression 75/75 sans aucun échec toléré**,
-une première.
+la fenêtre passer largement. Le test, lui, enchaînait connexion et envoi dans la même milliseconde.
+
+⚠️ **Correction d'une conclusion trop rapide** : j'ai d'abord annoncé qu'il suffisait d'attendre l'`accept`
+du serveur. **C'est faux** — cette seule garde laisse encore **3 échecs sur 10**. Ce qui est établi, c'est
+l'existence et l'ampleur de la fenêtre, pas son mécanisme : `GruntNIOTCPServer.read` ne consomme rien quand la
+connexion est absente du registre ou pas prête (il rend `false` sans lire, et le sélecteur par niveau devrait
+réessayer), et `GruntTCPConnection.send` écrit de façon synchrone — **où les octets disparaissent reste
+inexpliqué**, et c'est consigné tel quel dans `SHIMS.md`.
+
+Traitement : `LoginServer` expose `connectionsAccepted` (compteur utile aussi en exploitation), et le test
+attend ce point **puis RÉÉMET** le `ClientInfo` jusqu'à obtenir le `BootData` — réponse idempotente du
+serveur. Ce n'est pas un faux « OK » : l'échange RÉEL `BuyChests → LootResults` reste exigé pour passer.
+Vérifié **8/8** en isolation, et **régression complète sans aucun échec toléré** — une première.

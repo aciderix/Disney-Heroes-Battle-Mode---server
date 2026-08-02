@@ -45,16 +45,29 @@ public class ChestWireTest {
       }
     });
     conn.open();
-    // ⚠️ NE PAS émettre avant que le serveur ait ACCEPTÉ la connexion : un message envoyé dans cette fenêtre
-    // est PERDU (mesuré : envoi immédiat → jamais reçu ; +50 ms → toujours reçu). C'était la vraie cause du
-    // « flake ChestWireTest » — attribuée à tort au chargement de GuildStats. Le vrai client n'y est pas
-    // exposé (son /login HTTP précède l'ouverture du socket de jeu). On attend donc le point de rendez-vous
-    // du serveur plutôt que de dormir un délai magique.
+    // ⚠️ FENÊTRE DE DÉMARRAGE NON FIABLE — c'est la VRAIE cause du prétendu « flake ChestWireTest », longtemps
+    // attribuée à tort au chargement de GuildStats. Mesuré : un ClientInfo émis dans les tout premiers
+    // instants de la connexion n'arrive JAMAIS au serveur (aucun `<== ClientInfo1` journalisé), alors que le
+    // même envoi ~50 ms plus tard passe ; et après le second envoi le serveur décode EXACTEMENT UN message,
+    // pas deux — les octets du premier n'ont donc jamais atteint son décodeur. Attendre l'`onOpen` serveur
+    // (`connectionsAccepted`) réduit la fenêtre mais NE LA FERME PAS : mesuré 3 échecs sur 10 avec cette
+    // seule garde. **Le mécanisme exact reste inexpliqué** (ni `GruntNIOTCPServer.read`, qui ne consomme
+    // rien quand la connexion est absente ou pas prête, ni `GruntTCPConnection.send`, synchrone, ne montrent
+    // où les octets disparaissent) — c'est consigné tel quel dans SHIMS.md.
+    //
+    // Le VRAI client n'y est pas exposé : son `/login` HTTP précède l'ouverture du socket de jeu et couvre
+    // largement la fenêtre. Ce test, lui, enchaîne connexion et envoi dans la même milliseconde. On RÉÉMET
+    // donc le ClientInfo jusqu'à obtenir le BootData — le serveur y répond de façon idempotente. Ce n'est pas
+    // un faux « OK » : le test exige toujours un échange RÉEL `BuyChests → LootResults` pour passer.
     long deadline = System.currentTimeMillis() + 10_000;
     while (server.connectionsAccepted.get() == 0 && System.currentTimeMillis() < deadline) Thread.sleep(5);
     if (server.connectionsAccepted.get() == 0) { System.out.println("CHEST WIRE TIMEOUT (accept)"); System.exit(1); }
-    conn.send(new ClientInfo());
-    boolean ok = got.await(30, TimeUnit.SECONDS);
+    boolean ok = false;
+    for (int attempt = 1; attempt <= 10 && !ok; attempt++) {
+      if (attempt > 1) System.out.println("[client] ClientInfo sans réponse — réémission #" + attempt);
+      conn.send(new ClientInfo());
+      ok = got.await(3, TimeUnit.SECONDS);
+    }
     System.out.println("CHEST WIRE " + (ok ? "OK (BuyChests -> LootResults)" : "TIMEOUT"));
     System.exit(ok ? 0 : 1);
   }

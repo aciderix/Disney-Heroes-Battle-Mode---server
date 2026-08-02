@@ -907,6 +907,28 @@ public final class LoginServer {
                 System.out.println("[login]     ! persistance échouée: " + e); } }
               System.out.println("[login]     SetPlayerName '" + spn.name + "'"
                   + (applied ? " appliqué [persisté]" : " refusé"));
+            } else if (m instanceof com.perblue.heroes.network.messages.SetLanguage) {
+              // LANGUE du joueur — relevée « reçue mais non traitée » dans les logs Windows (2026-08-02).
+              // Le jeu a un champ pour ça (`UserExtra.language`, écrit par `User.setLanguage`) et il vit dans
+              // `this.extra` → auto-persisté. Fire-and-forget, aucune réponse attendue.
+              com.perblue.heroes.network.messages.SetLanguage sl =
+                  (com.perblue.heroes.network.messages.SetLanguage) m;
+              boolean applied = user.setLanguage(sl);
+              if (applied) { try { store.save(user); } catch (Exception e) {
+                System.out.println("[login]     ! persistance échouée: " + e); } }
+              System.out.println("[login]     SetLanguage '" + sl.language + "'"
+                  + (applied ? " appliquée [persisté]" : " ignorée"));
+            } else if (m instanceof com.perblue.heroes.network.messages.SetExternalContentStatus) {
+              // NO-OP FIDÈLE (même catégorie que RECORD_SERVER_ROLL_FINISHED) : `hasExternalContent` dit au
+              // backend si l'APPAREIL a téléchargé le pack d'assets externe. Vérifié dans le jar : le champ
+              // n'apparaît QUE dans ce message, dans son émetteur (`ExternalAssetManager
+              // $DeferredSetExternalContentFlag`) et dans `HeroFiltersActV1` — AUCUN champ de joueur ne le
+              // reçoit et rien ne le relit. Lui inventer un stockage violerait §4 : on acquitte et on
+              // journalise, c'est la réponse autoritative correcte.
+              com.perblue.heroes.network.messages.SetExternalContentStatus se =
+                  (com.perblue.heroes.network.messages.SetExternalContentStatus) m;
+              System.out.println("[login]     SetExternalContentStatus hasExternalContent="
+                  + se.hasExternalContent + " (notification appareil, aucun état de joueur associé)");
             } else if (m instanceof com.perblue.heroes.network.messages.ClaimWeeklyQuestReward) {
               // Ouverture d'une BOÎTE-RÉCOMPENSE HEBDOMADAIRE (écran QUESTS). Fire-and-forget (le client a
               // appliqué QuestHelper.claimWeeklyReward de son côté). Le serveur AUTORITATIF ré-exécute la même

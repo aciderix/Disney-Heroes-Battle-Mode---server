@@ -2188,6 +2188,41 @@ public final class ServerUser {
     return true;
   }
 
+  /**
+   * <b>LANGUE du joueur</b> ({@code SetLanguage{language}}, relevé dans les logs Windows du 2026-08-02 comme
+   * reçu mais non traité). Fire-and-forget : le client applique son choix localement et informe le serveur.
+   *
+   * <p>Le jeu a un champ POUR ÇA : {@code UserExtra.language} (code de langue), écrit par le setter d'origine
+   * {@code User.setLanguage(Language)}. Comme ce champ vit <b>dans {@code this.extra}</b>, il est
+   * <b>auto-persisté</b> (PRINCIPLES §3) — aucun re-sync à écrire. On résout le code reçu par la méthode du
+   * jeu {@code Language.getLanguage(code)} et on appelle le setter : zéro règle réécrite.
+   *
+   * @return {@code true} si la langue a été appliquée
+   */
+  public synchronized boolean setLanguage(com.perblue.heroes.network.messages.SetLanguage m) {
+    ServerContext.init();
+    if (m == null || m.language == null || m.language.isEmpty()) {
+      System.out.println("[lang] message vide → ignoré"); return false;
+    }
+    com.perblue.heroes.util.localization.Language lang;
+    try {
+      lang = com.perblue.heroes.util.localization.Language.getLanguage(m.language);
+    } catch (Throwable t) {
+      System.out.println("[lang] code inconnu '" + m.language + "' → ignoré (" + t + ")"); return false;
+    }
+    if (lang == null) { System.out.println("[lang] code inconnu '" + m.language + "' → ignoré"); return false; }
+    User user = ClientNetworkStateConverter.getUser(userInfo, userExtra, "lang");
+    IndividualUser iu = ClientNetworkStateConverter.getIndividualUser(
+        individualUserExtra, userID, userInfo.diamonds, "lang");
+    ServerContext.bind(user, iu);
+    user.setLanguage(lang);                                  // setter d'origine → this.extra.language
+    System.out.println("[lang] langue → " + lang + " (code '" + userExtra.language + "')");
+    return true;
+  }
+
+  /** La langue persistée du joueur (code du jeu), ou {@code null} si jamais reçue. */
+  public String language() { return userExtra != null ? userExtra.language : null; }
+
   public synchronized boolean applyAction(Action m) {
     ServerContext.init();
     User user = ClientNetworkStateConverter.getUser(userInfo, userExtra, "action");

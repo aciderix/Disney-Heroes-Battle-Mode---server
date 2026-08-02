@@ -50,11 +50,36 @@ atteint son décodeur. La cause qu'on invoquait (chargement de `GuildStats`) ét
 est bien levée, mais **absorbée** par le warm-up de `ServerContext`.
 
 Le **vrai client n'y est pas exposé** : son `/login` HTTP précède l'ouverture du socket de jeu et couvre
-largement la fenêtre. Le test, lui, enchaînait connexion et envoi dans la même milliseconde. Correctif :
-`LoginServer` expose `connectionsAccepted` (compteur utile aussi en exploitation) et le test **attend ce
-point de rendez-vous** avant d'émettre — une synchronisation réelle, pas un `sleep` magique.
+largement la fenêtre. Le test, lui, enchaînait connexion et envoi dans la même milliseconde.
 
-**Régression : 75/75, aucun échec toléré** — une première (74/74 avec un échec toléré jusqu'ici).
+⚠️ **Et j'ai conclu trop vite une première fois** : après un correctif « attendre l'`accept` du serveur »
+vert 5/5, la régression complète a refait échouer le test — cette garde seule laisse encore **3 échecs sur
+10**. Ce qui est établi, c'est l'existence et l'ampleur de la fenêtre, **pas son mécanisme** :
+`GruntNIOTCPServer.read` ne consomme rien quand la connexion est absente du registre
+(`READ_CHANNEL_NULL_STAT`) ou pas prête (`READ_CHANNEL_NOT_READY_STAT`) — il rend `false` sans lire, et le
+sélecteur par niveau devrait réessayer ; `GruntTCPConnection.send` écrit de façon synchrone. **Où les octets
+disparaissent reste inexpliqué**, et c'est consigné tel quel dans `SHIMS.md` plutôt que masqué.
+
+Traitement : `LoginServer` expose `connectionsAccepted` (compteur utile aussi en exploitation), et le test
+attend ce point **puis RÉÉMET** le `ClientInfo` jusqu'à obtenir le `BootData` (réponse idempotente). Ce n'est
+pas un faux « OK » : l'échange RÉEL `BuyChests → LootResults` reste exigé. Vérifié **8/8** en isolation.
+
+**Régression : verte au complet, aucun échec toléré** — une première (jusqu'ici 74/74 avec un échec toléré).
+
+### Deux manques des logs Windows comblés
+
+**`SetLanguage`** — le jeu a un champ POUR ÇA : `UserExtra.language`, écrit par le setter d'origine
+`User.setLanguage(Language)`. Comme il vit dans `this.extra`, il est **auto-persisté** : aucun re-sync à
+écrire. Le handler résout le code reçu par la méthode du jeu `Language.getLanguage(code)` et appelle le
+setter — zéro règle réécrite. [`SetLanguageTest`] : application, round-trip SQLite, changement de langue,
+refus d'un code vide/nul sans altérer l'existant. **7ᵉ fois où mon test avait tort** : j'attendais `null`
+pour un compte neuf, le constructeur du jeu pose une chaîne **vide**.
+
+**`SetExternalContentStatus`** — **NO-OP FIDÈLE**, même catégorie que `RECORD_SERVER_ROLL_FINISHED` :
+`hasExternalContent` n'apparaît, dans tout le jar, que dans ce message, dans son émetteur
+(`ExternalAssetManager$DeferredSetExternalContentFlag`) et dans `HeroFiltersActV1`. **Aucun champ de joueur
+ne le reçoit et rien ne le relit** : c'est une notification sur l'APPAREIL. Lui inventer un stockage
+violerait §4 — on acquitte et on journalise, c'est la réponse autoritative correcte.
 
 **Reste** : la **vérification EN JEU** de GUILD WAR (et d'INVASION, et des trous de guilde) — **nulle à ce
 jour**. Statut 🟢, pas ✅.

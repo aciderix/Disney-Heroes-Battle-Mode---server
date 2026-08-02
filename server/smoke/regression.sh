@@ -26,7 +26,7 @@ TESTS=(
   BattlePassTest BattlePassClaimTest BattlePassPointsTest BattlePassRolloverTest
   CompleteQuestTest WeeklyBoxTest WeeklyQuestTest
   MailboxTest ItemsTest SkillUpgradeTest AlchemyTest SetFlagTest UnlockHeroTest
-  UpdateTimeTest SetNameTest TeamLevelPersistTest
+  UpdateTimeTest SetNameTest SetLanguageTest TeamLevelPersistTest
   LootAuthoritativeTest LootEquipTest LootPersistTest LootDeterminismTest LootCreditAuthoritativeTest LootParityMultiCombatTest LootSeedChainTest SeedTest
   ArenaInfoTest ArenaDefenseTest ArenaLadderTest ArenaAttackTest ArenaRealPvPTest ArenaConcurrencyTest ArenaFightResetTest
   ArenaRewardsTest
