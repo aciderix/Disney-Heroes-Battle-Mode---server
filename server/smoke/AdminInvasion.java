@@ -50,19 +50,20 @@ public final class AdminInvasion {
 
   public static void main(String[] a) throws Exception {
     Map<String, String> opt = new HashMap<>();
-    boolean showStatus = false, spawn = false;
+    boolean showStatus = false, spawn = false, clear = false;
     for (int i = 0; i < a.length; i++) {
       String k = a[i];
       switch (k) {
         case "--status": showStatus = true; break;
         case "--spawn-boss": spawn = true; break;
+        case "--clear-bosses": clear = true; break;
         default:
           if (k.startsWith("--") && i + 1 < a.length && !a[i + 1].startsWith("--")) opt.put(k.substring(2), a[++i]);
           else System.out.println("[admin] option ignorée : " + k);
       }
     }
-    if (!showStatus && !spawn) {
-      System.out.println("Usage : AdminInvasion [--db <chemin>] [--shard <n>] (--status | --spawn-boss [--guild <id>] [--finder <userID>] [--level <n>])");
+    if (!showStatus && !spawn && !clear) {
+      System.out.println("Usage : AdminInvasion [--db <chemin>] [--shard <n>] (--status | --clear-bosses [--guild <id>] | --spawn-boss [--guild <id>] [--finder <userID>] [--level <n>])");
       return;
     }
 
@@ -72,6 +73,19 @@ public final class AdminInvasion {
     long now = com.perblue.heroes.util.TimeUtil.serverTimeNow();
 
     try (UserStore store = new UserStore(db)) {
+      if (clear) {
+        java.util.List<ServerGuild> gs = opt.containsKey("guild")
+            ? java.util.Collections.singletonList(store.loadGuild(shardID, Long.parseLong(opt.get("guild"))))
+            : store.listGuilds(shardID, null, 10_000);
+        for (ServerGuild g : gs) {
+          if (g == null) continue;
+          int n = 0;
+          for (com.perblue.heroes.network.messages.InvasionBossInfo b :
+               new java.util.ArrayList<>(ServerInvasion.activeBosses(g, now))) { g.replaceInvasionBoss(b.bossID, null); n++; }
+          store.saveGuild(g);
+          System.out.println("[invasion] guilde " + g.guildID + " : " + n + " boss retiré(s).");
+        }
+      }
       if (spawn) {
         ServerGuild g;
         if (opt.containsKey("guild")) {
