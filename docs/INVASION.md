@@ -225,3 +225,43 @@ c'est le prochain chantier, avec sa propre étude (composition des combats de br
 
 BREAKER QUEST (bloqué par le manque nº2), BOSS BATTLES, les récompenses de rang de guilde, le report de
 ligue d'une invasion à la suivante.
+
+
+## BREAKER QUEST — handler écrit, composition servie, rendu à finir (2026-08-02, suite)
+
+Le manque nº2 ci-dessus est traité côté serveur : **`GetBreakerQuest` a un handler**
+(`ServerInvasionBreaker.buildQuest`) et le client reçoit désormais **10 combats** au lieu de rien
+(`==> BreakerQuest (10 combat(s), à partir de la salle 0)`).
+
+**La composition vient des données, pas d'une invention.** Un tirage de
+`InvasionStats.BREAKER_FIGHT_COMP` (`invasion_breaker_fight_comp.tab`) rend **25 `DropItem`** — relevé à
+l'exécution, pas supposé : cinq groupes de cinq unités, chacune portant `level`/`stars`/`rarity`, plus deux
+marqueurs qui structurent le tout — `ward=WARD_xxx` (le garde auquel l'unité appartient ; la ligne ROOT de
+la table est `<BREAKER>, <WARD_1>, <WARD_2>, <WARD_3>, <WARD_4>`) et `boss=true` (la vedette du groupe).
+La taille de page vient de `BREAKER_PAGE_SIZE`/`BREAKER_FIRST_PAGE_SIZE`, et l'indice de départ est
+`UserInvasionData.breakerBattlesWon` — le `R` des formules `BREAKER_FIGHT_LEVEL/GOLD/POINT_REWARD`.
+
+**`InvasionBreakerAttackStart` ne répondait plus avec des listes vides** : `breakerDefenders` et
+`wardLineups` sont désormais remplis depuis cette même composition.
+
+### Trois faits mesurés en route (aucun deviné)
+
+1. **`DropItem.getType()` rend une CHAÎNE**, pas un `UnitType` — le cast direct levait
+   `ClassCastException` sur chaque unité, et la quête sortait à 0 combat.
+2. **Le niveau d'équipe indexe des tables du jeu** : poser 999 sur l'atelier de fabrication levait
+   `ArrayIndexOutOfBoundsException: Index 999 out of bounds for length 751` dans `TeamLevelStats`. On prend
+   désormais le **maximum réel** des données (dichotomie sur `getMaxHeroLevel`), pas un chiffre rond.
+3. **`ServerContext.bind` échoue avec un `IndividualUser` d'identifiant 0** — l'atelier utilise l'identifiant
+   et le shard du joueur, comme les bots d'arène.
+
+### ⚠️ Ce qui reste : le RENDU
+
+Le client accepte le message **sans lever**, mais l'écran BREAKER QUEST reste **visuellement vide**. Le
+serveur envoie donc quelque chose de structurellement valide mais d'incomplet pour l'affichage. Piste la
+plus probable, par analogie avec l'arène : les `HeroSummary` fabriqués partagent tous le même `heroId`
+(l'atelier réutilise un seul `User`), et le client indexe ses widgets par `heroId` — c'est exactement le
+problème que `ServerArena.offsetHeroIds` résout pour les lignes de classement. À vérifier et corriger à la
+prochaine session, avec une capture à l'appui.
+
+**Statut honnête** : `GetBreakerQuest` n'est plus un trou noir (10 combats servis, composition réelle), mais
+la BREAKER QUEST n'est **pas encore jouable en jeu**.

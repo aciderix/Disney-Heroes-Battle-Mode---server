@@ -1507,6 +1507,25 @@ public final class LoginServer {
               resp.rewards = new java.util.HashMap<>();
               resp.setAsReplyTo(m);
               c.send(resp);
+            } else if (m instanceof com.perblue.heroes.network.messages.GetBreakerQuest) {
+              // INVASION #69 — ENTRÉE du mode SOLO. Manque RÉEL trouvé EN JEU : ce message arrivait sans
+              // handler, l'écran BREAKER QUEST restait donc entièrement VIDE. Cf. ServerInvasionBreaker.
+              long qnow = com.perblue.heroes.util.TimeUtil.serverTimeNow();
+              ServerInvasionObject qinv = ServerInvasionObject.at(qnow);
+              long qid = ServerInvasion.rotation(ServerInvasion.invasionStart(qnow));
+              com.perblue.heroes.network.messages.UserInvasionData qud = null;
+              try {
+                qud = ServerInvasion.loadOrResetUserData(
+                    store.loadUserInvasion(user.shardID, user.userID), user.userID,
+                    user.currentGuildID(), qid);
+              } catch (Exception e) { System.out.println("[login]     ! état invasion (quête) : " + e); }
+              com.perblue.heroes.network.messages.BreakerQuest bq =
+                  ServerInvasionBreaker.buildQuest(user, qud, qinv, qid);
+              bq.setAsReplyTo(m);
+              c.send(bq);
+              System.out.println("[login] <== GetBreakerQuest → ==> BreakerQuest ("
+                  + bq.basicBreakerFights.size() + " combat(s), à partir de la salle "
+                  + (qud != null ? qud.breakerBattlesWon : 0) + ")");
             } else if (m instanceof com.perblue.heroes.network.messages.GetInvasionBosses) {
               // INVASION #69 — boss PARTAGÉS de la guilde (état opérateur persisté, v7) : les expirés
               // (au-delà de BOSS_FIGHT_TIME_LIMIT) sont retirés à la lecture.
@@ -1539,12 +1558,17 @@ public final class LoginServer {
               com.perblue.heroes.network.messages.BreakerUserFightData bd =
                   new com.perblue.heroes.network.messages.BreakerUserFightData();
               bd.index = bs.room;
-              bd.breakerDefenders = new java.util.ArrayList<>();
-              bd.wardLineups = new java.util.ArrayList<>();
+              // ⚠️ Ces deux listes étaient VIDES : le client recevait un combat sans adversaire. On les
+              // remplit depuis la composition tirée (cf. ServerInvasionBreaker) — groupe BREAKER d'un côté,
+              // les quatre lineups de gardes de l'autre.
+              java.util.List<ServerInvasionBreaker.Group> bgroups = ServerInvasionBreaker.groups(user, comp);
+              bd.breakerDefenders = new java.util.ArrayList<>(ServerInvasionBreaker.breakerLineup(bgroups));
+              bd.wardLineups = new java.util.ArrayList<>(ServerInvasionBreaker.toWardLineups(bgroups));
               bd.setAsReplyTo(m);
               c.send(bd);
               System.out.println("[login] <== InvasionBreakerAttackStart room=" + bs.room + " ward=" + bs.ward
-                  + " → ==> BreakerUserFightData (composition " + comp.size() + " unité(s) tirée des données)");
+                  + " → ==> BreakerUserFightData (" + bd.breakerDefenders.size() + " breaker(s) + "
+                  + bd.wardLineups.size() + " garde(s), composition de " + comp.size() + " unités)");
             } else if (m instanceof com.perblue.heroes.network.messages.InvasionBreakerAttack) {
               // INVASION #69 — issue d'un combat de breaker. Le serveur AUTORITATIF débite l'énergie
               // d'invasion et accorde or/points/BREAKER selon les FORMULES DU JEU, met à jour l'état

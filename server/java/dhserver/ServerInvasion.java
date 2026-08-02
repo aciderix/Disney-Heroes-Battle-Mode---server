@@ -354,6 +354,12 @@ public final class ServerInvasion {
   // ===================== BOSS (#69) =====================
 
   /** Durée de vie d'un boss trouvé ({@code BOSS_FIGHT_TIME_LIMIT}, 24 h par défaut). */
+  /** Taille d'une page de BREAKER QUEST — {@code BREAKER_FIRST_PAGE_SIZE} pour la première, sinon
+   *  {@code BREAKER_PAGE_SIZE} (données du jeu, `invasion_constants.tab`). */
+  public static int breakerPageSize(boolean first) {
+    return (int) constLong(first ? "BREAKER_FIRST_PAGE_SIZE" : "BREAKER_PAGE_SIZE", 10L);
+  }
+
   public static long bossTimeLimit() { return constLong("BOSS_FIGHT_TIME_LIMIT", 86_400_000L); }
   /** Durée du verrou d'attaque ({@code ATTACK_LOCK_DURATION}, 5 min). */
   public static long attackLockDuration() { return constLong("ATTACK_LOCK_DURATION", 300_000L); }
