@@ -345,3 +345,44 @@ SHIMS) gonfle la puissance affichée. La chaîne technique (aperçu → START �
 **prouvée** ; gagner une salle ≥ 1 EN JEU avec ce compte de test suppose de jouer gardes+vedettes (ou
 d'ancrer l'ère de contenu) — à confirmer ultérieurement. **Nouvelle commande pilote** `breakerfight` : ouvre
 l'aperçu du combat actif sans viser la vedette au pixel près (reproduit le `onClicked`).
+
+## BOSS BATTLES — rendu vérifié EN JEU + boss attaquable (2026-08-02, g47)
+
+**Le boss est SERVEUR-autoritatif** : le jar CLIENT n'a aucune méthode pour le créer (il ne fait que le LIRE
+et l'attaquer). Le backend le « fait apparaître » pour la guilde — ici décision OPÉRATEUR (cohérent avec
+« ADMIN = source »). Nouvel outil **`server/smoke/AdminInvasion.java`** (pendant d'`AdminWar`) :
+`--spawn-boss [--guild <id>] [--finder <userID>] [--level <n>]` appelle `ServerInvasion.spawnBoss` (niveau
+`BOSS_FIGHT_INITAL_LEVEL`=450 et échéance `BOSS_FIGHT_TIME_LIMIT` tirés des données) et persiste ; `--status`
+liste les boss actifs par guilde. Vérifié en CLI : boss #1 niv 450 apparu pour « Baroness Legion », persisté.
+
+**Vérifié EN JEU** : `nav INVASION` → BOSS BATTLES (GO) → `GetInvasionBosses → InvasionBosses (1 boss actif)`
+→ l'écran **rend le boss** : « Boss found today: 1/100 », **« Found By: You »** (le finder), la vedette
+(crâne), le compteur de clés BREAKER (1) en tête. Le boss partagé de guilde s'affiche donc de bout en bout.
+
+**Défaut RÉEL nº3 corrigé — `InvasionBossInfo.actionState` jamais renseigné.** Comme `activeBreakerFight`,
+c'est un champ wire que le client lit : `InvasionBossCard.onCardPressed` n'ouvre l'aperçu de combat QUE si
+`actionState == FIGHT` (et ne propose la réclamation que si `CLAIM`). Sans lui, taper le boss ne fait RIEN.
+Nouveau `ServerInvasion.applyBossActionState(boss, user, ud)` calcule la vue PAR JOUEUR (FIGHT si actif/non
+vaincu ; CLAIM si vaincu et part du joueur non réclamée ; sinon DEFAULT) ; le handler `GetInvasionBosses`
+l'applique à chaque boss servi. [`InvasionBossTest` : boss neuf ⇒ FIGHT]. Régression 77/77.
+
+### RESTE (chantier suivant, précis) — la boucle d'ATTAQUE du boss
+
+Les handlers d'attaque manquent encore et **ne doivent pas être devinés** (§4/§8) :
+1. **`StartInvasionBossAttack`** → doit répondre **`StartBossAttackResponse{bossID, damageMultiplier,
+   bossLineup, selectedBoosts}`** (le ctor `InvasionBossAttackScreen` l'exige), acquérir le VERROU exclusif
+   (`ServerGuild.lockBoss`, `ATTACK_LOCK_DURATION`), et débiter les clés (`chargeForBossAttack` côté client
+   ⇒ à confirmer : débit au START ou à l'issue).
+2. **`InvasionBossAttack`** (issue) → **⚠️ les dégâts ne sont PAS un champ du message.** Le client les
+   calcule LOCALEMENT (`InvasionBossAttackScreen.getBossDamage` = `UnitCombatStats.totalDamageTaken` de la
+   vedette) et met à jour SON `damageDone` ; le message ne porte que `base` (outcome), `bossID`,
+   `damageMultiplier`, `breakpoints`, et `defenderHeroes` (HeroData de la vedette après combat). Dériver les
+   dégâts du HP restant de `defenderHeroes` **diverge** de `totalDamageTaken` (overkill sur l'énorme HP du
+   boss) ⇒ pour un boss PARTAGÉ (classement/mort), il faudra soit une **re-simulation serveur** du combat de
+   boss (obtenir `totalDamageTaken`), soit établir au bytecode que `defenderHeroes`/`breakpoints` suffisent.
+   `ServerInvasion.attackBoss` (verrou + clés + cumul + persistance) est prêt et **testé** ; seul le point
+   d'entrée réseau + la **source fidèle des dégâts** restent à établir.
+
+**Observation** : le boss est niveau 450 (donnée du jeu) — invaincable par le compte de test TL100 (même
+inflation d'ère de contenu que le breaker) ; la vérification d'une victoire/récompense de boss EN JEU suppose
+un compte fort ou l'ancrage d'ère de contenu, en plus des handlers ci-dessus.

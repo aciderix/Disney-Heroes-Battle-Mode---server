@@ -1540,7 +1540,19 @@ public final class LoginServer {
                   new com.perblue.heroes.network.messages.InvasionBosses();
               ib.invasionID = gb.invasionID != 0 ? gb.invasionID
                   : ServerInvasion.rotation(ServerInvasion.invasionStart(bnow2));
-              ib.bosses = new java.util.ArrayList<>(ServerInvasion.activeBosses(bg, bnow2));
+              java.util.List<com.perblue.heroes.network.messages.InvasionBossInfo> activeBosses =
+                  ServerInvasion.activeBosses(bg, bnow2);
+              // Vue PAR JOUEUR : sans actionState=FIGHT, taper le boss n'ouvre pas l'aperçu de combat côté
+              // client (InvasionBossCard.onCardPressed). On la renseigne pour chaque boss servi.
+              com.perblue.heroes.network.messages.UserInvasionData bud = null;
+              try {
+                long binv = ServerInvasion.rotation(ServerInvasion.invasionStart(bnow2));
+                bud = ServerInvasion.loadOrResetUserData(
+                    store.loadUserInvasion(user.shardID, user.userID), user.userID, user.currentGuildID(), binv);
+              } catch (Exception ignore) {}
+              for (com.perblue.heroes.network.messages.InvasionBossInfo bi : activeBosses)
+                ServerInvasion.applyBossActionState(bi, user, bud);
+              ib.bosses = new java.util.ArrayList<>(activeBosses);
               ib.bossFeed = new java.util.ArrayList<>();
               if (bg != null) { try { store.saveGuild(bg); } catch (Exception ignore) {} }
               ib.setAsReplyTo(m);

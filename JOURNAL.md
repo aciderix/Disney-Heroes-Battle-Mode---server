@@ -1,5 +1,29 @@
 # JOURNAL — journal détaillé des modifications
 
+## 2026-08-02 (g47) — INVASION BOSS BATTLES : boss affiché EN JEU + rendu attaquable
+
+Le boss d'invasion est SERVEUR-autoritatif (le jar client ne sait que le lire/attaquer). Rien ne le faisait
+apparaître au runtime. Nouvel outil opérateur `server/smoke/AdminInvasion.java` (pendant d'`AdminWar`) :
+`--spawn-boss`/`--status` — appelle `ServerInvasion.spawnBoss` (niveau/échéance des données) et persiste.
+
+Vérifié EN JEU : `nav INVASION` → BOSS BATTLES → `GetInvasionBosses → InvasionBosses (1 boss actif)` →
+l'écran rend le boss (« Boss found today: 1/100 », « Found By: You », vedette crâne, clés BREAKER=1).
+
+**Défaut RÉEL nº3 — `InvasionBossInfo.actionState` jamais renseigné.** Même famille qu'`activeBreakerFight` :
+`InvasionBossCard.onCardPressed` n'ouvre l'aperçu de combat QUE si `actionState == FIGHT`. Sans lui, taper le
+boss ne fait rien. Nouveau `ServerInvasion.applyBossActionState(boss, user, ud)` (FIGHT si actif/non vaincu ;
+CLAIM si vaincu+part non réclamée ; sinon DEFAULT), appliqué par le handler `GetInvasionBosses` à chaque
+boss. [`InvasionBossTest` : boss neuf ⇒ FIGHT]. Régression 77/77.
+
+**RESTE (chantier suivant, non deviné §4/§8)** : la boucle d'ATTAQUE du boss —
+`StartInvasionBossAttack → StartBossAttackResponse{bossLineup,…}` (+ verrou + clés) et `InvasionBossAttack`
+(issue). ⚠️ Les dégâts NE SONT PAS dans le message : le client calcule `getBossDamage` =
+`UnitCombatStats.totalDamageTaken` localement ; le dériver du HP de `defenderHeroes` diverge (overkill) ⇒
+il faudra une re-simulation serveur ou une preuve bytecode que `defenderHeroes`/`breakpoints` suffisent.
+`ServerInvasion.attackBoss` (verrou+clés+cumul+persistance) est prêt et testé ; seul le point d'entrée
+réseau + la source FIDÈLE des dégâts restent. Boss niveau 450 = invaincable par le compte de test (inflation
+d'ère de contenu, cf. SHIMS). Détail : `docs/INVASION.md` §BOSS BATTLES.
+
 ## 2026-08-02 (g46) — BREAKER QUEST jouable EN JEU : deux défauts réels de plus
 
 Reprise de l'énigme « écran vide » de la BREAKER QUEST (g45). La sonde `breakerdump`, élargie à

@@ -55,6 +55,13 @@ public final class InvasionBossTest {
       System.out.println("[invasion] boss #" + boss.bossID + " trouvé (niveau " + boss.bossLevel
           + ", expire dans " + (ServerInvasion.bossTimeLimit() / 3600000) + " h)");
 
+      // VUE PAR JOUEUR : un boss actif/non vaincu doit être FIGHT — sinon taper le boss n'ouvre pas
+      // l'aperçu de combat côté client (InvasionBossCard.onCardPressed). Défaut trouvé EN JEU (g47).
+      ServerInvasion.applyBossActionState(boss, founder, ServerInvasion.newUserData(1L, g.guildID, 249));
+      if (boss.actionState != com.perblue.heroes.network.messages.InvasionBossActionState.FIGHT)
+        throw new AssertionError("boss neuf devrait être FIGHT (attaquable), obtenu " + boss.actionState);
+      System.out.println("[invasion] actionState d'un boss neuf = FIGHT (attaquable en jeu) ✔");
+
       // ATTAQUE d'un membre : clés débitées, dégâts cumulés.
       ServerUser m1 = ServerUser.newPlayer(2L, 1);
       m1.giveResource(ResourceType.BREAKER, 10);

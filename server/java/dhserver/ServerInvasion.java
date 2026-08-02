@@ -418,6 +418,39 @@ public final class ServerInvasion {
     return out;
   }
 
+  /** RENSEIGNE la vue PAR JOUEUR d'un boss avant de l'envoyer : {@code actionState} (FIGHT/CLAIM/DEFAULT) et
+   *  {@code youAttacked}. Le client (InvasionBossCard.onCardPressed) n'ouvre l'aperçu de combat QUE si
+   *  {@code actionState == FIGHT} (et ne propose la réclamation que si {@code CLAIM}) — sans ce champ, taper le
+   *  boss ne fait RIEN (même famille de défaut que {@code activeBreakerFight}). L'état vient de la logique du
+   *  jeu : boss non vaincu ⇒ FIGHT ; vaincu et part du joueur non réclamée ⇒ CLAIM ; sinon DEFAULT. */
+  public static void applyBossActionState(com.perblue.heroes.network.messages.InvasionBossInfo boss,
+      ServerUser user, com.perblue.heroes.network.messages.UserInvasionData ud) {
+    if (boss == null) return;
+    long total = 0L;
+    boolean youAttacked = false;
+    if (boss.damageDone != null) {
+      for (java.util.Map.Entry<?, ?> e : ((java.util.Map<?, ?>) boss.damageDone).entrySet()) {
+        Object v = e.getValue();
+        if (v instanceof com.perblue.heroes.network.messages.InvasionBossDamageData)
+          total += ((com.perblue.heroes.network.messages.InvasionBossDamageData) v).damage;
+        if (user != null && e.getKey() instanceof Long && ((Long) e.getKey()) == user.userID) youAttacked = true;
+      }
+    }
+    boss.youAttacked = youAttacked;
+    float hp = 0f;
+    try { hp = com.perblue.heroes.game.logic.InvasionHelper.getBossHP(boss); } catch (Throwable ignore) {}
+    boolean defeated = hp > 0f && total >= hp;
+    if (defeated) {
+      boolean claimed = ud != null && ud.bossClaimStatus != null
+          && Boolean.TRUE.equals(ud.bossClaimStatus.get(boss.bossID));
+      boss.actionState = (youAttacked && !claimed)
+          ? com.perblue.heroes.network.messages.InvasionBossActionState.CLAIM
+          : com.perblue.heroes.network.messages.InvasionBossActionState.DEFAULT;
+    } else {
+      boss.actionState = com.perblue.heroes.network.messages.InvasionBossActionState.FIGHT;
+    }
+  }
+
   /** Résultat d'une attaque de boss. */
   public static final class BossOutcome {
     public boolean accepted;
