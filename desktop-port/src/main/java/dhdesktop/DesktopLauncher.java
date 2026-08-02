@@ -304,6 +304,10 @@ public final class DesktopLauncher {
                     TutorialDriver.requestStaminaAid(game);
                     continue;
                 }
+                if (low.startsWith("warqueue ")) {               // warqueue <STATE> — inscrire la guilde en file de GUERRE (CHANGE_WAR_QUEUE réel)
+                    TutorialDriver.changeWarQueue(game, ln.substring(9).trim());
+                    continue;
+                }
                 if (low.startsWith("postmerc ")) {               // postmerc <hero> — poster un mercenaire (POST_HERO réel)
                     TutorialDriver.postMerc(game, ln.substring(9).trim());
                     continue;

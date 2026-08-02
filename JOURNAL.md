@@ -1,5 +1,56 @@
 # JOURNAL — journal détaillé des modifications
 
+## 2026-08-02 (g43) — GUILD WAR : ✅ VÉRIFIÉ EN JEU (client réel → notre serveur → affichage)
+
+La pièce qui manquait depuis le début du mode : la **vérification EN JEU** (PRINCIPLES §8). Menée sur
+BaronessDante (TL 100, guilde « Baroness Legion »), pile complète `run-online.sh`. `WAR` se déverrouille à
+**TEAM_LEVEL_REQ 45** (`unlockables.tab`) — le compte est largement au-dessus. Détail, tableau et captures :
+[`docs/GUILD_WAR.md`](docs/GUILD_WAR.md) §4.
+
+**Outillage ajouté pour la mener, sans toucher au jeu** : pilote DEV `warqueue <ÉTAT>` (appelle le chemin
+d'origine `ClientActionHelper.changeGuildWarQueueState` — le message ne porte que l'état, relevé au
+bytecode) ; `server/smoke/WarRivalSeed.java` (sème une guilde adverse inscrite, même rôle que `GuildAidSeed`) ;
+et `AdminWar --tick --force` pour déclencher l'appariement sans attendre `RESET_HOUR`.
+
+**La chaîne complète, exercée par le VRAI client** : `nav WAR` → `GetWarsList` → écran GUILD WAR
+(`COPPER · RANK #1 · MMR 10`) ; `warqueue QUEUED_SINGLE` → `CHANGE_WAR_QUEUE` accepté et persisté ;
+`AdminWar --tick --force` → guerre #1 **Baroness Legion vs Rival Syndicate**, phase SABOTAGE ; après
+redémarrage, la porte de garage affiche **« VS RIVAL SYNDICATE — BAN PHASE — Ends in 11h 58m 46s »** ; un tap
+→ `GetWarInfo` → écran **CURRENT WAR** avec le garage **9 salles sur 3 étages**, les 9 voitures adverses et
+les deux MMR ; WAR LOGS → `RequestWarLogs` ; ALL LEAGUES ; RANKS → `GetWarRankings(COPPER)`.
+
+**Trois confirmations qui vont plus loin que « ça rend »**
+1. **La chronologie des phases est la bonne.** Le décompte « BAN PHASE 11h 58m » est le client qui relit,
+   avec son propre `WarHelper.isBanPhase`, notre `extraStateEndTime` posé à `début + SABOTAGE_BAN_PHASE_LENGTH`
+   (12 h). Le chiffre affiché EST la preuve de la valeur envoyée.
+2. **Le barème de score est le bon.** WAR LOGS affiche `Lineups Defeated ×1`, `Rooms Defeated ×100`, et
+   `Clean Sweeps / Defensive Wins / Clean Defenses ×0` — exactement `POINTS_PER_LINEUP`, `POINTS_PER_CAR` et
+   les scalaires de voiture à 0 **parce qu'aucune voiture n'est détenue** (`ServerWarScoring.carPointScalar`).
+3. **Le correctif `GuildInfo.warEndTime` (étape 2) était bien vital** : sans lui, le client n'aurait vu
+   **aucune** guerre active. Les logs Windows l'avaient laissé entendre ; l'écran le prouve.
+
+Confirmés au passage : les tranches de ligue (`COPPER 1-199 / BRONZE 200-399 / SILVER 400-599`), les 3 boîtes
+par ligue (`NUM_SEASON_BOXES`), et la résolution du `seasonID` 104 en « **Aug 2026** ».
+
+**Une bizarrerie observée, puis EXPLIQUÉE — et surtout PAS « corrigée » à tort.** Au classement, la guilde du
+joueur apparaît deux fois. Réflexe §8 : aller lire le bytecode avant de conclure. `WarRankingsScreen
+.addPosterContent` ajoute une ligne d'**en-tête** « ta guilde », conditionnée par `isYourGuildInRankings()` —
+elle ne s'affiche donc **que si** la guilde figure déjà dans `rankingRows`, que `addRankingsContent` rend
+intégralement. Le doublon est le rendu d'origine ; **retirer notre guilde de `rankingRows` supprimerait
+l'en-tête**. On ne touche à rien (§1/§4bis).
+
+**Vérifiés en jeu aussi, dans la foulée** : `SetLanguage 'en' appliquée [persisté]` et
+`SetExternalContentStatus hasExternalContent=true`, les deux manques relevés dans les logs Windows — reçus du
+vrai client et traités.
+
+**Ce qui reste NON vérifié en jeu, dit franchement** : placer les lineups de défense (une défense = **15 héros
+distincts**, le compte de test en a 7), attaquer, sabotages/bans/protections/spars (exigent des `WAR_TOKENS`),
+réclamer une boîte, et la clôture + MMR + bascule de saison (2 jours réels). Tous couverts headless
+(`WarAttackTest`, `WarSabotageTest`, `WarEndTest`, `WarSchedulerTest`) ; ils passeront ✅ le jour où un compte
+à 15 héros et une guerre menée à terme les exerceront.
+
+Instantané de base pris avant l'exercice : `server/data/dh-snapshot-prewar-0802.db` (+ `-wal`/`-shm`).
+
 ## 2026-08-02 (g42) — GUILD WAR : l'ORDONNANCEUR (étape 10/10) + le « flake » qui n'en était pas un
 
 Dernière pièce du mode : jusqu'ici **toutes les briques existaient mais rien ne les déclenchait**. Aucune

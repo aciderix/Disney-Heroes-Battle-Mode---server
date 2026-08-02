@@ -4,9 +4,12 @@
 > **on n'invente aucune valeur** (`PRINCIPLES.md` §4) et **on ne suppose rien** (§8) — chaque ligne
 > ci-dessous est adossée à un fait (bytecode, `.tab`, chaîne localisée, ou exécution).
 >
-> Régression : `bash server/smoke/regression.sh` — **75/75, aucun échec toléré**. (L'ancien « flake
-> `ChestWireTest` » n'en était pas un : c'était une course réelle, élucidée et corrigée le 2026-08-02,
-> cf. §Étape 10.)
+> Régression : `bash server/smoke/regression.sh` — **76/76, aucun échec toléré**. (L'ancien « flake
+> `ChestWireTest` » n'en était pas un : c'était une course réelle, élucidée le 2026-08-02, cf. §Étape 10.)
+>
+> **Statut : ✅ VÉRIFIÉ EN JEU le 2026-08-02** pour le protocole d'affichage et le cycle de vie d'une
+> guerre (§4) ; les ACTIONS de jeu (défense, attaque, sabotage, réclamation de boîte, clôture) restent
+> à confirmer en jeu — voir §4 « Ce qui reste NON vérifié ».
 
 ---
 
@@ -619,3 +622,73 @@ Traitement : `LoginServer` expose `connectionsAccepted` (compteur utile aussi en
 attend ce point **puis RÉÉMET** le `ClientInfo` jusqu'à obtenir le `BootData` — réponse idempotente du
 serveur. Ce n'est pas un faux « OK » : l'échange RÉEL `BuyChests → LootResults` reste exigé pour passer.
 Vérifié **8/8** en isolation, et **régression complète sans aucun échec toléré** — une première.
+
+---
+
+## 4. ✅ VÉRIFICATION EN JEU (2026-08-02) — client réel → notre serveur → affichage
+
+Menée sur le compte **BaronessDante** (TL 100, guilde « Baroness Legion »), pile complète
+`desktop-port/run-online.sh`. `WAR` est déverrouillé à **TEAM_LEVEL_REQ 45** (`unlockables.tab`).
+
+Outillage ajouté pour la mener, sans jamais toucher au jeu :
+* **pilote DEV `warqueue <ÉTAT>`** → appelle le CHEMIN RÉEL `ClientActionHelper.changeGuildWarQueueState`
+  (le message ne porte que l'état, relevé au bytecode ; le `WarInfo` ne sert qu'au rappel local) ;
+* **`server/smoke/WarRivalSeed.java`** → sème une guilde adverse inscrite en file (même rôle que
+  `GuildAidSeed` pour les dons) ;
+* **`AdminWar --tick --force`** → déclenche l'appariement sans attendre `RESET_HOUR`.
+
+| # | Ce qui a été fait | Ce que le serveur a répondu | Ce que le CLIENT a affiché |
+|---|---|---|---|
+| 1 | `nav WAR` | `GetWarsList → WarsList (0 guerres, COPPER, MMR 10)` | écran **GUILD WAR** : `COPPER · RANK #1 · MMR 10`, « Rank up to earn more War Boxes! » |
+| 2 | `warqueue QUEUED_SINGLE` | `Action CHANGE_WAR_QUEUE{TYPE=QUEUED_SINGLE}` → `QUEUED_SINGLE [persisté]` | — (fire-and-forget) |
+| 3 | `AdminWar --tick --force` | `tour FORCÉ : 1 guerre ouverte` → guerre #1 Baroness Legion **vs** Rival Syndicate, `SABOTAGE` jusqu'au J+2 | — |
+| 4 | redémarrage du client | `WarsList (1 guerres…)` | porte de garage **« VS RIVAL SYNDICATE — BAN PHASE — Ends in 11h 58m 46s »**, `COPPER · RANK #2` |
+| 5 | tap sur la guerre | `GetWarInfo → WarInfo (guerre #1, état SABOTAGE)` | écran **CURRENT WAR** complet (voir ci-dessous) |
+| 6 | WAR LOGS | `RequestWarLogs → WarLogs (0 attaque, 0 défense)` | le **barème** ligne par ligne |
+| 7 | ALL LEAGUES | (données locales `war_league_brackets.tab`) | `COPPER 1-199 · BRONZE 200-399 · SILVER 400-599`, **3 boîtes** par ligue |
+| 8 | RANKS (COPPER) | `GetWarRankings(COPPER) → WarRankings (2 guildes)` | **Aug 2026** · Rival Syndicate **1ST** (MMR 30) · Baroness Legion **2ND** (MMR 10) |
+
+**Ce que ces captures CONFIRMENT, au-delà du simple « ça rend » :**
+
+1. **La chronologie des phases est la bonne.** Le client affiche « **BAN PHASE — Ends in 11h 58m** » : c'est
+   SON `WarHelper.isBanPhase` qui lit notre `extraStateEndTime`, posé par `openWar` à
+   `début + SABOTAGE_BAN_PHASE_LENGTH` (12 h). Le décompte est la preuve directe de la valeur envoyée.
+2. **Le garage est correctement dérivé.** L'écran CURRENT WAR montre **9 salles réparties sur 3 étages**
+   numérotés 3/2/1, exactement `ServerWarCars.GARAGE_ORDER`, avec les **9 voitures** de la guilde adverse.
+3. **Le barème de score est le bon.** WAR LOGS affiche `Lineups Defeated ×1`, `Rooms Defeated ×100`,
+   `Clean Sweeps ×0`, `Defensive Wins ×0`, `Clean Defenses ×0` — soit `POINTS_PER_LINEUP=1`,
+   `POINTS_PER_CAR=100`, et les scalaires liés aux voitures à 0 **parce qu'aucune voiture n'est détenue**
+   (`ServerWarScoring.carPointScalar`). Le client réaffiche nos multiplicateurs tels quels.
+4. **Les tranches de ligue et le nombre de boîtes** affichés (`1-199 / 200-399 / 400-599`, 3 boîtes) sont
+   ceux de `leagueForMMR` et `NUM_SEASON_BOXES`.
+5. **La saison se résout en date.** L'écran de classement titre « **Aug 2026** » à partir du `seasonID` 104
+   calculé par `ServerWar.seasonIDAt`.
+6. **`GuildInfo.warEndTime` était bien indispensable** (correctif de l'étape 2) : sans lui le client
+   n'aurait affiché aucune guerre active — l'écran serait resté sur l'état « pas de guerre ».
+
+**Une bizarrerie observée puis EXPLIQUÉE (ce n'est pas un défaut serveur).** Sur l'écran de classement, la
+guilde du joueur apparaît **deux fois**. Vérifié au bytecode : `WarRankingsScreen.addPosterContent` ajoute une
+ligne « ta guilde » en **en-tête**, et cette ligne est conditionnée par `isYourGuildInRankings()` — c'est-à-dire
+qu'elle ne s'affiche **que si** la guilde figure déjà dans `rankingRows`. La liste, elle, est rendue
+intégralement par `addRankingsContent`. Le doublon est donc le rendu d'origine ; **retirer notre guilde de
+`rankingRows` supprimerait au contraire l'en-tête**. On ne touche à rien (PRINCIPLES §1/§4bis).
+
+**Captures** : `desktop-port/build/war1.png` (écran WARS), `war2.png` (porte de garage, BAN PHASE),
+`war3.png` (CURRENT WAR, garage 3×3), `war4.png` (WAR LOGS + barème), `war5.png` (ALL LEAGUES),
+`war6.png` (classement COPPER).
+
+### ⚠️ Ce qui reste NON vérifié en jeu
+
+Honnêteté du statut (PRINCIPLES §8) : la vérification ci-dessus couvre **le protocole d'affichage et le cycle
+de vie d'une guerre**, pas les actions de jeu. Restent à confirmer en jeu :
+
+| Action | Pourquoi pas encore |
+|---|---|
+| Placer les **lineups de défense** | une défense de guerre = **15 héros DISTINCTS** ; le compte de test n'en a que **7** |
+| **Attaquer** une salle, KO définitif, points marqués | dépend du point précédent (il faut des défenseurs en face) |
+| **Sabotages / bans / protections / spars** | exigent des `WAR_TOKENS` et une guilde adverse peuplée |
+| **Réclamer une boîte** de promotion / fin de saison | exige une guerre menée à terme (2 jours) ou un forçage d'horloge |
+| **Clôture** + variation de MMR + bascule de saison | idem — testé headless (`WarEndTest`, `WarSchedulerTest`), pas en jeu |
+
+Ces points sont couverts par les tests headless ; ils passent en ✅ le jour où un compte à 15 héros et une
+guerre menée à terme les exercent pour de vrai.

@@ -813,6 +813,26 @@ public final class TutorialDriver {
         } catch (Throwable t) { System.out.println("[requeststamina] échec: " + t); }
     }
 
+    /** DEV : INSCRIT (ou retire) la guilde de la file de GUERRE via le CHEMIN RÉEL du jeu
+     *  ({@code ClientActionHelper.changeGuildWarQueueState} → Action CHANGE_WAR_QUEUE), sans avoir à trouver
+     *  le bouton d'un écran de guerre encore vide. Invoqué via clickfile
+     *  "warqueue &lt;QUEUED_SINGLE|QUEUED_PERSISTENT|NOT_QUEUED&gt;". */
+    public static void changeWarQueue(GameMain game, String state) {
+        try {
+            com.perblue.heroes.game.objects.User u = game.getYourUser();
+            if (u == null || !com.perblue.heroes.game.logic.GuildHelper.isInGuild(u)) {
+                System.out.println("[warqueue] joueur sans guilde — ignoré"); return;
+            }
+            com.perblue.heroes.network.messages.WarQueueState st =
+                com.perblue.heroes.network.messages.WarQueueState.valueOf(state.trim().toUpperCase());
+            // Le message ne porte QUE l'état (relevé au bytecode) ; le WarInfo ne sert qu'au rappel local.
+            com.perblue.heroes.network.messages.WarInfo wi =
+                new com.perblue.heroes.network.messages.WarInfo();
+            com.perblue.heroes.game.ClientActionHelper.changeGuildWarQueueState(wi, st);
+            System.out.println("[warqueue] Action CHANGE_WAR_QUEUE(" + st + ") envoyée [chemin réel]");
+        } catch (Throwable t) { System.out.println("[warqueue] échec: " + t); }
+    }
+
     /** DEV : POSTE un héros comme mercenaire (Action POST_HERO), sans navigation MERCENARIES.
      *  Invoqué via clickfile "postmerc &lt;UnitType&gt;". */
     public static void postMerc(GameMain game, String heroName) {
