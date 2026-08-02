@@ -40,7 +40,11 @@ Valeurs lues **au runtime** (sonde, pas lecture de fichier) :
 * Coûts de sabotage (`war_sabotage_cost.tab`) : 67, 133, 200, 267, 333 … (×15).
 * Les **prévisualisations de récompenses sortent bien des tables** (vérifié à l'exécution) :
   `getPromotionRewardPreviews(GOLD,…)` → `BADGE_CHEST_1X ×2`, `WAR_TOKENS 2500`, `MEMORY_TOKENS 900`,
-  `GENERIC_STONES 40`, `GOLD 2 253 330`… ; `getSeasonRewardsPreview(GOLD,1,1,…)` → palier 4.
+  `GENERIC_STONES 40`, `GOLD 2 253 330`… ; `getSeasonRewardsPreview(GOLD,1,…)` → palier 4.
+  **⚠️ Correction d'une lecture initiale erronée** : le paramètre entier de ces méthodes n'est PAS un
+  « scalaire » mais **`L` = le NIVEAU D'ÉQUIPE** du joueur (`RewardDropExpression.convert0` fait
+  `setVariable("L", n)`). C'est pourquoi mon premier relevé montrait des quantités négatives : j'avais
+  passé 1. Conséquences mesurées en §étape 6.
 
 ### 1.3 Le jeu DOCUMENTE lui-même ses règles (`game-data/strings/HowToPlay.properties`)
 
@@ -152,8 +156,9 @@ Les **lineups de défense de guerre** arrivent déjà par `HeroLineupUpdate` ave
 | 3 | **Matchmaking (appariement par MMR, anti-rematch, BYE) + phases** | ✅ FAIT |
 | 4 | **Voitures : affectations, étoiles, portes de garage** | ✅ FAIT |
 | 5 | **Attaques + scoring + journaux** | ✅ FAIT |
-| 6 | Fin de guerre : issue, delta MMR, remboursements, boîtes | ⬜ |
-| 7 | Fin de saison : reset MMR (top 10 → Gold, autres ≤ 599), récompenses | ⬜ |
+| 6 | **Fin de guerre : issue, delta MMR, boîtes** | ✅ FAIT (remboursements → dépendent du sabotage) |
+| 7 | Sabotage / bans / protections / spars | ⬜ **PAS FAIT** |
+| 8 | Fin de saison : distribution des boîtes + stockage/réclamation | ⬜ |
 
 ### Étape 1 — calendrier, ligues, MMR ✅
 
@@ -383,3 +388,51 @@ inconnu, 3ᵉ attaque, MEMBER sans droit, crédit épuisé), lineup KO définiti
 étage 2 ouvert, barème `3×1 + 6×100 + 1×0 = 603`, bonus de balayage `0 → 5` selon que la voiture
 survit, issue cohérente avec les totaux dans les deux sens, DRAW à égalité, BYE, journaux et score
 recalculés à l'identique après round-trip DB.
+
+### Étape 6 — clôture d'une guerre ✅
+
+**`dhserver.ServerWarEnd`**. À l'échéance : issue depuis les totaux, variation de MMR des deux camps,
+plancher de ligue, libération des guildes, persistance. **Idempotent** — une guerre déjà close ne se
+recompte pas (assertion dédiée).
+
+Point de correction pris en compte : **les deux variations se calculent sur les MMR d'AVANT**. Les
+appliquer l'une après l'autre noterait le second camp contre un adversaire déjà mis à jour, et
+l'échange ne serait plus symétrique.
+
+Un BYE ne se compare à personne : le camp encaisse `BYE_RATING_GAIN` (mesuré : MMR 10 → 60).
+
+**⚠️ Fait mesuré, et garde-fou qui en découle.** La variable des expressions de récompense est
+**`L` = le niveau d'équipe du joueur**. Or :
+
+| Table | Protection dans les données | Comportement mesuré |
+|---|---|---|
+| **Promotion** (`war_box_options.tab`) | `max(…,1)` partout | jamais ≤ 0 — vérifié sur **7 ligues × 4 niveaux (84 boîtes)** |
+| **Saison** | **aucune** | **quantités NÉGATIVES** en dessous de **TL 289** (COPPER, GOLD) et **TL 282** (LEGENDARY) |
+
+Le barème de saison a manifestement été calibré pour la population du jeu live (niveaux d'équipe très
+élevés). Passer une quantité négative à `RewardHelper.giveReward` **retirerait** des ressources au
+joueur — l'inverse d'une « End-of-Season Reward ». `ServerWarEnd.keepPositive` écarte donc les
+quantités non strictement positives. Ce n'est pas une valeur inventée : on ne fabrique aucune
+récompense, on refuse seulement d'en retirer — et c'est la seule lecture compatible avec les
+`max(…,1)` que les concepteurs ont mis partout ailleurs. Le test **exerce réellement** le garde-fou :
+il vérifie d'abord qu'à TL 45 la table produit bien 3 quantités ≤ 0 (sinon l'assertion elle-même est à
+revoir), puis qu'aucune ne sort de la boîte ; et qu'à TL 565 la même table donne
+`GENERIC_STONES×247, EPIC_CHIP×1522, GENERIC_MEGABIT×225909`.
+
+Test : `server/smoke/WarEndTest`. Sortie : rien avant l'échéance ; clôture `A VICTORY 972 pts
+(MMR 900 → 1011)` / `B DEFEAT 0 pts (MMR 1100 → 1069)` avec deltas calculés sur les MMR d'avant ;
+plancher de ligue respecté ; guildes libérées ; 2ᵉ clôture sans effet ; round-trip DB ; BYE +50 ;
+84 boîtes de promotion sans quantité ≤ 0 ; garde-fou de saison exercé aux deux extrêmes.
+
+### ⚠️ Ce qui reste — énoncé sans arrondi
+
+* **Sabotage, bans, protections, spars : PAS FAITS.** C'est un pan entier (`WAR_SABOTAGE_DEFENDER`,
+  `WAR_EDIT_BAN_PROTECT`, `WAR_SPAR_TARGET`, `war_sabotage_effects.tab`, cooldowns et streaks
+  `BAN_*`/`PROTECT_*`). Le **remboursement des tokens au perdant** (« Tokens spent are refunded if you
+  lose the War ») en dépend directement : sans comptabilité des frais de sabotage, il n'y a rien à
+  rembourser. Je ne l'ai donc pas simulé.
+* **Stockage et réclamation des boîtes** : `ServerWarEnd` sait les *générer* depuis les tables du jeu ;
+  il reste à les attribuer par joueur, les persister et câbler `CLAIM_WAR_BOX_REWARD`.
+* **Handlers réseau** : aucun des 7 messages ni des 11 `CommandType` n'est encore branché dans
+  `LoginServer` — tout le moteur est testé unitairement, rien n'est joignable depuis le client.
+* **Vérification EN JEU** : nulle. Statut 🟢, pas ✅.
