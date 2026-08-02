@@ -34,6 +34,10 @@ public final class ServerWarEnd {
     public int mmrDeltaA, mmrDeltaB;
     public int pointsA, pointsB;
     public boolean alreadyFinished;
+    /** Remboursements de sabotage dus au camp PERDANT ({@code userID → montant}), et leur monnaie. */
+    public final java.util.LinkedHashMap<Long, Integer> refunds = new java.util.LinkedHashMap<>();
+    public com.perblue.heroes.network.messages.ResourceType refundCurrency =
+        ServerWarSabotage.DEFAULT_SABOTAGE_CURRENCY;
   }
 
   /**
@@ -81,6 +85,21 @@ public final class ServerWarEnd {
     applySide(w, gb, w.guildBID, r.outcomeB, r.mmrDeltaB);
 
     // L'état de la guerre porte l'issue du camp A (chaque client lit sa propre vue via toWarInfo).
+    // « Tokens spent are refunded if you lose the War » (aide du jeu) : le camp PERDANT récupère ce que
+    // chacun de ses membres a réellement dépensé en sabotages — d'où la comptabilité par joueur de la v3
+    // (le prix escalade, un simple compteur de sabotages ne permettrait pas de retrouver la somme).
+    long loserID = r.outcomeA == WarSummaryState.DEFEAT ? w.guildAID
+                 : r.outcomeB == WarSummaryState.DEFEAT ? w.guildBID : 0L;
+    if (loserID > 0) {
+      java.util.LinkedHashMap<Long, Integer> fees = w.sabotageFeesOf(loserID);
+      if (fees != null) r.refunds.putAll(fees);
+      WarGuildInfo loserSide = w.sideOf(loserID);
+      if (loserSide != null && loserSide.sabotageCurrency != null
+          && loserSide.sabotageCurrency != com.perblue.heroes.network.messages.ResourceType.DEFAULT) {
+        r.refundCurrency = loserSide.sabotageCurrency;
+      }
+    }
+
     w.state = r.outcomeA;
     w.stateEndTime = w.endTime;
     finalizeGuild(ga, w);
@@ -90,6 +109,33 @@ public final class ServerWarEnd {
     store.saveGuild(ga);
     store.saveGuild(gb);
     return r;
+  }
+
+  /**
+   * Crédite les remboursements de sabotage décidés par {@link #finishWar}. Séparé de la clôture pour que
+   * l'écriture de l'état de guerre et le crédit des joueurs restent deux opérations distinctes (les
+   * comptes des membres ne sont pas forcément chargés au même moment).
+   *
+   * @return le nombre de joueurs remboursés
+   */
+  public static int creditRefunds(UserStore store, int shardID, Result r) throws java.sql.SQLException {
+    if (r == null || r.refunds.isEmpty()) return 0;
+    int n = 0;
+    for (java.util.Map.Entry<Long, Integer> e : r.refunds.entrySet()) {
+      if (e.getValue() == null || e.getValue() <= 0) continue;
+      ServerUser u = store.loadIfExists(e.getKey(), shardID);
+      if (u == null) {
+        // Un joueur disparu (compte supprimé, transféré) n'est pas remboursable — on le DIT plutôt que
+        // de laisser un remboursement s'évaporer sans trace.
+        System.out.println("[war] remboursement impossible : joueur " + e.getKey() + " introuvable ("
+            + e.getValue() + " " + r.refundCurrency + " non rendus)");
+        continue;
+      }
+      u.giveResource(r.refundCurrency, e.getValue());
+      store.save(u);
+      n++;
+    }
+    return n;
   }
 
   /** Écrit l'issue d'un camp : MMR, delta affiché, ligue, et bilan de saison de la guilde. */

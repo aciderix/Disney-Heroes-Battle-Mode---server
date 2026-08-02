@@ -156,7 +156,7 @@ Les **lineups de défense de guerre** arrivent déjà par `HeroLineupUpdate` ave
 | 3 | **Matchmaking (appariement par MMR, anti-rematch, BYE) + phases** | ✅ FAIT |
 | 4 | **Voitures : affectations, étoiles, portes de garage** | ✅ FAIT |
 | 5 | **Attaques + scoring + journaux** | ✅ FAIT |
-| 6 | **Fin de guerre : issue, delta MMR, boîtes** | ✅ FAIT (remboursements → dépendent du sabotage) |
+| 6 | **Fin de guerre : issue, delta MMR, remboursements, boîtes** | ✅ FAIT |
 | 7 | **Sabotage / bans / protections / spars** | ✅ FAIT |
 | 8 | Fin de saison : distribution des boîtes + stockage/réclamation | ⬜ |
 
@@ -426,9 +426,6 @@ plancher de ligue respecté ; guildes libérées ; 2ᵉ clôture sans effet ; ro
 
 ### ⚠️ Ce qui reste — énoncé sans arrondi
 
-* **Remboursement des tokens au perdant** : la comptabilité existe désormais (`ServerWarState` v3,
-  frais par joueur), il reste à la brancher dans `ServerWarEnd.finishWar` — un rendu ciblé, plus une
-  inconnue.
 * **Stockage et réclamation des boîtes** : `ServerWarEnd` sait les *générer* depuis les tables du jeu ;
   il reste à les attribuer par joueur, les persister et câbler `CLAIM_WAR_BOX_REWARD`.
 * **Handlers réseau** : aucun des 7 messages ni des 11 `CommandType` n'est encore branché dans
@@ -475,3 +472,14 @@ de ban fermée après 12 h alors que les protections restent ouvertes ; round-tr
 sur 3 lineups : « déjà saboté » ne se déclenchait jamais. Le protocole tranche — `sabotageWarDefender`
 identifie la victime par son **seul `UnitType`**, ce qui n'aurait aucun sens si un héros pouvait
 occuper deux lineups. Une défense de guerre, ce sont donc **15 héros distincts**.
+
+### Remboursement des sabotages au perdant ✅ (complète l'étape 6)
+
+Une fois la comptabilité par joueur en place (v3), `finishWar` calcule les remboursements du camp
+**perdant** et `creditRefunds` les crédite. « Tokens spent are refunded if you lose the War » — et
+c'est **celui qui a payé** qui récupère, d'où l'imputation par joueur plutôt qu'un total de guilde.
+Un joueur introuvable (compte supprimé) n'est pas remboursable : le cas est **journalisé** au lieu de
+laisser un remboursement s'évaporer sans trace.
+
+Vérifié : B perd, 300 `WAR_TOKENS` rendus au joueur qui les avait dépensés, crédités et persistés ;
+le vainqueur ne récupère rien.

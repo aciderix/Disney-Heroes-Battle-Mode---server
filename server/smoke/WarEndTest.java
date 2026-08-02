@@ -62,6 +62,7 @@ public final class WarEndTest {
       ga.warPromotionMask = ServerWar.markLeagueReached(0, ServerWar.leagueForMMR(ga.warMMR));
       gb.warPromotionMask = ServerWar.markLeagueReached(0, ServerWar.leagueForMMR(gb.warMMR));
       store.saveGuild(ga); store.saveGuild(gb);
+      store.save(ra); store.save(rb);   // les comptes doivent exister pour être remboursables
 
       // Guerre finie sur le papier : A a tout pris chez B, B n'a rien pris chez A.
       ServerWarState w = new ServerWarState();
@@ -156,6 +157,53 @@ public final class WarEndTest {
       check(rga.warMMR == mmrAfter && rga.currentWarID == 0 && rga.warsWon == 1,
           "l'état de guilde doit persister");
       System.out.println("[war] round-trip DB : issue, delta et bilan persistés");
+
+      // ---------------------------------------------------------------------------------------
+      // 4bis. REMBOURSEMENT DES SABOTAGES AU PERDANT.
+      // « Tokens spent are refunded if you lose the War » — et c'est CELUI QUI A PAYÉ qui récupère.
+      // ---------------------------------------------------------------------------------------
+      // On rejoue une guerre courte où B (le perdant) a dépensé en sabotages.
+      ServerWarState w2 = new ServerWarState();
+      w2.shardID = 1; w2.seasonID = season;
+      w2.startTime = now; w2.endTime = now + 1;
+      w2.state = WarSummaryState.ACTIVE; w2.stateEndTime = w2.endTime;
+      w2.guildAID = ga.guildID; w2.guildBID = gb.guildID;
+      WarGuildInfo s2a = new WarGuildInfo(); s2a.guildInfo = ga.info.basicInfo;
+      for (int i = 0; i < ServerWarCars.GARAGE_SIZE; i++) {
+        addMember(s2a, member(300L + i, ServerWarCars.GARAGE_ORDER.get(i), 3, false));
+      }
+      ServerWarCars.rebuildCars(s2a);
+      WarGuildInfo s2b = new WarGuildInfo();
+      s2b.guildInfo = gb.info.basicInfo;
+      s2b.sabotageCurrency = ServerWarSabotage.DEFAULT_SABOTAGE_CURRENCY;
+      for (int i = 0; i < ServerWarCars.GARAGE_SIZE; i++) {
+        addMember(s2b, member(400L + i, ServerWarCars.GARAGE_ORDER.get(i), 3, true));
+      }
+      ServerWarCars.rebuildCars(s2b);
+      w2.putSide(ga.guildID, s2a); w2.putSide(gb.guildID, s2b);
+      // Le joueur 2 (chef de B) a dépensé 300 en sabotages.
+      w2.addSabotageFee(gb.guildID, rb.userID, 200);
+      w2.addSabotageFee(gb.guildID, rb.userID, 100);
+      store.saveWar(w2);
+
+      long tokensBefore = rb.resourceAmount(ResourceType.WAR_TOKENS);
+      ServerWarEnd.Result r2 = ServerWarEnd.finishWar(store, w2, ga, gb, now + 2);
+      check(r2 != null && r2.outcomeB == WarSummaryState.DEFEAT, "B doit perdre cette 2e guerre");
+      check(r2.refunds.size() == 1 && r2.refunds.get(rb.userID) == 300,
+          "le perdant doit se voir rembourser 300, imputés au joueur qui a payé, obtenu " + r2.refunds);
+      check(r2.refundCurrency == ServerWarSabotage.DEFAULT_SABOTAGE_CURRENCY,
+          "la monnaie de remboursement doit être celle du camp");
+      int credited = ServerWarEnd.creditRefunds(store, 1, r2);
+      check(credited == 1, "un joueur doit être remboursé, obtenu " + credited);
+      ServerUser rbAfter = store.loadIfExists(rb.userID, 1);
+      check(rbAfter.resourceAmount(ResourceType.WAR_TOKENS) == tokensBefore + 300,
+          "le remboursement doit être crédité et persisté (attendu " + (tokensBefore + 300) + ", obtenu "
+              + rbAfter.resourceAmount(ResourceType.WAR_TOKENS) + ")");
+      System.out.println("[war] remboursement au perdant : 300 " + r2.refundCurrency
+          + " rendus au joueur " + rb.userID + " (celui qui avait payé)");
+      // Le VAINQUEUR n'est pas remboursé.
+      check(w2.totalSabotageFees(ga.guildID) == 0 && !r2.refunds.containsKey(ra.userID),
+          "le vainqueur ne doit rien récupérer");
 
       // ---------------------------------------------------------------------------------------
       // 5. BYE — gain fixe, sans adversaire.
