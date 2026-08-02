@@ -1521,6 +1521,10 @@ public final class LoginServer {
               } catch (Exception e) { System.out.println("[login]     ! état invasion (quête) : " + e); }
               com.perblue.heroes.network.messages.BreakerQuest bq =
                   ServerInvasionBreaker.buildQuest(user, qud, qinv, qid);
+              // Forme requête/réponse, comme tous les autres handlers. ⚠️ Les DEUX formes ont été essayées
+              // EN JEU (réponse appariée ET poussée spontanée) : dans les deux cas l'écran garde
+              // `breakerQuests = null`. Le point de blocage est donc AILLEURS que dans l'appariement —
+              // enquête en cours, cf. docs/INVASION.md.
               bq.setAsReplyTo(m);
               c.send(bq);
               System.out.println("[login] <== GetBreakerQuest → ==> BreakerQuest ("

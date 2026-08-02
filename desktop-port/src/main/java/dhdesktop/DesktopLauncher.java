@@ -340,6 +340,10 @@ public final class DesktopLauncher {
                     TutorialDriver.invasionState(game);
                     continue;
                 }
+                if (low.equals("breakerdump")) {                 // breakerdump — dumper la BreakerQuest côté client
+                    TutorialDriver.breakerDump(game);
+                    continue;
+                }
                 if (low.startsWith("postmerc ")) {               // postmerc <hero> — poster un mercenaire (POST_HERO réel)
                     TutorialDriver.postMerc(game, ln.substring(9).trim());
                     continue;

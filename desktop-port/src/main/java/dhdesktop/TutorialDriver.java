@@ -1006,6 +1006,37 @@ public final class TutorialDriver {
         } catch (Throwable t) { System.out.println("[invstate] échec: " + t); }
     }
 
+    /** DEV : que contient, CÔTÉ CLIENT, la BreakerQuest reçue ? (écran vide → savoir si la donnée manque
+     *  ou si c'est la mise en page). Invoqué via clickfile "breakerdump". */
+    public static void breakerDump(GameMain game) {
+        try {
+            Object screen = game.getScreenManager().getScreen();
+            System.out.println("[breakerdump] écran = " + screen.getClass().getSimpleName());
+            for (Class<?> c = screen.getClass(); c != null; c = c.getSuperclass()) {
+                for (java.lang.reflect.Field f : c.getDeclaredFields()) {
+                    if (f.getType() == com.perblue.heroes.network.messages.BreakerQuest.class) {
+                        f.setAccessible(true);
+                        com.perblue.heroes.network.messages.BreakerQuest bq =
+                            (com.perblue.heroes.network.messages.BreakerQuest) f.get(screen);
+                        if (bq == null) { System.out.println("[breakerdump] BreakerQuest = null"); return; }
+                        System.out.println("[breakerdump] combats = " + bq.basicBreakerFights.size()
+                            + " · activeBreakerFight = " + bq.activeBreakerFight);
+                        int n = 0;
+                        for (Object o : bq.basicBreakerFights) {
+                            com.perblue.heroes.network.messages.BasicBreakerFight bf =
+                                (com.perblue.heroes.network.messages.BasicBreakerFight) o;
+                            System.out.println("[breakerdump]   #" + bf.index + " boss=" + bf.bossHero
+                                + " wards=" + (bf.wards == null ? "null" : bf.wards.size()));
+                            if (++n >= 3) break;
+                        }
+                        return;
+                    }
+                }
+            }
+            System.out.println("[breakerdump] aucun champ BreakerQuest sur cet écran");
+        } catch (Throwable t) { System.out.println("[breakerdump] échec: " + t); }
+    }
+
     /** DEV : POSTE un héros comme mercenaire (Action POST_HERO), sans navigation MERCENARIES.
      *  Invoqué via clickfile "postmerc &lt;UnitType&gt;". */
     public static void postMerc(GameMain game, String heroName) {

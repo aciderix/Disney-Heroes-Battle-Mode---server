@@ -263,5 +263,30 @@ plus probable, par analogie avec l'arène : les `HeroSummary` fabriqués partage
 problème que `ServerArena.offsetHeroIds` résout pour les lignes de classement. À vérifier et corriger à la
 prochaine session, avec une capture à l'appui.
 
-**Statut honnête** : `GetBreakerQuest` n'est plus un trou noir (10 combats servis, composition réelle), mais
-la BREAKER QUEST n'est **pas encore jouable en jeu**.
+### Enquête sur l'écran vide — ce qui est ÉLIMINÉ, et le prochain pas
+
+Sonde ajoutée (`breakerdump` : dump côté CLIENT du champ `BreakerQuest` de l'écran). Verdict :
+**`BreakerQuest = null` sur `InvasionBreakerScreen`**, alors que le serveur journalise bien
+`==> BreakerQuest (10 combat(s))`. Le message part donc, mais le client ne le range nulle part.
+
+Chemin du client, relevé au bytecode (`GameMain.lambda$setupPostClientInfoHandlers$120`) :
+
+```java
+InvasionHolder h = this.currentInvasion;
+if (h != null) h.setBreakerQuest(bq);
+if (screenManager.checkStackForScreen(InvasionBreakerScreen.class)) handleScreenMessage(bq);
+```
+
+**Éliminé par la mesure** : ce n'est pas l'appariement requête/réponse. Les deux formes ont été essayées EN
+JEU — réponse appariée (`setAsReplyTo`) **et** poussée spontanée — et l'écran garde `null` dans les deux cas.
+Ce n'est pas non plus une exception : ni le client ni le serveur ne journalisent quoi que ce soit. Et ce
+n'est pas l'hypothèse `heroId` avancée plus haut : elle expliquerait un rendu fautif, pas un champ `null`.
+
+**Prochain pas, précis** : instrumenter le CLIENT pour savoir si le message est seulement *décodé* — enregistrer
+un listener temporaire sur `BreakerQuest` depuis le pilote, et dumper `GameMain.currentInvasion` (si ce champ
+est `null`, le handler ci-dessus n'appelle ni `setBreakerQuest` ni `handleScreenMessage`, ce qui produit
+exactement le symptôme observé, y compris l'absence totale de trace).
+
+**Statut honnête** : `GetBreakerQuest` n'est plus un trou noir côté serveur (10 combats servis, composition
+réelle tirée des données), mais la BREAKER QUEST n'est **pas jouable en jeu** — l'écran reste vide, et la
+cause est cernée sans être encore établie.
