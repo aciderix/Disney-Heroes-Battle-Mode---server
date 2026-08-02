@@ -212,6 +212,23 @@ public final class ServerWarAttack {
     return r;
   }
 
+  /**
+   * Une équipe de défense telle que l'ATTAQUANT doit la recevoir.
+   *
+   * <p><b>⚠️ CORRECTIF (2026-08-02, défaut trouvé EN JEU).</b> {@code WarDefense.defenders} attend des
+   * {@link com.perblue.heroes.network.messages.WarHeroData} (le héros COMPLET, pour que le client puisse le
+   * faire combattre), pas les {@code WarHeroSummary} de l'état de guerre. Recopier la liste telle quelle
+   * compilait (les listes du wire sont brutes après dex2jar) mais faisait échouer la SÉRIALISATION de
+   * {@code StartWarAttackResponse} — {@code ClassCastException: WarHeroSummary cannot be cast to
+   * WarHeroData} dans {@code WarHeroData.writeListed}. Conséquence : le client n'a JAMAIS reçu la réponse, et
+   * <b>aucune attaque n'était possible en jeu</b> alors que le serveur, lui, journalisait « [persisté] ».
+   * Un test headless ne pouvait pas le voir : il n'écrit pas le message sur le fil.
+   *
+   * <p>On convertit donc chaque défenseur : {@code HeroData} bâti par la logique du jeu
+   * ({@code ClientNetworkStateConverter.getHeroData} sur l'{@code UnitData} reconstruit depuis le résumé),
+   * en reportant le sabotage subi ({@code sabotageType}/{@code sabotagedByUserID}) — c'est exactement ce que
+   * {@code WarCombatHelper} applique ensuite côté client.
+   */
   @SuppressWarnings("unchecked")
   private static com.perblue.heroes.network.messages.WarDefense toDefense(WarMemberInfo m, int index) {
     com.perblue.heroes.network.messages.WarDefense d =
@@ -222,7 +239,25 @@ public final class ServerWarAttack {
     }
     WarLineupSummary lineup = (WarLineupSummary) m.defenses.get(index);
     d.defeated = ServerWarCars.lineupDefeated(lineup);
-    if (lineup.heroes != null) d.defenders.addAll(lineup.heroes);
+    if (lineup.heroes != null) {
+      java.util.List<Object> defenders = (java.util.List<Object>) d.defenders;
+      for (Object o : lineup.heroes) {
+        com.perblue.heroes.network.messages.WarHeroSummary hs =
+            (com.perblue.heroes.network.messages.WarHeroSummary) o;
+        com.perblue.heroes.network.messages.WarHeroData hd =
+            new com.perblue.heroes.network.messages.WarHeroData();
+        try {
+          hd.hero = com.perblue.heroes.game.ClientNetworkStateConverter.getHeroData(
+              com.perblue.heroes.game.ClientNetworkStateConverter.getHero(hs.hero));
+        } catch (Throwable t) {
+          System.out.println("[war] défenseur illisible (" + t + ") — ignoré");
+          continue;
+        }
+        hd.sabotageType = hs.sabotage;
+        hd.sabotagedByUserID = hs.sabotagedByUser;
+        defenders.add(hd);
+      }
+    }
     return d;
   }
 }

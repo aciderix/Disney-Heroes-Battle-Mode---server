@@ -1462,8 +1462,20 @@ public final class ServerUser {
     resyncHeroes(user);
   }
 
-  /** Outillage TEST : ajoute (ou remonte) un héros à un rang/niveau/étoiles donnés + resync wire. Sert à créer
-   *  un état exploitable pour tester une feature (ex. un héros avec de la marge de niveau pour SKILL_UPGRADE). */
+  /**
+   * Outillage TEST : ajoute (ou remonte) un héros à un rang/niveau/étoiles donnés + resync wire. Sert à créer
+   * un état exploitable pour tester une feature (ex. un héros avec de la marge de niveau pour SKILL_UPGRADE).
+   *
+   * <p><b>⚠️ CORRECTIF (2026-08-02) — l'ordre des deux entiers du jeu est (ÉTOILES, NIVEAU), pas l'inverse.</b>
+   * Relevé au bytecode : {@code User.createAndAddHero(type, rarity, i3, i4, …)} passe {@code (i3, i4)} à
+   * {@code CombatHelper.createUnitData(type, rarity, i3, i4, mode)}, qui fait {@code setStars(i3)} et
+   * {@code setLevel(i4)}. Cette méthode passait {@code (level, stars)} → le héros recevait le NIVEAU comme
+   * NOMBRE D'ÉTOILES. Conséquence mesurée EN JEU : un héros « niveau 40 » se retrouvait à <b>40 étoiles</b> et
+   * le client PLANTAIT au hub — {@code HasEnoughCollectionHeroes.isSatisfied} indexe une liste dimensionnée par
+   * {@code UnitStats.getMaxStars} avec {@code hero.getStars()} → {@code IndexOutOfBounds: Index 40 out of
+   * bounds for length 7}, dans {@code showDailyQuestMenuDot} au rendu du menu latéral. Le compte devenait
+   * inutilisable. On passe désormais {@code (stars, level)} et on repose explicitement les deux.
+   */
   public synchronized void grantHero(com.perblue.heroes.network.messages.UnitType type,
       com.perblue.heroes.network.messages.Rarity rarity, int level, int stars) {
     ServerContext.init();
@@ -1472,9 +1484,9 @@ public final class ServerUser {
         individualUserExtra, userID, userInfo.diamonds, "grant");
     ServerContext.bind(user, iu);
     if (user.getHero(type) == null)
-      user.createAndAddHero(type, rarity, level, stars, new String[]{"grant"});
+      user.createAndAddHero(type, rarity, stars, level, new String[]{"grant"});   // (ÉTOILES, NIVEAU)
     com.perblue.heroes.game.objects.UnitData ud = (com.perblue.heroes.game.objects.UnitData) user.getHero(type);
-    if (ud != null) { ud.setRarity(rarity); ud.setLevel(level); }
+    if (ud != null) { ud.setRarity(rarity); ud.setStars(stars); ud.setLevel(level); }
     resyncHeroes(user);
   }
 

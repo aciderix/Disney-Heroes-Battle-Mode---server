@@ -184,6 +184,15 @@ public final class ServerWarMatchmaker {
 
     store.saveWar(w);                                   // attribue le warID sous verrou
 
+    // QUI participe, avec quelle défense : c'est l'ouverture de la guerre qui fige la liste des membres
+    // (chacun avec ses lineups WAR_DEFENSE_1..3 déjà posés). Sans ça, `WarGuildInfo.members` resterait vide
+    // et PERSONNE ne participerait — défaut réel trouvé par la vérification EN JEU, cf. ServerWarMembers.
+    int na = ServerWarMembers.syncAll(store, shardID, w, pairing.a);
+    int nb = pairing.isBye() ? 0 : ServerWarMembers.syncAll(store, shardID, w, pairing.b);
+    System.out.println("[war] guerre ouverte : " + na + " membre(s) côté " + pairing.a.guildID
+        + (pairing.isBye() ? " (BYE)" : " · " + nb + " côté " + pairing.b.guildID));
+    store.saveWar(w);
+
     applyToGuild(pairing.a, w, pairing.isBye() ? 0L : pairing.b.guildID);
     if (!pairing.isBye()) applyToGuild(pairing.b, w, pairing.a.guildID);
     store.saveGuild(pairing.a);

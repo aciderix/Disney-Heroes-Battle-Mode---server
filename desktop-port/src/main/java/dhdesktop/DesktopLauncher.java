@@ -308,6 +308,34 @@ public final class DesktopLauncher {
                     TutorialDriver.changeWarQueue(game, ln.substring(9).trim());
                     continue;
                 }
+                if (low.startsWith("wardefense ")) {             // wardefense <1|2|3> — poser une défense de guerre (saveHeroLineup réel)
+                    TutorialDriver.setWarDefense(game, ln.substring(11).trim());
+                    continue;
+                }
+                if (low.startsWith("warassign ")) {              // warassign <WarCarType> — s'affecter à une salle (ASSIGN_WAR_CAR réel)
+                    TutorialDriver.assignWarCar(game, ln.substring(10).trim());
+                    continue;
+                }
+                if (low.startsWith("warsabotage ")) {            // warsabotage <hero> <type> — saboter un défenseur adverse
+                    TutorialDriver.sabotageWarDefender(game, ln.substring(12).trim());
+                    continue;
+                }
+                if (low.startsWith("warban ")) {                 // warban <hero> [protect] — bannir/protéger un héros
+                    TutorialDriver.warBanProtect(game, ln.substring(7).trim());
+                    continue;
+                }
+                if (low.equals("warspar")) {                     // warspar — s'entraîner contre un adversaire
+                    TutorialDriver.warSpar(game);
+                    continue;
+                }
+                if (low.equals("warattack")) {                   // warattack — démarrer une attaque de guerre
+                    TutorialDriver.warAttack(game);
+                    continue;
+                }
+                if (low.startsWith("wartarget ")) {              // wartarget <WarCarType> — changer la salle ciblée
+                    TutorialDriver.warTarget(game, ln.substring(10).trim());
+                    continue;
+                }
                 if (low.startsWith("postmerc ")) {               // postmerc <hero> — poster un mercenaire (POST_HERO réel)
                     TutorialDriver.postMerc(game, ln.substring(9).trim());
                     continue;

@@ -18,6 +18,15 @@
 > 3. **Faire le point** sur l'état courant ET sur ce qui a été transmis lors de la compression, PUIS enchaîner.
 > Ne PAS sauter cette procédure : c'est la condition pour reprendre dans de bonnes conditions.
 
+Dernière mise à jour : **2026-08-02 (g44)** — **« tout vérifier en jeu » : les ACTIONS de guerre → 4 DÉFAUTS RÉELS.** Détail : `docs/GUILD_WAR.md` §5.
+**(1) Personne ne participait jamais à une guerre** : rien ne créait de `WarMemberInfo`, `members` restait vide ⇒ affectation de salle refusée, aucune cible d'attaque, 0/0 partout. **Les tests headless fabriquaient eux-mêmes les membres qu'ils testaient.** → nouveau `ServerWarMembers` (défenses `WAR_DEFENSE_1..3` réelles, à l'ouverture ET à chaque changement ; état de guerre reporté par `UnitType`).
+**(2) `grantHero` inversait ÉTOILES/NIVEAU** (`createAndAddHero` = (STARS, LEVEL) au bytecode) → héros à 40 étoiles → `IndexOutOfBounds` dans `HasEnoughCollectionHeroes` au rendu du menu ⇒ **client qui plante au hub, compte injouable**. `SkillUpgradeTest`/`SkillSetup` corrompaient pareil sans l'asserter.
+**(3) `StartWarAttackResponse` ne se sérialisait pas** : `WarDefense.defenders` attend des `WarHeroData`, pas des `WarHeroSummary` → `ClassCastException` À L'ÉCRITURE SUR LE FIL, après un « [persisté] » côté serveur ⇒ **attaquer était impossible en jeu**, invisible headless.
+**(4) `createGuild` n'exige pas d'être sans guilde** (inscrit, NON corrigé).
+**Vérifié en jeu** : file, pose des 3 défenses (+resynchro), affectation de salle (3/3 + écusson), défense adverse 0/15·3/3, et **sabotage** avec **palier/coût RECALCULÉS serveur** (INDEX client ignoré = anti-triche prouvé).
+**2 refus = gates DU JEU** (guilde niveau 0) : `WAR_BAN_PROTECT_MAX_PROTECT_SIZE`, `WAR_SPARS_NOT_ENOUTH` — le pilote demande son verdict au client avant d'envoyer.
+**RESTE** : attaque menée à terme (le client cesse d'émettre après passage en ACTIVE — cause NON élucidée), bans/spars (perks requis), clôture+MMR+boîtes+réclamation, 6 commandes de lecture. Régression 76/76.
+
 Dernière mise à jour : **2026-08-02 (g43)** — **GUILD WAR ✅ VÉRIFIÉ EN JEU** (client réel → notre serveur → affichage). Détail+captures : `docs/GUILD_WAR.md` §4.
 Chaîne exercée par le VRAI client : `nav WAR` → `GetWarsList` → écran GUILD WAR (COPPER · RANK #1 · MMR 10) ; `warqueue QUEUED_SINGLE` → `CHANGE_WAR_QUEUE` accepté+persisté (chemin d'origine `ClientActionHelper.changeGuildWarQueueState`) ; `AdminWar --tick --force` → guerre #1 vs une guilde semée (`WarRivalSeed`) ; porte de garage **« VS RIVAL SYNDICATE — BAN PHASE — Ends in 11h 58m »** ; `GetWarInfo` → **CURRENT WAR** (garage **9 salles/3 étages** = `GARAGE_ORDER`, 9 voitures adverses, les 2 MMR) ; WAR LOGS → **barème** `Lineups ×1` / `Rooms ×100` / scalaires voitures ×0 ; ALL LEAGUES (1-199/200-399/400-599, 3 boîtes) ; classement « **Aug 2026** ».
 **3 confirmations fortes** : (1) le décompte « BAN PHASE 11h58 » = le client relisant notre `extraStateEndTime` ⇒ chronologie des phases correcte ; (2) le barème affiché = `ServerWarScoring` ; (3) sans le correctif `GuildInfo.warEndTime` le client n'aurait vu AUCUNE guerre.

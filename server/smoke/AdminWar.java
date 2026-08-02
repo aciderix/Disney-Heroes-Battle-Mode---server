@@ -3,6 +3,7 @@ import dhserver.ServerContext;
 import dhserver.ServerGuild;
 import dhserver.ServerWar;
 import dhserver.ServerWarBoxes;
+import dhserver.ServerWarMembers;
 import dhserver.ServerWarScheduler;
 import dhserver.ServerWarState;
 import dhserver.UserStore;
@@ -73,20 +74,23 @@ public final class AdminWar {
 
   public static void main(String[] a) throws Exception {
     Map<String, String> opt = new HashMap<>();
-    boolean tick = false, force = false, showStatus = false;
+    boolean tick = false, force = false, showStatus = false, resync = false, advance = false, end = false;
     for (int i = 0; i < a.length; i++) {
       String k = a[i];
       switch (k) {
         case "--tick":   tick = true; break;
         case "--force":  force = true; break;
         case "--status": showStatus = true; break;
+        case "--resync": resync = true; break;
+        case "--advance": advance = true; break;
+        case "--end": end = true; break;
         default:
           if (k.startsWith("--") && i + 1 < a.length && !a[i + 1].startsWith("--")) opt.put(k.substring(2), a[++i]);
           else System.out.println("[admin] option ignorée : " + k);
       }
     }
-    if (!tick && !showStatus) {
-      System.out.println("Usage : AdminWar [--db <chemin>] [--shard <n>] (--status | --tick [--force])");
+    if (!tick && !showStatus && !resync && !advance && !end) {
+      System.out.println("Usage : AdminWar [--db <chemin>] [--shard <n>] (--status | --tick [--force] | --resync)");
       return;
     }
 
@@ -95,6 +99,37 @@ public final class AdminWar {
     int shardID = Integer.parseInt(opt.getOrDefault("shard", "1"));
 
     try (UserStore store = new UserStore(db)) {
+      if (resync) {
+        // Recalcule les MEMBRES des guerres en cours depuis les rosters + défenses posées. Sert quand un
+        // membre rejoint après l'ouverture, ou après une correction de l'état (cf. ServerWarMembers).
+        for (ServerGuild g : store.listGuilds(shardID, null, 10_000)) {
+          if (g.currentWarID <= 0) continue;
+          ServerWarState w = store.loadWar(shardID, g.currentWarID);
+          if (w == null) continue;
+          int n = ServerWarMembers.syncAll(store, shardID, w, g);
+          store.saveWar(w);
+          System.out.println("[war] guerre #" + w.warID + " · guilde " + g.guildID + " → " + n + " membre(s)");
+        }
+      }
+      if (advance || end) {
+        // LEVIERS D'OPÉRATEUR pour ne pas attendre deux jours réels : `--advance` fait passer une guerre de
+        // SABOTAGE à ACTIVE en appliquant la règle du jeu (`advancePhase` à son échéance), `--end` ramène la
+        // fin de guerre à maintenant pour que le prochain tour la clôture normalement. Aucune règle n'est
+        // court-circuitée : c'est l'horloge qu'on avance, pas la logique.
+        long now = com.perblue.heroes.util.TimeUtil.serverTimeNow();
+        java.util.Set<Long> seen = new java.util.HashSet<>();
+        for (ServerGuild g : store.listGuilds(shardID, null, 10_000)) {
+          if (g.currentWarID <= 0 || !seen.add(g.currentWarID)) continue;
+          ServerWarState w = store.loadWar(shardID, g.currentWarID);
+          if (w == null) continue;
+          if (advance && dhserver.ServerWarMatchmaker.advancePhase(w, w.stateEndTime)) {
+            System.out.println("[war] guerre #" + w.warID + " → " + w.state);
+          }
+          if (end) { w.endTime = now - 1000L; w.stateEndTime = w.endTime;
+            System.out.println("[war] guerre #" + w.warID + " : échéance ramenée à maintenant"); }
+          store.saveWar(w);
+        }
+      }
       if (tick) {
         long now = com.perblue.heroes.util.TimeUtil.serverTimeNow();
         ServerWarScheduler.Tick t = ServerWarScheduler.tick(store, shardID, now, force);

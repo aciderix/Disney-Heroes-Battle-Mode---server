@@ -692,3 +692,86 @@ de vie d'une guerre**, pas les actions de jeu. Restent à confirmer en jeu :
 
 Ces points sont couverts par les tests headless ; ils passent en ✅ le jour où un compte à 15 héros et une
 guerre menée à terme les exercent pour de vrai.
+
+
+---
+
+## 5. Vérification EN JEU des ACTIONS (2026-08-02, 2ᵉ session) — 4 défauts RÉELS trouvés
+
+Consigne : « tout vérifier en jeu, sans exception ». Cette session a exercé les ACTIONS (et non plus
+seulement l'affichage). Elle a coûté **quatre défauts réels**, dont trois qu'aucun test headless ne pouvait
+voir. C'est la meilleure justification possible de PRINCIPLES §8.
+
+### 5.1 🐛 Personne ne participait jamais à une guerre (`ServerWarMembers`)
+
+**Rien ne créait de {@code WarMemberInfo}** : `WarGuildInfo.members` restait vide pour toujours. Conséquences
+en chaîne : `assignCar` répondait « ce joueur ne participe pas à cette guerre », aucune attaque n'avait de
+cible, et l'écran affichait 0/0 partout. **Les tests headless ne pouvaient pas le voir : ils fabriquaient
+eux-mêmes les `WarMemberInfo` qu'ils testaient ensuite.**
+
+Correctif : `ServerWarMembers` construit les membres depuis les lineups `WAR_DEFENSE_1..3` réellement posés
+(chemin du jeu `getHeroLineup` → `getHero` → `getHeroSummary`, comme `ServerArena.readDefenseTeam`), à
+l'ouverture de la guerre (`openWar`) **et** à chaque `HeroLineupUpdate(WAR_DEFENSE_*)`. L'état de guerre déjà
+acquis (héros KO, sabotages) est REPORTÉ héros par héros, apparié par `UnitType` — sinon changer sa défense
+effacerait les faits de la guerre en cours.
+
+### 5.2 🐛 `grantHero` inversait ÉTOILES et NIVEAU → client qui plante au hub
+
+Relevé au bytecode : `User.createAndAddHero(type, rarity, i3, i4, …)` transmet `(i3, i4)` à
+`CombatHelper.createUnitData`, qui fait `setStars(i3)` puis `setLevel(i4)` — donc **(ÉTOILES, NIVEAU)**.
+`ServerUser.grantHero(type, rarity, level, stars)` passait `(level, stars)` : un héros « niveau 40 » recevait
+**40 étoiles**. Mesuré en jeu : `HasEnoughCollectionHeroes.isSatisfied` indexe une liste dimensionnée par
+`UnitStats.getMaxStars` avec `hero.getStars()` → `IndexOutOfBoundsException: Index 40 out of bounds for
+length 7`, levée dans `showDailyQuestMenuDot` au rendu du menu latéral : **le compte devenait injouable**.
+`SkillUpgradeTest`/`SkillSetup` produisaient la même corruption sans la détecter (ils n'assertaient pas les
+étoiles).
+
+### 5.3 🐛 `StartWarAttackResponse` ne se sérialisait pas → attaque impossible en jeu
+
+`WarDefense.defenders` attend des **`WarHeroData`** (le héros complet, pour le combat), pas les
+`WarHeroSummary` de l'état de guerre. Recopier la liste telle quelle **compilait** (dex2jar efface les
+génériques) mais levait, à l'écriture sur le fil, `ClassCastException: WarHeroSummary cannot be cast to
+WarHeroData` dans `WarHeroData.writeListed`. Le serveur journalisait pourtant « START_WAR_ATTACK … [persisté] » :
+**le défaut n'était visible que du côté client, qui ne recevait jamais la réponse.** Un test headless ne
+l'attrape pas — il n'écrit pas le message sur le fil. Corrigé dans `ServerWarAttack.toDefense`
+(conversion via `ClientNetworkStateConverter.getHeroData`, sabotage reporté).
+
+### 5.4 ⚠️ `createGuild` n'exige pas que le joueur soit sans guilde
+
+Constaté en semant l'adversaire : un membre de « Baroness Legion » a pu créer « Rival Syndicate » **sans
+quitter** la première, qui a gardé son identifiant dans son roster. Le serveur autoritatif doit refuser (ou
+faire quitter d'abord). **Non corrigé à ce stade — inscrit ici pour ne pas le perdre.**
+
+### 5.5 Ce qui EST vérifié en jeu, action par action
+
+| Action | Message / commande | Résultat en jeu |
+|---|---|---|
+| S'inscrire en file | `CHANGE_WAR_QUEUE` | ✅ accepté, persisté (rôle RULER validé) |
+| Poser sa défense | `HeroLineupUpdate(WAR_DEFENSE_1..3)` | ✅ ×3, persistée, **et resynchronisée dans la guerre** |
+| S'affecter à une salle | `ASSIGN_WAR_CAR` | ✅ accepté ; l'écran passe la salle à **3/3** avec l'écusson de défense |
+| Voir la défense adverse | `GetWarInfo` | ✅ salle adverse à **0/15 · 3/3** (15 héros, 3 équipes) |
+| Saboter un défenseur | `WAR_SABOTAGE_DEFENDER` | ✅ `REDUCE_HP_PERCENT` sur STITCH → **coût 67, palier 1 RECALCULÉ serveur** (l'`INDEX` du client est ignoré : anti-triche vérifié en conditions réelles) |
+| Bannir un héros | `WAR_EDIT_BAN_PROTECT` | ⛔ **refusé par le CLIENT** : `WAR_BAN_PROTECT_MAX_PROTECT_SIZE` — la taille de ban/protect vient d'un perk de guilde, et la guilde de test est **niveau 0**. Gate FIDÈLE du jeu, pas un défaut serveur. |
+| S'entraîner | `WAR_SPAR_TARGET` | ⛔ **refusé par le CLIENT** : `WAR_SPARS_NOT_ENOUTH` (sic) — quota de spars = perk `WAR_SPARS`, nul au niveau 0. Même conclusion. |
+| Attaquer | `START_WAR_ATTACK` | ⚠️ **partiellement vérifié** : la commande atteint le serveur, qui valide et répond (salle `REDUCE_ATTACKER_HP_FLAT`), et le défaut de sérialisation §5.3 est corrigé. Mais après passage en phase ACTIVE, le client n'a plus ré-émis la commande (le pilote la construit, `GameStateManager.startAction` ne l'envoie pas). **Cause non élucidée — à reprendre.** |
+
+### 5.6 Restent NON vérifiés en jeu
+
+* **Attaque menée à son terme** (3 vagues → `WarAttack` → points) — bloquée par le point ci-dessus.
+* **Bans / protections / spars** — nécessitent une guilde avec des **perks** (niveau > 0), donc l'économie
+  d'influence ; le gate est celui du jeu, les handlers serveur sont couverts headless.
+* **Clôture de guerre, MMR, boîtes de promotion/saison, réclamation d'une boîte** — l'outil
+  `AdminWar --end` existe pour ramener l'échéance à maintenant, la séquence n'a pas encore été jouée.
+* **`GetWarSeasonsList`, `EditGuildWarSettings`, `CHANGE_WAR_TARGET`, `GET_WAR_MEMBER_INFO`,
+  `GET_WAR_MOMENTS`, `RECORD_PHONY_WAR_ACTIVITY`, `CLAIM_WAR_BOX_REWARD`** — non exercés.
+
+### 5.7 Outillage ajouté (aucune modification du jeu)
+
+* Pilote DEV : `warqueue`, `wardefense <1|2|3>`, `warassign <CAR>`, `warsabotage <hero> <type>`,
+  `warban <hero> [protect]`, `warspar`, `warattack`, `wartarget <CAR>` — tous passent par les **API clientes
+  d'origine** (`ClientActionHelper.*`, `WarClientHelper.try*`), jamais par une coordonnée devinée. Les
+  commandes `warban`/`warspar` demandent d'abord **son verdict au client** et l'affichent : c'est ainsi que
+  les deux refus ci-dessus ont été identifiés comme des gates du jeu et non des silences.
+* `server/smoke/WarSetup.java` : héros, jetons de guerre, défense et affectation de salle d'un compte.
+* `server/smoke/WarRivalSeed.java` : guilde adverse inscrite en file.
+* `AdminWar` : `--status`, `--tick [--force]`, `--resync`, `--advance`, `--end`.

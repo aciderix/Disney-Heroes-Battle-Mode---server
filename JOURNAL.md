@@ -1,5 +1,53 @@
 # JOURNAL — journal détaillé des modifications
 
+## 2026-08-02 (g44) — « tout vérifier en jeu » : les ACTIONS de guerre — 4 défauts RÉELS
+
+Consigne de l'utilisateur : vérifier TOUT en jeu, sans exception. Cette session est passée de l'affichage
+aux ACTIONS. Elle a coûté **quatre défauts réels**, dont trois qu'aucun test headless ne pouvait voir.
+Détail complet et tableau action par action : [`docs/GUILD_WAR.md`](docs/GUILD_WAR.md) §5.
+
+**1. Personne ne participait jamais à une guerre.** Rien, nulle part, ne créait de `WarMemberInfo` :
+`WarGuildInfo.members` restait vide pour toujours. D'où, en cascade, « ce joueur ne participe pas à cette
+guerre » sur toute affectation de salle, aucune cible d'attaque, et 0/0 partout à l'écran. **Les tests
+headless ne pouvaient pas l'attraper : ils fabriquaient eux-mêmes les `WarMemberInfo` qu'ils testaient.**
+Nouveau `ServerWarMembers` : les membres sont bâtis depuis les lineups `WAR_DEFENSE_1..3` réellement posés
+(chemin du jeu, comme la défense d'arène), à l'ouverture de la guerre ET à chaque changement de défense ;
+l'état de guerre déjà acquis (héros KO, sabotages) est reporté héros par héros, apparié par `UnitType`.
+
+**2. `grantHero` inversait ÉTOILES et NIVEAU — le client plantait au hub.** Relevé au bytecode :
+`createAndAddHero(type, rarity, i3, i4, …)` → `createUnitData` fait `setStars(i3)`, `setLevel(i4)`. On
+passait `(level, stars)`. Un héros « niveau 40 » recevait donc **40 étoiles**, et
+`HasEnoughCollectionHeroes` indexait une liste de taille 7 avec 40 → `IndexOutOfBoundsException` au rendu du
+menu latéral : **compte injouable**. `SkillUpgradeTest`/`SkillSetup` produisaient la même corruption sans
+jamais l'asserter.
+
+**3. `StartWarAttackResponse` ne se sérialisait pas — attaquer était impossible.** `WarDefense.defenders`
+attend des `WarHeroData` (héros complet, pour combattre), pas les `WarHeroSummary` de l'état de guerre.
+Recopier la liste compilait (dex2jar efface les génériques) mais levait `ClassCastException` **à l'écriture
+sur le fil**, après que le serveur eut journalisé « [persisté] ». Le défaut n'existait donc que du point de
+vue du client, qui ne recevait jamais la réponse — invisible headless, par construction.
+
+**4. `createGuild` n'exige pas que le joueur soit sans guilde** (constaté en semant l'adversaire : un membre
+a créé une seconde guilde sans quitter la première, qui a gardé son identifiant). Inscrit, non corrigé.
+
+**Vérifié en jeu** : inscription en file, pose des trois défenses (+ resynchronisation dans la guerre),
+affectation de salle (la salle passe à 3/3 avec l'écusson), lecture de la défense adverse (0/15 · 3/3), et
+**sabotage** — `REDUCE_HP_PERCENT` sur STITCH, **coût 67 / palier 1 RECALCULÉ par le serveur** en ignorant
+l'`INDEX` envoyé par le client : l'anti-triche est prouvé en conditions réelles.
+
+**Deux refus, et ce sont ceux du JEU** : `WAR_BAN_PROTECT_MAX_PROTECT_SIZE` et `WAR_SPARS_NOT_ENOUTH` — la
+taille de ban/protect et le quota de spars viennent de perks de guilde, et la guilde de test est niveau 0.
+Le pilote demande maintenant **son verdict au client** avant d'envoyer, ce qui a permis de nommer ces gates
+au lieu de constater un silence.
+
+**Reste** : l'attaque menée à terme (la commande atteint le serveur mais le client cesse de la ré-émettre
+après le passage en phase ACTIVE — cause non élucidée), les bans/spars (exigent une guilde avec perks), la
+clôture + MMR + boîtes + réclamation, et six commandes de lecture non encore exercées. Tout est listé en
+§5.6 de la doc, sans arrondi.
+
+Régression **76/76**. Outillage ajouté sans toucher au jeu : huit commandes de pilote passant par les API
+clientes d'origine, `WarSetup`, `WarRivalSeed`, et `AdminWar --resync/--advance/--end`.
+
 ## 2026-08-02 (g43) — GUILD WAR : ✅ VÉRIFIÉ EN JEU (client réel → notre serveur → affichage)
 
 La pièce qui manquait depuis le début du mode : la **vérification EN JEU** (PRINCIPLES §8). Menée sur

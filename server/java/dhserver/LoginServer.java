@@ -964,6 +964,24 @@ public final class LoginServer {
                 System.out.println("[login]     ! persistance échouée: " + e); } }
               System.out.println("[login] <== HeroLineupUpdate(" + hlu.type + ")"
                   + (applied ? " → lineup enregistrée [persistée]" : " refusée"));
+              // GUERRE DE GUILDE : une défense de guerre change la GUERRE EN COURS, pas seulement le joueur.
+              // On resynchronise SON entrée dans l'état partagé (l'état de guerre déjà acquis — héros KO,
+              // sabotages — est reporté par ServerWarMembers) et on rediffuse aux membres en ligne.
+              if (applied && hlu.type != null && hlu.type.name().startsWith("WAR_DEFENSE")) {
+                ServerGuild wg = currentGuild(user);
+                ServerWarState ww = warOf(wg, 0);
+                if (ww != null && ServerWarMembers.syncOne(ww, wg, user)) {
+                  try {
+                    store.saveWar(ww);
+                    com.perblue.heroes.network.messages.WarInfo wi = ww.toWarInfo(wg.guildID);
+                    pushToGuild(wg, 0L, wi);
+                    System.out.println("[login]     défense de guerre resynchronisée (guerre #" + ww.warID
+                        + ") [persistée]");
+                  } catch (Exception e) {
+                    System.out.println("[login]     ! resynchro défense de guerre échouée: " + e);
+                  }
+                }
+              }
             } else if (m instanceof com.perblue.heroes.network.messages.GetArenaInfo) {
               // OUVERTURE DE L'ARÈNE (FIGHT_PIT/COLISEUM) — le client (ArenaLeagueScreen) envoie GetArenaInfo{type}
               // et attend un ArenaInfo pour rendre l'écran (sinon « LOADING… » infini — trouvé EN JEU). Le builder

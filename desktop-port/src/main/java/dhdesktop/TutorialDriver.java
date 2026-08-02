@@ -833,6 +833,156 @@ public final class TutorialDriver {
         } catch (Throwable t) { System.out.println("[warqueue] échec: " + t); }
     }
 
+    /** DEV : POSE une équipe de DÉFENSE DE GUERRE via le CHEMIN RÉEL du jeu
+     *  ({@code ClientActionHelper.saveHeroLineup} → message {@code HeroLineupUpdate}), avec les 5 héros
+     *  suivants du roster. Le garage étant entièrement CLOS pendant la phase de sabotage (jour 1), l'écran
+     *  n'offre pas de point d'entrée — on emprunte donc l'API que la fenêtre de lineups appelle elle-même.
+     *  Invoqué via clickfile "wardefense &lt;1|2|3&gt;". */
+    public static void setWarDefense(GameMain game, String which) {
+        try {
+            int n = Integer.parseInt(which.trim());
+            com.perblue.heroes.network.messages.HeroLineupType type =
+                com.perblue.heroes.network.messages.HeroLineupType.valueOf("WAR_DEFENSE_" + n);
+            com.perblue.heroes.game.objects.User u = game.getYourUser();
+            if (u == null) { System.out.println("[wardefense] pas de joueur"); return; }
+            java.util.List<com.perblue.heroes.network.messages.UnitType> all = new java.util.ArrayList<>();
+            for (Object o : u.getHeroes()) {
+                all.add(((com.perblue.heroes.game.objects.UnitData) o).getType());
+            }
+            com.perblue.heroes.network.messages.HeroLineup hl =
+                new com.perblue.heroes.network.messages.HeroLineup();
+            @SuppressWarnings("unchecked") java.util.List<Object> heroes = (java.util.List<Object>) hl.heroes;
+            int start = (n - 1) * 5;
+            for (int i = start; i < start + 5 && i < all.size(); i++) heroes.add(all.get(i));
+            com.perblue.heroes.game.ClientActionHelper.saveHeroLineup(type, 0L, hl, null);
+            System.out.println("[wardefense] " + type + " ← " + heroes.size() + " héros " + heroes
+                + " [chemin saveHeroLineup réel]");
+        } catch (Throwable t) { System.out.println("[wardefense] échec: " + t); }
+    }
+
+    /** DEV : AFFECTE le joueur à une SALLE du garage via le CHEMIN RÉEL du jeu
+     *  ({@code ClientActionHelper.assignWarCar} → Action {@code ASSIGN_WAR_CAR}).
+     *  Invoqué via clickfile "warassign &lt;WarCarType&gt;". */
+    public static void assignWarCar(GameMain game, String car) {
+        try {
+            com.perblue.heroes.network.messages.WarCarType ct =
+                com.perblue.heroes.network.messages.WarCarType.valueOf(car.trim().toUpperCase());
+            com.perblue.heroes.game.objects.User u = game.getYourUser();
+            if (u == null) { System.out.println("[warassign] pas de joueur"); return; }
+            com.perblue.heroes.game.ClientActionHelper.assignWarCar(u.getID(), ct);
+            System.out.println("[warassign] ASSIGN_WAR_CAR(" + ct + ") envoyée [chemin réel]");
+        } catch (Throwable t) { System.out.println("[warassign] échec: " + t); }
+    }
+
+    /** Le {@code WarInfo} que l'écran de guerre courant détient (champ {@code warInfo} de
+     *  {@code WarBattlefieldScreen}) — c'est l'objet que les actions du jeu prennent en paramètre. */
+    private static com.perblue.heroes.network.messages.WarInfo currentWarInfo(GameMain game) {
+        try {
+            Object screen = game.getScreenManager().getScreen();
+            for (Class<?> c = screen.getClass(); c != null; c = c.getSuperclass()) {
+                for (java.lang.reflect.Field f : c.getDeclaredFields()) {
+                    if (f.getType() == com.perblue.heroes.network.messages.WarInfo.class) {
+                        f.setAccessible(true);
+                        return (com.perblue.heroes.network.messages.WarInfo) f.get(screen);
+                    }
+                }
+            }
+            System.out.println("[war] écran courant sans WarInfo : " + screen.getClass().getSimpleName());
+        } catch (Throwable t) { System.out.println("[war] WarInfo introuvable : " + t); }
+        return null;
+    }
+
+    /** L'identifiant du premier membre ADVERSE (pour cibler sabotage/attaque/spar). */
+    private static long firstEnemyMember(com.perblue.heroes.network.messages.WarInfo wi) {
+        try {
+            for (Object o : wi.enemyGuild.members.values()) {
+                com.perblue.heroes.network.messages.WarMemberInfo m =
+                    (com.perblue.heroes.network.messages.WarMemberInfo) o;
+                if (m.userInfo != null) return m.userInfo.iD;
+            }
+        } catch (Throwable ignore) {}
+        return 0L;
+    }
+
+    /** DEV : SABOTE un héros défenseur adverse via le chemin réel
+     *  ({@code ClientActionHelper.sabotageWarDefender} → Action {@code WAR_SABOTAGE_DEFENDER}).
+     *  Invoqué via clickfile "warsabotage &lt;UnitType&gt; &lt;WarSabotageType&gt;". */
+    public static void sabotageWarDefender(GameMain game, String args) {
+        try {
+            String[] p = args.trim().split("[,;\\s]+");
+            com.perblue.heroes.network.messages.WarInfo wi = currentWarInfo(game);
+            if (wi == null) return;
+            long target = firstEnemyMember(wi);
+            com.perblue.heroes.network.messages.UnitType hero =
+                com.perblue.heroes.network.messages.UnitType.valueOf(p[0].toUpperCase());
+            com.perblue.heroes.network.messages.WarSabotageType sab =
+                com.perblue.heroes.network.messages.WarSabotageType.valueOf(p[1].toUpperCase());
+            com.perblue.heroes.game.ClientActionHelper.sabotageWarDefender(wi, target, hero, sab,
+                com.perblue.heroes.network.messages.ResourceType.WAR_TOKENS, 0, null);
+            System.out.println("[warsabotage] " + sab + " sur " + hero + " de " + target + " [chemin réel]");
+        } catch (Throwable t) { System.out.println("[warsabotage] échec: " + t); }
+    }
+
+    /** DEV : pose un BAN (ou une PROTECTION) via {@code ClientActionHelper.doWarEditBanProtect} →
+     *  Action {@code WAR_EDIT_BAN_PROTECT}. Invoqué via "warban &lt;UnitType&gt; [protect]". */
+    public static void warBanProtect(GameMain game, String args) {
+        try {
+            String[] p = args.trim().split("[,;\\s]+");
+            com.perblue.heroes.network.messages.WarInfo wi = currentWarInfo(game);
+            if (wi == null) return;
+            boolean protect = p.length > 1 && p[1].equalsIgnoreCase("protect");
+            java.util.List<com.perblue.heroes.network.messages.UnitType> units = new java.util.ArrayList<>();
+            units.add(com.perblue.heroes.network.messages.UnitType.valueOf(p[0].toUpperCase()));
+            // On demande D'ABORD au client SON verdict (c'est lui qui décide ce qui est légal) : s'il refuse,
+            // rien n'est envoyé et on saura POURQUOI au lieu de constater un silence.
+            Object code = com.perblue.heroes.ui.war.WarClientHelper.tryEditWarBanProtect(
+                game.getYourUser(), wi.yourGuild, units, protect, 0L);
+            System.out.println("[warban] verdict client = " + code);
+            if (code != null) return;
+            com.perblue.heroes.game.ClientActionHelper.doWarEditBanProtect(wi, units, protect, 0L, null);
+            System.out.println("[warban] " + (protect ? "PROTECT" : "BAN") + " " + units + " [chemin réel]");
+        } catch (Throwable t) { System.out.println("[warban] échec: " + t); }
+    }
+
+    /** DEV : SPAR contre un membre adverse ({@code ClientActionHelper.doSpar} → {@code WAR_SPAR_TARGET}).
+     *  Invoqué via "warspar". */
+    public static void warSpar(GameMain game) {
+        try {
+            com.perblue.heroes.network.messages.WarInfo wi = currentWarInfo(game);
+            if (wi == null) return;
+            long target = firstEnemyMember(wi);
+            Object code = com.perblue.heroes.ui.war.WarClientHelper.trySpar(game.getYourUser(), wi, target, 0);
+            System.out.println("[warspar] verdict client = " + code);
+            if (code != null) return;
+            com.perblue.heroes.game.ClientActionHelper.doSpar(wi, target, 0, null);
+            System.out.println("[warspar] spar contre " + target + " [chemin réel]");
+        } catch (Throwable t) { System.out.println("[warspar] échec: " + t); }
+    }
+
+    /** DEV : DÉMARRE une attaque de guerre ({@code ClientActionHelper.startWarAttack} →
+     *  {@code START_WAR_ATTACK}). Invoqué via "warattack". */
+    public static void warAttack(GameMain game) {
+        try {
+            com.perblue.heroes.network.messages.WarInfo wi = currentWarInfo(game);
+            if (wi == null) return;
+            long target = firstEnemyMember(wi);
+            com.perblue.heroes.game.ClientActionHelper.startWarAttack(wi, target, 0);
+            System.out.println("[warattack] START_WAR_ATTACK sur " + target + " [chemin réel]");
+        } catch (Throwable t) { System.out.println("[warattack] échec: " + t); }
+    }
+
+    /** DEV : change la SALLE CIBLÉE par la guilde ({@code changeWarTarget} → {@code CHANGE_WAR_TARGET}).
+     *  Invoqué via "wartarget &lt;WarCarType&gt;". */
+    public static void warTarget(GameMain game, String car) {
+        try {
+            com.perblue.heroes.network.messages.WarInfo wi = currentWarInfo(game);
+            if (wi == null) return;
+            com.perblue.heroes.game.ClientActionHelper.changeWarTarget(wi,
+                com.perblue.heroes.network.messages.WarCarType.valueOf(car.trim().toUpperCase()), true);
+            System.out.println("[wartarget] CHANGE_WAR_TARGET(" + car + ") [chemin réel]");
+        } catch (Throwable t) { System.out.println("[wartarget] échec: " + t); }
+    }
+
     /** DEV : POSTE un héros comme mercenaire (Action POST_HERO), sans navigation MERCENARIES.
      *  Invoqué via clickfile "postmerc &lt;UnitType&gt;". */
     public static void postMerc(GameMain game, String heroName) {
