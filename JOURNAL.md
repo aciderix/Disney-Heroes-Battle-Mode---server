@@ -1,5 +1,62 @@
 # JOURNAL — journal détaillé des modifications
 
+## 2026-08-02 (g41) — GUILD WAR (#68) : mode COMPLET côté serveur, branché de bout en bout
+
+Neuf incréments, chacun commité et poussé séparément, chacun avec son test dédié.
+Doc de suivi complète : [`docs/GUILD_WAR.md`](docs/GUILD_WAR.md).
+
+**Méthode : la preuve avant le code.** Trois faits établis avant d'écrire une ligne.
+1. La logique WAR est **cliente** (`WarStats`/`WarHelper`/`WarCombatHelper`/`ui.war.WarClientHelper`) —
+   même configuration favorable qu'INVASION.
+2. Scan du pool de constantes des **20 341 classes** `com/perblue/**` : **28 constantes** de
+   `war_constants.tab` n'apparaissent QUE dans leur propre déclaration. Témoin de contrôle validant le
+   discriminant : les constantes réellement consommées apparaissent dans ≥ 2 classes. Même signature que
+   `MERCENARY_COST` ⇒ elles sont parsées **pour le serveur**.
+3. Le jeu **documente ses propres règles** dans `HowToPlay.properties` (cartes `WAR_CARD_*`), et elles
+   correspondent **une à une** aux constantes (1 pt/lineup, 100/salle, sabotage 24 h + bans 12 h, « top
+   ten → Gold », « others Copper to Silver », « cannot be demoted »).
+
+**Livré** : `ServerWar` (saisons/ligues/MMR/reset), `ServerWarState` (état SYMÉTRIQUE, deux vues) + table
+`wars`, `ServerGuild` v8, `ServerWarMatchmaker` (appariement, anti-rematch, BYE, phases), `ServerWarCars`
+(dérivation des voitures, étoiles, portes), `ServerWarAttack` + `ServerWarScoring` (validations, KO
+définitif, barème), `ServerWarSabotage` (sabotages/bans/protections/spars), `ServerWarEnd` (issue, MMR,
+remboursements, boîtes), `ServerWarBoxes` + table `user_war_boxes`. **7 messages et 11 commandes branchés**
+dans `LoginServer`, avec diffusion à la guilde. **7 tests dédiés. Régression 74/74.**
+
+**Trois défauts RÉELS trouvés et corrigés en route**
+1. `nextGuildID` lisait `MAX+1` **avant** insertion → deux créations concurrentes obtenaient le **même
+   identifiant** et la seconde **écrasait** la première (upsert), faisant disparaître une guilde sans la
+   moindre erreur. Alloue désormais sous verrou via un compteur persisté.
+2. `ServerGuild` v8 **dupliquait** `warQueueState`/`warExtraAttackRank`/`warEndTime` que porte déjà le
+   `GuildInfo` **du jeu**, lu par le client → double source de vérité (§4/§6). Sans `warEndTime` écrit
+   dans le `GuildInfo`, **le client n'aurait jamais vu de guerre active** — et les logs Windows fournis le
+   jour même l'ont confirmé indépendamment (`isWarActive` appelé à chaque rendu du hub).
+3. **`setCount(UserFlag)` ne persiste PAS** (les compteurs vivent dans `User.counts`, hors `this.extra`)
+   alors que `setTime` oui. `creditMercenaryHireReward` (#64) faisait `setCount` **sans** `resyncCounts`
+   et son commentaire affirmait le contraire : le compteur hebdomadaire « earned this week » repartait à
+   zéro à chaque round-trip. `GuildMercRewardTest` ne l'avait pas vu car il n'assertait que la monnaie.
+
+**Six fois, mes TESTS avaient tort et la règle du jeu raison** — cinq d'entre elles autour de la même
+phrase, « a room with no defenders is automatically defeated and worth 100 points to the other side » :
+un étage dégarni ouvre immédiatement l'étage suivant ; les salles vides valent déjà 100 points chacune à
+l'adversaire ; l'attaquant qui garnit moins de salles PERD malgré ses attaques réussies (608 contre 700).
+La sixième : une défense de guerre compte **15 héros distincts** — le protocole identifie la victime d'un
+sabotage par son **seul `UnitType`**, ce qui n'aurait aucun sens autrement.
+
+**Quatre lectures/inférences assumées**, chacune isolée dans UNE méthode et documentée : `ratingChange`
+(Elo standard sur `ELO_K`/`ELO_N`), `rematchPenalty` (interpolation par ancienneté), `sabotageCurrency`
+= `WAR_TOKENS`, durée du jour 2. Plus `ELO_LOSS_BUFFER_THRESHOLD`, **lue mais volontairement NON
+appliquée** — j'avais d'abord inventé un rôle pour elle, le test l'a démenti, et l'analyse a montré que
+c'était à la fois arbitraire ET sans effet.
+
+**Garde-fou mesuré** : les récompenses de SAISON n'ont aucun `max(…,1)` et deviennent **négatives sous
+TL 289** (282 en LEGENDARY) — les créditer **retirerait** des ressources au joueur. `keepPositive` écarte
+les quantités ≤ 0 ; les lignes de PROMOTION, elles, ne descendent jamais à 0 (vérifié sur 84 boîtes).
+
+**Restent** : distribution automatique des boîtes (promotion / fin de saison) et un ordonnanceur
+(appariement, clôture) — les fonctions existent, le déclencheur manque. **Et surtout la vérification EN
+JEU, nulle à ce jour** : statut 🟢, pas ✅.
+
 ## 2026-08-02 (g40) — PREMIER RUN WINDOWS de la pile complète (logs fournis par l'utilisateur)
 
 L'utilisateur a réussi à lancer le jeu **sur Windows** (Intel UHD 620, GL 3.2, 1280×720) et a fourni

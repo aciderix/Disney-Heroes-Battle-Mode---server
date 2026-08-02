@@ -69,6 +69,12 @@ public final class UserStore implements AutoCloseable {
           + "updatedAt INTEGER NOT NULL, PRIMARY KEY (shardID, warID))");
       s.execute("CREATE INDEX IF NOT EXISTS wars_by_guildA ON wars (shardID, guildA, startTime DESC)");
       s.execute("CREATE INDEX IF NOT EXISTS wars_by_guildB ON wars (shardID, guildB, startTime DESC)");
+      // GUILD WAR #68 : boîtes de guerre EN ATTENTE, par joueur. Gagnées par la guilde (promotion, fin de
+      // saison) mais réclamées individuellement (`CLAIM_WAR_BOX_REWARD`), d'où une table par joueur —
+      // même forme que `user_invasion`.
+      s.execute("CREATE TABLE IF NOT EXISTS user_war_boxes ("
+          + "shardID INTEGER NOT NULL, userID INTEGER NOT NULL, data BLOB NOT NULL, "
+          + "updatedAt INTEGER NOT NULL, PRIMARY KEY (shardID, userID))");
     }
   }
 
@@ -133,6 +139,32 @@ public final class UserStore implements AutoCloseable {
       }
     }
     return out;
+  }
+
+  /** GUILD WAR #68 — boîtes de guerre en attente de {@code (shard, userID)} (jamais {@code null}). */
+  public synchronized ServerWarBoxes loadWarBoxes(int shardID, long userID) throws SQLException {
+    try (PreparedStatement ps = conn.prepareStatement(
+        "SELECT data FROM user_war_boxes WHERE shardID=? AND userID=?")) {
+      ps.setInt(1, shardID);
+      ps.setLong(2, userID);
+      try (ResultSet rs = ps.executeQuery()) {
+        if (rs.next()) return ServerWarBoxes.fromBytes(rs.getBytes(1));
+      }
+    }
+    return new ServerWarBoxes();
+  }
+
+  /** GUILD WAR #68 — enregistre les boîtes en attente d'un joueur. */
+  public synchronized void saveWarBoxes(int shardID, long userID, ServerWarBoxes boxes) throws SQLException {
+    try (PreparedStatement ps = conn.prepareStatement(
+        "INSERT INTO user_war_boxes (shardID, userID, data, updatedAt) VALUES (?,?,?,?) "
+            + "ON CONFLICT(shardID, userID) DO UPDATE SET data=excluded.data, updatedAt=excluded.updatedAt")) {
+      ps.setInt(1, shardID);
+      ps.setLong(2, userID);
+      ps.setBytes(3, boxes.toBytes());
+      ps.setLong(4, System.currentTimeMillis());
+      ps.executeUpdate();
+    }
   }
 
   /** GUILD WAR #68 — prochain warID libre du shard (max+1, base 1). */

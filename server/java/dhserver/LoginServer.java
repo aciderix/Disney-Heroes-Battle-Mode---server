@@ -597,6 +597,265 @@ public final class LoginServer {
                   || act.command == com.perblue.heroes.network.messages.CommandType.VIEWED_CONTEST_POINTS) {
                 // Marqueurs « vu » (pastille) — informationnels, pas d'état à modifier. On acquitte (pas de LOADING).
                 System.out.println("[login]     action " + act.command + " (marqueur vu, no-op)");
+              } else if (act.command == com.perblue.heroes.network.messages.CommandType.CHANGE_WAR_QUEUE) {
+                // GUILD WAR (#68) — inscription / retrait de la file. Contrôles du client ré-exécutés.
+                ServerGuild g = currentGuild(user);
+                com.perblue.heroes.network.messages.WarQueueState want = enumExtra(act,
+                    com.perblue.heroes.network.messages.ActionExtraType.TYPE,
+                    com.perblue.heroes.network.messages.WarQueueState.class,
+                    com.perblue.heroes.network.messages.WarQueueState.NOT_QUEUED);
+                String err = g == null ? "joueur sans guilde"
+                    : ServerWar.changeQueueState(g, user, want,
+                        com.perblue.heroes.util.TimeUtil.serverTimeNow());
+                if (err != null) {
+                  System.out.println("[login]     ⛔ CHANGE_WAR_QUEUE REFUSÉ : " + err);
+                } else {
+                  store.saveGuild(g);
+                  com.perblue.heroes.network.messages.WarQueueStateUpdate up =
+                      new com.perblue.heroes.network.messages.WarQueueStateUpdate();
+                  up.guildID = g.guildID; up.newState = g.warQueueState();
+                  c.send(up); pushToGuild(g, user.userID, up);
+                  System.out.println("[login] <== CHANGE_WAR_QUEUE → " + up.newState + " [persisté]");
+                }
+
+              } else if (act.command == com.perblue.heroes.network.messages.CommandType.ASSIGN_WAR_CAR) {
+                ServerGuild g = currentGuild(user);
+                ServerWarState w = warOf(g, 0);
+                long targetID = extraLong(act,
+                    com.perblue.heroes.network.messages.ActionExtraType.ID, user.userID);
+                com.perblue.heroes.network.messages.WarCarType car = enumExtra(act,
+                    com.perblue.heroes.network.messages.ActionExtraType.TYPE,
+                    com.perblue.heroes.network.messages.WarCarType.class,
+                    com.perblue.heroes.network.messages.WarCarType.DEFAULT);
+                String err = w == null ? "aucune guerre en cours"
+                    : ServerWarCars.assignCar(g, w, user.userID, user.currentGuildRole(), targetID, car);
+                if (err != null) {
+                  System.out.println("[login]     ⛔ ASSIGN_WAR_CAR REFUSÉ : " + err);
+                } else {
+                  store.saveWar(w);
+                  com.perblue.heroes.network.messages.WarCarAssignmentUpdate up =
+                      new com.perblue.heroes.network.messages.WarCarAssignmentUpdate();
+                  up.guildID = g.guildID; up.userID = targetID; up.assignedCar = car;
+                  c.send(up); pushToGuild(g, user.userID, up);
+                  System.out.println("[login] <== ASSIGN_WAR_CAR " + targetID + " → " + car + " [persisté]");
+                }
+
+              } else if (act.command == com.perblue.heroes.network.messages.CommandType.CHANGE_WAR_TARGET) {
+                ServerGuild g = currentGuild(user);
+                ServerWarState w = warOf(g, 0);
+                com.perblue.heroes.network.messages.WarCarType car = enumExtra(act,
+                    com.perblue.heroes.network.messages.ActionExtraType.SLOT,
+                    com.perblue.heroes.network.messages.WarCarType.class,
+                    com.perblue.heroes.network.messages.WarCarType.DEFAULT);
+                boolean targeted = Boolean.parseBoolean(String.valueOf(
+                    act.extra == null ? "false"
+                        : act.extra.get(com.perblue.heroes.network.messages.ActionExtraType.TYPE)));
+                if (w == null) {
+                  System.out.println("[login]     ⛔ CHANGE_WAR_TARGET : aucune guerre en cours");
+                } else if (!com.perblue.heroes.game.logic.GuildHelper.canWarTarget(user.currentGuildRole())) {
+                  System.out.println("[login]     ⛔ CHANGE_WAR_TARGET REFUSÉ : rôle "
+                      + user.currentGuildRole());
+                } else {
+                  com.perblue.heroes.network.messages.WarGuildInfo enemy = w.enemySideOf(g.guildID);
+                  com.perblue.heroes.network.messages.WarCarInfo info =
+                      enemy.cars == null ? null : (com.perblue.heroes.network.messages.WarCarInfo)
+                          enemy.cars.get(car);
+                  if (info == null) {
+                    System.out.println("[login]     ⛔ CHANGE_WAR_TARGET : salle " + car + " inconnue");
+                  } else {
+                    info.targeted = targeted;
+                    w.putSide(w.opponentOf(g.guildID), enemy);
+                    store.saveWar(w);
+                    com.perblue.heroes.network.messages.WarTargetUpdate up =
+                        new com.perblue.heroes.network.messages.WarTargetUpdate();
+                    up.guildID = g.guildID; up.car = car; up.targeted = targeted;
+                    c.send(up); pushToGuild(g, user.userID, up);
+                    System.out.println("[login] <== CHANGE_WAR_TARGET " + car + " → " + targeted
+                        + " [persisté]");
+                  }
+                }
+
+              } else if (act.command
+                  == com.perblue.heroes.network.messages.CommandType.WAR_SABOTAGE_DEFENDER) {
+                ServerGuild g = currentGuild(user);
+                ServerWarState w = warOf(g, 0);
+                long targetID = extraLong(act,
+                    com.perblue.heroes.network.messages.ActionExtraType.ID, 0);
+                com.perblue.heroes.network.messages.WarSabotageType type = enumExtra(act,
+                    com.perblue.heroes.network.messages.ActionExtraType.TYPE,
+                    com.perblue.heroes.network.messages.WarSabotageType.class,
+                    com.perblue.heroes.network.messages.WarSabotageType.DEFAULT);
+                // Le héros visé voyage dans le 2e argument de doAction — c'est `Action.heroType`, PAS un
+                // extra (relevé dans ClientActionHelper.sabotageWarDefender).
+                com.perblue.heroes.network.messages.UnitType hero = act.heroType;
+                if (w == null) {
+                  System.out.println("[login]     ⛔ WAR_SABOTAGE_DEFENDER : aucune guerre en cours");
+                } else {
+                  ServerWarSabotage.SabotageResult sr = ServerWarSabotage.sabotage(w, g, user, targetID,
+                      hero, type, com.perblue.heroes.util.TimeUtil.serverTimeNow());
+                  if (!sr.ok()) {
+                    System.out.println("[login]     ⛔ WAR_SABOTAGE_DEFENDER REFUSÉ : " + sr.error);
+                  } else {
+                    store.saveWar(w); store.save(user);
+                    com.perblue.heroes.network.messages.WarSabotageUpdate up =
+                        new com.perblue.heroes.network.messages.WarSabotageUpdate();
+                    up.guildID = g.guildID; up.userID = targetID; up.hero = hero;
+                    up.sabotageType = type; up.sabotagedByUserID = user.userID;
+                    c.send(up); pushToGuild(g, user.userID, up);
+                    System.out.println("[login] <== WAR_SABOTAGE_DEFENDER " + hero + " de " + targetID
+                        + " → " + type + " (coût " + sr.cost + ", palier " + sr.number + ") [persisté]");
+                  }
+                }
+
+              } else if (act.command
+                  == com.perblue.heroes.network.messages.CommandType.WAR_EDIT_BAN_PROTECT) {
+                ServerGuild g = currentGuild(user);
+                ServerWarState w = warOf(g, 0);
+                boolean isBan = Boolean.parseBoolean(String.valueOf(
+                    act.extra == null ? "false"
+                        : act.extra.get(com.perblue.heroes.network.messages.ActionExtraType.INDEX)));
+                java.util.List<com.perblue.heroes.network.messages.UnitType> heroes =
+                    parseUnitList(act.extra == null ? null
+                        : act.extra.get(com.perblue.heroes.network.messages.ActionExtraType.SLOT));
+                String err = w == null ? "aucune guerre en cours"
+                    : ServerWarSabotage.editBanProtect(w, g, user, heroes, isBan,
+                        com.perblue.heroes.util.TimeUtil.serverTimeNow());
+                if (err != null) {
+                  System.out.println("[login]     ⛔ WAR_EDIT_BAN_PROTECT REFUSÉ : " + err);
+                } else {
+                  store.saveWar(w);
+                  com.perblue.heroes.network.messages.WarEditBanProtectUpdate up =
+                      new com.perblue.heroes.network.messages.WarEditBanProtectUpdate();
+                  up.guildID = g.guildID; up.userID = user.userID; up.isBan = isBan; up.warID = w.warID;
+                  up.heroes.addAll(heroes);
+                  c.send(up); pushToGuild(g, user.userID, up);
+                  System.out.println("[login] <== WAR_EDIT_BAN_PROTECT " + (isBan ? "bans" : "protections")
+                      + " = " + heroes + " [persisté]");
+                }
+
+              } else if (act.command == com.perblue.heroes.network.messages.CommandType.WAR_SPAR_TARGET) {
+                ServerGuild g = currentGuild(user);
+                ServerWarState w = warOf(g, 0);
+                long targetID = extraLong(act,
+                    com.perblue.heroes.network.messages.ActionExtraType.ID, 0);
+                String err = w == null ? "aucune guerre en cours"
+                    : ServerWarSabotage.spar(w, g, user, targetID);
+                if (err != null) {
+                  System.out.println("[login]     ⛔ WAR_SPAR_TARGET REFUSÉ : " + err);
+                } else {
+                  store.saveWar(w);
+                  com.perblue.heroes.network.messages.WarSparsUpdate up =
+                      new com.perblue.heroes.network.messages.WarSparsUpdate();
+                  up.guildID = g.guildID; up.userID = user.userID; up.targetUserID = targetID;
+                  com.perblue.heroes.network.messages.WarMemberInfo me =
+                      (com.perblue.heroes.network.messages.WarMemberInfo)
+                          w.sideOf(g.guildID).members.get(user.userID);
+                  up.sparsDealt = me == null ? 0 : me.sparsDealt;
+                  c.send(up); pushToGuild(g, user.userID, up);
+                  System.out.println("[login] <== WAR_SPAR_TARGET " + targetID + " → "
+                      + up.sparsDealt + "/" + ServerWarSabotage.sparQuota(g) + " [persisté]");
+                }
+
+              } else if (act.command == com.perblue.heroes.network.messages.CommandType.START_WAR_ATTACK) {
+                ServerGuild g = currentGuild(user);
+                ServerWarState w = warOf(g, 0);
+                long defenderID = extraLong(act,
+                    com.perblue.heroes.network.messages.ActionExtraType.ID, 0);
+                if (w == null) {
+                  System.out.println("[login]     ⛔ START_WAR_ATTACK : aucune guerre en cours");
+                } else {
+                  ServerWarAttack.StartResult sr = ServerWarAttack.validateStart(w, g, user, defenderID,
+                      com.perblue.heroes.util.TimeUtil.serverTimeNow());
+                  if (!sr.ok()) {
+                    System.out.println("[login]     ⛔ START_WAR_ATTACK REFUSÉ : " + sr.error);
+                  } else {
+                    ServerWarAttack.consumeAttack(w, g, user, sr.usesExtraAttack);
+                    store.saveWar(w); store.save(user);
+                    com.perblue.heroes.network.messages.StartWarAttackResponse resp =
+                        ServerWarAttack.buildStartResponse(w, g.guildID, defenderID);
+                    resp.setAsReplyTo(m);
+                    c.send(resp);
+                    com.perblue.heroes.network.messages.AddInProgressWarAttack add =
+                        new com.perblue.heroes.network.messages.AddInProgressWarAttack();
+                    add.attackerGuildID = g.guildID; add.attackerUserID = user.userID;
+                    add.defenderUserID = defenderID; add.usedExtraAttack = sr.usesExtraAttack;
+                    pushToGuild(g, user.userID, add);
+                    System.out.println("[login] <== START_WAR_ATTACK vs " + defenderID + " (salle "
+                        + resp.currentCar + (sr.usesExtraAttack ? ", attaque BONUS" : "") + ") [persisté]");
+                  }
+                }
+
+              } else if (act.command
+                  == com.perblue.heroes.network.messages.CommandType.CLAIM_WAR_BOX_REWARD) {
+                long boxID = extraLong(act, com.perblue.heroes.network.messages.ActionExtraType.ID, 0);
+                int index = (int) extraLong(act,
+                    com.perblue.heroes.network.messages.ActionExtraType.INDEX, 0);
+                ServerWarBoxes boxes = store.loadWarBoxes(user.shardID, user.userID);
+                com.perblue.heroes.network.messages.RewardDrop chosen = boxes.claim(boxID, index);
+                if (chosen == null) {
+                  System.out.println("[login]     ⛔ CLAIM_WAR_BOX_REWARD : boîte " + boxID
+                      + " / option " + index + " introuvable (déjà réclamée ?)");
+                } else {
+                  user.grantRewards(java.util.Collections.singletonList(chosen));
+                  store.saveWarBoxes(user.shardID, user.userID, boxes);
+                  store.save(user);
+                  System.out.println("[login] <== CLAIM_WAR_BOX_REWARD #" + boxID + " option " + index
+                      + " → " + (chosen.itemType != com.perblue.heroes.network.messages.ItemType.DEFAULT
+                          ? chosen.itemType : chosen.resourceType) + "×" + chosen.quantity
+                      + " (reste " + boxes.size() + " boîte(s)) [persisté]");
+                }
+
+              } else if (act.command == com.perblue.heroes.network.messages.CommandType.GET_WAR_MEMBER_INFO) {
+                ServerGuild g = currentGuild(user);
+                ServerWarState w = warOf(g, 0);
+                long who = extraLong(act, com.perblue.heroes.network.messages.ActionExtraType.ID,
+                    user.userID);
+                com.perblue.heroes.network.messages.WarMemberInfo mi = null;
+                if (w != null) {
+                  com.perblue.heroes.network.messages.WarGuildInfo side = w.sideOf(g.guildID);
+                  if (side != null && side.members != null) {
+                    mi = (com.perblue.heroes.network.messages.WarMemberInfo) side.members.get(who);
+                  }
+                  if (mi == null) {
+                    com.perblue.heroes.network.messages.WarGuildInfo enemy = w.enemySideOf(g.guildID);
+                    if (enemy.members != null) {
+                      mi = (com.perblue.heroes.network.messages.WarMemberInfo) enemy.members.get(who);
+                    }
+                  }
+                }
+                if (mi == null) {
+                  System.out.println("[login]     ~ GET_WAR_MEMBER_INFO " + who + " : introuvable");
+                } else {
+                  mi.setAsReplyTo(m);
+                  c.send(mi);
+                  System.out.println("[login] <== GET_WAR_MEMBER_INFO " + who + " → WarMemberInfo (salle "
+                      + mi.assignedCar + ")");
+                }
+
+              } else if (act.command == com.perblue.heroes.network.messages.CommandType.GET_WAR_MOMENTS) {
+                // Les « moments » sont les guerres récemment commencées/terminées de la guilde.
+                ServerGuild g = currentGuild(user);
+                com.perblue.heroes.network.messages.WarMoments wm =
+                    new com.perblue.heroes.network.messages.WarMoments();
+                if (g != null) {
+                  for (ServerWarState w : store.listWarsForGuild(user.shardID, g.guildID, 10)) {
+                    if (ServerWarEnd.isFinished(w)) wm.endedWars.add(w.toSummary(g.guildID));
+                    else wm.startedWars.add(w.toSummary(g.guildID));
+                  }
+                  wm.seasons.addAll(g.warSeasonHistory());
+                }
+                wm.setAsReplyTo(m);
+                c.send(wm);
+                System.out.println("[login] <== GET_WAR_MOMENTS → " + wm.startedWars.size()
+                    + " en cours, " + wm.endedWars.size() + " terminée(s)");
+
+              } else if (act.command
+                  == com.perblue.heroes.network.messages.CommandType.RECORD_PHONY_WAR_ACTIVITY) {
+                // Notification cliente pure : `ActionHelper.doAction` n'a AUCUNE branche pour ce type
+                // (même cas que RECORD_SERVER_ROLL_FINISHED). On acquitte sans rien simuler — inventer un
+                // compteur ici violerait §4.
+                System.out.println("[login] <== RECORD_PHONY_WAR_ACTIVITY (notification, sans effet serveur)");
+
               } else {
                 boolean applied = user.applyAction(act);
                 if (applied) { try { store.save(user); } catch (Exception e) {
@@ -1313,6 +1572,181 @@ public final class LoginServer {
                   else { System.out.println("[login]     ! donateToGuildRequest échec: " + t); t.printStackTrace(); }
                 }
               }
+            } else if (m instanceof com.perblue.heroes.network.messages.GetWarInfo) {
+              // GUILD WAR (#68) — l'écran de guerre. L'état est SYMÉTRIQUE (ServerWarState) : `toWarInfo`
+              // produit la vue du demandeur, avec son propre camp dans `yourGuild`.
+              ServerGuild g = currentGuild(user);
+              ServerWarState w = warOf(g, ((com.perblue.heroes.network.messages.GetWarInfo) m).warID);
+              com.perblue.heroes.network.messages.WarInfo wi =
+                  w != null ? w.toWarInfo(g.guildID) : new com.perblue.heroes.network.messages.WarInfo();
+              if (w != null) {
+                // Bascule de phase paresseuse : SABOTAGE → ACTIVE, exactement comme le client la ferait.
+                if (ServerWarMatchmaker.advancePhase(w, com.perblue.heroes.util.TimeUtil.serverTimeNow())) {
+                  try { store.saveWar(w); } catch (Exception e) { System.out.println("[login] ! save guerre: " + e); }
+                  wi = w.toWarInfo(g.guildID);
+                }
+              }
+              wi.setAsReplyTo(m);
+              c.send(wi);
+              System.out.println("[login] <== GetWarInfo → ==> WarInfo (guerre #" + wi.warID
+                  + ", état " + wi.state + ")");
+
+            } else if (m instanceof com.perblue.heroes.network.messages.GetWarsList) {
+              // Historique des guerres de la guilde + ligue/MMR/rang courants + boîtes en attente.
+              ServerGuild g = currentGuild(user);
+              com.perblue.heroes.network.messages.WarsList wl =
+                  new com.perblue.heroes.network.messages.WarsList();
+              if (g != null) {
+                ServerWar.rollOverSeason(g, ServerWar.seasonIDAt(
+                    com.perblue.heroes.util.TimeUtil.serverTimeNow()), 0);
+                wl.mMR = ServerWar.currentMMR(g);
+                wl.league = ServerWar.effectiveLeague(wl.mMR, g.warPromotionMask);
+                wl.rank = warRankOf(g);
+                for (ServerWarState w : store.listWarsForGuild(user.shardID, g.guildID,
+                    ServerWar.maxPreviousWars())) {
+                  wl.wars.add(w.toSummary(g.guildID));
+                }
+                wl.unopenedBoxes.addAll(store.loadWarBoxes(user.shardID, user.userID).boxes());
+                store.saveGuild(g);
+              }
+              wl.setAsReplyTo(m);
+              c.send(wl);
+              System.out.println("[login] <== GetWarsList → ==> WarsList (" + wl.wars.size()
+                  + " guerres, ligue " + wl.league + " MMR " + wl.mMR + ", " + wl.unopenedBoxes.size()
+                  + " boîte(s))");
+
+            } else if (m instanceof com.perblue.heroes.network.messages.GetWarSeasonsList) {
+              ServerGuild g = currentGuild(user);
+              com.perblue.heroes.network.messages.WarSeasonsList sl =
+                  new com.perblue.heroes.network.messages.WarSeasonsList();
+              if (g != null) {
+                sl.guildID = g.guildID;
+                sl.currentMMR = ServerWar.currentMMR(g);
+                sl.currentLeague = ServerWar.effectiveLeague(sl.currentMMR, g.warPromotionMask);
+                sl.currentRank = warRankOf(g);
+                sl.seasons.addAll(g.warSeasonHistory());
+                sl.unopenedBoxes.addAll(store.loadWarBoxes(user.shardID, user.userID).boxes());
+              }
+              sl.setAsReplyTo(m);
+              c.send(sl);
+              System.out.println("[login] <== GetWarSeasonsList → ==> WarSeasonsList ("
+                  + sl.seasons.size() + " saison(s) archivée(s), ligue " + sl.currentLeague + ")");
+
+            } else if (m instanceof com.perblue.heroes.network.messages.GetWarRankings) {
+              // Classement des guildes du shard par MMR, dans la ligue demandée.
+              com.perblue.heroes.network.messages.GetWarRankings gr =
+                  (com.perblue.heroes.network.messages.GetWarRankings) m;
+              com.perblue.heroes.network.messages.WarRankings wr =
+                  new com.perblue.heroes.network.messages.WarRankings();
+              wr.league = gr.league;
+              wr.seasonID = ServerWar.seasonIDAt(com.perblue.heroes.util.TimeUtil.serverTimeNow());
+              ServerGuild mine = currentGuild(user);
+              java.util.List<ServerGuild> all = store.listGuilds(user.shardID, null, 10_000);
+              all.sort((x, y) -> Integer.compare(ServerWar.currentMMR(y), ServerWar.currentMMR(x)));
+              int rank = 0;
+              for (ServerGuild g : all) {
+                int mmr = ServerWar.currentMMR(g);
+                com.perblue.heroes.network.messages.WarLeague lg =
+                    ServerWar.effectiveLeague(mmr, g.warPromotionMask);
+                rank++;
+                if (gr.league != null && gr.league != com.perblue.heroes.network.messages.WarLeague.UNRANKED
+                    && lg != gr.league) continue;
+                com.perblue.heroes.network.messages.WarRankingRow row =
+                    new com.perblue.heroes.network.messages.WarRankingRow();
+                row.guild = g.info.basicInfo;
+                row.mmr = mmr;
+                row.rank = rank;
+                wr.rankingRows.add(row);
+                if (mine != null && g.guildID == mine.guildID) wr.yourGuild = row;
+              }
+              wr.setAsReplyTo(m);
+              c.send(wr);
+              System.out.println("[login] <== GetWarRankings(" + gr.league + ") → ==> WarRankings ("
+                  + wr.rankingRows.size() + " guilde(s))");
+
+            } else if (m instanceof com.perblue.heroes.network.messages.RequestWarLogs) {
+              ServerGuild g = currentGuild(user);
+              ServerWarState w = warOf(g, ((com.perblue.heroes.network.messages.RequestWarLogs) m).warID);
+              com.perblue.heroes.network.messages.WarLogs logs =
+                  new com.perblue.heroes.network.messages.WarLogs();
+              if (w != null) {
+                logs.attacks.addAll(w.attacksBy(g.guildID));
+                logs.defenses.addAll(w.attacksAgainst(g.guildID));
+                logs.yourSummary = ServerWarScoring.summaryFor(w, g.guildID);
+                logs.enemySummary = ServerWarScoring.summaryFor(w, w.opponentOf(g.guildID));
+                com.perblue.heroes.network.messages.WarGuildInfo side = w.sideOf(g.guildID);
+                if (side != null && side.members != null) {
+                  for (Object o : side.members.values()) {
+                    com.perblue.heroes.network.messages.WarMemberInfo mi =
+                        (com.perblue.heroes.network.messages.WarMemberInfo) o;
+                    com.perblue.heroes.network.messages.WarLogMember lm =
+                        new com.perblue.heroes.network.messages.WarLogMember();
+                    lm.info = mi.userInfo;
+                    lm.sabotagesDealt = mi.sabotagesDealt;
+                    lm.sparsDealt = mi.sparsDealt;
+                    logs.members.add(lm);
+                  }
+                }
+              }
+              logs.setAsReplyTo(m);
+              c.send(logs);
+              System.out.println("[login] <== RequestWarLogs → ==> WarLogs (" + logs.attacks.size()
+                  + " attaque(s), " + logs.defenses.size() + " défense(s))");
+
+            } else if (m instanceof com.perblue.heroes.network.messages.WarAttack) {
+              // Résultat d'attaque (fire-and-forget, comme CampaignAttack) : le client a joué les 3 vagues,
+              // le serveur applique le verdict à l'état PARTAGÉ et rediffuse le score.
+              com.perblue.heroes.network.messages.WarAttack wa =
+                  (com.perblue.heroes.network.messages.WarAttack) m;
+              ServerGuild g = currentGuild(user);
+              ServerWarState w = warOf(g, 0);
+              if (w == null) {
+                System.out.println("[login]     ⛔ WarAttack : aucune guerre en cours");
+              } else {
+                try {
+                  boolean extra = ServerWarAttack.attacksUsed(w, user) > 1;
+                  ServerWarAttack.recordAttack(w, g.guildID, user.basicInfo(), wa.defendingUserID,
+                      wa.battles, extra, com.perblue.heroes.util.TimeUtil.serverTimeNow());
+                  store.saveWar(w);
+                  com.perblue.heroes.network.messages.WarPointsUpdate up =
+                      ServerWarScoring.toPointsUpdate(w, g.guildID);
+                  c.send(up);
+                  pushToGuild(g, user.userID, up);          // le score est celui de TOUTE la guilde
+                  System.out.println("[login] <== WarAttack vs " + wa.defendingUserID + " ("
+                      + (wa.battles == null ? 0 : wa.battles.size()) + " vagues) → " + up.totalPoints
+                      + " points [persisté]");
+                } catch (Throwable t) {
+                  System.out.println("[login]     ! WarAttack échec : " + t);
+                }
+              }
+
+            } else if (m instanceof com.perblue.heroes.network.messages.EditGuildWarSettings) {
+              // Le chef ouvre (ou restreint) les attaques supplémentaires. Le rang vit dans le GuildInfo DU
+              // JEU (`warExtraAttackRank`), que `GuildHelper.canUseExtraWarAttacks` relit.
+              com.perblue.heroes.network.messages.EditGuildWarSettings es =
+                  (com.perblue.heroes.network.messages.EditGuildWarSettings) m;
+              ServerGuild g = currentGuild(user);
+              if (g == null) {
+                System.out.println("[login]     ⛔ EditGuildWarSettings : joueur sans guilde");
+              } else if (user.currentGuildRole()
+                  != com.perblue.heroes.network.messages.GuildRole.RULER) {
+                // Aucun `GuildPermission` dédié n'existe pour ce réglage ; l'aide du jeu est explicite —
+                // « The Guild LEADER may change the settings to allow any Guild members to use Extra
+                // Attacks » — donc on le réserve au RULER.
+                System.out.println("[login]     ⛔ EditGuildWarSettings REFUSÉ : réservé au chef (rôle "
+                    + user.currentGuildRole() + ")");
+              } else {
+                g.setWarExtraAttackRank(es.extraAttackRank);
+                store.saveGuild(g);
+                com.perblue.heroes.network.messages.UserGuildUpdate up = user.buildUserGuildUpdate(
+                    g, user.currentGuildRole(),
+                    com.perblue.heroes.network.messages.GuildUpdateReason.DEFAULT);
+                up.setAsReplyTo(m);
+                c.send(up);
+                System.out.println("[login] <== EditGuildWarSettings → attaques bonus à partir de "
+                    + es.extraAttackRank + " [persisté]");
+              }
+
             } else if (m instanceof Ping) {
               // Écho de latence/keepalive : le client mesure le RTT et surveille l'activité serveur.
               // Sans réponse, son chien de garde ferme la connexion (« Reconnecting… »).
@@ -1546,6 +1980,59 @@ public final class LoginServer {
       }
 
       /** GUILDES #7 — la guilde courante du joueur (ou {@code null} s'il n'en a pas / introuvable). */
+      /** Lit un enum dans les extras d'une {@code Action} (le client les envoie en texte). */
+      private <E extends Enum<E>> E enumExtra(com.perblue.heroes.network.messages.Action a,
+          com.perblue.heroes.network.messages.ActionExtraType key, Class<E> type, E dflt) {
+        if (a.extra == null) return dflt;
+        Object v = a.extra.get(key);
+        if (v == null) return dflt;
+        if (type.isInstance(v)) return type.cast(v);
+        try { return Enum.valueOf(type, String.valueOf(v)); } catch (Exception e) { return dflt; }
+      }
+
+      /** Lit une liste de héros depuis un extra ({@code WAR_EDIT_BAN_PROTECT} l'envoie en texte). */
+      private java.util.List<com.perblue.heroes.network.messages.UnitType> parseUnitList(Object raw) {
+        java.util.List<com.perblue.heroes.network.messages.UnitType> out = new java.util.ArrayList<>();
+        if (raw == null) return out;
+        if (raw instanceof java.util.Collection) {
+          for (Object o : (java.util.Collection<?>) raw) {
+            try {
+              out.add(o instanceof com.perblue.heroes.network.messages.UnitType
+                  ? (com.perblue.heroes.network.messages.UnitType) o
+                  : com.perblue.heroes.network.messages.UnitType.valueOf(String.valueOf(o).trim()));
+            } catch (Exception ignore) { }
+          }
+          return out;
+        }
+        for (String part : String.valueOf(raw).split("[,;\\s]+")) {
+          if (part.isEmpty()) continue;
+          try { out.add(com.perblue.heroes.network.messages.UnitType.valueOf(part.trim())); }
+          catch (Exception ignore) { }
+        }
+        return out;
+      }
+
+      /** GUILD WAR (#68) — la guerre demandée, ou celle EN COURS de la guilde ({@code warID <= 0}). */
+      private ServerWarState warOf(ServerGuild g, long warID) {
+        if (g == null) return null;
+        long id = warID > 0 ? warID : g.currentWarID;
+        if (id <= 0) return null;
+        try { return store.loadWar(g.shardID, id); }
+        catch (Exception e) { System.out.println("[login]     ! chargement guerre échoué: " + e); return null; }
+      }
+
+      /** GUILD WAR (#68) — rang de la guilde sur le shard, par MMR décroissant (1 = première). */
+      private int warRankOf(ServerGuild g) {
+        if (g == null) return 0;
+        try {
+          int mine = ServerWar.currentMMR(g), rank = 1;
+          for (ServerGuild other : store.listGuilds(g.shardID, null, 10_000)) {
+            if (other.guildID != g.guildID && ServerWar.currentMMR(other) > mine) rank++;
+          }
+          return rank;
+        } catch (Exception e) { return 0; }
+      }
+
       private ServerGuild currentGuild(ServerUser u) {
         if (!u.inGuild()) return null;
         try { return store.loadGuild(u.shardID, u.currentGuildID()); }

@@ -158,7 +158,9 @@ Les **lineups de défense de guerre** arrivent déjà par `HeroLineupUpdate` ave
 | 5 | **Attaques + scoring + journaux** | ✅ FAIT |
 | 6 | **Fin de guerre : issue, delta MMR, remboursements, boîtes** | ✅ FAIT |
 | 7 | **Sabotage / bans / protections / spars** | ✅ FAIT |
-| 8 | Fin de saison : distribution des boîtes + stockage/réclamation | ⬜ |
+| 8 | **Boîtes : stockage par joueur + réclamation** | ✅ FAIT |
+| 9 | **Branchement réseau (7 messages + 11 commandes)** | ✅ FAIT |
+| 10 | Distribution automatique des boîtes en fin de saison | ⬜ |
 
 ### Étape 1 — calendrier, ligues, MMR ✅
 
@@ -428,8 +430,12 @@ plancher de ligue respecté ; guildes libérées ; 2ᵉ clôture sans effet ; ro
 
 * **Stockage et réclamation des boîtes** : `ServerWarEnd` sait les *générer* depuis les tables du jeu ;
   il reste à les attribuer par joueur, les persister et câbler `CLAIM_WAR_BOX_REWARD`.
-* **Handlers réseau** : aucun des 7 messages ni des 11 `CommandType` n'est encore branché dans
-  `LoginServer` — tout le moteur est testé unitairement, rien n'est joignable depuis le client.
+* **Distribution automatique des boîtes** en fin de saison / à la promotion : `ServerWarEnd` sait les
+  générer et `ServerWarBoxes` les stocker et les réclamer, mais rien ne les ATTRIBUE encore
+  automatiquement — il manque le déclencheur (promotion détectée, bascule de saison).
+* **Ordonnanceur** : `pair`/`openWar`/`finishWar`/`advancePhase` existent et sont testés, mais aucune
+  tâche périodique ne les appelle. Les phases avancent paresseusement sur `GetWarInfo` ; l'appariement
+  et la clôture demandent un déclencheur (tour de matchmaking, cron).
 * **Vérification EN JEU** : nulle. Statut 🟢, pas ✅.
 
 ### Étape 7 — sabotages, bans, protections, spars ✅
@@ -483,3 +489,43 @@ laisser un remboursement s'évaporer sans trace.
 
 Vérifié : B perd, 300 `WAR_TOKENS` rendus au joueur qui les avait dépensés, crédités et persistés ;
 le vainqueur ne récupère rien.
+
+### Étapes 8 et 9 — boîtes réclamables et branchement réseau ✅
+
+**`ServerWarBoxes`** (table `user_war_boxes`) : les boîtes sont gagnées par la GUILDE mais **réclamées
+par JOUEUR** — `WarsList.unopenedBoxes` et `WarSeasonsList.unopenedBoxes` voyagent dans des messages
+adressés à un joueur, et `CLAIM_WAR_BOX_REWARD{ID, INDEX}` désigne une boîte et l'option retenue. Chaque
+boîte est un `WarBoxInfo` (objet du jeu) en octets wire. **Retirer la boîte à la réclamation EST
+l'anti-double-réclamation** : une boîte réclamée n'existe plus, donc rejouer la commande ne rend rien —
+inutile de tenir un registre d'identifiants réclamés.
+
+**Branchement réseau — tout est désormais joignable depuis le client.**
+
+| Message | Réponse |
+|---|---|
+| `GetWarInfo` | `WarInfo` (+ bascule de phase paresseuse `SABOTAGE → ACTIVE`, comme le ferait le client) |
+| `GetWarsList` | `WarsList` (historique, ligue, MMR, rang, boîtes en attente) |
+| `GetWarSeasonsList` | `WarSeasonsList` (saisons archivées + boîtes) |
+| `GetWarRankings` | `WarRankings` (guildes du shard triées par MMR, filtrées par ligue) |
+| `RequestWarLogs` | `WarLogs` (attaques menées, attaques subies, récapitulatifs, membres) |
+| `WarAttack` | applique le verdict + `WarPointsUpdate` **diffusé à toute la guilde** |
+| `EditGuildWarSettings` | `UserGuildUpdate` |
+
+| Commande | Effet |
+|---|---|
+| `CHANGE_WAR_QUEUE` | file d'attente → `WarQueueStateUpdate` diffusé |
+| `ASSIGN_WAR_CAR` | affectation de salle → `WarCarAssignmentUpdate` diffusé |
+| `CHANGE_WAR_TARGET` | marquage de cible (`canWarTarget`) → `WarTargetUpdate` diffusé |
+| `WAR_SABOTAGE_DEFENDER` | sabotage (coût **recalculé serveur**) → `WarSabotageUpdate` diffusé |
+| `WAR_EDIT_BAN_PROTECT` | bans/protections → `WarEditBanProtectUpdate` diffusé |
+| `WAR_SPAR_TARGET` | spar → `WarSparsUpdate` diffusé |
+| `START_WAR_ATTACK` | validation + consommation → `StartWarAttackResponse` + `AddInProgressWarAttack` |
+| `CLAIM_WAR_BOX_REWARD` | crédite l'option choisie et retire la boîte |
+| `GET_WAR_MEMBER_INFO` | `WarMemberInfo` (allié ou ennemi) |
+| `GET_WAR_MOMENTS` | `WarMoments` |
+| `RECORD_PHONY_WAR_ACTIVITY` | **NO-OP fidèle** — `ActionHelper.doAction` n'a aucune branche pour ce type (même cas que `RECORD_SERVER_ROLL_FINISHED`) : on acquitte sans rien simuler, inventer un compteur violerait §4 |
+
+**Deux détails de protocole relevés au bytecode, pas devinés** : le héros visé par un sabotage voyage
+dans **`Action.heroType`** (2ᵉ argument de `doAction`), pas dans les extras ; et `EditGuildWarSettings`
+n'a **aucun `GuildPermission` dédié** — l'aide du jeu tranche (« The Guild **Leader** may change the
+settings »), donc c'est réservé au `RULER`.
