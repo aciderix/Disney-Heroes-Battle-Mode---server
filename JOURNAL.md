@@ -1,5 +1,37 @@
 # JOURNAL — journal détaillé des modifications
 
+## 2026-08-02 (g46) — BREAKER QUEST jouable EN JEU : deux défauts réels de plus
+
+Reprise de l'énigme « écran vide » de la BREAKER QUEST (g45). La sonde `breakerdump`, élargie à
+`activeBreakerFight`, a livré le verdict : le champ était `null`.
+
+**Défaut nº1 — `BreakerQuest.activeBreakerFight` jamais renseigné.** Le client
+(`InvasionBreakerScreen`) lit `holder.getBreakerQuest().activeBreakerFight` pour activer l'aperçu et
+démarrer le combat de la salle active ; le `onClicked` de la vedette n'ouvre l'aperçu **que si ce champ
+est non nul**. Notre `buildQuest` ne remplissait que la liste `basicBreakerFights` → taper la vedette
+n'ouvrait **rien**. La salle 0 ne « marchait » que parce que le **tutoriel** forçait le démarrage ; hors
+tutoriel (salle ≥ 1) la quête était **injouable**. Correctif : `buildQuest` pose
+`activeBreakerFight = toFightInfo(salleActive, groupes)`. Vérifié EN JEU : l'aperçu **BREAKER FIGHT 1**
+s'ouvre, on choisit ses héros, `InvasionBreakerAttackStart room=1` part et le serveur répond.
+
+**Défaut nº2 — points d'invasion calculés avec des arguments inventés.** `resolveBreakerFight` appelait
+`getBreakerFightPoints(room, 1, 1)`. Le jeu appelle
+`getBreakerFightPoints(room, userLevelSnapshot, invasionMaxTeamLevel)` (bytecode
+`InvasionHelper.recordBreakerFightOutcome`), l'expression étant `BREAKER_FIGHT_POINT_REWARD = 1R*M` avec
+`M = getInvasionPointsMultiplier(userLevelSnapshot, invasionMaxTeamLevel)`. Le `(1,1)` divergeait du client
+dès que le niveau d'équipe fait monter le multiplicateur → **score serveur incohérent**. Correctif : mêmes
+arguments que le jeu (via `bindGameContext` + `ContentHelper.getCurrent(user).getInvasionMaxTeamLevel()`),
+plus le facteur d'évènement `SpecialEventSnapshot.NONE.getLootResourceMultiplier(...)` (= 1, PARTIEL). Note :
+`R=0` (salle 0) ⇒ 0 point est le comportement **du jeu**, pas un bug.
+
+Vérifié EN JEU : salle 0 VICTOIRE (persistée : −10 énergie, +1000 or, +1 BREAKER ; état relu à l'écran :
+énergie 71/80, BREAKER 1) ; salle 1 DÉFAITE (persistée : −10 énergie, rien accordé, niveau 25). Voie
+VICTOIRE salle ≥ 1 (points > 0) : le nouveau code s'exécute **sans exception** et crédite `ud.points`
+(`BreakerQuestTest`, `BreakerWinProbe` : `room=1 → +1010 or, +1 BREAKER, +1 pt`). Nouvelle commande pilote
+`breakerfight` (ouvre l'aperçu du combat actif). Observation à suivre : la puissance des vedettes (866 M en
+salle 1) rend le QUICK FIGHT perdant sur ce compte de test — difficulté voulue (gardes+vedettes) cumulée à
+l'inflation d'ère de contenu (cf. SHIMS). Régression + `BreakerQuestTest`.
+
 ## 2026-08-02 (g45) — INVASION vérifiée EN JEU (une première) + fin du cycle de guerre
 
 ### GUILD WAR — la boucle est bouclée

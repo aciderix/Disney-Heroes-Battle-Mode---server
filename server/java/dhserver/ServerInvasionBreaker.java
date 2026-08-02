@@ -6,8 +6,13 @@ import com.perblue.heroes.game.objects.User;
 import com.perblue.heroes.network.messages.BasicBreakerFight;
 import com.perblue.heroes.network.messages.BasicUserInfo;
 import com.perblue.heroes.network.messages.BreakerQuest;
-import com.perblue.heroes.network.messages.BreakerUserWardLineupData;
+import com.perblue.heroes.network.messages.BreakerUserFightInfo;
+import com.perblue.heroes.network.messages.BreakerUserWardLineupInfo;
 import com.perblue.heroes.network.messages.CombatModifier;
+import com.perblue.heroes.network.messages.GameMode;
+import com.perblue.heroes.network.messages.HeroBattleData;
+import com.perblue.heroes.network.messages.HeroBattleDataExtraType;
+import com.perblue.heroes.network.messages.HeroData;
 import com.perblue.heroes.network.messages.HeroSummary;
 import com.perblue.heroes.network.messages.IndividualUserExtra;
 import com.perblue.heroes.network.messages.Rarity;
@@ -20,30 +25,32 @@ import java.util.List;
 import java.util.Map;
 
 /**
- * INVASION (#69) — la BREAKER QUEST (mode SOLO) : la liste des combats et leur composition.
+ * INVASION (#69) — la BREAKER QUEST (mode SOLO) : liste des combats, aperçus et composition des adversaires.
  *
- * <p><b>Manque RÉEL trouvé EN JEU (2026-08-02).</b> Taper « GO » sur BREAKER QUEST envoie
- * {@code GetBreakerQuest} — que le serveur journalisait <b>sans y répondre</b> : aucun handler. L'écran
- * restait entièrement VIDE, le client attendant un {@code BreakerQuest} qui ne venait jamais. Le mode SOLO
- * n'avait donc aucune entrée, alors que le mode était marqué terminé. Et le handler
- * {@code InvasionBreakerAttackStart}, lui, répondait avec des listes VIDES.
+ * <p><b>Manque RÉEL trouvé EN JEU (2026-08-02).</b> Taper « GO » envoyait {@code GetBreakerQuest} que le
+ * serveur journalisait <b>sans y répondre</b> : écran VIDE. Une fois le handler écrit, deux défauts de
+ * TYPAGE WIRE se sont révélés à la sérialisation (invisibles headless, comme pour la guerre) :
+ * <ol>
+ *   <li>{@code BasicBreakerFight.wards} est une liste d'ENUMS ({@code CombatModifier}, {@code packEnumList} au
+ *       bytecode), pas de {@code HeroSummary} — c'est un aperçu des TYPES DE GARDE ;</li>
+ *   <li>le START d'un combat ne se répond pas avec un {@code BreakerUserFightData}
+ *       ({@code breakerDefenders : List<HeroBattleData>}) mais avec un <b>{@code BreakerUserFightInfo}</b> —
+ *       c'est ce type que le client range dans {@code BreakerQuest.activeBreakerFight}
+ *       ({@code GameMain}$119) et dont {@code InvasionClientHelper.getBreakerDefenderLineup} tire les
+ *       défenseurs.</li>
+ * </ol>
  *
- * <p><b>La composition vient des données du jeu</b>, pas d'une invention : {@code invasion_breaker_fight_comp
- * .tab} (drop-table {@code InvasionStats.BREAKER_FIGHT_COMP}), tirée par
- * {@link ServerInvasion#rollBreakerComposition} dans le contexte du joueur. Un tirage rend <b>25</b>
- * {@code DropItem} — relevé à l'exécution : cinq groupes de cinq unités, chacune portant ses paramètres
- * {@code level}/{@code stars}/{@code rarity}, plus deux marqueurs :
- * <ul>
- *   <li>{@code ward=WARD_xxx} — l'unité appartient au groupe de CE garde (quatre gardes : la ligne ROOT de la
- *       table est {@code <BREAKER>, <WARD_1>, <WARD_2>, <WARD_3>, <WARD_4>}) ; sans ce paramètre, l'unité
- *       appartient au groupe BREAKER lui-même ;</li>
- *   <li>{@code boss=true} — l'unité VEDETTE de son groupe (une par groupe), celle que l'écran affiche.</li>
- * </ul>
+ * <p><b>Identité des adversaires : {@code HeroData}, pas {@code HeroSummary}.</b> Le client lit chaque
+ * défenseur comme un {@code HeroData} (type/level/stars/rarity) et son état de combat depuis
+ * {@code HeroData.modePersistentData[INVASION_BREAKER] = HeroBattleData{healthPercent, extra{BOSS}}}. On
+ * produit donc des {@code HeroData} via la logique du jeu ({@code ClientNetworkStateConverter.getHeroData}
+ * sur l'{@code UnitData} fabriqué), en y posant l'état de mode (pleine vie + drapeau boss lu par le client
+ * via {@code Boolean.parseBoolean((String) extra.get(BOSS))}).
  *
- * <p>⚠️ <b>Lecture assumée, isolée ici</b> : {@code BasicBreakerFight.wards} est une liste de
- * {@code HeroSummary} et l'écran en montre un aperçu par combat — on y met <b>le boss de chaque groupe de
- * garde</b> (quatre icônes), le {@code bossHero} étant celui du groupe BREAKER. C'est la seule lecture qui
- * donne un aperçu non redondant ; si un fait la contredit, il n'y a que {@link #toBasicFight} à corriger.
+ * <p><b>Composition tirée des données</b> ({@code invasion_breaker_fight_comp.tab} via
+ * {@link ServerInvasion#rollBreakerComposition}) : un tirage rend 25 {@code DropItem} = cinq groupes de cinq
+ * — le groupe BREAKER (sans {@code ward}) et quatre groupes de garde (un {@code ward=WARD_xxx} chacun), une
+ * unité {@code boss=true} par groupe.
  */
 public final class ServerInvasionBreaker {
 
@@ -60,32 +67,13 @@ public final class ServerInvasionBreaker {
   public static final class Group {
     /** Le garde de ce groupe ({@code WARD_xxx}), ou {@code null} pour le groupe BREAKER. */
     public String ward;
-    public final List<HeroSummary> heroes = new ArrayList<>();
-    /** L'unité marquée {@code boss=true} du groupe — la vedette affichée. */
-    public HeroSummary boss;
+    /** Chaque unité, en {@code HeroData} prêt au wire (identité + état de mode INVASION_BREAKER). */
+    public final List<HeroData> heroes = new ArrayList<>();
+    /** Le résumé de l'unité {@code boss=true} du groupe — la vedette de l'aperçu. */
+    public HeroSummary bossSummary;
   }
 
-  /**
-   * Le {@link User} synthétique qui sert d'atelier à la fabrication des unités — même patron que les bots
-   * d'arène ({@code ServerArena.syntheticOpponent}) : un {@code UserInfo} porteur du <b>shard du joueur</b>
-   * (sinon le contenu daté n'est pas chargé) et d'un niveau d'équipe élevé (sans quoi
-   * {@code createAndAddHero} refuse les niveaux visés). L'identifiant est celui du joueur : un
-   * {@code IndividualUser} à l'identifiant 0 fait échouer {@code ServerContext.bind} (mesuré EN JEU).
-   */
-  private static User workshop(ServerUser owner) {
-    UserInfo ui = new UserInfo();
-    ui.shardID = owner != null ? owner.shardID : 1;
-    ui.basicInfo = new BasicUserInfo();
-    // Le TL indexe des tables du jeu (`TeamLevelStats`, 751 entrées) : 999 sortait du tableau
-    // (`ArrayIndexOutOfBounds`, mesuré EN JEU). On prend le MAXIMUM réel des données, pas un chiffre rond.
-    ui.basicInfo.teamLevel = maxTeamLevel();
-    User w = ClientNetworkStateConverter.getUser(ui, new UserExtra(), "breaker");
-    ServerContext.bind(w, ClientNetworkStateConverter.getIndividualUser(
-        new IndividualUserExtra(), owner != null ? owner.userID : 1L, 0, "breaker"));
-    return w;
-  }
-
-  /** Le niveau d'équipe MAXIMUM que les données du jeu définissent (dichotomie sur `getMaxHeroLevel`). */
+  /** Le niveau d'équipe MAXIMUM que les données du jeu définissent (dichotomie sur {@code getMaxHeroLevel}). */
   private static int maxTeamLevel() {
     int lo = 1, hi = 2000;
     while (lo < hi) {
@@ -97,9 +85,23 @@ public final class ServerInvasionBreaker {
   }
 
   /**
-   * Découpe une composition tirée en ses groupes, dans l'ordre de la table
-   * ({@code BREAKER} d'abord, puis les gardes rencontrés).
+   * Le {@link User} synthétique qui sert d'atelier — même patron que les bots d'arène : shard du joueur
+   * (contenu daté chargé), niveau d'équipe = maximum réel des données (999 sortait de {@code TeamLevelStats},
+   * {@code ArrayIndexOutOfBounds} mesuré), et identité du joueur (un {@code IndividualUser} d'identifiant 0
+   * fait échouer {@code ServerContext.bind}, mesuré EN JEU).
    */
+  private static User workshop(ServerUser owner) {
+    UserInfo ui = new UserInfo();
+    ui.shardID = owner != null ? owner.shardID : 1;
+    ui.basicInfo = new BasicUserInfo();
+    ui.basicInfo.teamLevel = maxTeamLevel();
+    User w = ClientNetworkStateConverter.getUser(ui, new UserExtra(), "breaker");
+    ServerContext.bind(w, ClientNetworkStateConverter.getIndividualUser(
+        new IndividualUserExtra(), owner != null ? owner.userID : 1L, 0, "breaker"));
+    return w;
+  }
+
+  /** Découpe une composition tirée en ses groupes, dans l'ordre de la table (BREAKER puis les gardes). */
   public static List<Group> groups(ServerUser owner, List<?> composition) {
     List<Group> out = new ArrayList<>();
     java.util.Map<String, Group> byWard = new java.util.LinkedHashMap<>();
@@ -110,7 +112,7 @@ public final class ServerInvasionBreaker {
       Rarity rarity = Rarity.WHITE;
       int level = 1, stars = 1;
       try {
-        // `DropItem.getType()` rend une CHAÎNE (le nom de la ligne de table), pas un UnitType — mesuré.
+        // `DropItem.getType()` rend une CHAÎNE (nom de ligne), pas un UnitType — mesuré.
         type = UnitType.valueOf(String.valueOf(o.getClass().getMethod("getType").invoke(o)));
         Object p = o.getClass().getMethod("getParameters").invoke(o);
         if (p instanceof Map) {
@@ -126,74 +128,99 @@ public final class ServerInvasionBreaker {
         System.out.println("[invasion] unité de composition illisible : " + t);
         continue;
       }
-      HeroSummary hs = summary(w, type, rarity, stars, level);
-      if (hs == null) continue;
+      boolean isBoss = "true".equalsIgnoreCase(boss);
+      HeroData hd = heroData(w, type, rarity, stars, level, isBoss);
+      if (hd == null) continue;
       String key = ward == null ? "" : ward;
       Group g = byWard.get(key);
       if (g == null) { g = new Group(); g.ward = ward; byWard.put(key, g); out.add(g); }
-      g.heroes.add(hs);
-      if ("true".equalsIgnoreCase(boss)) g.boss = hs;
+      g.heroes.add(hd);
+      if (isBoss) g.bossSummary = summary(w, type);
     }
     // Repli : un groupe sans marqueur `boss` montre sa première unité (jamais d'aperçu vide).
-    for (Group g : out) if (g.boss == null && !g.heroes.isEmpty()) g.boss = g.heroes.get(0);
+    for (Group g : out) {
+      if (g.bossSummary == null && !g.heroes.isEmpty()) g.bossSummary = summary(w, g.heroes.get(0).type);
+    }
     return out;
   }
 
-  /** Fabrique le résumé wire d'une unité, par la logique du jeu ({@code createAndAddHero} + converter). */
-  private static HeroSummary summary(User w, UnitType type, Rarity rarity, int stars, int level) {
+  /** Un {@code HeroData} complet (identité + état de mode INVASION_BREAKER : pleine vie, drapeau boss). */
+  @SuppressWarnings("unchecked")
+  private static HeroData heroData(User w, UnitType type, Rarity rarity, int stars, int level, boolean boss) {
     try {
       // ⚠️ (ÉTOILES, NIVEAU) — ordre relevé au bytecode, cf. ServerUser.grantHero.
-      w.createAndAddHero(type, rarity, stars, level, new String[]{"breaker"});
+      if (w.getHero(type) == null) w.createAndAddHero(type, rarity, stars, level, new String[]{"breaker"});
       UnitData ud = (UnitData) w.getHero(type);
       if (ud == null) return null;
       ud.setRarity(rarity); ud.setStars(stars); ud.setLevel(level);
-      return ClientNetworkStateConverter.getHeroSummary(ud);
+      HeroData hd = ClientNetworkStateConverter.getHeroData(ud);
+      HeroBattleData bd = new HeroBattleData();
+      bd.healthPercent = 1.0f;                       // adversaire à pleine vie au début du combat
+      ((Map<Object, Object>) bd.extra).put(HeroBattleDataExtraType.BOSS, Boolean.toString(boss));
+      ((Map<Object, Object>) hd.modePersistentData).put(GameMode.INVASION_BREAKER, bd);
+      return hd;
     } catch (Throwable t) {
       System.out.println("[invasion] unité " + type + " non fabricable : " + t);
       return null;
     }
   }
 
-  /** L'aperçu d'un combat pour la liste de la BREAKER QUEST. */
+  /** Le résumé wire d'une unité (pour l'aperçu de la liste). */
+  private static HeroSummary summary(User w, UnitType type) {
+    try {
+      UnitData ud = (UnitData) w.getHero(type);
+      return ud == null ? null : ClientNetworkStateConverter.getHeroSummary(ud);
+    } catch (Throwable t) { return null; }
+  }
+
+  /**
+   * L'aperçu d'un combat pour la liste de la BREAKER QUEST.
+   *
+   * <p>⚠️ {@code BasicBreakerFight.wards} = liste d'ENUMS ({@code CombatModifier}), pas de {@code HeroSummary}
+   * (cf. l'en-tête de classe). {@code bossHero} = boss du groupe BREAKER.
+   */
   public static BasicBreakerFight toBasicFight(int room, List<Group> groups) {
     BasicBreakerFight bf = new BasicBreakerFight();
     bf.index = room;
     @SuppressWarnings("unchecked") List<Object> wards = (List<Object>) bf.wards;
     for (Group g : groups) {
-      if (g.ward == null) bf.bossHero = g.boss;          // groupe BREAKER → la vedette du combat
-      else if (g.boss != null) wards.add(g.boss);        // un garde → une icône d'aperçu
+      if (g.ward == null) { bf.bossHero = g.bossSummary; continue; }
+      try { wards.add(CombatModifier.valueOf(g.ward)); }
+      catch (Throwable t) { System.out.println("[invasion] garde inconnu (aperçu) : " + g.ward); }
     }
     return bf;
   }
 
-  /** Les lineups de gardes, format « données » (ce que l'attaquant reçoit pour combattre). */
-  public static List<BreakerUserWardLineupData> toWardLineups(List<Group> groups) {
-    List<BreakerUserWardLineupData> out = new ArrayList<>();
+  /**
+   * Le combat ACTIF complet, réponse à {@code InvasionBreakerAttackStart} : ce {@code BreakerUserFightInfo}
+   * que le client range dans {@code activeBreakerFight} et dont il tire les défenseurs. {@code breakerLineup}
+   * = groupe BREAKER ({@code List<HeroData>}) ; {@code wardLineups} = les gardes
+   * ({@code BreakerUserWardLineupInfo}).
+   */
+  @SuppressWarnings("unchecked")
+  public static BreakerUserFightInfo toFightInfo(int room, List<Group> groups) {
+    BreakerUserFightInfo fi = new BreakerUserFightInfo();
+    fi.index = room;
+    List<Object> breakerLineup = (List<Object>) fi.breakerLineup;
+    List<Object> wardLineups = (List<Object>) fi.wardLineups;
     for (Group g : groups) {
-      if (g.ward == null) continue;
-      BreakerUserWardLineupData d = new BreakerUserWardLineupData();
-      try { d.ward = CombatModifier.valueOf(g.ward); }
+      if (g.ward == null) { breakerLineup.addAll(g.heroes); continue; }
+      BreakerUserWardLineupInfo wl = new BreakerUserWardLineupInfo();
+      wl.defeated = false;
+      try { wl.ward = CombatModifier.valueOf(g.ward); }
       catch (Throwable t) { System.out.println("[invasion] garde inconnu : " + g.ward); }
-      @SuppressWarnings("unchecked") List<Object> enemies = (List<Object>) d.enemies;
-      enemies.addAll(g.heroes);
-      out.add(d);
+      ((List<Object>) wl.enemies).addAll(g.heroes);
+      wardLineups.add(wl);
     }
-    return out;
-  }
-
-  /** Les unités du groupe BREAKER (celles qu'on affronte hors gardes). */
-  public static List<HeroSummary> breakerLineup(List<Group> groups) {
-    for (Group g : groups) if (g.ward == null) return g.heroes;
-    return new ArrayList<>();
+    return fi;
   }
 
   /**
-   * La BREAKER QUEST du joueur : une page de combats à partir de sa progression.
+   * La BREAKER QUEST du joueur : une page de combats depuis sa progression.
    *
-   * <p>La taille de page vient des données ({@code BREAKER_PAGE_SIZE} / {@code BREAKER_FIRST_PAGE_SIZE}) et
-   * l'indice de départ est le nombre de combats déjà GAGNÉS ({@code UserInvasionData.breakerBattlesWon}) —
-   * c'est le {@code R} des formules {@code BREAKER_FIGHT_LEVEL/GOLD/POINT_REWARD} de
-   * {@code invasion_constants.tab}.
+   * <p>Taille de page = {@code BREAKER_PAGE_SIZE}/{@code BREAKER_FIRST_PAGE_SIZE} ; indice de départ = le
+   * nombre de combats déjà GAGNÉS ({@code UserInvasionData.breakerBattlesWon}) — le {@code R} des formules
+   * {@code BREAKER_FIGHT_LEVEL/GOLD/POINT_REWARD} de {@code invasion_constants.tab}.
    */
   public static BreakerQuest buildQuest(ServerUser user, com.perblue.heroes.network.messages.UserInvasionData ud,
       ServerInvasion.IInvasionProvider inv, long invasionID) {
@@ -203,11 +230,21 @@ public final class ServerInvasionBreaker {
     @SuppressWarnings("unchecked") List<Object> fights = (List<Object>) bq.basicBreakerFights;
     for (int i = 0; i < page; i++) {
       int room = done + i;
-      long seed = invasionID * 1_000_003L + room * 31L + user.userID;
-      List<Group> gs = groups(user, ServerInvasion.rollBreakerComposition(user, room, inv, seed));
+      List<Group> gs = groups(user,
+          ServerInvasion.rollBreakerComposition(user, room, inv, fightSeed(invasionID, room, user)));
       if (gs.isEmpty()) continue;
       fights.add(toBasicFight(room, gs));
+      // Le combat ACTIF (première salle non gagnée = tête de page) doit AUSSI voyager en entier dans
+      // BreakerQuest.activeBreakerFight : c'est CE champ que le client lit (InvasionBreakerScreen) pour
+      // activer l'aperçu/START du combat et connaître activeIndex. Sans lui, activeBreakerFight est null
+      // côté client ⇒ taper la vedette n'ouvre RIEN (bloqué hors tutoriel — défaut trouvé EN JEU).
+      if (room == done) bq.activeBreakerFight = toFightInfo(room, gs);
     }
     return bq;
+  }
+
+  /** Graine STABLE d'un combat (invasion, salle, joueur) : mêmes adversaires à la liste et à l'entrée. */
+  public static long fightSeed(long invasionID, int room, ServerUser user) {
+    return invasionID * 1_000_003L + room * 31L + user.userID;
   }
 }

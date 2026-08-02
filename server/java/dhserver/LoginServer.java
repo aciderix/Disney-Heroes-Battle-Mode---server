@@ -1521,10 +1521,9 @@ public final class LoginServer {
               } catch (Exception e) { System.out.println("[login]     ! état invasion (quête) : " + e); }
               com.perblue.heroes.network.messages.BreakerQuest bq =
                   ServerInvasionBreaker.buildQuest(user, qud, qinv, qid);
-              // Forme requête/réponse, comme tous les autres handlers. ⚠️ Les DEUX formes ont été essayées
-              // EN JEU (réponse appariée ET poussée spontanée) : dans les deux cas l'écran garde
-              // `breakerQuests = null`. Le point de blocage est donc AILLEURS que dans l'appariement —
-              // enquête en cours, cf. docs/INVASION.md.
+              // Forme requête/réponse, comme tous les autres handlers. RÉSOLU EN JEU (2026-08-02) : la quête
+              // s'affiche ET se joue dès que `buildQuest` renseigne `activeBreakerFight` (le champ que le client
+              // lit pour activer l'aperçu/START du combat de la salle active). Cf. docs/INVASION.md.
               bq.setAsReplyTo(m);
               c.send(bq);
               System.out.println("[login] <== GetBreakerQuest → ==> BreakerQuest ("
@@ -1557,22 +1556,21 @@ public final class LoginServer {
                   (com.perblue.heroes.network.messages.InvasionBreakerAttackStart) m;
               long bnow = com.perblue.heroes.util.TimeUtil.serverTimeNow();
               ServerInvasionObject sinv = ServerInvasionObject.at(bnow);
-              long seed = sinv.getID() * 1_000_003L + bs.room * 31L + user.userID;
+              // ⚠️ La réponse est un BreakerUserFightInfo (que GameMain$119 range dans
+              // BreakerQuest.activeBreakerFight et dont InvasionClientHelper.getBreakerDefenderLineup tire les
+              // défenseurs), PAS un BreakerUserFightData — ce dernier attend des HeroBattleData et sa
+              // sérialisation levait ClassCastException à l'écriture (défaut invisible headless). La MÊME
+              // graine que la liste (fightSeed) garantit que le combat entré == celui montré dans la liste.
+              long seed = ServerInvasionBreaker.fightSeed(sinv.getID(), bs.room, user);
               java.util.List<?> comp = ServerInvasion.rollBreakerComposition(user, bs.room, sinv, seed);
-              com.perblue.heroes.network.messages.BreakerUserFightData bd =
-                  new com.perblue.heroes.network.messages.BreakerUserFightData();
-              bd.index = bs.room;
-              // ⚠️ Ces deux listes étaient VIDES : le client recevait un combat sans adversaire. On les
-              // remplit depuis la composition tirée (cf. ServerInvasionBreaker) — groupe BREAKER d'un côté,
-              // les quatre lineups de gardes de l'autre.
               java.util.List<ServerInvasionBreaker.Group> bgroups = ServerInvasionBreaker.groups(user, comp);
-              bd.breakerDefenders = new java.util.ArrayList<>(ServerInvasionBreaker.breakerLineup(bgroups));
-              bd.wardLineups = new java.util.ArrayList<>(ServerInvasionBreaker.toWardLineups(bgroups));
-              bd.setAsReplyTo(m);
-              c.send(bd);
+              com.perblue.heroes.network.messages.BreakerUserFightInfo fi =
+                  ServerInvasionBreaker.toFightInfo(bs.room, bgroups);
+              fi.setAsReplyTo(m);
+              c.send(fi);
               System.out.println("[login] <== InvasionBreakerAttackStart room=" + bs.room + " ward=" + bs.ward
-                  + " → ==> BreakerUserFightData (" + bd.breakerDefenders.size() + " breaker(s) + "
-                  + bd.wardLineups.size() + " garde(s), composition de " + comp.size() + " unités)");
+                  + " → ==> BreakerUserFightInfo (" + fi.breakerLineup.size() + " breaker(s) + "
+                  + fi.wardLineups.size() + " garde(s), composition de " + comp.size() + " unités)");
             } else if (m instanceof com.perblue.heroes.network.messages.InvasionBreakerAttack) {
               // INVASION #69 — issue d'un combat de breaker. Le serveur AUTORITATIF débite l'énergie
               // d'invasion et accorde or/points/BREAKER selon les FORMULES DU JEU, met à jour l'état

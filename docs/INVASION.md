@@ -290,3 +290,58 @@ exactement le symptôme observé, y compris l'absence totale de trace).
 **Statut honnête** : `GetBreakerQuest` n'est plus un trou noir côté serveur (10 combats servis, composition
 réelle tirée des données), mais la BREAKER QUEST n'est **pas jouable en jeu** — l'écran reste vide, et la
 cause est cernée sans être encore établie.
+
+## RÉSOLU (2026-08-02, g46) — la BREAKER QUEST s'affiche, se joue et persiste EN JEU
+
+L'énigme de « l'écran vide » avait UNE cause de plus, invisible au dump précédent (qui ne regardait que
+`basicBreakerFights`). La sonde `breakerdump` a été étendue à **`activeBreakerFight`** et a tranché :
+
+```
+[breakerdump] holder.getBreakerQuest() = combats=10
+[breakerdump] activeBreakerFight = null        ← AVANT le correctif
+[breakerdump] activeBreakerFight = index=1 breakerLineup=5 wardLineups=4   ← APRÈS
+```
+
+**Défaut RÉEL nº1 — `BreakerQuest.activeBreakerFight` jamais renseigné.** Le client
+(`InvasionBreakerScreen`, relevé au bytecode : `this.activeBreakerFight = holder.getBreakerQuest().activeBreakerFight`)
+lit CE champ pour activer l'aperçu et démarrer le combat de la salle active. Le `onClicked` de la vedette
+n'ouvre l'aperçu **que si `activeBreakerFight != null`**. Notre `buildQuest` ne remplissait que la LISTE
+(`basicBreakerFights`) → champ `null` → **taper la vedette n'ouvrait rien**. Le combat de la salle 0 ne
+« marchait » que parce que le **tutoriel** forçait le démarrage ; hors tutoriel (salle ≥ 1), la quête était
+**injouable**. Correctif : `buildQuest` pose `bq.activeBreakerFight = toFightInfo(salleActive, groupes)`.
+
+**Défaut RÉEL nº2 — points d'invasion calculés avec des arguments inventés.** `resolveBreakerFight` appelait
+`getBreakerFightPoints(room, 1, 1)`. Le jeu (relevé au bytecode de `InvasionHelper.recordBreakerFightOutcome`)
+appelle `getBreakerFightPoints(room, userLevelSnapshot, invasionMaxTeamLevel)`, l'expression étant
+`BREAKER_FIGHT_POINT_REWARD = 1R*M` avec `M = getInvasionPointsMultiplier(userLevelSnapshot, invasionMaxTeamLevel)`
+(et `userLevelSnapshot=0` retombe fidèlement sur `invasionMaxTeamLevel`). Le `(1,1)` inventé divergeait du
+client dès que le niveau d'équipe fait passer le multiplicateur au-dessus de 1 → **score serveur ≠ score
+attendu** (triche/incohérence multijoueur). Correctif : mêmes arguments que le jeu, plus le facteur
+d'évènement `SpecialEventSnapshot.NONE.getLootResourceMultiplier(INVASION_BREAKER, INVASION_POINTS)` (= 1,
+PARTIEL headless, cf. SHIMS). **`R=0` (salle 0) ⇒ 0 point : c'est le comportement DU JEU**, pas un bug.
+
+### Vérifié EN JEU (client réel → serveur → persistance → affichage)
+
+- **Salle 0, VICTOIRE** (déjà couvert) : `InvasionBreakerAttack room=0 outcome=WIN → −10 énergie, +1000 or,
+  +1 BREAKER, +0 pts (niveau 0)`, **persisté**. À la réouverture de l'écran INVASION : énergie 71/80,
+  **BREAKER 1**, TIER 1 0/100 — l'état vient bien du serveur.
+- **La BREAKER QUEST s'affiche et se joue** : `nav INVASION` → GO → 10 salles rendues (niveaux 25/50/75… =
+  `(R<7?5R:12+3R)*5`), aperçu **BREAKER FIGHT 1** ouvert (5 vedettes niv. 25), CHOOSE YOUR HEROES →
+  `InvasionBreakerAttackStart room=1 → BreakerUserFightInfo`.
+- **Salle 1, DÉFAITE** : `InvasionBreakerAttack room=1 outcome=LOSS → −10 énergie, +0 or, +0 BREAKER,
+  +0 pts (niveau 25)`, **persisté** (débit d'énergie même en défaite = fidèle).
+- **Voie VICTOIRE salle ≥ 1 (points > 0)** : prouvée **headless** (`BreakerQuestTest`, `BreakerWinProbe`) —
+  `room=1 victory → −10 énergie, +1010 or, +1 BREAKER, +1 pt (niveau 25)`, le NOUVEAU code de points
+  (`bindGameContext` + `ContentHelper.getCurrent(...).getInvasionMaxTeamLevel()` + `getBreakerFightPoints`)
+  **s'exécute sans exception** et crédite `ud.points`.
+
+### Observation à suivre — difficulté/puissance des vedettes de breaker
+
+En jeu, l'aperçu de la salle 1 affiche une puissance ennemie de **866,3 M** face à notre équipe (~10 505),
+d'où la défaite en QUICK FIGHT. Deux facteurs se cumulent : (a) le breaker est **conçu pour être dur** — on
+doit d'abord défaire les **4 gardes** (qui l'affaiblissent) et jouer les **héros vedettes** (empouvoirés) ;
+(b) l'**inflation de stats de l'ère de contenu** (R102/2026, même racine que « 39,96 M » d'énergie, cf.
+SHIMS) gonfle la puissance affichée. La chaîne technique (aperçu → START → OUTCOME → persistance) est
+**prouvée** ; gagner une salle ≥ 1 EN JEU avec ce compte de test suppose de jouer gardes+vedettes (ou
+d'ancrer l'ère de contenu) — à confirmer ultérieurement. **Nouvelle commande pilote** `breakerfight` : ouvre
+l'aperçu du combat actif sans viser la vedette au pixel près (reproduit le `onClicked`).

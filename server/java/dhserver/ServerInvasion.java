@@ -343,7 +343,20 @@ public final class ServerInvasion {
     ud.breakerBattlesWon++;
     o.gold = com.perblue.heroes.game.data.invasion.InvasionStats.getBreakerFightGoldReward(room);
     o.breakers = com.perblue.heroes.game.data.invasion.InvasionStats.getBreakerFightBreakerReward();
-    o.points = com.perblue.heroes.game.data.invasion.InvasionStats.getBreakerFightPoints(room, 1, 1);
+    // POINTS D'INVASION — on reproduit EXACTEMENT l'appel du jeu (InvasionHelper.recordBreakerFightOutcome) :
+    // getBreakerFightPoints(room, userLevelSnapshot, invasionMaxTeamLevel), l'expression étant BREAKER_FIGHT_POINT_REWARD
+    // = "1R*M" avec R=room et M=getInvasionPointsMultiplier(userLevelSnapshot, invasionMaxTeamLevel). userLevelSnapshot=0
+    // retombe fidèlement sur invasionMaxTeamLevel (branche du jeu). Le facteur d'évènement vient de
+    // snapshot.getLootResourceMultiplier(INVASION_BREAKER, INVASION_POINTS) — SpecialEventSnapshot.NONE ⇒ 1 (PARTIEL, cf.
+    // SHIMS : aucun bonus d'évènement headless, comme la campagne). NB : room 0 ⇒ R=0 ⇒ 0 point, comportement DU JEU.
+    u.bindGameContext();
+    int invasionMaxTeamLevel = com.perblue.heroes.game.data.content.ContentHelper
+        .getCurrent(u.gameUser()).getInvasionMaxTeamLevel();
+    int eventMul = com.perblue.heroes.game.specialevent.SpecialEventSnapshot.NONE.getLootResourceMultiplier(
+        com.perblue.heroes.network.messages.GameMode.INVASION_BREAKER,
+        com.perblue.heroes.network.messages.ResourceType.INVASION_POINTS);
+    o.points = com.perblue.heroes.game.data.invasion.InvasionStats
+        .getBreakerFightPoints(room, ud.userLevelSnapshot, invasionMaxTeamLevel) * eventMul;
     u.giveResource(com.perblue.heroes.network.messages.ResourceType.GOLD, o.gold);
     u.giveResource(com.perblue.heroes.network.messages.ResourceType.BREAKER, o.breakers);
     ud.breakersGained += o.breakers;

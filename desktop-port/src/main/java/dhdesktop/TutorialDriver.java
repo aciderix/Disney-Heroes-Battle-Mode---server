@@ -1018,23 +1018,55 @@ public final class TutorialDriver {
                         f.setAccessible(true);
                         com.perblue.heroes.network.messages.BreakerQuest bq =
                             (com.perblue.heroes.network.messages.BreakerQuest) f.get(screen);
-                        if (bq == null) { System.out.println("[breakerdump] BreakerQuest = null"); return; }
-                        System.out.println("[breakerdump] combats = " + bq.basicBreakerFights.size()
-                            + " · activeBreakerFight = " + bq.activeBreakerFight);
-                        int n = 0;
-                        for (Object o : bq.basicBreakerFights) {
-                            com.perblue.heroes.network.messages.BasicBreakerFight bf =
-                                (com.perblue.heroes.network.messages.BasicBreakerFight) o;
-                            System.out.println("[breakerdump]   #" + bf.index + " boss=" + bf.bossHero
-                                + " wards=" + (bf.wards == null ? "null" : bf.wards.size()));
-                            if (++n >= 3) break;
-                        }
-                        return;
+                        System.out.println("[breakerdump] (champ écran) BreakerQuest = "
+                            + (bq == null ? "null" : ("combats=" + bq.basicBreakerFights.size())));
                     }
                 }
             }
             System.out.println("[breakerdump] aucun champ BreakerQuest sur cet écran");
         } catch (Throwable t) { System.out.println("[breakerdump] échec: " + t); }
+        // Source de vérité : le HOLDER (GameMain.currentInvasion) et ce qu'il détient.
+        try {
+            java.lang.reflect.Field ci = GameMain.class.getDeclaredField("currentInvasion");
+            ci.setAccessible(true);
+            Object holder = ci.get(game);
+            System.out.println("[breakerdump] GameMain.currentInvasion = " + holder);
+            if (holder != null) {
+                com.perblue.heroes.network.messages.BreakerQuest bq =
+                    (com.perblue.heroes.network.messages.BreakerQuest) holder.getClass().getMethod("getBreakerQuest").invoke(holder);
+                System.out.println("[breakerdump] holder.getBreakerQuest() = "
+                    + (bq == null ? "null" : ("combats=" + bq.basicBreakerFights.size())));
+                // Le champ CRUCIAL pour pouvoir DÉMARRER un combat : sans lui l'aperçu ne s'ouvre pas.
+                if (bq != null) {
+                    com.perblue.heroes.network.messages.BreakerUserFightInfo af = bq.activeBreakerFight;
+                    System.out.println("[breakerdump] activeBreakerFight = " + (af == null ? "null"
+                        : ("index=" + af.index + " breakerLineup=" + af.breakerLineup.size()
+                           + " wardLineups=" + af.wardLineups.size())));
+                }
+            }
+        } catch (Throwable t) { System.out.println("[breakerdump] holder : " + t); }
+    }
+
+    /** DEV : OUVRE l'aperçu du combat de breaker ACTIF (InvasionBreakerPreviewWindow), sans avoir à viser
+     *  la vedette au pixel près — reproduit exactement le onClicked de la vedette. Invoqué via "breakerfight". */
+    public static void breakerFight(GameMain game) {
+        try {
+            java.lang.reflect.Field ci = GameMain.class.getDeclaredField("currentInvasion");
+            ci.setAccessible(true);
+            Object holder = ci.get(game);
+            if (holder == null) { System.out.println("[breakerfight] pas d'invasion courante"); return; }
+            com.perblue.heroes.network.messages.BreakerQuest bq =
+                (com.perblue.heroes.network.messages.BreakerQuest) holder.getClass().getMethod("getBreakerQuest").invoke(holder);
+            if (bq == null || bq.activeBreakerFight == null) {
+                System.out.println("[breakerfight] activeBreakerFight ABSENT — le serveur ne l'a pas fourni"); return;
+            }
+            com.perblue.heroes.network.messages.BreakerUserFightInfo af = bq.activeBreakerFight;
+            com.perblue.heroes.ui.invasion.InvasionBreakerPreviewWindow w =
+                new com.perblue.heroes.ui.invasion.InvasionBreakerPreviewWindow(
+                    (com.perblue.heroes.ui.invasion.InvasionHolder) holder, af, af.index);
+            w.show();
+            System.out.println("[breakerfight] aperçu ouvert (index=" + af.index + ")");
+        } catch (Throwable t) { System.out.println("[breakerfight] échec: " + t); t.printStackTrace(); }
     }
 
     /** DEV : POSTE un héros comme mercenaire (Action POST_HERO), sans navigation MERCENARIES.
