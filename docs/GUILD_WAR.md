@@ -4,7 +4,9 @@
 > **on n'invente aucune valeur** (`PRINCIPLES.md` §4) et **on ne suppose rien** (§8) — chaque ligne
 > ci-dessous est adossée à un fait (bytecode, `.tab`, chaîne localisée, ou exécution).
 >
-> Régression : `bash server/smoke/regression.sh` (seul échec toléré = flake connu `ChestWireTest`).
+> Régression : `bash server/smoke/regression.sh` — **75/75, aucun échec toléré**. (L'ancien « flake
+> `ChestWireTest` » n'en était pas un : c'était une course réelle, élucidée et corrigée le 2026-08-02,
+> cf. §Étape 10.)
 
 ---
 
@@ -160,7 +162,7 @@ Les **lineups de défense de guerre** arrivent déjà par `HeroLineupUpdate` ave
 | 7 | **Sabotage / bans / protections / spars** | ✅ FAIT |
 | 8 | **Boîtes : stockage par joueur + réclamation** | ✅ FAIT |
 | 9 | **Branchement réseau (7 messages + 11 commandes)** | ✅ FAIT |
-| 10 | Distribution automatique des boîtes en fin de saison | ⬜ |
+| 10 | **Ordonnanceur : appariement à l'heure, phases, clôtures, boîtes automatiques** | ✅ FAIT |
 
 ### Étape 1 — calendrier, ligues, MMR ✅
 
@@ -529,3 +531,83 @@ inutile de tenir un registre d'identifiants réclamés.
 dans **`Action.heroType`** (2ᵉ argument de `doAction`), pas dans les extras ; et `EditGuildWarSettings`
 n'a **aucun `GuildPermission` dédié** — l'aide du jeu tranche (« The Guild **Leader** may change the
 settings »), donc c'est réservé au `RULER`.
+
+### Étape 10 — l'ORDONNANCEUR ✅
+
+Jusqu'ici **toutes les briques existaient mais rien ne les déclenchait** : aucune guerre ne démarrait
+d'elle-même, aucune ne se terminait, aucune boîte ne tombait. C'est le rôle de `ServerWarScheduler`, un
+**tour de boucle idempotent et rejouable** (`tick`), branché dans `LoginServer.main` sur un thread démon
+(`startBackgroundLoop`, période réglable par `-Ddh.war.tick.seconds`, défaut 60 s) et applicable à tous les
+shards portant des guildes (`tickAllShards` + `UserStore.listGuildShards`, PRINCIPLES §5).
+
+Un tour fait, dans cet ordre :
+
+| # | Étape du tour | Idempotence |
+|---|---|---|
+| 1 | **Bascule de saison** (`ServerWar.rollOverSeason` avec le rang final par MMR) + **boîtes de fin de saison** | `warSeasonID == season` → on passe |
+| 2 | **Clôture** des guerres échues (`ServerWarEnd.finishWar` : issue, MMR, remboursements) + **boîtes de promotion** | `Result.alreadyFinished` |
+| 3 | **Avance de phase** `SABOTAGE → ACTIVE` (`ServerWarMatchmaker.advancePhase`) | la phase ne change qu'une fois |
+| 4 | **Appariement** des guildes inscrites, à l'heure prévue | repère persisté dans `shard_state` |
+
+**Le calendrier.** Le client affiche « Next War Starts in » à partir de `WarQueueStateUpdate
+.nextMatchmakingTime`, dont `WarClientHelper.updateWarInfoQueueState` fait **directement**
+`warInfo.startTime` : **le moment de l'appariement EST le début de la prochaine guerre**. ⚠️ **Lecture
+structurelle assumée, isolée dans `lastMatchmakingTime`** : on l'ancre sur `RESET_HOUR` (11 h, fuseau
+serveur) — seule heure de référence que `war_constants.tab` fournisse, et qu'**aucune classe cliente ne
+lit** (même signature que `ELO_K` & co.). Une seule méthode à corriger si un fait la contredit.
+
+**Deux pièges traversés, tous deux réels :**
+
+1. **La fenêtre se compare au PASSÉ, pas au futur.** La première version testait `now >= nextMatchmakingTime(last)`
+   — or cette valeur est par construction dans le futur, donc la condition n'était **jamais** vraie et
+   l'appariement ne tournait pas une seule fois. Le tour compare désormais le repère persisté à la **dernière**
+   occurrence de `RESET_HOUR` (`last < lastMatchmakingTime(now)`), et enregistre le repère de la **fenêtre**
+   (pas `now`), sans quoi l'heure d'appariement dériverait à chaque tour.
+2. **Un shard neuf ne doit pas apparier à son premier tour.** Sinon le tout premier démarrage du serveur
+   ouvrirait des guerres hors calendrier, à n'importe quelle heure. Il pose le repère et attend la prochaine
+   occurrence — d'où l'outil opérateur ci-dessous pour n'avoir pas à attendre.
+
+**Deux masques distincts, à ne surtout pas confondre** — `ServerGuild` v9 ajoute `warBoxedLeagueMask` à côté
+de `warPromotionMask` : le second dit « ligue ATTEINTE » (et sert de plancher anti-rétrogradation, « cannot
+be demoted »), le premier « boîtes DÉJÀ REMISES ». Les fusionner redistribuerait des boîtes à chaque guerre.
+Le masque de boîtes repart à zéro à chaque nouvelle saison, le plancher non.
+
+**Boîtes générées joueur par joueur** : le montant dépend du **niveau d'équipe** (variable `L` des
+expressions), donc `awardBoxes` boucle sur les membres et génère le lot de chacun. Le garde-fou `keepPositive`
+(récompenses de saison négatives sous TL 289) s'applique donc naturellement, par joueur.
+
+**Outil opérateur `server/smoke/AdminWar.java`** — pendant de `AdminGuild`/`AdminMail`. Il ne crée aucune
+règle, il appelle l'ordonnanceur et lit l'état persisté :
+
+```
+AdminWar [--db server/data/dh-server.db] [--shard 1] --status
+AdminWar [--db …] [--shard 1] --tick [--force]
+```
+
+`--status` rend la saison, l'heure du prochain appariement, et par guilde : MMR, ligue effective, état de
+file, guerre en cours et son échéance, plus le total de boîtes en attente. `--tick --force` apparie
+immédiatement — **seul levier forcé** ; clôtures et bascules de saison dépendent d'échéances réelles qu'on
+ne bouscule pas. Vérifié en CLI : 3 guildes inscrites → tour non forcé = aucun appariement (calendrier
+respecté) → tour forcé = **1 paire + 1 BYE**, guildes en `SABOTAGE` jusqu'à J+2, file remise à `NOT_QUEUED`.
+
+**Test `WarSchedulerTest`** (dans la régression) : calendrier ancré sur `RESET_HOUR` et jamais à plus de
+24 h ; appariement une seule fois par fenêtre ; `GuildInfo.warEndTime` porte bien la fenêtre (c'est ce que le
+client lit) ; avance de phase ; clôture + boîtes de promotion ; **non-redistribution** des boîtes au tour
+suivant ; réclamation d'une boîte (option créditée, boîte retirée, rejeu sans effet, persistance) ; bascule
+de saison (archivage, remise à zéro du masque de boîtes, boîtes de fin de saison) et son idempotence.
+
+### 🐛 Le « flake `ChestWireTest` » n'était pas un flake
+
+Trouvé en vérifiant la régression après l'étape 10 : `ChestWireTest` échouait **systématiquement**, ce qui
+contredisait la note « vert en isolation » portée depuis des semaines. Mesure : un message émis par le client
+**avant que le serveur ait accepté la connexion** est **perdu** — envoi immédiat après `open()` (ou depuis le
+`onOpen` du client) → jamais reçu, 5 essais sur 5 ; envoi 50 ms plus tard → reçu, 5 essais sur 5. La cause
+attribuée jusqu'ici (chargement de `GuildStats`) était fausse : cette exception-là est bien levée mais
+**absorbée** par le warm-up de `ServerContext`.
+
+Le **vrai client n'y est pas exposé** : son `/login` HTTP précède l'ouverture du socket de jeu, ce qui laisse
+la fenêtre passer largement. Le test, lui, enchaînait connexion et envoi dans la même milliseconde. Correctif :
+`LoginServer` expose `connectionsAccepted` (compteur de connexions acceptées, utile aussi en exploitation) et
+le test **attend ce point de rendez-vous** avant d'émettre — une synchronisation réelle, pas un `sleep`
+magique. Résultat : `ChestWireTest` vert 5/5 en isolation, et **régression 75/75 sans aucun échec toléré**,
+une première.

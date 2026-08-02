@@ -155,6 +155,10 @@ public final class ServerGuild {
   public final List<Long> previousWarOpponents = new ArrayList<>();
   /** Bilan de la saison EN COURS. */
   public int warsWon, warsLost, warsCompleted;
+  /** v9 — masque des ligues pour lesquelles les BOÎTES DE PROMOTION ont déjà été remises.
+   *  DISTINCT de {@link #warPromotionMask} : celui-ci dit « ligue atteinte » (plancher anti-rétrogradation),
+   *  celui-là « boîtes déjà distribuées ». Les confondre en redistribuerait à chaque guerre. */
+  public int warBoxedLeagueMask;
   /** Saisons ACHEVÉES : octets wire de chaque {@link com.perblue.heroes.network.messages.WarSeasonSummary}
    *  (objet du jeu, jamais un schéma inventé — PRINCIPLES §4/§6). Alimente {@code GetWarSeasonsList}. */
   public final List<byte[]> warSeasonHistoryWire = new ArrayList<>();
@@ -364,7 +368,7 @@ public final class ServerGuild {
 
       ByteArrayOutputStream bos = new ByteArrayOutputStream();
       DataOutputStream o = new DataOutputStream(bos);
-      o.writeInt(8);                       // version (…6 contest/membre ; 7 boss d'invasion ; 8 guild war)
+      o.writeInt(9);                       // version (…7 boss d'invasion ; 8 guild war ; 9 boîtes remises)
       o.writeLong(guildID);
       o.writeInt(shardID);
       o.writeInt(infoWire.length);
@@ -429,6 +433,8 @@ public final class ServerGuild {
       for (Long id : previousWarOpponents) o.writeLong(id);
       o.writeInt(warSeasonHistoryWire.size());
       for (byte[] w : warSeasonHistoryWire) { o.writeInt(w.length); o.write(w); }
+      // v9 : ligues dont les boîtes de promotion ont déjà été remises
+      o.writeInt(warBoxedLeagueMask);
       o.flush();
       return bos.toByteArray();
     } catch (Exception ex) {
@@ -512,6 +518,9 @@ public final class ServerGuild {
         for (int i = 0; i < no; i++) g.previousWarOpponents.add(in.readLong());
         int nh = in.readInt();
         for (int i = 0; i < nh; i++) { byte[] w = new byte[in.readInt()]; in.readFully(w); g.warSeasonHistoryWire.add(w); }
+      }
+      if (version >= 9) {
+        g.warBoxedLeagueMask = in.readInt();
       }
       return g;
     } catch (Exception ex) {

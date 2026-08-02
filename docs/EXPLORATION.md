@@ -66,7 +66,7 @@ Ordre de traitement (modifiable). On commence par **BATTLE PASS**.
 | 15 | ENCHANTING | 35 | ⬜ | enchantement d'équipement |
 | 16 | COLISEUM (PvP) | 40 | ⬜ | |
 | 17 | MEGA_MART / GEAR_MARKET / MEMORY_MARKET | 41-42 | 💤 | stores (fermés) |
-| 18 | **WAR (guild war)** | 45 | 🟢 | **Serveur COMPLET, jamais vérifié en jeu.** 8 modules (`ServerWar`, `ServerWarState`, `ServerWarMatchmaker`, `ServerWarCars`, `ServerWarAttack`, `ServerWarScoring`, `ServerWarSabotage`, `ServerWarEnd`, `ServerWarBoxes`), tables `wars` + `user_war_boxes`, `ServerGuild` v8. **7 messages + 11 commandes branchés** dans `LoginServer`. 7 tests dédiés. Doc : `docs/GUILD_WAR.md`. **Restent** : distribution automatique des boîtes (promotion / fin de saison) et un ordonnanceur (appariement, clôture) — les fonctions existent, le déclencheur manque. |
+| 18 | **WAR (guild war)** | 45 | 🟢 | **Serveur COMPLET, jamais vérifié en jeu.** 8 modules (`ServerWar`, `ServerWarState`, `ServerWarMatchmaker`, `ServerWarCars`, `ServerWarAttack`, `ServerWarScoring`, `ServerWarSabotage`, `ServerWarEnd`, `ServerWarBoxes`), tables `wars` + `user_war_boxes`, `ServerGuild` v8. **7 messages + 11 commandes branchés** dans `LoginServer`. **8 tests dédiés** (dont `WarSchedulerTest`). **ORDONNANCEUR livré (2026-08-02)** : `ServerWarScheduler` (bascule de saison, clôtures, phases, appariement ancré sur `RESET_HOUR`) tourne en tâche de fond depuis `LoginServer.main` sur tous les shards ; outil opérateur `AdminWar --status / --tick [--force]`. `ServerGuild` v9 (`warBoxedLeagueMask`). Doc : `docs/GUILD_WAR.md`. **Reste** : la vérification EN JEU, nulle à ce jour. |
 | 19 | FRANCHISE_TRIALS / TEAM_TRIALS | 55 | ⬜ | |
 | 20 | INVASION | 60 | ⬜ | |
 | 21 | PORT | ? | ⬜ | à mapper |

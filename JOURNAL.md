@@ -1,5 +1,64 @@
 # JOURNAL — journal détaillé des modifications
 
+## 2026-08-02 (g42) — GUILD WAR : l'ORDONNANCEUR (étape 10/10) + le « flake » qui n'en était pas un
+
+Dernière pièce du mode : jusqu'ici **toutes les briques existaient mais rien ne les déclenchait**. Aucune
+guerre ne démarrait d'elle-même, aucune ne se terminait, aucune boîte ne tombait.
+
+**`ServerWarScheduler`** — un tour de boucle **idempotent et rejouable** : bascule de saison (avec le rang
+final par MMR, donc les boîtes de fin de saison) → clôture des guerres échues (issue, MMR, remboursement au
+perdant, boîtes de promotion) → avance de phase `SABOTAGE → ACTIVE` → appariement des guildes inscrites, à
+l'heure prévue. Branché dans `LoginServer.main` sur un thread démon (`startBackgroundLoop`, période réglable
+par `-Ddh.war.tick.seconds`, défaut 60 s), appliqué à **tous les shards portant des guildes**
+(`tickAllShards` + nouveau `UserStore.listGuildShards`, PRINCIPLES §5).
+
+**Le calendrier** : le client fait de `WarQueueStateUpdate.nextMatchmakingTime` **directement**
+`warInfo.startTime` (`WarClientHelper.updateWarInfoQueueState`) — l'instant d'appariement EST le début de la
+prochaine guerre. ⚠️ **Lecture structurelle assumée, isolée dans `lastMatchmakingTime`** : ancrage sur
+`RESET_HOUR` (11 h, fuseau serveur), seule heure de référence des données et qu'aucune classe cliente ne lit.
+
+**Deux pièges, tous deux réels et corrigés.**
+1. **La fenêtre se compare au PASSÉ.** Ma première version testait `now >= nextMatchmakingTime(last)` — valeur
+   par construction dans le futur, donc **la condition n'était jamais vraie** : l'appariement ne tournait pas
+   une seule fois. Le tour compare désormais le repère persisté à la **dernière** occurrence de `RESET_HOUR`,
+   et enregistre le repère de la **fenêtre** (pas `now`), sans quoi l'heure dériverait à chaque tour.
+2. **Un shard neuf ne doit pas apparier à son premier tour**, sinon le tout premier démarrage du serveur
+   ouvrirait des guerres à n'importe quelle heure. Il pose le repère et attend — d'où l'outil opérateur.
+
+**`ServerGuild` v9** : `warBoxedLeagueMask` (« boîtes déjà remises »), **distinct** de `warPromotionMask`
+(« ligue atteinte », plancher anti-rétrogradation « cannot be demoted »). Les confondre redistribuerait des
+boîtes à chaque guerre. Le masque de boîtes repart à zéro à chaque saison, le plancher non.
+
+**Outil opérateur `AdminWar`** (pendant d'`AdminGuild`/`AdminMail`) : `--status` (saison, prochain
+appariement, et par guilde MMR / ligue effective / file / guerre en cours / boîtes en attente) et
+`--tick [--force]`. Le forçage ne concerne QUE l'appariement : clôtures et bascules de saison dépendent
+d'échéances réelles qu'on ne bouscule pas. Vérifié en CLI sur 3 guildes : tour non forcé = aucun appariement
+(calendrier respecté), tour forcé = **1 paire + 1 BYE**, guildes en `SABOTAGE` jusqu'à J+2, file remise à
+`NOT_QUEUED`.
+
+### 🐛 Le « flake `ChestWireTest` » n'était pas un flake — c'était une course réelle
+
+En vérifiant la régression, `ChestWireTest` échouait **systématiquement**, ce qui contredisait la note « vert
+en isolation » portée depuis des semaines. Vérifié d'abord que ce n'était pas moi : l'échec est identique sur
+`HEAD` sans mes modifications.
+
+Mesuré ensuite, au lieu de supposer : **un message émis par le client avant que le serveur ait accepté la
+connexion est perdu**. Envoi immédiat après `open()`, ou depuis le `onOpen` du client → jamais reçu, 5 essais
+sur 5. Le même envoi 50 ms plus tard → reçu, 5 essais sur 5. Et le tampon socket ne rattrape pas : après un
+second envoi, le serveur décode **exactement un** message, pas deux — les octets du premier n'ont jamais
+atteint son décodeur. La cause qu'on invoquait (chargement de `GuildStats`) était fausse : cette exception
+est bien levée, mais **absorbée** par le warm-up de `ServerContext`.
+
+Le **vrai client n'y est pas exposé** : son `/login` HTTP précède l'ouverture du socket de jeu et couvre
+largement la fenêtre. Le test, lui, enchaînait connexion et envoi dans la même milliseconde. Correctif :
+`LoginServer` expose `connectionsAccepted` (compteur utile aussi en exploitation) et le test **attend ce
+point de rendez-vous** avant d'émettre — une synchronisation réelle, pas un `sleep` magique.
+
+**Régression : 75/75, aucun échec toléré** — une première (74/74 avec un échec toléré jusqu'ici).
+
+**Reste** : la **vérification EN JEU** de GUILD WAR (et d'INVASION, et des trous de guilde) — **nulle à ce
+jour**. Statut 🟢, pas ✅.
+
 ## 2026-08-02 (g41) — GUILD WAR (#68) : mode COMPLET côté serveur, branché de bout en bout
 
 Neuf incréments, chacun commité et poussé séparément, chacun avec son test dédié.

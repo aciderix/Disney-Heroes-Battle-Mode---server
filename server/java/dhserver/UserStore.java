@@ -304,6 +304,20 @@ public final class UserStore implements AutoCloseable {
     return out;
   }
 
+  /**
+   * Les shards qui portent au moins une guilde — c'est l'ensemble sur lequel l'ordonnanceur de GUERRE
+   * (`ServerWarScheduler`) doit tourner. On ne tient pas de registre de shards à part : un shard sans
+   * aucune guilde n'a par définition rien à apparier ni à clôturer (PRINCIPLES §5, multi-serveur).
+   */
+  public synchronized java.util.List<Integer> listGuildShards() throws SQLException {
+    java.util.List<Integer> out = new java.util.ArrayList<>();
+    try (PreparedStatement ps = conn.prepareStatement("SELECT DISTINCT shardID FROM guilds ORDER BY shardID");
+         ResultSet rs = ps.executeQuery()) {
+      while (rs.next()) out.add(rs.getInt(1));
+    }
+    return out;
+  }
+
   /** Clé du compteur d'identifiants de guilde dans {@code shard_state}. */
   private static final String GUILD_ID_SEQ = "guild_id_seq";
 

@@ -49,6 +49,19 @@ public final class LoginServer {
    *  et toute livraison temps réel aux autres membres). Rempli à ClientInfo, vidé à onClose. */
   private final java.util.concurrent.ConcurrentHashMap<Long, GruntConnection> online =
       new java.util.concurrent.ConcurrentHashMap<>();
+  /**
+   * Nombre de connexions ACCEPTÉES depuis le démarrage (observabilité).
+   *
+   * <p>Il sert aussi de point de rendez-vous aux tests sur socket : <b>un message émis par un client AVANT
+   * que le serveur ait accepté la connexion est PERDU</b> — fait mesuré (2026-08-02), pas une supposition :
+   * un envoi immédiatement après {@code open()} (ou depuis le {@code onOpen} du client) n'arrive JAMAIS,
+   * alors qu'un envoi 50 ms plus tard passe systématiquement. Le vrai client n'y est pas exposé (son
+   * {@code /login} HTTP précède l'ouverture du socket de jeu, ce qui laisse largement la fenêtre passer),
+   * mais un test qui enchaîne connexion et envoi dans la même milliseconde l'était : c'est la vraie cause du
+   * « flake ChestWireTest », longtemps attribuée à tort au chargement de {@code GuildStats}.
+   */
+  public final java.util.concurrent.atomic.AtomicInteger connectionsAccepted =
+      new java.util.concurrent.atomic.AtomicInteger();
 
   public LoginServer(int port, ServerUser user, UserStore store) {
     this.port = port; this.user = user; this.store = store;
@@ -96,6 +109,7 @@ public final class LoginServer {
     GruntConnectionListener listener = new GruntConnectionListener() {
       public void onOpen(final GruntConnection conn) {
         System.out.println("[login] onOpen " + conn);
+        connectionsAccepted.incrementAndGet();
         // Handler de LOG universel : journalise chaque message, et répond BootData au ClientInfo.
         GruntListener<GruntMessage> logger = new GruntListener<GruntMessage>() {
           public void onReceive(GruntConnection c, GruntMessage m) {
@@ -2071,6 +2085,10 @@ public final class LoginServer {
     System.out.println("[login] compte id=1 chargé/créé (" + user.tutorialActCount()
         + " actes de tuto) — DB " + dbPath);
     new LoginServer(port, user, store).start();
+    // GUILD WAR #68 — l'ordonnanceur : appariement à l'heure, avance des phases, clôture des guerres
+    // échues, bascule de saison et distribution des boîtes. C'est ce que le backend faisait tourner tout
+    // seul ; sans lui, aucune guerre ne démarre ni ne se termine jamais.
+    ServerWarScheduler.startBackgroundLoop(store);
     Thread.currentThread().join();
   }
 }

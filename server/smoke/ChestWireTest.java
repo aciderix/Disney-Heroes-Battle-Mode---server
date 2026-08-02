@@ -16,14 +16,15 @@ public class ChestWireTest {
     File db = File.createTempFile("dhwire", ".db"); db.delete();
     UserStore store = new UserStore(db.getPath());
     ServerUser user = store.loadOrCreate(1L, 1);
-    new LoginServer(PORT, user, store).start();
+    LoginServer server = new LoginServer(PORT, user, store);
+    server.start();
 
     final CountDownLatch got = new CountDownLatch(1);
     final long[] t0 = {0};
     GruntConnection conn = new GruntBuilder(MessageFactory.getInstance())
         .setAddress("127.0.0.1").setPort(PORT).setConnectionWrapper(DHXORConnectionWrapper.class)
         .setConnectionListener(new GruntConnectionListener() {
-          public void onOpen(GruntConnection c) { c.send(new ClientInfo()); }
+          public void onOpen(GruntConnection c) {}
           public void onClose(GruntConnection c) {}
         }).buildConnection();
     conn.setListener(BootData.class, new GruntListener<BootData>() {
@@ -44,6 +45,15 @@ public class ChestWireTest {
       }
     });
     conn.open();
+    // ⚠️ NE PAS émettre avant que le serveur ait ACCEPTÉ la connexion : un message envoyé dans cette fenêtre
+    // est PERDU (mesuré : envoi immédiat → jamais reçu ; +50 ms → toujours reçu). C'était la vraie cause du
+    // « flake ChestWireTest » — attribuée à tort au chargement de GuildStats. Le vrai client n'y est pas
+    // exposé (son /login HTTP précède l'ouverture du socket de jeu). On attend donc le point de rendez-vous
+    // du serveur plutôt que de dormir un délai magique.
+    long deadline = System.currentTimeMillis() + 10_000;
+    while (server.connectionsAccepted.get() == 0 && System.currentTimeMillis() < deadline) Thread.sleep(5);
+    if (server.connectionsAccepted.get() == 0) { System.out.println("CHEST WIRE TIMEOUT (accept)"); System.exit(1); }
+    conn.send(new ClientInfo());
     boolean ok = got.await(30, TimeUnit.SECONDS);
     System.out.println("CHEST WIRE " + (ok ? "OK (BuyChests -> LootResults)" : "TIMEOUT"));
     System.exit(ok ? 0 : 1);
