@@ -1,5 +1,56 @@
 # JOURNAL — journal détaillé des modifications
 
+## 2026-08-02 (g40) — PREMIER RUN WINDOWS de la pile complète (logs fournis par l'utilisateur)
+
+L'utilisateur a réussi à lancer le jeu **sur Windows** (Intel UHD 620, GL 3.2, 1280×720) et a fourni
+`logs_pc.txt` (1043 lignes). C'est le **premier run hors Linux/headless**, et il valide le chemin de boot
+de bout en bout **en conditions réelles**.
+
+**Ce qui marche, prouvé par le log**
+- Redirection réseau : `ServerType.LIVE -> login http://127.0.0.1:8080/login` ; le login HTTP répond
+  `{"status": "good", "data": "127.0.0.1:8081"}` ; `[NetworkProvider] Connection to 127.0.0.1:8081 opened`.
+- Handshake complet : `ClientInfo1 → BootData (122 actes de tuto)`, puis `Ping1 → Ping (echo)`.
+- `handleBootData` va **jusqu'au bout** : user créé, challenge/battle-pass/chat/contests/**invasions**/
+  special events/dots initialisés, « Sending BootData to screen », `MainScreen` atteint.
+- **Stat-sync (#40) opérationnel** : `Updated com.perblue.heroes.game.data.DHConstantStats from text
+  battle_pass_v2_constants.tab`.
+- Tutoriel persisté : `tuto INTRO -> step 1/2/3 [persisté]`, puis `onClose` propre.
+- **Spine d'origine via unidbg fonctionne aussi sur Windows** : `[UnidbgVM] 1er Skeleton_getVertices
+  (spine d'origine via unidbg) -> drawCount=192`. Le message
+  `libspine-native.so load dependency libandroid.so failed` qui le précède est ATTENDU (c'est un `.so`
+  Android/Linux) : le chargement direct échoue, le chemin unidbg prend le relais.
+- Les erreurs de parse `.tab` (`FAST_FORWARD`, `SAPPHIRE_5..12`, `guild_perk_levels.tab` `CONTENT_TL`
+  vide, `fight_pit_season_configs.tab`…) sont **exactement les mêmes** que celles observées headless →
+  confirme l'analyse déjà documentée : intrinsèques à la donnée du 12.1.0, attrapées et sautées par
+  `GeneralStats.onStatError`, **non fatales**.
+
+**⭐ Confirmation INDÉPENDANTE d'un correctif fait le jour même (GUILD WAR étape 4)**
+La trace réelle du client montre :
+```
+GuildPerkHelper.updateGuildInfoTimedPerks ← GameMain.getYourGuildInfo
+  ← WarHelper.isWarActive
+  ← HasActiveGuildWar.isSatisfied ← QuestHelper.isUnlocked ← getUnlockedDailyQuests
+  ← hasUnclaimedDailyQuests ← showDailyQuestMenuDot ← DotTracker ← RedDot
+```
+Autrement dit, **le client appelle `WarHelper.isWarActive` à chaque rendu du hub** (pastille de quêtes
+quotidiennes, via la condition de quête `HasActiveGuildWar`), et `isWarActive` lit
+`getYourGuildInfo().warEndTime`. C'est précisément ce qui rendait critique la correction faite quelques
+heures plus tôt : ma v8 de `ServerGuild` **dupliquait** l'état de guerre au lieu d'écrire dans le
+`GuildInfo` du jeu — sans `warEndTime` renseigné, le client n'aurait jamais vu de guerre active, et le
+défaut ne se serait manifesté qu'en jeu. Le log le confirme depuis un client RÉEL.
+
+**Deux manques réels relevés (petits, consignés, non traités ici)**
+1. `SetLanguage1` et `SetExternalContentStatus1` **arrivent au serveur et ne sont pas traités** (simple
+   journalisation, comme la télémétrie). `SetLanguage` porte la langue du joueur — un vrai serveur la
+   persisterait (elle compte pour les textes générés côté serveur, p. ex. le courrier admin).
+2. Sur Windows, le chargement direct de `libspine-native.so` échoue et l'on retombe sur unidbg. Ça
+   marche, mais un binaire spine natif Windows serait le chemin propre.
+
+**Ce que ces logs NE prouvent PAS** — à dire clairement : le compte est à TL1 dans le tutoriel, donc
+**aucun** message de guilde, d'invasion ou de guerre n'a été échangé. La vérification en jeu de GUILD
+WAR (#68), d'INVASION (#69) et des trous de guilde reste **entièrement due** ; leur statut demeure 🟢
+(serveur prouvé) et non ✅.
+
 ## 2026-07-20 (g12) — Quêtes : boîtes-récompense weekly + START_QUEST/Prize Wall élucidés par les faits
 
 Demande « finir quêtes ». **Boîte-récompense weekly** (gap réel) : ouvrir une boîte (après
