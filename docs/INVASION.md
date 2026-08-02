@@ -162,3 +162,66 @@ delta victoire +25, durée 60 s), plafonds quotidiens de guilde, etc.
      rang 90 → rétrogradé BRONZE.
 5. **État partagé de guilde** : dégâts au boss par membre, plafonds quotidiens de guilde
    (`GUILD_DAILY_BOSS_LIMIT=100`, `BOSS_GUILD_DAILY_LIMIT=2400`) → table `shard_state` / `ServerGuild`.
+
+
+---
+
+## ✅ VÉRIFICATION EN JEU (2026-08-02) — l'écran s'ouvre enfin, et un manque de plus
+
+Première vérification EN JEU du mode (PRINCIPLES §8). Compte BaronessDante, TL 100 (INVASION exige
+`TEAM_LEVEL_REQ 60`).
+
+### Le calendrier bloquait, et c'était FIDÈLE
+
+`nav INVASION` répondait `canNavigateTo=false`. Sonde des prédicats DU JEU, un par un, plutôt que de
+supposer : `Unlockables.isUnlocked(INVASION)` = **true** (TL 100 ≥ 60), mais `ServerInvasion.isActive` =
+**false** — l'invasion va du **lundi 12 h au samedi 12 h** et on était un dimanche. Gate correct, rien à
+corriger.
+
+**Levier ajouté : `-Ddh.clock.offset.hours`** (`ServerContext.applyClockOffset`, exposé par
+`DH_SERVER_OPTS` dans `run-online.sh`). Le serveur est la SOURCE DE L'HEURE — le client se cale dessus via
+`TimeUtil.initClock(BootData.serverTime, deviceTime)` — donc décaler l'horloge serveur décale l'ensemble de
+façon cohérente, et toutes les mécaniques datées suivent **leur propre logique**, inchangée. Ce n'est pas un
+contournement (§2) : aucune vérification n'est court-circuitée, on avance la pendule. Vérifié de bout en
+bout : à `+30 h`, le serveur ET le client affichent lundi. (Au passage, `BootData.serverTime` et l'écho
+`Ping` envoyaient `System.currentTimeMillis()` en dur — corrigé en `serverTimeNow()`, sans quoi un décalage
+désynchroniserait client et serveur.)
+
+### 🐛 Manque RÉEL nº1 : l'invasion n'était jamais poussée au boot
+
+Horloge dans la fenêtre, feature déverrouillée… et `canNavigateTo` restait **false**. Cause nommée par la
+sonde : **`InvasionHelper.getActiveInvasion()` = null**. Le client ne connaît l'invasion que par le message
+`InvasionInfo` — qu'il ne demandait jamais, puisqu'il faut déjà être sur l'écran pour l'envoyer. Poule et
+œuf. Le vrai backend la pousse au login, comme `SocialHistory` pour le chat de guilde.
+
+Correctif : `LoginServer.sendInvasionInfo(c, user, replyTo)`, appelée en réponse à `GetInvasionInfo` **et
+spontanément au BOOT**. Résultat immédiat : `getActiveInvasion` rend un `ClientInvasion`,
+`canNavigateTo(INVASION)` passe à **true**, et l'écran s'ouvre.
+
+### Ce que l'écran affiche, et ce que ça prouve
+
+`==> InvasionInfo : rotation #254 équipe YELLOW du Mon Aug 03 12:00 au Sat Aug 08 12:00 [EN COURS]`
+
+* popup **HOW INVASION WORKS** (et `VIEW_INVASION_EXPLANATION` reçu côté serveur) ;
+* écran **INVASION!** avec le compte à rebours **4j 18h 59m** — exactement la fenêtre envoyée, relue par le
+  client depuis notre message ;
+* **BREAKER QUEST (SOLO)** avec l'**énergie d'invasion 80/80** (ressource `INVASION_STAMINA` du jeu, à son
+  cap) ; **BOSS BATTLES (GUILD)** avec 0 breaker ;
+* **MY PROGRESS: TIER 1**, barre **0/100** points d'invasion ; MY SCORE 0 / GUILD SCORE 0, rangs « - ».
+
+### 🐛 Manque RÉEL nº2 : `GetBreakerQuest` n'est pas géré
+
+Taper **GO** sur BREAKER QUEST envoie `GetBreakerQuest1` — que le serveur **journalise sans y répondre**
+(aucun handler). L'écran reste **entièrement vide**, le client attendant un `BreakerQuest`
+{`activeBreakerFight`, `basicBreakerFights`} qui ne vient jamais.
+
+Le mode n'était donc **pas complet**, contrairement à ce que le statut laissait croire : les handlers
+existants (`GetInvasionInfo`, `GetInvasionBosses`, `InvasionBreakerAttackStart`, `InvasionBreakerAttack`,
+`INVASION_CLAIM_GUILD_RANK_REWARD`) ne couvrent pas l'entrée du mode SOLO. **Non corrigé à ce stade** —
+c'est le prochain chantier, avec sa propre étude (composition des combats de breaker depuis
+`invasion_*.tab`).
+
+### Restent NON vérifiés en jeu
+
+BREAKER QUEST (bloqué par le manque nº2), BOSS BATTLES, les récompenses de rang de guilde, le report de
+ligue d'une invasion à la suivante.

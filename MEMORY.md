@@ -18,6 +18,14 @@
 > 3. **Faire le point** sur l'état courant ET sur ce qui a été transmis lors de la compression, PUIS enchaîner.
 > Ne PAS sauter cette procédure : c'est la condition pour reprendre dans de bonnes conditions.
 
+Dernière mise à jour : **2026-08-02 (g45)** — **INVASION vérifiée EN JEU (une première)** + fin du cycle de guerre. Détail : `docs/INVASION.md`, `docs/GUILD_WAR.md` §5.
+**WAR** : 2ᵉ défaut de typage wire — `StartWarAttackResponse.activeCars` attend des `WarAttackCarBonus`, pas des `WarCarType` (compile, explose À L'ÉCRITURE ⇒ visible côté client seulement). `WarAttackTest` écrit désormais le message sur le fil. **Vérifiés en jeu** : clôture (« DRAW +1 MMR », 10→11 / 30→29, WAR BOXES 3), réclamation (`CLAIM_WAR_BOX_REWARD` → `BADGE_CHEST_1X×1`), liste à 3 guerres, phase ACTIVE (garages ouverts, salles vides tamponnées **KO**), START_WAR_ATTACK sérialisé.
+**Piège d'instrumentation** : `WarClientHelper.doStartWarAttack` N'EST PAS un prédicat — c'est le rappel de l'action, il CONSOMME l'attaque. Le pré-appeler cassait le vrai envoi.
+**INVASION** : le calendrier (lundi 12 h → samedi 12 h) bloquait, fidèlement. **Nouveau levier `-Ddh.clock.offset.hours`** (via `DH_SERVER_OPTS`) : le serveur est la SOURCE DE L'HEURE, le client se cale dessus ⇒ décaler l'horloge serveur décale tout de façon cohérente, sans court-circuiter aucune règle. Corollaire corrigé : `BootData.serverTime` et l'écho `Ping` envoyaient `currentTimeMillis()` en dur.
+**🐛 Manque nº1 CORRIGÉ** : l'`InvasionInfo` n'était **jamais poussée au BOOT** ⇒ `getActiveInvasion()` null ⇒ navigation refusée ⇒ le client ne pouvait jamais demander l'info (poule/œuf). Poussée au login comme `SocialHistory`. L'écran s'ouvre : compte à rebours 4j18h, énergie 80/80, TIER 1, 0/100.
+**🐛 Manque nº2 NON corrigé** : **`GetBreakerQuest` n'a pas de handler** — GO sur BREAKER QUEST laisse l'écran VIDE. Le mode INVASION n'était donc PAS complet. Prochain chantier.
+Régression 76/76.
+
 Dernière mise à jour : **2026-08-02 (g44)** — **« tout vérifier en jeu » : les ACTIONS de guerre → 4 DÉFAUTS RÉELS.** Détail : `docs/GUILD_WAR.md` §5.
 **(1) Personne ne participait jamais à une guerre** : rien ne créait de `WarMemberInfo`, `members` restait vide ⇒ affectation de salle refusée, aucune cible d'attaque, 0/0 partout. **Les tests headless fabriquaient eux-mêmes les membres qu'ils testaient.** → nouveau `ServerWarMembers` (défenses `WAR_DEFENSE_1..3` réelles, à l'ouverture ET à chaque changement ; état de guerre reporté par `UnitType`).
 **(2) `grantHero` inversait ÉTOILES/NIVEAU** (`createAndAddHero` = (STARS, LEVEL) au bytecode) → héros à 40 étoiles → `IndexOutOfBounds` dans `HasEnoughCollectionHeroes` au rendu du menu ⇒ **client qui plante au hub, compte injouable**. `SkillUpgradeTest`/`SkillSetup` corrompaient pareil sans l'asserter.

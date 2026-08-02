@@ -190,7 +190,11 @@ public final class ServerUser {
    */
   public synchronized BootData bootData() {
     BootData bd = new BootData();
-    long now = System.currentTimeMillis();
+    // L'HEURE DU SERVEUR fait autorité et le client s'y cale (TimeUtil.initClock). On envoie donc
+    // `serverTimeNow()` — qui vaut l'horloge réelle par défaut, et l'horloge DÉCALÉE si l'opérateur a posé
+    // `-Ddh.clock.offset.hours` (cf. ServerContext.applyClockOffset). Envoyer `currentTimeMillis()` en dur
+    // désynchroniserait le client du serveur dès qu'un décalage est en place.
+    long now = com.perblue.heroes.util.TimeUtil.serverTimeNow();
     bd.serverTime = now;
     bd.currentServer.shardID = shardID;
     userInfo.lastLoginTime = now;

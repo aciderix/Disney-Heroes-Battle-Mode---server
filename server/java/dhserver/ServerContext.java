@@ -83,6 +83,7 @@ public final class ServerContext {
       // N'affecte QUE l'envoi d'événements, PAS les valeurs RNG (même graine → même séquence). Valeur du jeu,
       // pas une rustine (c'est le chemin offline prévu par PerBlue).
       com.perblue.heroes.BuildOptions.SERVER_TYPE = com.perblue.heroes.ServerType.NONE;
+      applyClockOffset();
       // NB : on NE pose PAS CodeLocationHelper.SERVER — le jeu initialise ContentHelper/stats en client-location
       // (extension null en SERVER → NPE ShardStats.getStats). On reste en client-location ; les rares chemins
       // client-only fragiles headless (ex. QuestStats.getAllQuestIDs = thread-check + copie gdx Array) sont
@@ -144,6 +145,37 @@ public final class ServerContext {
       System.out.println("[ctx] DH.app headless + données du jeu + couche évènements spéciaux");
     } catch (Throwable t) {
       throw new RuntimeException("échec init contexte serveur (DH.app)", t);
+    }
+  }
+
+  /**
+   * DÉCALAGE D'HORLOGE de l'opérateur ({@code -Ddh.clock.offset.hours=<h>}, défaut 0).
+   *
+   * <p>Le serveur est la SOURCE DE L'HEURE : le client se cale dessus (`TimeUtil.initClock(BootData
+   * .serverTime, deviceTime)` au login puis à chaque `Ping`). Décaler l'horloge SERVEUR décale donc
+   * l'ensemble de façon cohérente — serveur et client voient la même date, et toutes les mécaniques datées
+   * (fenêtre d'INVASION lundi 12 h → samedi 12 h, `RESET_HOUR` des guerres, saisons, cooldowns) suivent
+   * <b>leur propre logique</b>, inchangée.
+   *
+   * <p>Ce n'est donc PAS un contournement de règle (PRINCIPLES §2) : aucune vérification n'est court-circuitée,
+   * on avance la pendule. Indispensable pour vérifier EN JEU un mode qui n'est ouvert que certains jours,
+   * sans attendre le bon jour de la semaine. À 0 (défaut) le serveur utilise l'heure réelle.
+   *
+   * <p>Mise en œuvre : on pose {@code TimeUtil.CLOCK_OFFSET} (champ privé) de sorte que
+   * {@code serverTimeNow() = System.currentTimeMillis() - CLOCK_OFFSET} rende l'heure décalée ; tout ce qui
+   * date côté serveur passe par ce même accesseur.
+   */
+  private static void applyClockOffset() {
+    long hours = Long.getLong("dh.clock.offset.hours", 0L);
+    if (hours == 0L) return;
+    try {
+      Field f = com.perblue.heroes.util.TimeUtil.class.getDeclaredField("CLOCK_OFFSET");
+      f.setAccessible(true);
+      f.setLong(null, -hours * 3600_000L);      // serverTimeNow = now - OFFSET → OFFSET négatif = avance
+      System.out.println("[ctx] ⏱ horloge serveur décalée de " + hours + " h → "
+          + new java.util.Date(com.perblue.heroes.util.TimeUtil.serverTimeNow()));
+    } catch (Throwable t) {
+      System.out.println("[ctx] décalage d'horloge impossible : " + t);
     }
   }
 

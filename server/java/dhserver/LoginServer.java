@@ -68,6 +68,44 @@ public final class LoginServer {
     this.oppSrc = new StoreOpponentSource(store);
   }
 
+  /**
+   * INVASION (#69) — envoie l'{@code InvasionInfo} courant : calendrier et identité de l'invasion, CALCULÉS
+   * depuis les données du jeu ({@code invasion_constants} : jour/heure de début et de fin,
+   * {@code INVASION_BASE_DATE}/{@code ROTATION} ; {@code UnitStats.getTeam} pour l'équipe vedette), plus
+   * l'état JOUEUR relu en base et remis à zéro si la rotation a changé (comme
+   * {@code InvasionHelper.resetUserInvasion}). L'énergie d'invasion reste une ressource du jeu
+   * ({@code INVASION_STAMINA}, régénérée par la mécanique existante).
+   *
+   * <p>Appelé à deux moments : en RÉPONSE à {@code GetInvasionInfo}, et <b>spontanément au BOOT</b> — sans
+   * cette poussée, {@code InvasionHelper.getActiveInvasion()} reste {@code null} côté client et la
+   * navigation vers l'écran est refusée, donc le joueur ne peut jamais déclencher la requête (cf. le
+   * commentaire au point d'appel).
+   *
+   * @param replyTo le message auquel répondre, ou {@code null} pour une poussée spontanée
+   */
+  private void sendInvasionInfo(GruntConnection c, ServerUser user, GruntMessage replyTo) {
+    try {
+      long inow = com.perblue.heroes.util.TimeUtil.serverTimeNow();
+      com.perblue.heroes.network.messages.InvasionInfo ii = ServerInvasion.buildInfo(inow);
+      if (ii.currentInvasion != null && ii.currentInvasion.invasion != null) {
+        try {
+          long invID = ii.currentInvasion.invasion.invasionID;
+          byte[] prev = store.loadUserInvasion(user.shardID, user.userID);
+          com.perblue.heroes.network.messages.UserInvasionData ud =
+              ServerInvasion.loadOrResetUserData(prev, user.userID, user.currentGuildID(), invID);
+          ii.currentInvasion.yourData = ud;
+          store.saveUserInvasion(user.shardID, user.userID, ServerInvasion.userDataToBytes(ud));
+        } catch (Exception e) { System.out.println("[login]     ! état invasion joueur : " + e); }
+      }
+      if (replyTo != null) ii.setAsReplyTo(replyTo);
+      c.send(ii);
+      System.out.println("[login] " + (replyTo != null ? "<== GetInvasionInfo → " : "")
+          + "==> InvasionInfo : " + ServerInvasion.describe(inow));
+    } catch (Exception e) {
+      System.out.println("[login]     ! InvasionInfo échoué: " + e);
+    }
+  }
+
   /** Pousse un message à tous les MEMBRES d'une guilde actuellement EN LIGNE, sauf {@code exceptUserID}
    *  (typiquement l'émetteur, déjà servi). Base du temps réel multi-user (#65). Ne lève jamais (best-effort). */
   private void pushToGuild(ServerGuild g, long exceptUserID, GruntMessage msg) {
@@ -167,6 +205,16 @@ public final class LoginServer {
                       + bootGuild.guildChatWire.size() + " message(s) d'historique");
                 } catch (Exception e) { System.out.println("[login]     ! SocialHistory (boot) échoué: " + e); }
               }
+              // INVASION (#69) — POUSSER l'invasion courante DÈS LE BOOT quand il y en a une.
+              //
+              // ⚠️ Manque RÉEL trouvé EN JEU (2026-08-02) : le client refusait la navigation vers INVASION
+              // (`UINavHelper.canNavigateTo` = false) alors que la feature est bien déverrouillée
+              // (`Unlockables.isUnlocked` = true, TL 100 ≥ 60) et que le calendrier était dans la fenêtre.
+              // Cause : `InvasionHelper.getActiveInvasion()` rendait `null` — le client ne connaît l'invasion
+              // que par le message `InvasionInfo`, qu'il ne demandait jamais puisqu'il faut déjà être sur
+              // l'écran pour l'envoyer. Poule et œuf : le VRAI backend la pousse au login, comme
+              // `SocialHistory` pour le chat. On fait pareil.
+              sendInvasionInfo(c, user, null);
             } else if (m instanceof ChangeTutorialStep) {
               // Progression du tutoriel : le serveur est autoritaire → on met à jour l'état ET on
               // PERSISTE (SQLite, octets wire). Fire-and-forget côté client (aucune réponse attendue).
@@ -1520,28 +1568,7 @@ public final class LoginServer {
                 System.out.println("[login]     ! InvasionBreakerAttack : " + e);
               }
             } else if (m instanceof com.perblue.heroes.network.messages.GetInvasionInfo) {
-              // INVASION (#69) — calendrier + identité de l'invasion courante, CALCULÉS depuis les données du jeu
-              // (invasion_constants : START/END jour+heure, INVASION_BASE_DATE/ROTATION ; UnitStats.getTeam pour
-              // les héros de l'équipe vedette). Le client enveloppe ça dans son ClientInvasion.
-              long inow = com.perblue.heroes.util.TimeUtil.serverTimeNow();
-              com.perblue.heroes.network.messages.InvasionInfo ii = ServerInvasion.buildInfo(inow);
-              // État JOUEUR : relu depuis la base, REMIS À ZÉRO si la rotation a changé (comme
-              // InvasionHelper.resetUserInvasion), puis re-persisté. L'énergie d'invasion elle-même est une
-              // ressource du jeu (INVASION_STAMINA, régén gérée par la mécanique existante).
-              if (ii.currentInvasion != null && ii.currentInvasion.invasion != null) {
-                try {
-                  long invID = ii.currentInvasion.invasion.invasionID;
-                  byte[] prev = store.loadUserInvasion(user.shardID, user.userID);
-                  com.perblue.heroes.network.messages.UserInvasionData ud =
-                      ServerInvasion.loadOrResetUserData(prev, user.userID, user.currentGuildID(), invID);
-                  ii.currentInvasion.yourData = ud;
-                  store.saveUserInvasion(user.shardID, user.userID, ServerInvasion.userDataToBytes(ud));
-                } catch (Exception e) { System.out.println("[login]     ! état invasion joueur : " + e); }
-              }
-              ii.setAsReplyTo(m);
-              c.send(ii);
-              System.out.println("[login] <== GetInvasionInfo → ==> InvasionInfo : "
-                  + ServerInvasion.describe(com.perblue.heroes.util.TimeUtil.serverTimeNow()));
+              sendInvasionInfo(c, user, m);
             } else if (m instanceof com.perblue.heroes.network.messages.GetGuildGiftRewards) {
               // GUILD CRATE / cadeaux de guilde (#58/#66) — cadeaux accumulés de la guilde (offreurs + récompenses).
               com.perblue.heroes.network.messages.GetGuildGiftRewards req =
@@ -1810,7 +1837,7 @@ public final class LoginServer {
               // Écho de latence/keepalive : le client mesure le RTT et surveille l'activité serveur.
               // Sans réponse, son chien de garde ferme la connexion (« Reconnecting… »).
               Ping in = (Ping) m;
-              long now = System.currentTimeMillis();
+              long now = com.perblue.heroes.util.TimeUtil.serverTimeNow();   // heure SERVEUR (suit -Ddh.clock.offset.hours)
               Ping pong = new Ping();
               pong.timestamp = in.timestamp;     // renvoyé tel quel (le client calcule le RTT)
               pong.serverReceive = now;

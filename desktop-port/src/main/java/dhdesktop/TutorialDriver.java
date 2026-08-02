@@ -987,6 +987,25 @@ public final class TutorialDriver {
         } catch (Throwable t) { System.out.println("[wartarget] échec: " + t); }
     }
 
+    /** DEV : pourquoi l'INVASION est-elle (in)accessible ? On interroge les prédicats DU JEU côté CLIENT.
+     *  Invoqué via clickfile "invstate". */
+    public static void invasionState(GameMain game) {
+        try {
+            com.perblue.heroes.game.objects.User u = game.getYourUser();
+            System.out.println("[invstate] heure client = "
+                + new java.util.Date(com.perblue.heroes.util.TimeUtil.serverTimeNow()));
+            System.out.println("[invstate] teamLevel = " + u.getTeamLevel());
+            System.out.println("[invstate] Unlockables.isUnlocked(INVASION) = "
+                + com.perblue.heroes.game.data.misc.Unlockables.isUnlocked(
+                    com.perblue.heroes.game.data.misc.Unlockable.INVASION, u));
+            System.out.println("[invstate] InvasionHelper.getActiveInvasion = "
+                + com.perblue.heroes.game.logic.InvasionHelper.getActiveInvasion());
+            System.out.println("[invstate] canNavigateTo(INVASION) = "
+                + com.perblue.heroes.ui.UINavHelper.canNavigateTo(
+                    com.perblue.heroes.ui.UINavHelper.Destination.INVASION, false, new String[0]));
+        } catch (Throwable t) { System.out.println("[invstate] échec: " + t); }
+    }
+
     /** DEV : POSTE un héros comme mercenaire (Action POST_HERO), sans navigation MERCENARIES.
      *  Invoqué via clickfile "postmerc &lt;UnitType&gt;". */
     public static void postMerc(GameMain game, String heroName) {

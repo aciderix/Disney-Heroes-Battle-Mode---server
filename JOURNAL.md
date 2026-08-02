@@ -1,5 +1,57 @@
 # JOURNAL — journal détaillé des modifications
 
+## 2026-08-02 (g45) — INVASION vérifiée EN JEU (une première) + fin du cycle de guerre
+
+### GUILD WAR — la boucle est bouclée
+
+`StartWarAttackResponse.activeCars` attendait des `WarAttackCarBonus{type, bonusPerkLevel}`, pas des
+`WarCarType` : deuxième défaut de typage du wire, même famille que `WarHeroData`, même signature — ça
+compile (dex2jar efface les génériques) et ça explose **à l'écriture du message**, donc côté client
+uniquement. Le niveau de perk vient de la guilde DÉFENSEUR : `WarHelper.getCarBonusPerk(car)` nomme le
+`GuildPerkType`, `GuildInfoPerkProvider.getPerkLevel` en donne le niveau — deux accesseurs du jeu reliés.
+`WarAttackTest` asserte désormais les types réels **et écrit le message sur le fil**, seul endroit où le
+mauvais type se voyait.
+
+Erreur d'instrumentation corrigée au passage : le pilote pré-appelait `WarClientHelper.doStartWarAttack`
+« pour connaître le verdict ». Ce n'est pas un prédicat, c'est LE RAPPEL de l'action — il consomme
+l'attaque localement, et le vrai passage échouait ensuite en `WAR_EXTRA_ATTACKS_DEPLETED` sans rien
+émettre, le message ne partant qu'à `completeAction`.
+
+Vérifiés en jeu : **clôture** (« DRAW +1 MMR », MMR 10→11 chez nous et 30→29 en face, WAR BOXES: 3),
+**réclamation** (fenêtre COPPER WAR BOX / AUG 2026, trois options, `CLAIM_WAR_BOX_REWARD` crédite
+`BADGE_CHEST_1X×1`, reste 2), **liste à trois guerres** (l'active en BATTLE PHASE), **phase ACTIVE** (les
+deux garages s'ouvrent, les salles sans défenseurs portent le tampon **KO** — la règle telle que le jeu
+l'énonce), et **START_WAR_ATTACK** dont la réponse se sérialise enfin.
+
+### INVASION — vérifiée EN JEU pour la première fois, et pas complète
+
+Le mode était marqué terminé. Il ne l'était pas.
+
+**Le calendrier bloquait, et c'était fidèle.** `nav INVASION` répondait `canNavigateTo=false`. Sonde des
+prédicats du jeu un par un : `Unlockables.isUnlocked` = true (TL 100 ≥ 60), mais l'invasion va du **lundi
+12 h au samedi 12 h** et on était dimanche.
+
+**Levier ajouté** : `-Ddh.clock.offset.hours` (via `DH_SERVER_OPTS`). Le serveur est la source de l'heure et
+le client se cale dessus, donc décaler l'horloge serveur décale l'ensemble de façon cohérente — aucune
+vérification n'est court-circuitée, on avance la pendule. Vérifié : à +30 h, serveur ET client affichent
+lundi. Corollaire corrigé : `BootData.serverTime` et l'écho `Ping` envoyaient `System.currentTimeMillis()`
+en dur, ce qui aurait désynchronisé les deux.
+
+**🐛 Manque nº1 : l'invasion n'était jamais poussée au boot.** Horloge bonne, feature déverrouillée, et
+pourtant refus — parce que `InvasionHelper.getActiveInvasion()` rendait `null`. Le client ne connaît
+l'invasion que par le message `InvasionInfo`, qu'il ne demandait jamais puisqu'il faut déjà être sur
+l'écran pour l'envoyer : poule et œuf. Le vrai backend la pousse au login, comme `SocialHistory` pour le
+chat. Corrigé — et l'écran s'ouvre.
+
+**Ce qu'il affiche** : compte à rebours **4j 18h 59m** (exactement la fenêtre envoyée), **énergie
+d'invasion 80/80**, BREAKER QUEST / BOSS BATTLES, **TIER 1**, barre 0/100, scores et rangs à zéro.
+
+**🐛 Manque nº2 : `GetBreakerQuest` n'est pas géré.** Taper GO envoie le message, le serveur le journalise
+sans répondre, et l'écran reste **entièrement vide**. Le mode SOLO n'a donc pas d'entrée. Non corrigé :
+c'est le prochain chantier, avec son étude propre.
+
+Régression 76/76.
+
 ## 2026-08-02 (g44) — « tout vérifier en jeu » : les ACTIONS de guerre — 4 défauts RÉELS
 
 Consigne de l'utilisateur : vérifier TOUT en jeu, sans exception. Cette session est passée de l'affichage

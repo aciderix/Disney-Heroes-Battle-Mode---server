@@ -85,7 +85,10 @@ CONTENT_PID=$!
 echo "[online] serveur de jeu TCP :$GAME_PORT ..."
 # game-framed.jar a des StackMapTable valides → plus de -Xverify:none (plus de SIGABRT oop-map).
 # On garde -XX:TieredStopAtLevel=1 (C1 seul) par prudence sur le bytecode dex2jar (le C2 avait planté).
-java -XX:TieredStopAtLevel=1 -Ddh.db="$ROOT/server/data/dh-server.db" \
+# DH_SERVER_OPTS : options -D supplémentaires pour le SERVEUR uniquement (dev/opérateur). Ex. avancer
+# l'horloge du serveur — dont le client se cale — pour vérifier un mode ouvert seulement certains jours :
+#   DH_SERVER_OPTS=-Ddh.clock.offset.hours=30 ./run-online.sh    (INVASION : lundi 12h → samedi 12h)
+java -XX:TieredStopAtLevel=1 ${DH_SERVER_OPTS:-} -Ddh.db="$ROOT/server/data/dh-server.db" \
      -Ddh.stats="$ROOT/game-data/stats" \
      -cp "$CPF:$SRVOUT" dhserver.LoginServer "$GAME_PORT" >/tmp/dh_game.log 2>&1 &
 GAME_PID=$!
