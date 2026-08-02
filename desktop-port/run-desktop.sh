@@ -78,6 +78,44 @@ if [ ! -d "$RESD" ]; then
      'AndroidManifest.xml' 'resources.arsc' -d "$RESD" || true
 fi
 
+# Overlay des CHAÎNES manquantes : le bundle de l'APK (12.1.0) précède certaines clés que le CODE de
+# game.jar référence (ex. InvasionUI.GUILD_DAILY_BOSS_LIMIT_INTERVAL) → le client affiche la CLÉ brute.
+# On complète depuis notre extraction game-data/strings (qui suit game.jar), en n'AJOUTANT QUE les clés
+# ABSENTES (jamais d'écrasement : on ne touche pas au libellé d'origine de la version du client). §4 : valeurs
+# extraites, pas inventées. Idempotent (relançable). Cf. docs/INVASION.md §BOSS BATTLES.
+if [ -d "$ROOT/game-data/strings" ] && [ -d "$ASSETS/strings" ]; then
+  python3 - "$ROOT/game-data/strings" "$ASSETS/strings" <<'PY' || true
+import os, sys
+src, dst = sys.argv[1], sys.argv[2]
+def keys(path):
+    k=set()
+    if not os.path.exists(path): return k
+    for line in open(path, encoding='utf-8', errors='replace'):
+        s=line.strip()
+        if not s or s.startswith('#') or '=' not in s: continue
+        k.add(s.split('=',1)[0].strip())
+    return k
+added_total=0
+for fn in os.listdir(src):
+    if not fn.endswith('.properties'): continue
+    d=os.path.join(dst,fn)
+    if not os.path.exists(d): continue          # ne crée pas de bundle absent du client
+    have=keys(d); missing=[]
+    for line in open(os.path.join(src,fn), encoding='utf-8', errors='replace'):
+        s=line.rstrip('\n')
+        t=s.strip()
+        if not t or t.startswith('#') or '=' not in t: continue
+        key=t.split('=',1)[0].strip()
+        if key not in have: missing.append(s); have.add(key)
+    if missing:
+        with open(d,'a',encoding='utf-8') as f:
+            f.write('\n# --- clés ajoutées depuis game-data/strings (absentes du bundle APK) ---\n')
+            f.write('\n'.join(missing)+'\n')
+        added_total+=len(missing)
+if added_total: print(f"[desktop] overlay chaînes : {added_total} clé(s) manquante(s) complétée(s)")
+PY
+fi
+
 # Extrait le natif libGDX (libgdx64.so) du jar gdx-platform natives-desktop du classpath.
 NATDIR="$BUILD/native"
 if [ ! -f "$NATDIR/libgdx64.so" ]; then

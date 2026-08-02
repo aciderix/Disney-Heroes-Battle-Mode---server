@@ -1,5 +1,29 @@
 # JOURNAL — journal détaillé des modifications
 
+## 2026-08-02 (g48) — INVASION BOSS : boucle d'attaque câblée + source FIDÈLE des dégâts + chaînes manquantes
+
+**Source fidèle des dégâts — établie au bytecode.** Le client calcule `getBossDamage =
+UnitCombatStats.totalDamageTaken` de la vedette et l'applique localement ; `InvasionBossAttack` n'a pas de
+champ « damage ». Mais dans `Scene`, sur le MÊME `entityDamageEvent`, `summary.damageTaken` ET
+`stats.totalDamageTaken` sont incrémentés du même montant → `base.defenders[*].units[*].damageTaken` de la
+vedette = exactement le chiffre du client. `defenderHeroes` n'est que le lineup statique (piège écarté).
+Combat client-autoritatif → on LIT ce chiffre : `ServerInvasion.extractBossDamage`.
+
+**Handlers câblés** : `StartInvasionBossAttack → StartBossAttackResponse{bossLineup,…}` + verrou exclusif ;
+`InvasionBossAttack → extractBossDamage → attackBoss` (débit clés BREAKER, cumul par joueur, persistance,
+libération du verrou). **LINEUP du boss corrigé** : `spawnBoss` ne posait pas `InvasionBossInfo.lineup` (que
+`getBossUnitData` lit) → nouveau `ServerInvasionBreaker.bossLineup` (vedette MAMA_BOT au niveau du boss,
+rareté = `getEnemyRarity` du niveau d'équipe du découvreur). [`InvasionBossTest` : lineup + extractBossDamage].
+
+**Chaînes manquantes (GUILD_DAILY_BOSS_LIMIT_INTERVAL corrigé)** : le bundle de l'APK (12.1.0) précède
+certaines clés que le CODE de game.jar référence → le client affichait la clé brute. `run-desktop.sh` overlaie
+désormais les clés ABSENTES depuis `game-data/strings` (jamais d'écrasement du libellé d'origine) → 556 clés
+complétées, dont `GUILD_DAILY_BOSS_LIMIT_INTERVAL = "Reset in %1$s"`.
+
+**Boss 450 — test** : `AdminInvasion --spawn-boss --level 1` (levier opérateur, comme le décalage d'horloge)
+spawn un boss faible battable par le compte de test pour exercer la boucle en jeu. Régression 77/77. Détail :
+`docs/INVASION.md` §BOSS BATTLES.
+
 ## 2026-08-02 (g47) — INVASION BOSS BATTLES : boss affiché EN JEU + rendu attaquable
 
 Le boss d'invasion est SERVEUR-autoritatif (le jar client ne sait que le lire/attaquer). Rien ne le faisait

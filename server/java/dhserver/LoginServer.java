@@ -1559,6 +1559,65 @@ public final class LoginServer {
               c.send(ib);
               System.out.println("[login] <== GetInvasionBosses → ==> InvasionBosses ("
                   + ib.bosses.size() + " boss actif(s))");
+            } else if (m instanceof com.perblue.heroes.network.messages.StartInvasionBossAttack) {
+              // INVASION #69 — le client OUVRE un combat de BOSS : réponse StartBossAttackResponse (exigée par
+              // le ctor InvasionBossAttackScreen) avec le LINEUP du boss, + acquisition du VERROU exclusif.
+              com.perblue.heroes.network.messages.StartInvasionBossAttack sba =
+                  (com.perblue.heroes.network.messages.StartInvasionBossAttack) m;
+              long snow = com.perblue.heroes.util.TimeUtil.serverTimeNow();
+              ServerGuild sg = currentGuild(user);
+              com.perblue.heroes.network.messages.InvasionBossInfo sboss = null;
+              if (sg != null)
+                for (com.perblue.heroes.network.messages.InvasionBossInfo b : ServerInvasion.activeBosses(sg, snow))
+                  if (b.bossID == sba.bossID) sboss = b;
+              com.perblue.heroes.network.messages.StartBossAttackResponse sresp =
+                  new com.perblue.heroes.network.messages.StartBossAttackResponse();
+              sresp.bossID = sba.bossID;
+              sresp.damageMultiplier = sba.damageMultiplier;
+              sresp.selectedBoosts = new java.util.ArrayList<>();
+              sresp.bossLineup = new java.util.ArrayList<>();
+              if (sboss != null) {
+                if (sboss.lineup != null) ((java.util.List<Object>) sresp.bossLineup).addAll(sboss.lineup);
+                sg.lockBoss(sba.bossID, user.userID, snow, ServerInvasion.attackLockDuration());
+                try { store.saveGuild(sg); } catch (Exception ignore) {}
+              }
+              sresp.setAsReplyTo(m);
+              c.send(sresp);
+              System.out.println("[login] <== StartInvasionBossAttack bossID=" + sba.bossID + " → ==> "
+                  + "StartBossAttackResponse (" + (sboss == null ? "boss introuvable" : "lineup "
+                  + (sboss.lineup == null ? 0 : sboss.lineup.size()) + ", verrou acquis") + ")");
+            } else if (m instanceof com.perblue.heroes.network.messages.InvasionBossAttack) {
+              // INVASION #69 — ISSUE d'un combat de boss. Le serveur AUTORITATIF débite les clés (BREAKER),
+              // cumule les DÉGÂTS DU JOUEUR (source fidèle = base.defenders[].units[].damageTaken de la vedette,
+              // = getBossDamage du client, cf. ServerInvasion.extractBossDamage) et persiste l'état partagé.
+              com.perblue.heroes.network.messages.InvasionBossAttack ba =
+                  (com.perblue.heroes.network.messages.InvasionBossAttack) m;
+              long banow = com.perblue.heroes.util.TimeUtil.serverTimeNow();
+              ServerGuild bg2 = currentGuild(user);
+              try {
+                long invID = ServerInvasion.rotation(ServerInvasion.invasionStart(banow));
+                com.perblue.heroes.network.messages.UserInvasionData ud = ServerInvasion.loadOrResetUserData(
+                    store.loadUserInvasion(user.shardID, user.userID), user.userID, user.currentGuildID(), invID);
+                com.perblue.heroes.network.messages.InvasionBossInfo boss = null;
+                if (bg2 != null)
+                  for (com.perblue.heroes.network.messages.InvasionBossInfo b : ServerInvasion.activeBosses(bg2, banow))
+                    if (b.bossID == ba.bossID) boss = b;
+                com.perblue.heroes.network.messages.UnitType bossType = null;
+                if (boss != null) {
+                  try { bossType = com.perblue.heroes.game.logic.InvasionHelper.getBossUnitData(boss).getType(); }
+                  catch (Throwable ignore) {}
+                }
+                long dmg = ServerInvasion.extractBossDamage(ba, bossType);
+                ServerInvasion.BossOutcome bo =
+                    ServerInvasion.attackBoss(bg2, user, ud, ba.bossID, ba.damageMultiplier, dmg, banow);
+                store.saveUserInvasion(user.shardID, user.userID, ServerInvasion.userDataToBytes(ud));
+                store.save(user);
+                if (bg2 != null) store.saveGuild(bg2);
+                System.out.println("[login] <== InvasionBossAttack bossID=" + ba.bossID + " ×" + ba.damageMultiplier
+                    + " outcome=" + (ba.base == null ? "?" : ba.base.outcome) + " → " + bo + " [persisté]");
+              } catch (Exception e) {
+                System.out.println("[login]     ! InvasionBossAttack : " + e);
+              }
             } else if (m instanceof com.perblue.heroes.network.messages.InvasionBreakerAttackStart) {
               // INVASION #69 — le client OUVRE un combat de breaker : le serveur lui renvoie la COMPOSITION
               // adverse, tirée de la table de drop DU JEU (invasion_breaker_fight_comp.tab) DANS LE CONTEXTE

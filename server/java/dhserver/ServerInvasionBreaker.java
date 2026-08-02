@@ -165,6 +165,43 @@ public final class ServerInvasionBreaker {
     }
   }
 
+  /** Le LINEUP d'un BOSS d'invasion (INVASION_BOSS) : une seule vedette au niveau donné, marquée BOSS —
+   *  c'est CE que {@code InvasionHelper.getBossUnitData} lit dans {@code InvasionBossInfo.lineup} (il cherche
+   *  le HeroData dont {@code modePersistentData[INVASION_BOSS].extra[BOSS]==true}). Sans lui, le boss n'a pas
+   *  d'unité (carte dégradée, combat impossible). Unité = {@code MAMA_BOT} (l'unité boss par défaut du jeu,
+   *  {@code getBossUnitType(DEFAULT)} — le gros robot de l'écran BOSS BATTLES) ; rareté = {@code getEnemyRarity}
+   *  du niveau d'équipe du découvreur (comme {@code InvasionBossCard.getScaledBossRarity}). */
+  public static List<HeroData> bossLineup(ServerUser owner, int level) {
+    List<HeroData> out = new ArrayList<>();
+    User w = workshop(owner);
+    int tl = owner != null && owner.basicInfo() != null && owner.basicInfo().teamLevel > 0
+        ? owner.basicInfo().teamLevel : maxTeamLevel();
+    Rarity rarity = com.perblue.heroes.game.data.invasion.InvasionStats.getEnemyRarity(tl);
+    HeroData hd = bossHeroData(w, UnitType.MAMA_BOT, rarity, level > 0 ? level : 1);
+    if (hd != null) out.add(hd);
+    return out;
+  }
+
+  /** Un {@code HeroData} de vedette de BOSS (identité + état INVASION_BOSS : pleine vie, drapeau BOSS). */
+  @SuppressWarnings("unchecked")
+  private static HeroData bossHeroData(User w, UnitType type, Rarity rarity, int level) {
+    try {
+      if (w.getHero(type) == null) w.createAndAddHero(type, rarity, 1, level, new String[]{"boss"});
+      UnitData ud = (UnitData) w.getHero(type);
+      if (ud == null) return null;
+      ud.setRarity(rarity); ud.setStars(1); ud.setLevel(level);
+      HeroData hd = ClientNetworkStateConverter.getHeroData(ud);
+      HeroBattleData bd = new HeroBattleData();
+      bd.healthPercent = 1.0f;
+      ((Map<Object, Object>) bd.extra).put(HeroBattleDataExtraType.BOSS, Boolean.toString(true));
+      ((Map<Object, Object>) hd.modePersistentData).put(GameMode.INVASION_BOSS, bd);
+      return hd;
+    } catch (Throwable t) {
+      System.out.println("[invasion] boss " + type + " non fabricable : " + t);
+      return null;
+    }
+  }
+
   /** Le résumé wire d'une unité (pour l'aperçu de la liste). */
   private static HeroSummary summary(User w, UnitType type) {
     try {

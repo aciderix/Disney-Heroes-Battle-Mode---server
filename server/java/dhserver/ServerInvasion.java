@@ -395,6 +395,9 @@ public final class ServerInvasion {
     b.damageDone = new java.util.HashMap<>();
     b.augments = new java.util.ArrayList<>();
     b.breakpoints = new java.util.ArrayList<>();
+    // LINEUP = l'unité du boss (MAMA_BOT), marquée BOSS pour INVASION_BOSS. `getBossUnitData` la lit ici :
+    // sans lineup, la carte est dégradée et le combat impossible. Construite dans le contexte du découvreur.
+    b.lineup = new java.util.ArrayList<>(ServerInvasionBreaker.bossLineup(finder, b.bossLevel));
     if (finder != null) {
       b.foundByUser = finder.basicInfo();
       b.finderTeamLevelSnapshot = finder.basicInfo() == null ? 1 : finder.basicInfo().teamLevel;
@@ -449,6 +452,31 @@ public final class ServerInvasion {
     } else {
       boss.actionState = com.perblue.heroes.network.messages.InvasionBossActionState.FIGHT;
     }
+  }
+
+  /** DÉGÂTS FIDÈLES infligés au boss lors d'une {@code InvasionBossAttack} — SOURCE établie au bytecode
+   *  (2026-08-02) : le client calcule {@code InvasionBossAttackScreen.getBossDamage = UnitCombatStats.totalDamageTaken}
+   *  de la vedette, et ce MÊME compteur est sérialisé dans {@code AttackUnitSummary.damageTaken} (Scene :
+   *  {@code summary.damageTaken += ev.getDamage()} ET {@code stats.totalDamageTaken += ev.getDamage()} sur le
+   *  MÊME évènement) — donc {@code base.defenders[*].units[*].damageTaken} de l'unité boss = exactement le
+   *  chiffre affiché au joueur. Combat client-autoritatif (comme campagne/arène/breaker) : on LIT ce chiffre,
+   *  on ne re-simule pas. On somme la vedette (type du boss) sur tous les lineups défenseurs. */
+  public static long extractBossDamage(com.perblue.heroes.network.messages.InvasionBossAttack ba,
+      com.perblue.heroes.network.messages.UnitType bossType) {
+    if (ba == null || ba.base == null || ba.base.defenders == null) return 0L;
+    double dmg = 0;
+    for (Object lo : ba.base.defenders) {
+      if (!(lo instanceof com.perblue.heroes.network.messages.AttackLineupSummary)) continue;
+      java.util.List<?> units = ((com.perblue.heroes.network.messages.AttackLineupSummary) lo).units;
+      if (units == null) continue;
+      for (Object uo : units) {
+        if (!(uo instanceof com.perblue.heroes.network.messages.AttackUnitSummary)) continue;
+        com.perblue.heroes.network.messages.AttackUnitSummary us =
+            (com.perblue.heroes.network.messages.AttackUnitSummary) uo;
+        if (bossType == null || us.type == bossType) dmg += us.damageTaken;
+      }
+    }
+    return (long) dmg;
   }
 
   /** Résultat d'une attaque de boss. */

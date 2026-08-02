@@ -62,6 +62,34 @@ public final class InvasionBossTest {
         throw new AssertionError("boss neuf devrait être FIGHT (attaquable), obtenu " + boss.actionState);
       System.out.println("[invasion] actionState d'un boss neuf = FIGHT (attaquable en jeu) ✔");
 
+      // LINEUP : le boss porte une vedette (getBossUnitData la lit) — sinon carte dégradée / combat impossible.
+      if (boss.lineup == null || boss.lineup.isEmpty())
+        throw new AssertionError("boss sans lineup (getBossUnitData renverrait une unité vide)");
+      UnitType bossType = com.perblue.heroes.game.logic.InvasionHelper.getBossUnitData(boss).getType();
+      if (bossType == UnitType.DEFAULT)
+        throw new AssertionError("vedette du boss non résolue depuis le lineup : " + bossType);
+      System.out.println("[invasion] lineup du boss OK : vedette " + bossType);
+
+      // DÉGÂTS FIDÈLES : extractBossDamage lit AttackUnitSummary.damageTaken de la vedette dans base.defenders
+      // (= getBossDamage du client). On fabrique un InvasionBossAttack minimal et on vérifie la somme.
+      InvasionBossAttack fakeBA = new InvasionBossAttack();
+      fakeBA.bossID = boss.bossID; fakeBA.damageMultiplier = 1;
+      if (fakeBA.base == null) fakeBA.base = new AttackBase();
+      if (fakeBA.base.defenders == null) fakeBA.base.defenders = new java.util.ArrayList<>();
+      AttackUnitSummary bossSummary = new AttackUnitSummary();
+      bossSummary.type = bossType; bossSummary.damageTaken = 123456f;
+      AttackUnitSummary noise = new AttackUnitSummary();          // une autre unité : ignorée (type ≠ boss)
+      noise.type = UnitType.MOANA; noise.damageTaken = 999f;
+      AttackLineupSummary ls = new AttackLineupSummary();
+      if (ls.units == null) ls.units = new java.util.ArrayList<>();
+      ((java.util.List<Object>) ls.units).add(bossSummary);
+      ((java.util.List<Object>) ls.units).add(noise);
+      ((java.util.List<Object>) fakeBA.base.defenders).add(ls);
+      long extracted = ServerInvasion.extractBossDamage(fakeBA, bossType);
+      if (extracted != 123456L)
+        throw new AssertionError("extractBossDamage attendu 123456, obtenu " + extracted);
+      System.out.println("[invasion] extractBossDamage (base.defenders.damageTaken) = " + extracted + " ✔");
+
       // ATTAQUE d'un membre : clés débitées, dégâts cumulés.
       ServerUser m1 = ServerUser.newPlayer(2L, 1);
       m1.giveResource(ResourceType.BREAKER, 10);

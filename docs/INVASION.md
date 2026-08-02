@@ -366,23 +366,46 @@ Nouveau `ServerInvasion.applyBossActionState(boss, user, ud)` calcule la vue PAR
 vaincu ; CLAIM si vaincu et part du joueur non réclamée ; sinon DEFAULT) ; le handler `GetInvasionBosses`
 l'applique à chaque boss servi. [`InvasionBossTest` : boss neuf ⇒ FIGHT]. Régression 77/77.
 
-### RESTE (chantier suivant, précis) — la boucle d'ATTAQUE du boss
+### Boucle d'ATTAQUE du boss — CÂBLÉE (2026-08-02, g48)
 
-Les handlers d'attaque manquent encore et **ne doivent pas être devinés** (§4/§8) :
-1. **`StartInvasionBossAttack`** → doit répondre **`StartBossAttackResponse{bossID, damageMultiplier,
-   bossLineup, selectedBoosts}`** (le ctor `InvasionBossAttackScreen` l'exige), acquérir le VERROU exclusif
-   (`ServerGuild.lockBoss`, `ATTACK_LOCK_DURATION`), et débiter les clés (`chargeForBossAttack` côté client
-   ⇒ à confirmer : débit au START ou à l'issue).
-2. **`InvasionBossAttack`** (issue) → **⚠️ les dégâts ne sont PAS un champ du message.** Le client les
-   calcule LOCALEMENT (`InvasionBossAttackScreen.getBossDamage` = `UnitCombatStats.totalDamageTaken` de la
-   vedette) et met à jour SON `damageDone` ; le message ne porte que `base` (outcome), `bossID`,
-   `damageMultiplier`, `breakpoints`, et `defenderHeroes` (HeroData de la vedette après combat). Dériver les
-   dégâts du HP restant de `defenderHeroes` **diverge** de `totalDamageTaken` (overkill sur l'énorme HP du
-   boss) ⇒ pour un boss PARTAGÉ (classement/mort), il faudra soit une **re-simulation serveur** du combat de
-   boss (obtenir `totalDamageTaken`), soit établir au bytecode que `defenderHeroes`/`breakpoints` suffisent.
-   `ServerInvasion.attackBoss` (verrou + clés + cumul + persistance) est prêt et **testé** ; seul le point
-   d'entrée réseau + la **source fidèle des dégâts** restent à établir.
+**Source FIDÈLE des dégâts — ÉTABLIE au bytecode.** Le client calcule `InvasionBossAttackScreen.getBossDamage`
+= `UnitCombatStats.totalDamageTaken` de la vedette et l'applique LOCALEMENT ; le message `InvasionBossAttack`
+ne porte pas de champ « damage ». MAIS : ce MÊME compteur est sérialisé dans
+`AttackUnitSummary.damageTaken` — dans `Scene`, sur le MÊME `entityDamageEvent`, on incrémente à la fois
+`summary.damageTaken += ev.getDamage()` ET `stats.totalDamageTaken += ev.getDamage()` (mesuré). Donc
+**`InvasionBossAttack.base.defenders[*].units[*].damageTaken` de la vedette = exactement le chiffre du
+client** (`ClientNetworkStateConverter.applyAttackBase` remplit `base.defenders` avec
+`getDefenderLineupSummaries`). `defenderHeroes`, lui, n'est que le `lineup` STATIQUE (aucune info de dégâts) —
+piège écarté. Combat **client-autoritatif** comme campagne/arène/breaker : on LIT ce chiffre, on ne re-simule
+pas → `ServerInvasion.extractBossDamage(ba, bossType)`.
 
-**Observation** : le boss est niveau 450 (donnée du jeu) — invaincable par le compte de test TL100 (même
-inflation d'ère de contenu que le breaker) ; la vérification d'une victoire/récompense de boss EN JEU suppose
-un compte fort ou l'ancrage d'ère de contenu, en plus des handlers ci-dessus.
+**Handlers (LoginServer)** :
+1. **`StartInvasionBossAttack`** → répond `StartBossAttackResponse{bossID, damageMultiplier, bossLineup=
+   boss.lineup, selectedBoosts}` (exigé par le ctor `InvasionBossAttackScreen`) et acquiert le VERROU exclusif
+   (`ServerGuild.lockBoss`, `ATTACK_LOCK_DURATION` — un attaquant à la fois).
+2. **`InvasionBossAttack`** (issue) → `extractBossDamage(base.defenders)` puis `ServerInvasion.attackBoss`
+   (débit clés `BOSS_FIGHT_{1X,5X}_KEY_COST` sur `BREAKER`, cumul des dégâts par joueur dans `damageDone`,
+   persistance de l'état partagé, libération du verrou). `attackBoss` était déjà prêt et testé.
+
+**LINEUP du boss corrigé** : `spawnBoss` ne posait pas `InvasionBossInfo.lineup`, or `getBossUnitData` le lit
+(cherche le HeroData marqué `INVASION_BOSS`/BOSS=true). Sans lui, carte dégradée + combat impossible. Nouveau
+`ServerInvasionBreaker.bossLineup` construit la vedette **MAMA_BOT** (unité boss par défaut du jeu,
+`getBossUnitType(DEFAULT)` — le robot de l'écran) au niveau du boss, rareté = `getEnemyRarity` du niveau
+d'équipe du découvreur (comme `InvasionBossCard.getScaledBossRarity`). [`InvasionBossTest` asserte lineup +
+`extractBossDamage`=damageTaken].
+
+### Boss niveau 450 — comment TESTER la boucle EN JEU
+
+Le boss réel est niveau `BOSS_FIGHT_INITAL_LEVEL`=450 (donnée du jeu) : **invaincable** par le compte de test
+TL100 (même inflation d'ère de contenu que le breaker). Pour exercer la boucle complète en jeu (aperçu →
+combat → dégâts → cumul → mort → réclamation) sans compte « endgame », l'opérateur **spawn un boss de faible
+niveau** — LEVIER d'opérateur légitime (comme `-Ddh.clock.offset.hours`), pas un contournement de règle :
+
+```
+AdminInvasion --shard 1 --spawn-boss --guild <id> --finder <userID> --level 1
+```
+
+Un boss niveau 1 (MAMA_BOT rareté basse) est battable par l'équipe de test → on voit le débit de clés, le
+cumul de dégâts (`base.defenders.damageTaken`), la mort du boss et le passage `actionState` FIGHT → CLAIM.
+La `réclamation` des récompenses de boss (`ClaimInvasionBossRewards` + `rollBossRewardLoot`) reste le dernier
+maillon (récompense dépendante du palier de contenu — à rejouer avec le boss faible).
