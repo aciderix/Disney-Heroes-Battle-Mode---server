@@ -151,7 +151,7 @@ Les **lineups de défense de guerre** arrivent déjà par `HeroLineupUpdate` ave
 | 2 | **État de guerre persisté (`ServerWarState`, table `wars`) + file d'attente** | ✅ FAIT |
 | 3 | **Matchmaking (appariement par MMR, anti-rematch, BYE) + phases** | ✅ FAIT |
 | 4 | **Voitures : affectations, étoiles, portes de garage** | ✅ FAIT |
-| 5 | Attaques + scoring + logs | ⬜ |
+| 5 | **Attaques + scoring + journaux** | ✅ FAIT |
 | 6 | Fin de guerre : issue, delta MMR, remboursements, boîtes | ⬜ |
 | 7 | Fin de saison : reset MMR (top 10 → Gold, autres ≤ 599), récompenses | ⬜ |
 
@@ -338,3 +338,48 @@ Test : `server/smoke/WarCarsTest`. Sortie : ordre/étages conformes au jeu, sall
 auto-placement autorisé, déplacement d'autrui refusé à un MEMBER, capacité 3 respectée, 3 membres × 3
 lineups = 9 étoiles puis salle prise à 9/9, étage 2 puis 3 ouverts par vol de voiture, garage propre
 fermé en SABOTAGE, round-trip DB reconstituant affectations, étoiles et portes.
+
+### Étape 5 — attaques, conséquences, score ✅
+
+**`ServerWarAttack` + `ServerWarScoring`**, journaux dans `ServerWarState` v2.
+
+**Le barème n'est pas inventé : le client l'écrit.** `WarOutcomeWindow` affiche chaque ligne du
+récapitulatif en faisant `n14 = compte × scalar; total += n14` — les cinq couples
+`X`/`Xscalar` de `WarOutcomeSummary` SONT le barème, et le total est leur somme. Aucune classe cliente
+ne *remplit* ces champs (seuls `WarLogsWindow` et `WarOutcomeWindow` les lisent) : c'est au serveur.
+Les cinq catégories correspondent une à une à la carte « Scoring » de l'aide, et les trois bonus de
+voiture ne rapportent **que si la voiture survit** — d'où un barème mis à zéro quand la salle est prise.
+
+**Validations** : reprise de `doStartWarAttack` (mode débloqué, membre présent sinon `WAR_JOINED_LATE`,
+**2 attaques max**, la seconde exigeant `canUseExtraWarAttacks` **et** `extraAttacksRemaining > 0`),
+plus deux contrôles que seul le serveur peut faire (phase de bataille, salle ouverte). La remise à zéro
+du compteur passe par la méthode du jeu `WarHelper.tryResetUserWarState`.
+
+**Combat client-autoritatif**, comme la campagne et l'arène : le client renvoie
+`WarAttack.battles = List<AttackStageResult>`. Le serveur est autoritatif sur le **droit** d'attaquer,
+la cible et **toutes les conséquences** (héros KO pour le reste de la guerre, étoiles, portes, score).
+
+**🐛 Bug PRÉ-EXISTANT trouvé et corrigé (#64, mercenaires).** Sonde : `setTime` persiste (il écrit dans
+`this.extra.times`) mais **`setCount(UserFlag)` NON** — les compteurs vivent dans `User.counts`, une
+carte interne hors `this.extra`. Or `creditMercenaryHireReward` faisait `setCount` **sans**
+`resyncCounts`, et son commentaire affirmait exactement le contraire (« auto-persisté this.extra ») :
+le compteur hebdomadaire « earned this week » repartait donc à zéro à chaque round-trip.
+`GuildMercRewardTest` ne l'avait pas vu parce qu'il n'assertait que la monnaie `SOCIAL_BUCKS`, qui
+elle persiste par un autre chemin. Corrigé, et le compteur de guerre passe désormais par
+`ServerUser.warAttacksUsed`/`consumeWarAttack`, qui portent la discipline de re-synchronisation.
+
+**🔎 Trois fois, le test a eu tort et la règle du jeu raison** — chaque fois autour de la même phrase,
+« Rooms that have no defenders are automatically defeated and worth 100 points to the other side » :
+1. une salle vide étant déjà « prise », un étage 1 dégarni **ouvre immédiatement l'étage 2** ;
+2. les salles laissées vides valent **déjà 100 points chacune à l'adversaire** avant la moindre
+   attaque (mesuré : 5 salles vides = 500 points) ;
+3. dans le scénario du test, le camp attaquant garnit *moins* de salles que sa cible et **perd** la
+   guerre malgré ses attaques réussies (608 contre 700).
+Ces trois faits sont désormais **assertés explicitement** plutôt que contournés — ils décrivent une
+mécanique de jeu réelle et forte : remplir ses salles est prioritaire sur attaquer.
+
+Test : `server/smoke/WarAttackTest`. Sortie : refus (phase, étage fermé, retardataire, défenseur
+inconnu, 3ᵉ attaque, MEMBER sans droit, crédit épuisé), lineup KO définitif, salle prise au balayage,
+étage 2 ouvert, barème `3×1 + 6×100 + 1×0 = 603`, bonus de balayage `0 → 5` selon que la voiture
+survit, issue cohérente avec les totaux dans les deux sens, DRAW à égalité, BYE, journaux et score
+recalculés à l'identique après round-trip DB.

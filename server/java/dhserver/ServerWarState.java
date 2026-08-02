@@ -32,8 +32,8 @@ import java.io.DataOutputStream;
  */
 public final class ServerWarState {
 
-  /** Version du format compact (état opérateur). */
-  private static final int VERSION = 1;
+  /** Version du format compact (état opérateur). v2 = journaux d'attaques. */
+  private static final int VERSION = 2;
 
   public long warID;
   public int shardID;
@@ -50,6 +50,57 @@ public final class ServerWarState {
   public long guildAID, guildBID;
   /** Octets wire des deux {@link WarGuildInfo} (objets du jeu). */
   public byte[] guildAWire, guildBWire;
+
+  /**
+   * v2 — JOURNAUX D'ATTAQUES, une liste par camp : les attaques MENÉES par A, celles menées par B.
+   * Chaque entrée est un {@link com.perblue.heroes.network.messages.WarLogAttack} — objet DU JEU en octets
+   * wire (attaquant, défenseur, salle visée, modificateurs de combat des deux côtés, vagues, attaque
+   * supplémentaire ou non). C'est la matière première de {@code RequestWarLogs} ET du calcul de score :
+   * balayages parfaits et défenses victorieuses s'en déduisent, on ne tient donc aucun compteur en double.
+   */
+  public final java.util.List<byte[]> attacksAWire = new java.util.ArrayList<>();
+  public final java.util.List<byte[]> attacksBWire = new java.util.ArrayList<>();
+
+  /** Journal des attaques MENÉES par {@code guildID} ({@code null} si la guilde n'est pas dans la guerre). */
+  public java.util.List<byte[]> attackLogOf(long guildID) {
+    if (guildID == guildAID) return attacksAWire;
+    if (guildID == guildBID) return attacksBWire;
+    return null;
+  }
+
+  /** Attaques menées par {@code guildID}, relues en objets du jeu (les illisibles sont écartées). */
+  public java.util.List<com.perblue.heroes.network.messages.WarLogAttack> attacksBy(long guildID) {
+    java.util.List<com.perblue.heroes.network.messages.WarLogAttack> out = new java.util.ArrayList<>();
+    java.util.List<byte[]> raw = attackLogOf(guildID);
+    if (raw == null) return out;
+    java.util.Iterator<byte[]> it = raw.iterator();
+    while (it.hasNext()) {
+      try {
+        out.add((com.perblue.heroes.network.messages.WarLogAttack)
+            MessageFactory.getInstance().readMessage(new GruntInputStream(it.next())));
+      } catch (Exception ignore) { it.remove(); }
+    }
+    return out;
+  }
+
+  /** Attaques SUBIES par {@code guildID} = celles menées par l'adversaire. */
+  public java.util.List<com.perblue.heroes.network.messages.WarLogAttack> attacksAgainst(long guildID) {
+    long other = opponentOf(guildID);
+    return other > 0 ? attacksBy(other) : new java.util.ArrayList<>();
+  }
+
+  /** Ajoute une attaque au journal de {@code guildID}. */
+  public void addAttack(long guildID, com.perblue.heroes.network.messages.WarLogAttack log) {
+    java.util.List<byte[]> raw = attackLogOf(guildID);
+    if (raw == null) throw new IllegalArgumentException("guilde " + guildID + " hors de la guerre " + warID);
+    try {
+      GruntOutputStream out = new GruntOutputStream();
+      log.writeAll(out);
+      raw.add(out.getBytes());
+    } catch (Exception ex) {
+      throw new RuntimeException("sérialisation WarLogAttack échouée", ex);
+    }
+  }
 
   public ServerWarState() {}
 
@@ -173,6 +224,11 @@ public final class ServerWarState {
       byte[] b = guildBWire == null ? write(new WarGuildInfo()) : guildBWire;
       o.writeInt(a.length); o.write(a);
       o.writeInt(b.length); o.write(b);
+      // v2 : journaux d'attaques (octets wire des WarLogAttack du jeu)
+      o.writeInt(attacksAWire.size());
+      for (byte[] w : attacksAWire) { o.writeInt(w.length); o.write(w); }
+      o.writeInt(attacksBWire.size());
+      for (byte[] w : attacksBWire) { o.writeInt(w.length); o.write(w); }
       o.flush();
       return bos.toByteArray();
     } catch (Exception ex) {
@@ -184,7 +240,7 @@ public final class ServerWarState {
     if (raw == null || raw.length == 0) return null;
     try {
       DataInputStream in = new DataInputStream(new ByteArrayInputStream(raw));
-      in.readInt(); // version (1 pour l'instant ; les lectures futures s'y adosseront)
+      int version = in.readInt();
       ServerWarState s = new ServerWarState();
       s.warID = in.readLong();
       s.shardID = in.readInt();
@@ -199,6 +255,12 @@ public final class ServerWarState {
       s.guildBID = in.readLong();
       s.guildAWire = new byte[in.readInt()]; in.readFully(s.guildAWire);
       s.guildBWire = new byte[in.readInt()]; in.readFully(s.guildBWire);
+      if (version >= 2) {
+        int na = in.readInt();
+        for (int i = 0; i < na; i++) { byte[] w = new byte[in.readInt()]; in.readFully(w); s.attacksAWire.add(w); }
+        int nb = in.readInt();
+        for (int i = 0; i < nb; i++) { byte[] w = new byte[in.readInt()]; in.readFully(w); s.attacksBWire.add(w); }
+      }
       return s;
     } catch (Exception ex) {
       throw new RuntimeException("lecture de guerre échouée", ex);

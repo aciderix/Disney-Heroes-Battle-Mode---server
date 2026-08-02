@@ -950,9 +950,61 @@ public final class ServerUser {
     // Reset hebdo du compteur d'affichage si nouvelle semaine serveur (mécanique du jeu).
     com.perblue.heroes.game.logic.MercenaryHelper.getAndUpdateSocialBucks(user);
     com.perblue.heroes.game.objects.UserFlag flag = com.perblue.heroes.game.objects.UserFlag.MERCENARY_SOCIAL_BUCKS;
-    user.setCount(flag, user.getCount(flag) + reward);          // « earned this week » (auto-persisté this.extra)
+    user.setCount(flag, user.getCount(flag) + reward);
+    // ⚠️ CORRECTIF (2026-08-02) : les compteurs UserFlag vivent dans `User.counts`, une carte interne HORS
+    // `this.extra` — le commentaire précédent (« auto-persisté this.extra ») était FAUX, et le compteur hebdo
+    // « earned this week » repartait donc à zéro à chaque round-trip wire. Mesuré : setTime persiste bien,
+    // setCount NON. resyncCounts recopie `User.counts`/`flags` dans `userExtra` (mécanisme déjà en place pour
+    // les quêtes et les cartes mensuelles) — il manquait simplement ici.
+    resyncCounts(user);
     giveResource(com.perblue.heroes.network.messages.ResourceType.SOCIAL_BUCKS, reward);   // monnaie réelle
     return reward;
+  }
+
+  // ===================== GUILD WAR (#68) — compteur d'attaques du joueur =====================
+
+  /**
+   * Attaques de guerre déjà consommées par ce joueur dans la guerre commencée à {@code warStartTime}.
+   *
+   * <p>Le compteur est {@code UserFlag.WAR_ATTACKS_USED} et il est remis à zéro par la logique DU JEU
+   * ({@code WarHelper.tryResetUserWarState}) dès que {@code TimeType.WAR_START_TIME_LAST_ATTACK} diffère du
+   * début de la guerre courante — c'est ainsi que le client distingue « 0 attaque dans CETTE guerre » de
+   * « compteur d'une guerre précédente ».
+   */
+  public synchronized int warAttacksUsed(long warStartTime) {
+    ServerContext.init();
+    User user = ClientNetworkStateConverter.getUser(userInfo, userExtra, "war-attacks");
+    ServerContext.bind(user, ClientNetworkStateConverter.getIndividualUser(
+        individualUserExtra, userID, userInfo.diamonds, "war-attacks"));
+    if (user.getTime(com.perblue.heroes.network.messages.TimeType.WAR_START_TIME_LAST_ATTACK) != warStartTime) {
+      return 0;
+    }
+    return user.getCount(com.perblue.heroes.game.objects.UserFlag.WAR_ATTACKS_USED);
+  }
+
+  /**
+   * Consomme une attaque de guerre : applique d'abord la remise à zéro du jeu si la guerre a changé, puis
+   * incrémente {@code WAR_ATTACKS_USED} — et RE-SYNCHRONISE, car ces compteurs vivent hors {@code this.extra}
+   * (cf. correctif ci-dessus).
+   *
+   * @return le nombre d'attaques consommées APRÈS incrément
+   */
+  public synchronized int consumeWarAttack(long warStartTime) {
+    ServerContext.init();
+    User user = ClientNetworkStateConverter.getUser(userInfo, userExtra, "war-attacks");
+    ServerContext.bind(user, ClientNetworkStateConverter.getIndividualUser(
+        individualUserExtra, userID, userInfo.diamonds, "war-attacks"));
+    com.perblue.heroes.game.logic.WarHelper.tryResetUserWarState(user, warStartTime);
+    com.perblue.heroes.game.objects.UserFlag flag =
+        com.perblue.heroes.game.objects.UserFlag.WAR_ATTACKS_USED;
+    int used = user.getCount(flag) + 1;
+    user.setCount(flag, used);
+    // tryResetUserWarState pose aussi WAR_START_TIME_LAST_ATTACK (un TimeType, lui partagé avec this.extra),
+    // mais le COMPTEUR exige le re-sync explicite.
+    user.setTime(com.perblue.heroes.network.messages.TimeType.WAR_START_TIME_LAST_ATTACK, warStartTime);
+    resyncHeroes(user);
+    resyncCounts(user);
+    return used;
   }
 
   // ===================== DONS / GUILD AID (#55) =====================
