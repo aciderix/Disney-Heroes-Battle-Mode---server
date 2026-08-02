@@ -32,8 +32,8 @@ import java.io.DataOutputStream;
  */
 public final class ServerWarState {
 
-  /** Version du format compact (état opérateur). v2 = journaux d'attaques. */
-  private static final int VERSION = 2;
+  /** Version du format compact (état opérateur). v2 = journaux d'attaques ; v3 = frais de sabotage. */
+  private static final int VERSION = 3;
 
   public long warID;
   public int shardID;
@@ -60,6 +60,38 @@ public final class ServerWarState {
    */
   public final java.util.List<byte[]> attacksAWire = new java.util.ArrayList<>();
   public final java.util.List<byte[]> attacksBWire = new java.util.ArrayList<>();
+
+  /**
+   * v3 — FRAIS DE SABOTAGE payés par chaque joueur, par camp ({@code userID → total dépensé}).
+   *
+   * <p>« Tokens spent are refunded if you lose the War » (aide du jeu) : le remboursement doit revenir à
+   * CELUI qui a payé, et le prix monte à chaque sabotage sur la même cible — un simple compteur de
+   * sabotages ne suffirait donc pas à retrouver la somme. On enregistre le montant réellement débité.
+   */
+  public final java.util.LinkedHashMap<Long, Integer> sabotageFeesA = new java.util.LinkedHashMap<>();
+  public final java.util.LinkedHashMap<Long, Integer> sabotageFeesB = new java.util.LinkedHashMap<>();
+
+  /** Frais de sabotage du camp de {@code guildID} ({@code null} si la guilde n'est pas dans la guerre). */
+  public java.util.LinkedHashMap<Long, Integer> sabotageFeesOf(long guildID) {
+    if (guildID == guildAID) return sabotageFeesA;
+    if (guildID == guildBID) return sabotageFeesB;
+    return null;
+  }
+
+  /** Enregistre un débit de sabotage, pour un éventuel remboursement en cas de défaite. */
+  public void addSabotageFee(long guildID, long userID, int cost) {
+    java.util.LinkedHashMap<Long, Integer> fees = sabotageFeesOf(guildID);
+    if (fees == null) throw new IllegalArgumentException("guilde " + guildID + " hors de la guerre " + warID);
+    fees.merge(userID, cost, Integer::sum);
+  }
+
+  /** Total dépensé en sabotages par ce camp. */
+  public int totalSabotageFees(long guildID) {
+    java.util.LinkedHashMap<Long, Integer> fees = sabotageFeesOf(guildID);
+    int total = 0;
+    if (fees != null) for (Integer v : fees.values()) total += v;
+    return total;
+  }
 
   /** Journal des attaques MENÉES par {@code guildID} ({@code null} si la guilde n'est pas dans la guerre). */
   public java.util.List<byte[]> attackLogOf(long guildID) {
@@ -229,6 +261,15 @@ public final class ServerWarState {
       for (byte[] w : attacksAWire) { o.writeInt(w.length); o.write(w); }
       o.writeInt(attacksBWire.size());
       for (byte[] w : attacksBWire) { o.writeInt(w.length); o.write(w); }
+      // v3 : frais de sabotage par joueur, par camp
+      o.writeInt(sabotageFeesA.size());
+      for (java.util.Map.Entry<Long, Integer> e : sabotageFeesA.entrySet()) {
+        o.writeLong(e.getKey()); o.writeInt(e.getValue());
+      }
+      o.writeInt(sabotageFeesB.size());
+      for (java.util.Map.Entry<Long, Integer> e : sabotageFeesB.entrySet()) {
+        o.writeLong(e.getKey()); o.writeInt(e.getValue());
+      }
       o.flush();
       return bos.toByteArray();
     } catch (Exception ex) {
@@ -260,6 +301,12 @@ public final class ServerWarState {
         for (int i = 0; i < na; i++) { byte[] w = new byte[in.readInt()]; in.readFully(w); s.attacksAWire.add(w); }
         int nb = in.readInt();
         for (int i = 0; i < nb; i++) { byte[] w = new byte[in.readInt()]; in.readFully(w); s.attacksBWire.add(w); }
+      }
+      if (version >= 3) {
+        int fa = in.readInt();
+        for (int i = 0; i < fa; i++) { long uid = in.readLong(); s.sabotageFeesA.put(uid, in.readInt()); }
+        int fb = in.readInt();
+        for (int i = 0; i < fb; i++) { long uid = in.readLong(); s.sabotageFeesB.put(uid, in.readInt()); }
       }
       return s;
     } catch (Exception ex) {

@@ -157,7 +157,7 @@ Les **lineups de défense de guerre** arrivent déjà par `HeroLineupUpdate` ave
 | 4 | **Voitures : affectations, étoiles, portes de garage** | ✅ FAIT |
 | 5 | **Attaques + scoring + journaux** | ✅ FAIT |
 | 6 | **Fin de guerre : issue, delta MMR, boîtes** | ✅ FAIT (remboursements → dépendent du sabotage) |
-| 7 | Sabotage / bans / protections / spars | ⬜ **PAS FAIT** |
+| 7 | **Sabotage / bans / protections / spars** | ✅ FAIT |
 | 8 | Fin de saison : distribution des boîtes + stockage/réclamation | ⬜ |
 
 ### Étape 1 — calendrier, ligues, MMR ✅
@@ -426,13 +426,52 @@ plancher de ligue respecté ; guildes libérées ; 2ᵉ clôture sans effet ; ro
 
 ### ⚠️ Ce qui reste — énoncé sans arrondi
 
-* **Sabotage, bans, protections, spars : PAS FAITS.** C'est un pan entier (`WAR_SABOTAGE_DEFENDER`,
-  `WAR_EDIT_BAN_PROTECT`, `WAR_SPAR_TARGET`, `war_sabotage_effects.tab`, cooldowns et streaks
-  `BAN_*`/`PROTECT_*`). Le **remboursement des tokens au perdant** (« Tokens spent are refunded if you
-  lose the War ») en dépend directement : sans comptabilité des frais de sabotage, il n'y a rien à
-  rembourser. Je ne l'ai donc pas simulé.
+* **Remboursement des tokens au perdant** : la comptabilité existe désormais (`ServerWarState` v3,
+  frais par joueur), il reste à la brancher dans `ServerWarEnd.finishWar` — un rendu ciblé, plus une
+  inconnue.
 * **Stockage et réclamation des boîtes** : `ServerWarEnd` sait les *générer* depuis les tables du jeu ;
   il reste à les attribuer par joueur, les persister et câbler `CLAIM_WAR_BOX_REWARD`.
 * **Handlers réseau** : aucun des 7 messages ni des 11 `CommandType` n'est encore branché dans
   `LoginServer` — tout le moteur est testé unitairement, rien n'est joignable depuis le client.
 * **Vérification EN JEU** : nulle. Statut 🟢, pas ✅.
+
+### Étape 7 — sabotages, bans, protections, spars ✅
+
+**`dhserver.ServerWarSabotage`**. Les trois validations viennent du client, ré-exécutées :
+`doSabotageWarDefender`, `tryEditWarBanProtect`, `trySpar`.
+
+**Anti-triche notable** : le client envoie un `INDEX` de palier de coût, mais le prix **monte avec le
+nombre de sabotages déjà posés sur la MÊME cible**. `WarClientHelper.getSabotageNumber` le compte
+depuis les défenses de la cible — le serveur **refait ce calcul** au lieu de faire confiance à
+l'`INDEX`, sinon n'importe qui paierait toujours le premier palier. Mesuré : 67 puis 133.
+
+**Frais comptabilisés PAR JOUEUR** (`ServerWarState` v3) : « Tokens spent are refunded if you lose the
+War » impose de rembourser *celui qui a payé*, et comme le prix escalade, un simple compteur de
+sabotages ne permettrait pas de retrouver la somme. On enregistre le montant réellement débité.
+
+**⚠️ Deux inférences assumées, isolées et documentées** :
+1. `sabotageCurrency` → **`WAR_TOKENS`**. Le champ est rempli par le serveur (aucune classe cliente ne
+   l'écrit) et il n'existe **pas** de `ResourceType.GUILD_TOKENS` malgré la formule « Sabotage uses
+   Guild Tokens » de l'aide. Parmi les `ResourceType` du jeu, `WAR_TOKENS` est la monnaie de guerre
+   (« Use War Tokens to buy items from the War Shop! ») et c'est elle que paient les boîtes de guerre.
+   Sélection à un seul endroit (`DEFAULT_SABOTAGE_CURRENCY`), pas une valeur fabriquée.
+2. `sabotageTypes` → **tous les types que le jeu déclare valides** (`WarHelper.isValidSabotage` :
+   tout sauf `DEFAULT` et `DELAY_ARRIVAL` — 24 types, chacun ayant bien une valeur X dans
+   `war_sabotage_effects.tab`, vérifié). L'aide dit « As your Guild ranks up, more sabotages will be
+   available », mais **aucune table ne relie un niveau de guilde à un sous-ensemble** : restreindre
+   reviendrait à inventer la progression.
+
+**Constat de fidélité sur les spars** : le quota vient du perk de guilde `WAR_SPARS`. Une guilde qui ne
+l'a pas acheté a un quota de **0**, donc aucun spar — et c'est le comportement correct, pas un bug.
+Le test l'assert dans les deux branches. Il vérifie aussi que « Spars do not consume your War
+attack » : le compteur d'attaques reste à 0.
+
+Test : `server/smoke/WarSabotageTest`. Sortie : 24 types valides ; coût 67 → 133 recalculé serveur ;
+refus (hors phase, cible inconnue, héros déjà saboté, type invalide, monnaie insuffisante) ; frais
+imputés au bon joueur ; bans (MEMBER refusé, 3 > max refusé, 2 acceptés, cooldown respecté) ; fenêtre
+de ban fermée après 12 h alors que les protections restent ouvertes ; round-trip DB complet.
+
+**🔎 Encore une fois, la mise en scène du test avait tort.** Mon premier jet donnait 5 héros répétés
+sur 3 lineups : « déjà saboté » ne se déclenchait jamais. Le protocole tranche — `sabotageWarDefender`
+identifie la victime par son **seul `UnitType`**, ce qui n'aurait aucun sens si un héros pouvait
+occuper deux lineups. Une défense de guerre, ce sont donc **15 héros distincts**.
