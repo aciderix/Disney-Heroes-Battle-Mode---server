@@ -142,11 +142,32 @@ public final class WarAttackTest {
       check(first.ok(), "la 1re attaque doit être autorisée : " + first.error);
       check(!first.usesExtraAttack, "la 1re attaque n'est pas une attaque supplémentaire");
 
-      StartWarAttackResponse resp = ServerWarAttack.buildStartResponse(w, ga.guildID, 2L);
+            // 4e paramètre = la guilde DÉFENSEUR (son niveau de perk alimente WarAttackCarBonus.bonusPerkLevel).
+      StartWarAttackResponse resp = ServerWarAttack.buildStartResponse(w, ga.guildID, 2L, gb);
       check(resp.currentCar == room0, "la réponse doit désigner la salle du défenseur");
       check(resp.lineup0 != null && !resp.lineup0.defeated, "le 1er lineup de défense doit être servi");
       check(resp.lineup0.defenders.size() == 5, "5 défenseurs par lineup, obtenu "
           + resp.lineup0.defenders.size());
+      // ⚠️ `activeCars` porte des WarAttackCarBonus{type, bonusPerkLevel}, PAS des WarCarType : le typage
+      // brut du wire (dex2jar) laissait passer l'erreur à la compilation, elle ne sortait qu'à l'écriture
+      // du message sur le fil (défaut trouvé EN JEU le 2026-08-02).
+      for (Object o : resp.activeCars) {
+        check(o instanceof com.perblue.heroes.network.messages.WarAttackCarBonus,
+            "activeCars doit contenir des WarAttackCarBonus, obtenu " + o.getClass().getSimpleName());
+      }
+      for (Object o : resp.lineup0.defenders) {
+        check(o instanceof com.perblue.heroes.network.messages.WarHeroData,
+            "les défenseurs doivent être des WarHeroData, obtenu " + o.getClass().getSimpleName());
+      }
+      // Preuve définitive : le message doit S'ÉCRIRE sur le fil (c'est là que le mauvais type explosait).
+      try {
+        com.perblue.grunt.translate.util.GruntOutputStream out =
+            new com.perblue.grunt.translate.util.GruntOutputStream();
+        resp.writeAll(out);
+        check(out.getBytes().length > 0, "la réponse d'attaque doit produire des octets");
+      } catch (Exception ex) {
+        throw new AssertionError("StartWarAttackResponse doit se SÉRIALISER : " + ex);
+      }
       check(resp.activeCars.size() == ServerWarCars.GARAGE_SIZE - countTaken(sideB),
           "les salles ENCORE DEBOUT doivent être listées");
       System.out.println("[war] START → salle " + resp.currentCar + ", 3 lineups servis, "

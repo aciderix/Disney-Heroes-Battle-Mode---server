@@ -186,7 +186,7 @@ public final class ServerWarAttack {
    * salles encore actives. Le client s'en sert pour monter le combat.
    */
   public static com.perblue.heroes.network.messages.StartWarAttackResponse buildStartResponse(
-      ServerWarState w, long attackerGuildID, long defenderUserID) {
+      ServerWarState w, long attackerGuildID, long defenderUserID, ServerGuild defenderGuild) {
     com.perblue.heroes.network.messages.StartWarAttackResponse r =
         new com.perblue.heroes.network.messages.StartWarAttackResponse();
     r.defenderUserID = defenderUserID;
@@ -205,9 +205,23 @@ public final class ServerWarAttack {
     r.lineup2 = slots[2];
 
     // Salles encore DEBOUT chez le défenseur : ce sont elles qui accordent leurs bonus au combat.
+    //
+    // ⚠️ CORRECTIF (2026-08-02, 2ᵉ défaut de typage trouvé EN JEU, même famille que `toDefense`) :
+    // `activeCars` attend des {@link com.perblue.heroes.network.messages.WarAttackCarBonus}
+    // ({type, bonusPerkLevel}), PAS des `WarCarType`. Y mettre l'enum compilait — les listes du wire sont
+    // brutes après dex2jar — mais levait `ClassCastException` à l'ÉCRITURE du message, donc le client ne
+    // recevait jamais la réponse et l'attaque était impossible. Le niveau de perk est celui de la guilde
+    // DÉFENSEUR (c'est son garage), lu par la logique du jeu comme le fait `ServerWarCars.maxCarSize`.
+    @SuppressWarnings("unchecked")
+    java.util.List<Object> activeCars = (java.util.List<Object>) r.activeCars;
     for (WarCarType car : ServerWarCars.GARAGE_ORDER) {
       WarCarInfo info = theirs.cars == null ? null : (WarCarInfo) theirs.cars.get(car);
-      if (info != null && !ServerWarCars.carDefeated(info)) r.activeCars.add(car);
+      if (info == null || ServerWarCars.carDefeated(info)) continue;
+      com.perblue.heroes.network.messages.WarAttackCarBonus bonus =
+          new com.perblue.heroes.network.messages.WarAttackCarBonus();
+      bonus.type = car;
+      bonus.bonusPerkLevel = ServerWarCars.carBonusPerkLevel(defenderGuild, car);
+      activeCars.add(bonus);
     }
     return r;
   }

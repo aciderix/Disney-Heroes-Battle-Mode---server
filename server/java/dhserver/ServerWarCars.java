@@ -61,6 +61,25 @@ public final class ServerWarCars {
   /** Position d'une voiture dans le garage, ou {@code -1}. */
   public static int garageIndex(WarCarType car) { return GARAGE_ORDER.indexOf(car); }
 
+  /**
+   * Niveau du PERK qui alimente le bonus de cette salle, pour la guilde qui la possède.
+   *
+   * <p>Le jeu nomme lui-même le lien : {@code WarHelper.getCarBonusPerk(car)} donne le {@code GuildPerkType}
+   * correspondant, et {@code GuildInfoPerkProvider.getPerkLevel} en donne le niveau acheté. C'est cette
+   * valeur que porte {@code WarAttackCarBonus.bonusPerkLevel} et que {@code WarCombatHelper} applique
+   * ensuite au combat. Aucune règle n'est inventée : on relie deux accesseurs du jeu.
+   */
+  public static int carBonusPerkLevel(ServerGuild g, WarCarType car) {
+    try {
+      com.perblue.heroes.network.messages.GuildPerkType perk = WarHelper.getCarBonusPerk(car);
+      if (perk == null || g == null || g.info == null) return 0;
+      return new com.perblue.heroes.game.objects.GuildInfoPerkProvider(g.info).getPerkLevel(perk);
+    } catch (Throwable t) {
+      System.out.println("[war] niveau de perk de " + car + " illisible : " + t);
+      return 0;
+    }
+  }
+
   /** Taille maximale d'une salle pour cette guilde : {@code BASE_CAR_SIZE} + perk de taille. */
   public static int maxCarSize(ServerGuild g, WarCarType car) {
     return WarHelper.getMaxCarSize(

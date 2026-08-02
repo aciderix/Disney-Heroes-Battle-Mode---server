@@ -785,8 +785,13 @@ public final class LoginServer {
                   } else {
                     ServerWarAttack.consumeAttack(w, g, user, sr.usesExtraAttack);
                     store.saveWar(w); store.save(user);
+                    // Le garage attaqué est celui de l'ADVERSAIRE : c'est SON niveau de perk qui alimente
+                    // les bonus de salle envoyés à l'attaquant (WarAttackCarBonus.bonusPerkLevel).
+                    ServerGuild defG = null;
+                    try { defG = store.loadGuild(user.shardID, w.opponentOf(g.guildID)); }
+                    catch (Exception e) { System.out.println("[login]     ! guilde adverse illisible: " + e); }
                     com.perblue.heroes.network.messages.StartWarAttackResponse resp =
-                        ServerWarAttack.buildStartResponse(w, g.guildID, defenderID);
+                        ServerWarAttack.buildStartResponse(w, g.guildID, defenderID, defG);
                     resp.setAsReplyTo(m);
                     c.send(resp);
                     com.perblue.heroes.network.messages.AddInProgressWarAttack add =

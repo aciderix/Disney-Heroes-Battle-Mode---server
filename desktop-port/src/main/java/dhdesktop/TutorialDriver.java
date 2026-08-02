@@ -966,6 +966,10 @@ public final class TutorialDriver {
             com.perblue.heroes.network.messages.WarInfo wi = currentWarInfo(game);
             if (wi == null) return;
             long target = firstEnemyMember(wi);
+            // ⚠️ NE PAS pré-appeler `WarClientHelper.doStartWarAttack` pour « connaître le verdict » : ce
+            // n'est pas un prédicat, c'est LE RAPPEL de l'action — il CONSOMME l'attaque localement. Le
+            // pré-appeler faisait échouer le vrai passage juste après (`WAR_EXTRA_ATTACKS_DEPLETED`), et rien
+            // n'était émis puisque le message ne part qu'à `completeAction`, après le rappel.
             com.perblue.heroes.game.ClientActionHelper.startWarAttack(wi, target, 0);
             System.out.println("[warattack] START_WAR_ATTACK sur " + target + " [chemin réel]");
         } catch (Throwable t) { System.out.println("[warattack] échec: " + t); }
