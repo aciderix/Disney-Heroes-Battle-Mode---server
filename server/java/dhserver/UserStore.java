@@ -243,6 +243,18 @@ public final class UserStore implements AutoCloseable {
     }
   }
 
+  /** MÉTA GLOBALE (clé-valeur, non lié à un shard) — réutilise {@code shard_state} avec {@code shardID=0}.
+   *  Sert p. ex. à persister l'ANCRE D'HORLOGE ({@code clock_offset_ms}) pour survivre aux redémarrages. */
+  public synchronized Long getMetaLong(String key) throws SQLException {
+    byte[] raw = loadShardState(0, key);
+    return raw != null && raw.length == 8 ? java.nio.ByteBuffer.wrap(raw).getLong() : null;
+  }
+
+  /** Écrit une méta globale {@code long} (cf. {@link #getMetaLong}). */
+  public synchronized void setMetaLong(String key, long value) throws SQLException {
+    saveShardState(0, key, java.nio.ByteBuffer.allocate(8).putLong(value).array());
+  }
+
   /** GUILDES #7 — charge la guilde {@code (shard, guildID)}, ou {@code null} si absente. */
   public synchronized ServerGuild loadGuild(int shardID, long guildID) throws SQLException {
     try (PreparedStatement ps = conn.prepareStatement(

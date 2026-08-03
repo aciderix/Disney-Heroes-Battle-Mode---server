@@ -168,15 +168,34 @@ public final class ServerContext {
   private static void applyClockOffset() {
     long hours = Long.getLong("dh.clock.offset.hours", 0L);
     if (hours == 0L) return;
+    // -Ddh.clock.offset.hours n'est qu'un BOOTSTRAP (dev). La SOURCE ROBUSTE est l'ancre PERSISTÉE en DB
+    // (clockOffsetMillis, appliquée par LoginServer au boot). serverTimeNow = now − OFFSET → OFFSET négatif = avance.
+    setClockOffsetMillis(-hours * 3600_000L);
+  }
+
+  /** Pose {@code TimeUtil.CLOCK_OFFSET} (ms) au RUNTIME. {@code serverTimeNow() = currentTimeMillis() − OFFSET}
+   *  (OFFSET négatif = heure de jeu AVANCÉE ; positif = RECULÉE). C'est l'unique horloge de JEU : l'ère de contenu
+   *  (getServerColumn), la fenêtre d'invasion, les saisons, tous les décomptes la suivent. Persistée en DB par
+   *  l'opérateur (cf. {@code AdminClock}) pour survivre aux redémarrages sans dérive. */
+  public static void setClockOffsetMillis(long offsetMs) {
     try {
       Field f = com.perblue.heroes.util.TimeUtil.class.getDeclaredField("CLOCK_OFFSET");
       f.setAccessible(true);
-      f.setLong(null, -hours * 3600_000L);      // serverTimeNow = now - OFFSET → OFFSET négatif = avance
-      System.out.println("[ctx] ⏱ horloge serveur décalée de " + hours + " h → "
+      f.setLong(null, offsetMs);
+      System.out.println("[ctx] ⏱ horloge de jeu : offset " + offsetMs + " ms → "
           + new java.util.Date(com.perblue.heroes.util.TimeUtil.serverTimeNow()));
     } catch (Throwable t) {
       System.out.println("[ctx] décalage d'horloge impossible : " + t);
     }
+  }
+
+  /** Offset d'horloge courant (ms) — {@code currentTimeMillis() − serverTimeNow()}. 0 = heure réelle. */
+  public static long clockOffsetMillis() {
+    try {
+      Field f = com.perblue.heroes.util.TimeUtil.class.getDeclaredField("CLOCK_OFFSET");
+      f.setAccessible(true);
+      return f.getLong(null);
+    } catch (Throwable t) { return 0L; }
   }
 
   /** Lie le joueur courant au shim {@code DH.app} (getYourUser/getYourIndividualUser). */

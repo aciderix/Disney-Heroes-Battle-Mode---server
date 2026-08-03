@@ -34,6 +34,7 @@ TESTS=(
   GuildMercenaryTest GuildInfluenceTest GuildAvatarTest GuildMercRewardTest GuildSkillDonationTest GuildGiftTest GuildContestTest GuildHeroXPDonationTest GuildContestSeasonTest InvasionScheduleTest InvasionBossTest BreakerQuestTest GuildClaimInactiveTest
   WarSeasonTest WarStateTest WarMatchmakingTest WarCarsTest WarAttackTest WarEndTest WarSabotageTest
   WarSchedulerTest
+  ClockAnchorTest
 )
 
 echo "[reg] compilation (serveur + ${#TESTS[@]} tests) ..."

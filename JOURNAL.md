@@ -1,5 +1,37 @@
 # JOURNAL — journal détaillé des modifications
 
+## 2026-08-03 (g51) — ÈRE DE CONTENU pilotable (ancre d'horloge PERSISTÉE) + cohérence d'horloge + audit hardcode
+
+**Audit « rien en dur à tort » (demandé).** Résultat : PROPRE. Les défauts `const*(champ, dflt)` sont des replis
+vérifiés ÉGAUX aux tabs (BOSS_FIGHT_INITAL_LEVEL 450, ATTACK_LOCK_DURATION 5 m, BOSS_FIGHT_5X_KEY_COST 3,
+WIN/LOSE/DRAW_COEFFICIENT 1.00/0.40/0.50) ; le coût mercenaire est évalué par le moteur d'expressions du jeu sur
+`user_values.tab` (zéro coefficient codé) ; les constantes de la FORMULE Elo (10.0/1.0) sont mathématiques (les
+tunables eloN/eloK viennent des données). Seul écart : mes seuils boss 10/30 % — corrigés (lus de
+`InvasionStats.getBoss10/30PercentRewardThreshold`, cf. g50).
+
+**Cohérence d'horloge (prérequis de l'ère).** Plusieurs timestamps de LOGIQUE lisaient `System.currentTimeMillis`
+au lieu de `serverTimeNow()` → sous une horloge décalée ils mélangeaient deux temps. Corrigés : arène (saison,
+lignes synthétiques, lastFightReset, maybeDailyReset), courrier (deliverMail), tiebreaker, « membre depuis ».
+Laissées en temps réel À DESSEIN : colonnes d'AUDIT DB (UserStore updatedAt/createdAt — jamais des décomptes).
+
+**L'ÈRE suit l'horloge — PROUVÉ.** `ContentStats.getServerColumn(serverTimeNow)` choisit la colonne R1…R102 par
+DATE (`content.<shard>.tab`). Sonde `ClockEraProbe` : 2026 → **Max TL 565 (R102)** ; 2018-04 → **Max TL 70** ;
+2016-09 → **Max TL 50 (R1)**. Décaler l'horloge décale l'ère → un serveur neuf peut DÉMARRER À R1 (ennemis
+faibles → débloque aussi le combat « gated par l'inflation »).
+
+**Ancre d'horloge PERSISTÉE (robustesse).** L'offset `-Ddh.clock.offset.hours` était un flag VOLATIL (dérive si
+oublié/changé au redémarrage). Désormais : méta DB `clock_offset_ms` (via `UserStore.get/setMetaLong`,
+réutilise `shard_state` shardID=0), ré-appliquée AU BOOT par `LoginServer` → l'heure de jeu s'écoule au rythme
+réel depuis l'ancre, survit aux redémarrages SANS dérive. `-D` reste un bootstrap (persisté s'il est fourni sans
+ancre). Nouveau `ServerContext.setClockOffsetMillis/clockOffsetMillis`.
+
+**Gestion admin (n'existait pas).** Nouvel outil `AdminClock` (pendant d'AdminInvasion/AdminWar) :
+`--status` (heure de jeu + Max TL de l'ère), `--set-date <yyyy-MM-dd>` (règle l'ère par date), `--offset-hours`,
+`--reset`. Vérifié bout en bout : `--set-date 2016-09-06` → **Max TL 50 (R1)**, ancre relue par une nouvelle
+instance (persistance OK), `--reset` → TL 565. Redémarrer le serveur pour appliquer. Nouveau test
+`ClockAnchorTest` (round-trip méta + offset + écoulement). Régression **78/78**.
+
+
 ## 2026-08-03 (g50) — INVASION BOSS : KILL + CLAIM vérifiés EN JEU (18 récompenses, 6 rôles)
 
 Suite de g49 : le boss #3 (MAMA_BOT niveau 1) est **tué EN JEU** en un coup via **5× DAMAGE** (bouton de

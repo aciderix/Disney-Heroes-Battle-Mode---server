@@ -2302,6 +2302,22 @@ public final class LoginServer {
     String dbPath = System.getProperty("dh.db", "server/data/dh-server.db");
     new java.io.File(dbPath).getAbsoluteFile().getParentFile().mkdirs();
     UserStore store = new UserStore(dbPath);
+    // ANCRE D'HORLOGE PERSISTÉE (ère de contenu R1…R102 + tous les décomptes). La DB fait AUTORITÉ pour survivre
+    // aux redémarrages sans dérive : à chaque boot on ré-applique l'offset persisté (l'offset est constant → l'heure
+    // de jeu s'écoule au rythme réel depuis l'ancre). Un -Ddh.clock.offset.hours n'est qu'un bootstrap : s'il est
+    // fourni sans ancre en DB, on le PERSISTE. Réglé par l'opérateur via AdminClock. Cf. ServerContext.setClockOffsetMillis.
+    try {
+      Long persisted = store.getMetaLong("clock_offset_ms");
+      if (persisted != null) {
+        ServerContext.setClockOffsetMillis(persisted);
+        System.out.println("[login] ⏱ ancre d'horloge PERSISTÉE appliquée (offset " + persisted + " ms) — heure de jeu "
+            + new java.util.Date(com.perblue.heroes.util.TimeUtil.serverTimeNow()));
+      } else if (ServerContext.clockOffsetMillis() != 0L) {
+        store.setMetaLong("clock_offset_ms", ServerContext.clockOffsetMillis());
+        System.out.println("[login] ⏱ bootstrap -Ddh.clock.offset.hours PERSISTÉ (offset "
+            + ServerContext.clockOffsetMillis() + " ms)");
+      }
+    } catch (Exception e) { System.out.println("[login] ! ancre d'horloge : " + e); }
     ServerUser user = store.loadOrCreate(/*userID*/ 1L, /*shardID*/ 1);
     System.out.println("[login] compte id=1 chargé/créé (" + user.tutorialActCount()
         + " actes de tuto) — DB " + dbPath);
