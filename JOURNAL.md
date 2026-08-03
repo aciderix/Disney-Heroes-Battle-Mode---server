@@ -1,5 +1,41 @@
 # JOURNAL — journal détaillé des modifications
 
+## 2026-08-03 (g54) — REFRAMING : bug `IStudiedBuff.spawnParticles` corrigé (INVOKESPECIAL de super-interface directe)
+
+Correctif du 🐛 trouvé en g53 (combat de guerre) : `IncompatibleClassChangeError: … IStudiedBuff.spawnParticles
+must be InterfaceMethodref constant`. **Cause racine précise** (disassemblage) : `SimpleStudiedBuff implements
+IStudiedBuff` appelle `IStudiedBuff.super.spawnParticles(Entity)` (méthode `default`) via **INVOKESPECIAL**, mais
+dex2jar encode l'entrée de constant pool en **Methodref de classe** au lieu d'**InterfaceMethodref** → la JVM
+rejette le lien au 1ᵉʳ appel. Le chemin est **rendu-seulement** : `AttackScreen` appelle chaque frame
+`IBuffVFX.spawnParticles` (invokeinterface, déjà correct) qui dispatche vers `SimpleStudiedBuff.spawnParticles`
+(l'override) → l'INVOKESPECIAL buggé. **NON spécifique à la guerre** : parmi mes 15 héros, **Baymax** (skill3) et
+**Stitch** (skill2) posent un `SimpleStudiedBuff` → ce héros planterait TOUT combat RENDU où il émet ce buff ; la
+guerre l'a exposé en alignant 14 héros.
+
+**Correctif** (`tools/reframe/ReframeJar`, normalisation non-sémantique §1, étend celle des INVOKESTATIC de
+2026-07-16) : (a) `INVOKEINTERFACE` → `itf=true` (JVMS 6.5, toujours un InterfaceMethodref) ; (b) `INVOKESPECIAL`
+→ `itf=true` **UNIQUEMENT si l'owner est une super-interface DIRECTE de la classe visitée** (`this.interfaces`,
+forme légale `T.super.m()`). ⚠️ La restriction au cas DIRECT est essentielle (JVMS 4.9.2) : flipper un
+INVOKESPECIAL vers une super-interface **indirecte** casse la vérif (`VerifyError`, cf. `PegasusSkill3` →
+`IRampageAbility`, héritée via la super-classe donc non directe — laissée intacte par le garde-fou).
+`INVOKEVIRTUAL` jamais touché.
+
+**Vérifié** : disassemblage `SimpleStudiedBuff` → `InterfaceMethod` (corrigé), `PegasusSkill3` → `Method`
+(intact), dans les **deux** jars reframés (serveur `game-framed.jar` ET client `game-logic-framed.jar`) ; les 3
+classes **verify+link OK sous le vérificateur par défaut** (aucun VerifyError) ; **régression 78/78**. Confirmé
+que `HeadlessCombat` (simulation) **ne rejoue pas les VFX** → le crash n'apparaît QUE dans le combat RENDU
+(`AttackScreen`) — vérifié par A/B : la même sim (Baymax+Stitch, NORMAL 13-10) termine `DONE` sur l'ANCIEN comme
+sur le NOUVEAU jar, car la sim n'appelle jamais `spawnParticles`.
+
+**Vérif EN JEU du combat rendu — RESTE (🟢)** : le témoin UI d'un combat RENDU faisant caster le studied buff est
+bloqué par des frictions ORTHOGONALES au correctif : la guerre de g53 est CLÔTURÉE (l'ordonnanceur l'a avancée) ;
+les boutons FIGHT/DEFENSE du COLISEUM (dans une liste défilante) ne se déclenchent pas via le pilote (tap
+intercepté par le scrollpane) ; la progression campagne du compte n'ouvre que 1-1 (1 ennemi de niv.1 → combat
+trop court pour que les compétences se déclenchent) ; le HALL OF FAME (contests) reste en LOADING. Le témoin
+définitif passe par la **re-création d'une guerre** (le flux d'attaque de g53, PROUVÉ rendre le combat). Détail
+dans `docs/SHIMS.md` §12.
+
+
 ## 2026-08-03 (g53) — GUILD WAR : combat d'attaque JOUÉ EN JEU + bug de reframing trouvé
 
 Suite de g52 : le COMBAT d'attaque de guerre est joué de bout en bout côté client. Après
