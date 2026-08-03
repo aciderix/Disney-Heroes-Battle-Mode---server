@@ -88,7 +88,7 @@ public final class ServerUser {
     UserInfo ui = new UserInfo();                 // tous champs non-null (constructeur du jeu)
     ui.shardID = shardID;
     ui.basicInfo.iD = userID;
-    long creation = System.currentTimeMillis();
+    long creation = com.perblue.heroes.util.TimeUtil.serverTimeNow();  // « membre depuis » = heure de JEU (cohérence d'ère)
     ui.basicInfo.creationTime = creation;
     ui.basicInfo.teamLevel = 1;                   // un compte neuf démarre au niveau d'équipe 1
     UserExtra ue = new UserExtra();
@@ -3005,7 +3005,7 @@ public final class ServerUser {
   public synchronized long deliverMail(com.perblue.heroes.network.messages.MailType type, String from,
       String subject, String body,
       java.util.List<com.perblue.heroes.network.messages.RewardDrop> attachments) {
-    long now = System.currentTimeMillis();
+    long now = com.perblue.heroes.util.TimeUtil.serverTimeNow();  // horodatage courrier = heure de JEU (cohérence d'ère)
     com.perblue.heroes.network.messages.MailMessage m = new com.perblue.heroes.network.messages.MailMessage();
     m.iD = nextMailID();
     m.type = type;
@@ -3192,7 +3192,7 @@ public final class ServerUser {
         individualUserExtra, userID, userInfo.diamonds, "arena-attack");
     ServerContext.bind(user, iu);
     long myID = userInfo.basicInfo != null ? userInfo.basicInfo.iD : 1L;
-    ServerArena.maybeDailyReset(ladder, type, System.currentTimeMillis());   // régén (si on franchit le reset en session)
+    ServerArena.maybeDailyReset(ladder, type, com.perblue.heroes.util.TimeUtil.serverTimeNow());   // régén (heure de JEU)
     int myIdx = ladder.indexOf(myID);
     int defIdx = ladder.indexOf(defenderID);
     if (myIdx >= 0) {
@@ -3207,7 +3207,7 @@ public final class ServerUser {
       if (myIdx >= 0) {
         ServerArenaLadder.Entry me = ladder.entries().get(myIdx);
         me.points += ARENA_WIN_POINTS;
-        me.pointsTiebreaker = System.currentTimeMillis();
+        me.pointsTiebreaker = com.perblue.heroes.util.TimeUtil.serverTimeNow();
         if (me.points > me.bestScore) me.bestScore = me.points;
       }
     }
@@ -3272,7 +3272,7 @@ public final class ServerUser {
     } else {
       ladder = ServerArena.generateLadder(user, userInfo, type, src);
     }
-    ServerArena.maybeDailyReset(ladder, type, System.currentTimeMillis());           // régén combats (reset quotidien)
+    ServerArena.maybeDailyReset(ladder, type, com.perblue.heroes.util.TimeUtil.serverTimeNow());           // régén combats (heure de JEU)
     com.perblue.heroes.network.messages.ArenaInfo info =
         ServerArena.buildArenaInfo(user, userInfo, type, ladder, src);
     return new ArenaResult(info, ladder);

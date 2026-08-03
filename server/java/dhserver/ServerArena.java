@@ -56,7 +56,7 @@ public final class ServerArena {
    *  défense RÉELLE (via {@code src.loadDefender}), pas en synthétique. */
   public static ArenaInfo buildArenaInfo(User user, UserInfo userInfo, ArenaType type, ServerArenaLadder ladder,
                                          OpponentSource src) {
-    long now = System.currentTimeMillis();
+    long now = com.perblue.heroes.util.TimeUtil.serverTimeNow();  // heure de JEU (suit le décalage d'ère), pas l'horloge murale
     ArenaInfo info = new ArenaInfo();
     info.type = type;
     info.season = buildSeason(type, now);
@@ -131,7 +131,7 @@ public final class ServerArena {
     me.teamLevel = userTL;
     me.remainingFightChances = MAX_FIGHTS;
     ladder.entries().add(me);                                       // toi en DERNIER (provisoire)
-    ladder.lastFightReset = System.currentTimeMillis();            // combats pleins → prochain reset = prochain 21h
+    ladder.lastFightReset = com.perblue.heroes.util.TimeUtil.serverTimeNow();  // heure de JEU ; prochain reset = prochain 21h
     return ladder;
   }
 
@@ -217,8 +217,8 @@ public final class ServerArena {
     if (d == null) return botRow(e, shardID, numTeams);            // compte disparu → repli synthétique
     BasicUserInfo who = new BasicUserInfo();
     who.iD = e.id; who.name = e.name; who.teamLevel = e.teamLevel;
-    who.creationTime = System.currentTimeMillis();
-    who.userLastActive = System.currentTimeMillis();
+    who.creationTime = com.perblue.heroes.util.TimeUtil.serverTimeNow();
+    who.userLastActive = com.perblue.heroes.util.TimeUtil.serverTimeNow();
     who.previousName = "";
     List<LineupSummary> teams = playerLineups(d, type, numTeams);  // SA défense posée (ou roster à défaut)
     offsetHeroIds(teams, 1_000_000 + (int) (e.id % 9000L) * 100);  // unicité heroId dans la ligue
@@ -244,8 +244,8 @@ public final class ServerArena {
     who.iD = e.id;
     who.name = e.name;
     who.teamLevel = e.teamLevel;
-    who.creationTime = System.currentTimeMillis();
-    who.userLastActive = System.currentTimeMillis();
+    who.creationTime = com.perblue.heroes.util.TimeUtil.serverTimeNow();
+    who.userLastActive = com.perblue.heroes.util.TimeUtil.serverTimeNow();
     who.previousName = "";
     Rarity rarity = rarityFromOrdinal(e.botRarityOrdinal);
     return syntheticOpponent(rarity, e.botLevel, who, shardID, numTeams, new java.util.Random(e.id));
@@ -346,8 +346,8 @@ public final class ServerArena {
   public static List defenderLineups(ServerArenaLadder.Entry e, int shardID, int numTeams) {
     BasicUserInfo who = new BasicUserInfo();
     who.iD = e.id; who.name = e.name; who.teamLevel = e.teamLevel;
-    who.creationTime = System.currentTimeMillis();
-    who.userLastActive = System.currentTimeMillis();
+    who.creationTime = com.perblue.heroes.util.TimeUtil.serverTimeNow();
+    who.userLastActive = com.perblue.heroes.util.TimeUtil.serverTimeNow();
     who.previousName = "";
     ArenaRow r = syntheticOpponent(rarityFromOrdinal(e.botRarityOrdinal), e.botLevel, who, shardID,
         numTeams, new java.util.Random(e.id));
