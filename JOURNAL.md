@@ -1,5 +1,26 @@
 # JOURNAL — journal détaillé des modifications
 
+## 2026-08-03 (g60) — ORACLE CLIENT : miroir des validations d'ENVOI (#74 B4)
+
+Levier B, incrément B4. Avant d'émettre une action, le CLIENT exécute une validation ; si elle lève, il REFUSE
+d'envoyer. On rejoue CE prédicat du jeu sur NOTRE état reconstruit → « le client enverrait-il / planterait-il ? »
+headless. Deux défauts attrapés sans in-game : (a) un état serveur qui REFUSERAIT une action légitime (joueur
+honnête bloqué) ; (b) une faille ANTI-TRICHE (le serveur accepte ce que le client aurait refusé).
+
+Ajouté à `ClientOracle` : `SendValidation` (prédicat pur) + `assertClientWouldSend` (doit passer) /
+`assertClientWouldRefuse(action, expectReason)` (doit lever ; passer = faille anti-triche). ⚠️ **Prédicats PURS
+seulement** — JAMAIS un rappel qui CONSOMME l'action (`WarClientHelper.doStartWarAttack`, g45 : le pré-appeler
+cassait le vrai envoi).
+
+`server/smoke/SendValidationTest` (patron réutilisable) sur le prédicat de référence `ChestHelper.
+validateChestPurchase` (celui que le serveur applique déjà en anti-triche dans `openChest`) : compte neuf → coffre
+SILVER gratuit ACCEPTÉ ; après consommation du gratuit par le chemin serveur réel (hors cooldown, 0 or) → REFUSÉ.
+Pour chaque nouvelle action de mode (#72), ajouter un couple send/refuse avec le vrai prédicat du jeu.
+
+Fichiers : `server/smoke/ClientOracle.java` (+harnais B4), `server/smoke/SendValidationTest.java` (nouveau),
+`server/smoke/regression.sh` (+1), `docs/HEADLESS_VERIFICATION.md` §SUIVI (B4 ✅). Régression **82/82**.
+
+
 ## 2026-08-03 (g59) — ORACLE CLIENT : le crash R1 (g55) désormais ATTRAPÉ HEADLESS (#74 B2b + B3)
 
 Suite du levier B (#74). Objectif : que l'`ClientOracle` exécute les vérifs du CLIENT qui étaient bloquées faute

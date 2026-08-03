@@ -85,9 +85,15 @@ Légende : ✅ fait · 🔨 en cours · ⬜ à faire
   le crash g55 : `HasEnoughCollectionHeroes.isSatisfied` → `list.get(hero.getStars())`, `stars > getMaxStars`) ;
   contrôle : un compte NEUF (ère courante) reste VERT → pas de faux positif. **Le crash qui a exigé l'in-game en
   g55 est désormais attrapé HEADLESS.** Intégré régression.
-- ⬜ **B4. Miroir des validations d'ENVOI** : par action de mode, exécuter la validation cliente
-  (`validateChestPurchase`, `doStartWarAttack`…) sur notre état → « le client enverrait-il / planterait-il ».
-- ⬜ **B5. Intégration** : `assertClientRenders(user)` dans les tests de handler (fait pour le self-test/régression).
+- ✅ **B4. Miroir des validations d'ENVOI** (`ClientOracle.assertClientWouldSend`/`assertClientWouldRefuse` +
+  `server/smoke/SendValidationTest`) : rejoue HEADLESS le prédicat que le CLIENT exécute AVANT d'émettre une action,
+  sur notre état → « le client enverrait-il / planterait-il ». Attrape (a) un état qui REFUSERAIT une action
+  légitime (joueur honnête bloqué) et (b) une faille ANTI-TRICHE (serveur trop permissif). Exemple de référence
+  (prédicat PUR, sûr) : `ChestHelper.validateChestPurchase` — compte neuf → SILVER gratuit ACCEPTÉ ; après
+  consommation (hors cooldown, 0 or) → REFUSÉ. ⚠️ **Prédicats PURS seulement** — JAMAIS un rappel qui CONSOMME
+  l'action (`WarClientHelper.doStartWarAttack`, g45). Patron réutilisable (1 couple send/refuse par action de mode).
+- 🔨 **B5. Intégration** : `assertClientRenders(user)` + les couples send/refuse dans les tests de handler de chaque
+  mode (fait pour les self-tests/régression ; à étendre au fil des nouveaux modes #72).
 
 ### Levier A — Contrat complet du mode (graphe de messages)
 - ⬜ **A1. `ModeGraph`** : scan de TOUT le jar → map message → {émetteurs, lecteurs} ; regroupement par mode.
@@ -106,3 +112,5 @@ Légende : ✅ fait · 🔨 en cours · ⬜ à faire
 - 2026-08-03 (g59) : **B2b + B3 faits.** 2 shims de structure (`userChallengeData`, `iapProducts`) dans
   `ServerContext` → daily-quest checks actifs ; `ClientOracleR1Test` PROUVE que l'oracle attrape le crash R1
   (g55) headless (`IndexOutOfBounds 6/6`), compte neuf toujours vert. Régression étendue.
+- 2026-08-03 (g60) : **B4 fait.** Miroir des validations d'ENVOI (`assertClientWouldSend`/`assertClientWouldRefuse`,
+  `SendValidationTest`) — rejoue le prédicat client sur notre état (référence `validateChestPurchase`, prédicat pur).

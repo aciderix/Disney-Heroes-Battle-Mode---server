@@ -36,7 +36,7 @@ TESTS=(
   WarSchedulerTest
   ClockAnchorTest
   WireCheck
-  ClientOracle ClientOracleR1Test
+  ClientOracle ClientOracleR1Test SendValidationTest
 )
 
 echo "[reg] compilation (serveur + ${#TESTS[@]} tests) ..."

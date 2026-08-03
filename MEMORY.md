@@ -23,6 +23,9 @@
 > 3. **Faire le point** sur l'état courant ET sur ce qui a été transmis lors de la compression, PUIS enchaîner.
 > Ne PAS sauter cette procédure : c'est la condition pour reprendre dans de bonnes conditions.
 
+Dernière mise à jour : **2026-08-03 (g60)** — **ORACLE CLIENT : miroir des validations d'ENVOI (#74 B4).** Détail : `JOURNAL.md` g60.
+`ClientOracle.assertClientWouldSend`/`assertClientWouldRefuse` rejouent HEADLESS le prédicat que le CLIENT exécute avant d'émettre une action, sur notre état → attrape (a) un état qui refuserait une action légitime, (b) une faille anti-triche. `SendValidationTest` (patron réutilisable) sur `ChestHelper.validateChestPurchase` : compte neuf → SILVER gratuit ACCEPTÉ ; après consommation (hors cooldown, 0 or) → REFUSÉ. ⚠️ Prédicats PURS seulement (jamais `doStartWarAttack`, g45). Régression **82/82**.
+
 Dernière mise à jour : **2026-08-03 (g59)** — **ORACLE CLIENT : le crash R1 (g55) désormais ATTRAPÉ HEADLESS (#74 B2b+B3).** Détail : `JOURNAL.md` g59 + `docs/HEADLESS_VERIFICATION.md` §SUIVI.
 `ClientOracle` exécute maintenant les daily-quest checks (voie du crash R1) : fixture `ServerContext.installClientHubRenderFixtures()` (conteneurs VIDES `userChallengeData`+`iapProducts`, ctor no-arg §4) **RÉSERVÉE À L'ORACLE** (les poser dans le `bind()` serveur GLOBAL réactivait le sous-système de défis #72 non implémenté → NPE `StickerHelper.setupWeeklyChallenges` sur chaque action = cascade de shim §2 ; scopé → 6 tests restaurés). **`ClientOracleR1Test`** : héros 6★ + horloge R1 → l'oracle LÈVE `IndexOutOfBounds 6/6` (= `HasEnoughCollectionHeroes.isSatisfied`, exactement g55), compte neuf vert → **le crash qui avait exigé l'in-game est attrapé HEADLESS**. Régression étendue (`ClientOracle`+`ClientOracleR1Test`).
 

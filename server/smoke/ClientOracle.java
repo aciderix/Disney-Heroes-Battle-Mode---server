@@ -64,6 +64,47 @@ public final class ClientOracle {
     return new Check() { public String name() { return name; } public void run(IUser u) { b.run(u); } };
   }
 
+  // ─────────────────────────────────────────────────────────────────────────────────────────────────────
+  // Levier B4 — MIROIR DES VALIDATIONS D'ENVOI (cf. docs/HEADLESS_VERIFICATION.md).
+  //
+  // Avant d'émettre une action, le CLIENT exécute une validation ; si elle LÈVE (typiquement
+  // ClientErrorCodeException), le client REFUSE d'envoyer. L'oracle rejoue CE MÊME prédicat du jeu sur NOTRE
+  // état reconstruit → répond « le client enverrait-il / planterait-il ? » SANS in-game. Deux défauts attrapés :
+  //   • un état serveur qui ferait REFUSER une action LÉGITIME (le joueur honnête serait bloqué) ;
+  //   • une faille ANTI-TRICHE (le serveur accepte ce que le client aurait refusé).
+  // ⚠️ N'utiliser que des PRÉDICATS PURS (sans effet de bord). JAMAIS un rappel d'action qui CONSOMME l'état
+  //    (ex. WarClientHelper.doStartWarAttack — g45 : le pré-appeler cassait le vrai envoi).
+  // ─────────────────────────────────────────────────────────────────────────────────────────────────────
+
+  /** Une validation d'envoi cliente : lève si le client refuserait/planterait sur cet état. */
+  public interface SendValidation { void run(IUser u); }
+
+  /** Le client ENVERRAIT (la validation passe sur cet état). Lève un AssertionError sinon (blocage indu). */
+  public static void assertClientWouldSend(String action, IUser u, SendValidation v) {
+    becomeMainThread();
+    try { v.run(u); }
+    catch (Throwable t) {
+      throw new AssertionError("SendValidation : le client REFUSERAIT/planterait un envoi LÉGITIME « " + action
+          + " » sur cet état serveur → " + t.getClass().getSimpleName() + ": " + t.getMessage());
+    }
+  }
+
+  /** Le client REFUSERAIT (la validation LÈVE), la raison contenant {@code expectReason} (vide = n'importe
+   *  quel refus). Un envoi qui PASSE ici = faille anti-triche (état serveur trop permissif). */
+  public static void assertClientWouldRefuse(String action, IUser u, String expectReason, SendValidation v) {
+    becomeMainThread();
+    try { v.run(u); }
+    catch (Throwable t) {
+      String msg = String.valueOf(t.getMessage());
+      if (expectReason != null && !expectReason.isEmpty() && !msg.contains(expectReason))
+        throw new AssertionError("SendValidation : « " + action + " » refusé mais pour une MAUVAISE raison — "
+            + "attendu contient « " + expectReason + " », obtenu « " + msg + " »");
+      return;   // refus attendu (le client n'enverrait pas) — comportement correct
+    }
+    throw new AssertionError("SendValidation : le client aurait REFUSÉ « " + action
+        + " » mais la validation a PASSÉ → faille anti-triche (état serveur trop permissif)");
+  }
+
   /** Self-test (régression) : un compte NEUF doit passer toutes les vérifs de rendu du hub. */
   public static void main(String[] a) throws Exception {
     dhserver.ServerContext.init();
