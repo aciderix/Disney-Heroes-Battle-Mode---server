@@ -48,7 +48,10 @@ public final class ScreenContract {
         if (!e.getName().endsWith(".class")) continue;
         String bin = e.getName().substring(0, e.getName().length() - 6);
         boolean match = false;
-        for (String p : prefixes) if (bin.equals(p) || bin.startsWith(p + "$")) { match = true; break; }
+        // Un préfixe finissant par "/" = TOUT le PACKAGE (tous les écrans/helpers du mode) → couvre le flux
+        // multi-écrans (ex. arène = league + hero chooser + pvp helper). Sinon = la classe + ses internes.
+        for (String p : prefixes)
+          if (p.endsWith("/") ? bin.startsWith(p) : (bin.equals(p) || bin.startsWith(p + "$"))) { match = true; break; }
         if (!match) continue;
         new ClassReader(zis.readAllBytes()).accept(new ClientVisitor(), ClassReader.SKIP_DEBUG);
         analyzed++;

@@ -64,12 +64,29 @@ s'appuyant sur les FAITS du jar (bytecode) et sur nos LEÇONS (défauts récurre
 
 ## Limites connues de l'outil (validé contre le travail fait, g57)
 
-Comparé aux écrans DÉJÀ implémentés (arène, breaker), pour distinguer « vrai bug passé » de « outil à améliorer » :
-- **§C ne liste QUE les vraies requêtes client→serveur** : un message serveur→client CONSTRUIT localement par
-  l'écran (ArenaInfo, ArenaRow…) n'est PAS un envoi → exclu (heuristique : lu par l'écran = inbound ; sinon nom
-  de requête Get*/Set*/…/*Attack). *(C'était un faux positif de la 1ʳᵉ version, corrigé — pas un bug de l'arène.)*
-- **§A/B peut sous-lister** si l'écran lit ses données via un HOLDER/manager plutôt que par `GETFIELD` direct sur
-  le message (ex. arène) → compléter la recon à la main pour ces écrans. Fournir aussi le display/holder en argument aide.
+Comparé aux écrans DÉJÀ implémentés (arène, breaker), pour distinguer « vrai bug passé » de « outil à améliorer ».
+Bilan : **0 bug réel** dans arène/breaker ; **1 faux positif** de l'outil corrigé (§C) ; **2 limites de PORTÉE**
+inhérentes (pas des bugs), à connaître.
+
+- **[corrigé] §C** ne liste QUE les vraies requêtes client→serveur : un message serveur→client CONSTRUIT
+  localement par l'écran (ArenaInfo, ArenaRow…) n'est PAS un envoi → exclu (lu par l'écran = inbound ; sinon nom
+  de requête Get*/Set*/…/*Attack). *(Faux positif de la 1ʳᵉ version, corrigé — pas un bug de l'arène.)*
+
+- **[LIMITE 1 — portée PAR CLASSE, un mode est MULTI-classes] l'outil analyse la/les classe(s) données, pas
+  « le mode ».** Un message peut être ENVOYÉ depuis un AUTRE écran ou un HELPER que l'écran principal. Ex. réel :
+  `ArenaLeagueScreen` n'envoie que `GetArenaInfo` ; le combat `ArenaAttack` (implémenté #44) est émis par
+  `ArenaAttackHeroChooserScreen`/`ArenaHelper`, invisible si on ne lance l'outil que sur la league screen.
+  → **Lancer sur TOUTES les classes du mode** : préfixe finissant par `/` = tout le package
+  (`…/ui/surge/`), ou lister plusieurs classes (écrans + hero choosers + `*Helper`) séparées par des virgules.
+  *(Correction : contrairement à ce que j'avais dit, l'outil NE sous-liste PAS §A/B pour l'arène — il capture bien
+  tout le contrat `ArenaInfo`/`ArenaRow`/`ArenaSeasonInfo` lu en `GETFIELD` direct. Cas théorique de sous-listage :
+  un écran qui lit via un MANAGER rendant des objets DOMAINE et non le message wire — non observé en arène/breaker.)*
+
+- **[LIMITE 2 — CONTRAT, pas LOGIQUE] l'outil montre QUOI peupler/router, jamais COMMENT.** Toute la partie
+  serveur — sélection d'adversaires (pool réel + synthétique), calcul de rang/points, barème, état/persistance,
+  anti-triche, rollover de saison — est INVISIBLE et NON scaffoldée (par design §3/§4 : la logique vient de
+  l'exécution du code du jeu, jamais inventée). Le scaffolder ne pose que la STRUCTURE (champs + round-trip).
+
 - **Vérifier « champ peuplé »** : un champ peut être rempli via `.add()`/`.put()` sur la liste/map pré-initialisée
   du message (ctor par défaut), PAS forcément via `champ =` (ex. breaker `wardLineups.add(...)`). Ne pas conclure
   « non peuplé » sur la seule absence de `champ =`.
