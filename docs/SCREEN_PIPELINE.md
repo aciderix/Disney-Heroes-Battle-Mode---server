@@ -17,8 +17,12 @@ s'appuyant sur les FAITS du jar (bytecode) et sur nos LEÇONS (défauts récurre
    `unzip -l libs/game.jar | grep -oE 'com/perblue/heroes/ui/<mode>/[A-Za-z]+Screen'`
    (ajouter le display/window qui lit les données, ex. `…/InvasionBreakerQuestDisplay`).
 
-2. **Extraire le contrat** :
+2. **Extraire le contrat** (+ option `--scaffold <Mode> <outdir>` en fin d'argument pour GÉNÉRER les squelettes) :
    `tools/screentool/contract.sh com/perblue/heroes/ui/<mode>/<Ecran>[,<…Display>]`
+   Scaffold : `java … ScreenContract <game> <srv> <Ecran> --scaffold <Mode> scratchpad/scaffold/<Mode>` →
+   `Server<Mode>Scaffold.java` (builder posant CHAQUE champ du contrat, TODO), `<Mode>ScaffoldTest.java`
+   (WireCheck sur chaque réponse), `LoginServer-<Mode>.snippet.txt` (handlers à insérer). **STRUCTURE seulement**
+   — la LOGIQUE (règles) reste à brancher via le code du jeu, jamais inventée (§3/§4).
    Lire les sections :
    - **A/B — champs à peupler** : chaque champ listé DOIT être posé par le serveur dans la réponse (sinon
      écran vide / bouton inerte = défaut nº1). C'est la spec de la réponse.
@@ -57,6 +61,18 @@ s'appuyant sur les FAITS du jar (bytecode) et sur nos LEÇONS (défauts récurre
 7. **Gate réel du jeu** — respecter le verrou (`Unlockable`/TL), jamais le désactiver ; l'atteindre par l'état légitime.
 8. **`PatchStats.<clinit>`** — ne pas déclencher `getBossHP` au push du boot (stat-sync incomplète → poison classe).
 9. **Vérif en jeu obligatoire** — headless prouvé = 🟢, pas ✅.
+
+## Limites connues de l'outil (validé contre le travail fait, g57)
+
+Comparé aux écrans DÉJÀ implémentés (arène, breaker), pour distinguer « vrai bug passé » de « outil à améliorer » :
+- **§C ne liste QUE les vraies requêtes client→serveur** : un message serveur→client CONSTRUIT localement par
+  l'écran (ArenaInfo, ArenaRow…) n'est PAS un envoi → exclu (heuristique : lu par l'écran = inbound ; sinon nom
+  de requête Get*/Set*/…/*Attack). *(C'était un faux positif de la 1ʳᵉ version, corrigé — pas un bug de l'arène.)*
+- **§A/B peut sous-lister** si l'écran lit ses données via un HOLDER/manager plutôt que par `GETFIELD` direct sur
+  le message (ex. arène) → compléter la recon à la main pour ces écrans. Fournir aussi le display/holder en argument aide.
+- **Vérifier « champ peuplé »** : un champ peut être rempli via `.add()`/`.put()` sur la liste/map pré-initialisée
+  du message (ctor par défaut), PAS forcément via `champ =` (ex. breaker `wardLineups.add(...)`). Ne pas conclure
+  « non peuplé » sur la seule absence de `champ =`.
 
 ## Sonde `sideOf`/`putSide` (état wire d'instantané)
 

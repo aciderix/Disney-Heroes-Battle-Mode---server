@@ -31,10 +31,14 @@ public final class ScreenContract {
   static final TreeSet<String> unlockables = new TreeSet<>();
   static final TreeSet<String> sends = new TreeSet<>();   // messages construits (new) par l'écran = candidats ENVOYÉS
 
+  static final TreeSet<String> handled = new TreeSet<>();
+
   public static void main(String[] args) throws Exception {
-    if (args.length < 3) { System.out.println("Usage: ScreenContract <game.jar> <server-classes-dir> <prefix1[,prefix2]>"); return; }
+    if (args.length < 3) { System.out.println("Usage: ScreenContract <game.jar> <server-classes-dir> <prefix1[,prefix2]> [--scaffold <ModeName> <outdir>]"); return; }
     String jar = args[0], srvDir = args[1];
     String[] prefixes = args[2].split(",");
+    String scaffoldMode = null, scaffoldOut = null;
+    for (int i = 3; i < args.length; i++) if (args[i].equals("--scaffold") && i + 2 < args.length) { scaffoldMode = args[i+1]; scaffoldOut = args[i+2]; }
 
     // 1) analyser les classes clientes qui matchent un préfixe
     int analyzed = 0;
@@ -53,7 +57,6 @@ public final class ScreenContract {
 
     // 2) set des messages routés par LoginServer (instanceof) — INCLUT les classes internes (le vrai routage
     //    est dans un listener anonyme LoginServer$…, pas dans l'outer class).
-    TreeSet<String> handled = new TreeSet<>();
     File dh = new File(srvDir, "dhserver");
     File[] lsClasses = dh.listFiles((d, nm) -> nm.equals("LoginServer.class") || nm.startsWith("LoginServer$"));
     if (lsClasses != null && lsClasses.length > 0) {
@@ -86,19 +89,145 @@ public final class ScreenContract {
     if (!anyRead) System.out.println("  (rien lu directement — l'écran lit peut-être via un holder/helper non fourni en argument)");
     System.out.println();
 
-    System.out.println("C. COUVERTURE HANDLERS (messages construits par l'écran = candidats ENVOYÉS client→serveur) :");
-    if (sends.isEmpty()) System.out.println("  (aucun `new <Message>` détecté dans l'écran)");
+    System.out.println("C. COUVERTURE HANDLERS (messages ENVOYÉS client→serveur) :");
+    // Un message CONSTRUIT (`new`) mais aussi LU par l'écran (§A/B) est une réponse serveur→client construite
+    // localement, PAS un envoi → on l'exclut (sinon faux positif, cf. ArenaInfo/ArenaRow sur l'écran arène).
+    java.util.Set<String> readMsgs = new java.util.HashSet<>(readFields.keySet()); readMsgs.addAll(readGetters.keySet());
+    boolean anySent = false;
     for (String m : sends) {
+      if (readMsgs.contains(m)) continue;               // lu → inbound, pas un envoi
       boolean ok = handled.contains(m);
-      System.out.println("  [" + (ok ? "OK " : "MANQUE") + "] " + simple(m)
-          + (ok ? " — routé par LoginServer (instanceof)" : " — AUCUN handler LoginServer (à implémenter)"));
+      boolean req = looksLikeRequest(simple(m));
+      if (!ok && !req) continue;                        // construit, non routé, non requête → type serveur→client local
+      anySent = true;
+      System.out.println("  [" + (ok ? "OK    " : "MANQUE") + "] " + simple(m)
+          + (ok ? " — routé par LoginServer (instanceof)" : " — requête sans handler LoginServer (à implémenter)"));
     }
+    if (!anySent) System.out.println("  (aucun message client→serveur détecté — écran en lecture seule ?)");
+    System.out.println("  (note : un message serveur→client CONSTRUIT localement par l'écran n'est PAS un envoi — exclu ici)");
     System.out.println();
 
     System.out.println("Tous les messages référencés : ");
     for (String m : referencedMsgs) System.out.println("  · " + simple(m) + (handled.contains(m) ? "  [handler✓]" : ""));
     System.out.println();
     printChecklist();
+
+    if (scaffoldMode != null) { System.out.println(); generateScaffold(jar, scaffoldMode, scaffoldOut); }
+  }
+
+  /** Génère des SQUELETTES (structure only, jamais de logique) : builder de réponse posant CHAQUE champ du
+   *  contrat (TODO), test avec WireCheck, snippet handler. La LOGIQUE (règles) reste à brancher via le code du
+   *  jeu (PRINCIPLES §3/§4 : jamais inventer). */
+  static void generateScaffold(String jar, String mode, String outDir) throws Exception {
+    // messages serveur→client (lus par l'écran) et client→serveur (envoyés, non routés)
+    TreeSet<String> produce = new TreeSet<>(readFields.keySet());
+    java.util.Set<String> readMsgs = new java.util.HashSet<>(readFields.keySet()); readMsgs.addAll(readGetters.keySet());
+    TreeSet<String> toHandle = new TreeSet<>();
+    // même filtre que le rapport C : exclure les lus (inbound) + ne garder que les requêtes non routées
+    for (String s : sends) if (!handled.contains(s) && !readMsgs.contains(s) && looksLikeRequest(simple(s))) toHandle.add(s);
+
+    // types des champs des messages à produire (name -> descriptor), en UNE passe sur le jar
+    TreeSet<String> want = new TreeSet<>(produce);
+    Map<String, LinkedHashMap<String, String>> fieldTypes = messageFieldTypes(jar, want);
+
+    new File(outDir).mkdirs();
+    StringBuilder builder = new StringBuilder(), test = new StringBuilder(), snippet = new StringBuilder();
+
+    builder.append("// SQUELETTE GÉNÉRÉ (#73 scaffolder) pour le mode ").append(mode).append(" — STRUCTURE, PAS DE LOGIQUE.\n");
+    builder.append("// À déplacer dans dhserver/ et à COMPLÉTER : chaque TODO = valeur RÉELLE via le code du jeu\n");
+    builder.append("// (<Mode>Helper/<Mode>Stats), JAMAIS inventée (PRINCIPLES §3/§4). Anti-triche : recalcul serveur.\n");
+    builder.append("package dhserver;\n\nimport com.perblue.heroes.network.messages.*;\n\n");
+    builder.append("public final class Server").append(mode).append("Scaffold {\n");
+    for (String m : produce) {
+      String sm = simple(m);
+      LinkedHashMap<String, String> fts = fieldTypes.getOrDefault(m, new LinkedHashMap<>());
+      builder.append("\n  /** Construit ").append(sm).append(" (serveur→client) — l'écran LIT les champs ci-dessous : tous DOIVENT être posés. */\n");
+      builder.append("  public static ").append(sm).append(" build").append(sm).append("(ServerUser u /*, contexte */) {\n");
+      builder.append("    ").append(sm).append(" m = new ").append(sm).append("();\n");
+      for (String f : readFields.get(m)) {
+        String desc = fts.get(f);
+        builder.append("    m.").append(f).append(" = ").append(initFor(desc)).append(";   // TODO valeur réelle")
+               .append(desc == null ? " (type ?)" : " (" + prettyType(desc) + ")").append("\n");
+      }
+      builder.append("    return m;\n  }\n");
+    }
+    builder.append("}\n");
+
+    test.append("// SQUELETTE DE TEST GÉNÉRÉ (#73) pour ").append(mode).append(" — à compléter + ajouter à regression.sh\n");
+    test.append("public final class ").append(mode).append("ScaffoldTest {\n");
+    test.append("  public static void main(String[] a) throws Exception {\n    dhserver.ServerContext.init();\n");
+    for (String m : produce) {
+      String sm = simple(m);
+      test.append("    WireCheck.assertRoundTrips(dhserver.Server").append(mode).append("Scaffold.build").append(sm).append("(null /*u*/));   // défaut nº3\n");
+    }
+    test.append("    // TODO: assertions d'état + round-trip DB (persistance).\n");
+    test.append("    System.out.println(\"[").append(mode).append("ScaffoldTest] round-trip wire OK (squelette)\");\n  }\n}\n");
+
+    snippet.append("// SNIPPET handler à INSÉRER dans LoginServer (chaîne if/else instanceof) — mode ").append(mode).append("\n");
+    if (toHandle.isEmpty()) snippet.append("// (aucun message client→serveur non routé détecté)\n");
+    for (String m : toHandle) {
+      String sm = simple(m);
+      snippet.append("} else if (m instanceof ").append(m.replace('/', '.')).append(") {\n");
+      snippet.append("    ").append(sm).append(" cm = (").append(sm).append(") m;\n");
+      snippet.append("    // TODO: valider (anti-triche, recalcul serveur) + exécuter la logique du jeu (<Mode>Helper) + persister ;\n");
+      snippet.append("    // répondre : conn.send(Server").append(mode).append("Scaffold.build<Réponse>(user, …));\n");
+      snippet.append("    System.out.println(\"[login] <== ").append(sm).append("\");\n");
+    }
+
+    write(outDir + "/Server" + mode + "Scaffold.java", builder.toString());
+    write(outDir + "/" + mode + "ScaffoldTest.java", test.toString());
+    write(outDir + "/LoginServer-" + mode + ".snippet.txt", snippet.toString());
+    System.out.println("F. SCAFFOLD généré dans " + outDir + " :");
+    System.out.println("   • Server" + mode + "Scaffold.java  (builder : " + produce.size() + " message(s), tous champs du contrat stubbés TODO)");
+    System.out.println("   • " + mode + "ScaffoldTest.java   (round-trip wire de chaque réponse)");
+    System.out.println("   • LoginServer-" + mode + ".snippet.txt  (" + toHandle.size() + " handler(s) à insérer)");
+    System.out.println("   ⚠️ STRUCTURE seulement — brancher la LOGIQUE via le code du jeu, ne rien inventer (§3/§4).");
+  }
+
+  static void write(String path, String content) throws IOException {
+    try (Writer w = new OutputStreamWriter(new FileOutputStream(path), java.nio.charset.StandardCharsets.UTF_8)) { w.write(content); }
+  }
+
+  /** Pour chaque message voulu, lit ses CHAMPS d'instance (nom→descripteur) depuis le jar. */
+  static Map<String, LinkedHashMap<String, String>> messageFieldTypes(String jar, Set<String> want) throws IOException {
+    Map<String, LinkedHashMap<String, String>> out = new HashMap<>();
+    try (ZipInputStream zis = new ZipInputStream(new BufferedInputStream(new FileInputStream(jar)))) {
+      ZipEntry e;
+      while ((e = zis.getNextEntry()) != null) {
+        if (!e.getName().endsWith(".class")) continue;
+        String bin = e.getName().substring(0, e.getName().length() - 6);
+        if (!want.contains(bin)) continue;
+        LinkedHashMap<String, String> fm = new LinkedHashMap<>();
+        new ClassReader(zis.readAllBytes()).accept(new ClassVisitor(Opcodes.ASM9) {
+          @Override public FieldVisitor visitField(int acc, String n, String d, String s, Object v) {
+            if ((acc & Opcodes.ACC_STATIC) == 0) fm.put(n, d);
+            return null;
+          }
+        }, ClassReader.SKIP_CODE);
+        out.put(bin, fm);
+      }
+    }
+    return out;
+  }
+
+  static String initFor(String desc) {
+    if (desc == null) return "null /* TODO type ? */";
+    switch (desc) {
+      case "Z": return "false"; case "B": case "C": case "S": case "I": return "0";
+      case "J": return "0L"; case "F": return "0f"; case "D": return "0d";
+    }
+    if (desc.startsWith("Ljava/util/List")) return "new java.util.ArrayList<>()";
+    if (desc.startsWith("Ljava/util/Map")) return "new java.util.HashMap<>()";
+    if (desc.startsWith("Ljava/util/Set")) return "new java.util.HashSet<>()";
+    if (desc.equals("Ljava/lang/String;")) return "\"\"";
+    if (desc.startsWith("[")) return "null /* array TODO */";
+    return "null /* TODO: " + prettyType(desc) + " */";
+  }
+
+  static String prettyType(String desc) {
+    if (desc == null) return "?";
+    if (desc.startsWith("L") && desc.endsWith(";")) { String s = desc.substring(1, desc.length()-1); return s.substring(s.lastIndexOf('/')+1); }
+    return desc;
   }
 
   /** E. Défauts RÉCURRENTS (distillés de MEMORY/SHIMS/JOURNAL) que le bytecode de l'écran NE montre PAS —
@@ -124,6 +253,18 @@ public final class ScreenContract {
   }
 
   static String simple(String bin) { int i = bin.lastIndexOf('/'); return bin.substring(i + 1); }
+
+  /** Heuristique de direction : un message client→serveur est en général nommé comme une REQUÊTE/action.
+   *  Sert à ne PAS confondre un type serveur→client construit localement (ArenaInfo, ArenaRow…) avec un envoi. */
+  static final String[] REQ_PREFIX = {"Get","Set","Claim","Start","Change","Buy","Use","Sell","Post","Hire",
+      "Donate","Upgrade","Activate","Edit","Create","Join","Leave","Kick","Promote","Demote","Accept","Reject",
+      "Refresh","Request","Mark","Take","Delete","Open","Send","Choose","Skip","Complete","Collect","Spend","Equip"};
+  static final String[] REQ_SUFFIX = {"Attack","Update"};
+  static boolean looksLikeRequest(String simpleName) {
+    for (String p : REQ_PREFIX) if (simpleName.startsWith(p)) return true;
+    for (String s : REQ_SUFFIX) if (simpleName.endsWith(s)) return true;
+    return false;
+  }
 
   static void noteType(String desc) {
     if (desc == null) return;
