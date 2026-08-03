@@ -19,17 +19,15 @@ public final class ClientOracle {
   /** Une vérif cliente : un nom + une action qui LÈVE si le client planterait/refuserait sur cet état. */
   interface Check { String name(); void run(IUser u); }
 
-  /** Vérifs « le hub rend sans planter » qui tournent PROPREMENT sur un User headless (B2). VRAI code client. */
+  /** Vérifs « le hub rend sans planter » qui tournent PROPREMENT sur un User headless (B2). VRAI code client.
+   *  Les vérifs de DAILY QUESTS ({@code getUnlockedDailyQuests}/{@code hasUnclaimedDailyQuests}) — LA voie du
+   *  crash R1 (g55 : {@code HasEnoughCollectionHeroes.isSatisfied} → {@code list.get(hero.getStars())} hors
+   *  bornes) — lisent les {@code IUserChallengeData} ; elles NPEaient tant que notre User headless n'avait pas
+   *  ce conteneur. Depuis la fixture challenge-data (#74 B2b : {@code ServerContext} pose
+   *  {@code DH.app.userChallengeData}), elles tournent → l'oracle attrape le crash R1 headless. */
   static final Check[] HUB_RENDER = {
     check("QuestHelper.getUnlockedAchievements", u -> QuestHelper.getUnlockedAchievements(u)),
     check("QuestHelper.getWeeklyDailyQuestsComplete", u -> QuestHelper.getWeeklyDailyQuestsComplete(u)),
-  };
-
-  /** Vérifs À FORT INTÉRÊT (voie du crash R1) mais qui exigent une FIXTURE utilisateur plus complète —
-   *  {@code getUnlockedDailyQuests} accède aux {@code IUserChallengeData} (données de défi/City Watch) que le
-   *  BootData réel fournit mais que notre User headless n'a pas encore → NPE. À activer quand la fixture est
-   *  prête (tracker B2b dans docs/HEADLESS_VERIFICATION.md). Une fois active, l'oracle attrape le crash R1 headless. */
-  static final Check[] HUB_RENDER_PENDING_FIXTURE = {
     check("QuestHelper.getUnlockedDailyQuests", u -> QuestHelper.getUnlockedDailyQuests(u)),   // ← voie du crash R1
     check("QuestHelper.hasUnclaimedDailyQuests", u -> QuestHelper.hasUnclaimedDailyQuests(u)),
   };
@@ -48,6 +46,9 @@ public final class ClientOracle {
   /** Assertion : le CLIENT rendrait cet état sans planter. Lève un AssertionError listant les vérifs en échec. */
   public static void assertClientRenders(IUser u) {
     becomeMainThread();
+    // Pose les structures de RENDU CLIENT du hub (conteneur de défis + catalogue IAP, vides) que le serveur
+    // n'a pas — cf. ServerContext.installClientHubRenderFixtures (RÉSERVÉ à l'oracle, jamais au bind serveur).
+    dhserver.ServerContext.installClientHubRenderFixtures();
     java.util.List<String> failures = new java.util.ArrayList<>();
     for (Check c : HUB_RENDER) {
       try { c.run(u); }

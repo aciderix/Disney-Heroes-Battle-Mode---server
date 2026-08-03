@@ -67,13 +67,24 @@ Légende : ✅ fait · 🔨 en cours · ⬜ à faire
   du jeu (`QuestStats.getDailyQuestIDs`…) ont un garde `currentThread == GameMain.MAIN_THREAD` (nul headless →
   garde violé). `becomeMainThread()` pose le champ static sur le thread courant (shim de HARNAIS, §4) → le vrai
   code client tourne headless.
-- 🔨 **B2. Vérifs « le hub rend sans planter »** : ✅ STABLES headless = `getUnlockedAchievements`,
-  `getWeeklyDailyQuestsComplete` (self-test vert, intégré régression). ⏳ En attente fixture ↓.
-- ⬜ **B2b. FIXTURE utilisateur complète** : `getUnlockedDailyQuests`/`hasUnclaimedDailyQuests` (LA voie du crash
-  R1, à fort intérêt) NPE car notre `User` headless n'a pas les `IUserChallengeData` (données de défi/City Watch
-  que le BootData réel fournit). Construire une fixture User complète (challenge data + ce que le vrai boot pose)
-  → déplacer ces 2 vérifs de `HUB_RENDER_PENDING_FIXTURE` vers `HUB_RENDER`. **Alors l'oracle attrape R1 headless.**
-- ⬜ **B3. Preuve anti-régression R1** : test héros 6★ + ère R1 → l'oracle DOIT flaguer le crash (gate sur B2b).
+- ✅ **B2. Vérifs « le hub rend sans planter »** : STABLES headless = `getUnlockedAchievements`,
+  `getWeeklyDailyQuestsComplete`, **+ (depuis B2b) `getUnlockedDailyQuests`/`hasUnclaimedDailyQuests`** (self-test
+  vert, intégré régression).
+- ✅ **B2b. FIXTURE challenge-data + catalogue IAP** : `getUnlockedDailyQuests`/`hasUnclaimedDailyQuests` (LA voie
+  du crash R1) NPEaient car notre `GameMain` headless n'avait ni `userChallengeData` (données de défi/City Watch)
+  ni `iapProducts` (catalogue boutique, lu par `PurchaseHelper` via les daily quests). **Correctif** :
+  `ServerContext.installClientHubRenderFixtures()` pose 2 shims de STRUCTURE du jeu (ctor no-arg, conteneurs VIDES
+  que le vrai boot remplirait) — `DH.app.userChallengeData = new ClientUserChallengeData()` et `DH.app.iapProducts
+  = new IAPProducts()` (couche plateforme §4). ⚠️ **RÉSERVÉ à l'oracle, JAMAIS au `bind()` serveur global** : les
+  poser globalement réactive `UserActivityTracker.notifyChallenges → StickerHelper.setupWeeklyChallenges` sur CHAQUE
+  action serveur (createGuild, combat…) → NPE (`StickerHelperExtension` absente, sous-système de défis #72 non
+  implémenté) = cascade de shim (violerait §2). L'oracle simule le rendu CLIENT du hub, il est le seul à en avoir
+  besoin. Les 2 vérifs sont passées de `HUB_RENDER_PENDING_FIXTURE` à `HUB_RENDER`. **L'oracle attrape R1 headless.**
+- ✅ **B3. Preuve anti-régression R1** (`server/smoke/ClientOracleR1Test`) : héros 6★ + horloge de jeu R1 (2016)
+  → `assertClientRenders` LÈVE avec **`IndexOutOfBoundsException: Index 6 out of bounds for length 6`** (exactement
+  le crash g55 : `HasEnoughCollectionHeroes.isSatisfied` → `list.get(hero.getStars())`, `stars > getMaxStars`) ;
+  contrôle : un compte NEUF (ère courante) reste VERT → pas de faux positif. **Le crash qui a exigé l'in-game en
+  g55 est désormais attrapé HEADLESS.** Intégré régression.
 - ⬜ **B4. Miroir des validations d'ENVOI** : par action de mode, exécuter la validation cliente
   (`validateChestPurchase`, `doStartWarAttack`…) sur notre état → « le client enverrait-il / planterait-il ».
 - ⬜ **B5. Intégration** : `assertClientRenders(user)` dans les tests de handler (fait pour le self-test/régression).
@@ -92,3 +103,6 @@ Légende : ✅ fait · 🔨 en cours · ⬜ à faire
 
 ### Historique des incréments
 - 2026-08-03 (g58) : création de ce document + démarrage B1 (harnais `ClientOracle`).
+- 2026-08-03 (g59) : **B2b + B3 faits.** 2 shims de structure (`userChallengeData`, `iapProducts`) dans
+  `ServerContext` → daily-quest checks actifs ; `ClientOracleR1Test` PROUVE que l'oracle attrape le crash R1
+  (g55) headless (`IndexOutOfBounds 6/6`), compte neuf toujours vert. Régression étendue.

@@ -23,6 +23,9 @@
 > 3. **Faire le point** sur l'état courant ET sur ce qui a été transmis lors de la compression, PUIS enchaîner.
 > Ne PAS sauter cette procédure : c'est la condition pour reprendre dans de bonnes conditions.
 
+Dernière mise à jour : **2026-08-03 (g59)** — **ORACLE CLIENT : le crash R1 (g55) désormais ATTRAPÉ HEADLESS (#74 B2b+B3).** Détail : `JOURNAL.md` g59 + `docs/HEADLESS_VERIFICATION.md` §SUIVI.
+`ClientOracle` exécute maintenant les daily-quest checks (voie du crash R1) : fixture `ServerContext.installClientHubRenderFixtures()` (conteneurs VIDES `userChallengeData`+`iapProducts`, ctor no-arg §4) **RÉSERVÉE À L'ORACLE** (les poser dans le `bind()` serveur GLOBAL réactivait le sous-système de défis #72 non implémenté → NPE `StickerHelper.setupWeeklyChallenges` sur chaque action = cascade de shim §2 ; scopé → 6 tests restaurés). **`ClientOracleR1Test`** : héros 6★ + horloge R1 → l'oracle LÈVE `IndexOutOfBounds 6/6` (= `HasEnoughCollectionHeroes.isSatisfied`, exactement g55), compte neuf vert → **le crash qui avait exigé l'in-game est attrapé HEADLESS**. Régression étendue (`ClientOracle`+`ClientOracleR1Test`).
+
 Dernière mise à jour : **2026-08-03 (g56)** — **LOOT AUTORITAIRE ✅ VÉRIFIÉ EN JEU (compte FRAIS).** Détail : `JOURNAL.md` g56 + `docs/SHIMS.md` #25.
 Le « reste » de #25/#46 : sur un compte joué DEPUIS la création (DB neuve, snapshot `dh-snapshot-postwar-0803.db`), 3 combats WIN d'affilée (NORMAL 1-1/1-2/1-3, auto-fight) → serveur **`[loot-authoritative] #25 AUTORITAIRE ✅ crédité=serveur (==client)` 3/3, 0 DIVERGENCE**, loot DIFFÉRENT à chaque combat → chaîne de graine EN PHASE → **autorité EFFECTIVE en jeu, anti-triche actif** (le serveur roule son butin sur `getDefaultSeed(userID)`+avance, matche le client, crédite le SERVEUR). Le compte hérité restait désynchronisé (repli sûr). Aucune modif code (logique déjà en place, c'était la vérif en jeu manquante).
 

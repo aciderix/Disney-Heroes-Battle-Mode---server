@@ -236,6 +236,33 @@ public final class ServerContext {
     } catch (Throwable t) { throw new RuntimeException("échec bind battle pass DH.app", t); }
   }
 
+  /**
+   * FIXTURE de RENDU CLIENT — réservée à l'ORACLE headless ({@code ClientOracle}, #74 B2b). Pose sur le shim
+   * {@code DH.app} les structures que le CLIENT a en mémoire pour RENDRE LE HUB mais que le serveur n'a pas
+   * (il ne rend rien) : le conteneur de DÉFIS ({@code userChallengeData}, lu par les daily quests via
+   * {@code getYourChallengeData}) et le CATALOGUE IAP ({@code iapProducts}, itéré par {@code PurchaseHelper}
+   * depuis les daily quests). Ce sont des conteneurs VIDES du jeu (ctor no-arg = ce que le boot remplirait) —
+   * couche plateforme (§4), aucune donnée/règle inventée.
+   *
+   * <p>⚠️ NE PAS poser ces champs dans {@link #bind} (chemin serveur global) : le sous-système de défis
+   * (City Watch / stickerbook, #72) n'est PAS implémenté côté serveur — le rendre non-nul GLOBALEMENT réactive
+   * {@code UserActivityTracker.notifyChallenges → StickerHelper.setupWeeklyChallenges} sur CHAQUE action serveur
+   * (createGuild, combat…), qui exige une {@code StickerHelperExtension} absente headless → NPE (cascade de shim,
+   * violerait §2 « pas d'état cassé plus tard »). C'est donc RÉSERVÉ à l'oracle, qui simule le rendu CLIENT du
+   * hub. Idempotent (ne pose que si nul).
+   */
+  public static synchronized void installClientHubRenderFixtures() {
+    init();
+    try {
+      Field cd = field(GameMain.class, "userChallengeData");
+      if (cd.get(app) == null)
+        cd.set(app, new com.perblue.heroes.game.data.stickerbook.ClientUserChallengeData());
+      Field ip = field(GameMain.class, "iapProducts");
+      if (ip.get(app) == null)
+        ip.set(app, new com.perblue.heroes.network.messages.IAPProducts());
+    } catch (Throwable t) { throw new RuntimeException("échec fixture de rendu client (oracle)", t); }
+  }
+
   private static long anchoredSeasonStart = 0;
 
   /**

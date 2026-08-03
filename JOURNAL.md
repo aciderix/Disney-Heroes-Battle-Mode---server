@@ -1,5 +1,43 @@
 # JOURNAL — journal détaillé des modifications
 
+## 2026-08-03 (g59) — ORACLE CLIENT : le crash R1 (g55) désormais ATTRAPÉ HEADLESS (#74 B2b + B3)
+
+Suite du levier B (#74). Objectif : que l'`ClientOracle` exécute les vérifs du CLIENT qui étaient bloquées faute
+de fixture, et PROUVE qu'il rattrape le crash R1 découvert en jeu (g55) SANS repasser par l'in-game.
+
+**B2b — fixture de rendu client.** Les 2 vérifs à fort intérêt (`getUnlockedDailyQuests`/`hasUnclaimedDailyQuests`,
+LA voie du crash R1) NPEaient headless pour DEUX raisons enchaînées, trouvées et corrigées l'une après l'autre :
+1. `GameMain.getYourChallengeData()` = simple GETFIELD de `userChallengeData` (prouvé au bytecode), nul headless →
+   NPE `IUserChallengeData.allHandles()`. 
+2. une fois le conteneur de défis posé : `PurchaseHelper$1.getIAPProducts()` = `DH.app.getIAPProducts()` (GETFIELD
+   `iapProducts`), nul → NPE `.products` (les daily quests itèrent le catalogue boutique).
+Correctif : `ServerContext.installClientHubRenderFixtures()` pose 2 conteneurs VIDES du jeu (ctor no-arg =
+structure que le vrai boot remplirait) — `userChallengeData = new ClientUserChallengeData()`, `iapProducts =
+new IAPProducts()`. Couche plateforme §4, aucune donnée/règle inventée. Les 2 vérifs passent de
+`HUB_RENDER_PENDING_FIXTURE` à `HUB_RENDER` (batterie par défaut).
+
+**⚠️ Cascade de shim évitée (§2) — leçon.** 1ère tentative : poser ces champs dans le `bind()` serveur GLOBAL.
+Résultat : **6 tests cassés** (chest/skill/alchemy/war) — `ServerUser.createGuild → UserActivityTracker.
+notifyChallenges → StickerHelper.setupWeeklyChallenges → ext.getHistoricChallenges()` = null (la
+`StickerHelperExtension` cliente est absente headless). En rendant `userChallengeData` non-nul GLOBALEMENT, on
+RÉACTIVE le sous-système de défis (City Watch / stickerbook, #72 NON implémenté serveur) sur CHAQUE action → NPE
+« cassé plus tard » = exactement ce que §2 interdit. **Correctif du correctif** : la fixture est **RÉSERVÉE à
+l'ORACLE** (il simule le rendu CLIENT du hub, seul lieu où ces structures existent légitimement), JAMAIS au chemin
+serveur. `bind()` reste inchangé → 6 tests restaurés.
+
+**B3 — preuve anti-régression R1** (`server/smoke/ClientOracleR1Test`). État exact de g55 : héros 6★ + horloge de
+jeu R1 (2016) → `assertClientRenders` LÈVE **`IndexOutOfBoundsException: Index 6 out of bounds for length 6`** =
+précisément `HasEnoughCollectionHeroes.isSatisfied` (bâtit une liste de taille `getMaxStars(user)+1` puis
+`list.get(hero.getStars())`, hors bornes quand `stars > getMaxStars` — au plafond R1, `getMaxStars=5`). Contrôle :
+un compte NEUF (ère courante) reste VERT (pas de faux positif). **Le crash qui avait exigé une découverte EN JEU
+en g55 est maintenant attrapé HEADLESS** — l'oracle client tient sa promesse (rattraper avant l'in-game via le
+code du jeu). Intégré à la régression (`ClientOracle`, `ClientOracleR1Test`).
+
+Fichiers : `server/java/dhserver/ServerContext.java` (`installClientHubRenderFixtures`), `server/smoke/ClientOracle.java`
+(appel de la fixture + 2 vérifs en `HUB_RENDER`), `server/smoke/ClientOracleR1Test.java` (nouveau),
+`server/smoke/regression.sh` (+`ClientOracleR1Test`), `docs/HEADLESS_VERIFICATION.md` §SUIVI (B2b/B3 ✅).
+
+
 ## 2026-08-03 (g58) — VÉRIF HEADLESS via le code du jeu : plan directeur + `ClientOracle` (#74, levier B)
 
 Idée (utilisateur) : puisqu'on a le code CLIENT du jeu, l'EXÉCUTER headless contre nos réponses/état pour
