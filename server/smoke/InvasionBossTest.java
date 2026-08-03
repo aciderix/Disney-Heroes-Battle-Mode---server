@@ -180,9 +180,21 @@ public final class InvasionBossTest {
             InvasionBossRewardType.PARTICIPANT, InvasionBossRewardType.FINISHER, InvasionBossRewardType.MOST_DAMAGE,
             InvasionBossRewardType.TEN_PERCENT_HP, InvasionBossRewardType.THIRTY_PERCENT_HP})
           if (!roles.contains(need)) throw new AssertionError("rôle gagné manquant " + need + " dans " + roles);
+        // Le découvreur touche FINDER, PAS HELPER (rôles distincts, butins distincts dans la table).
+        if (roles.contains(InvasionBossRewardType.HELPER))
+          throw new AssertionError("le découvreur ne doit pas toucher HELPER : " + roles);
         // Un joueur SANS dégâts n'a AUCUN rôle (anti-cheat).
         if (!ServerInvasion.earnedBossRoles(killed, 12345L).isEmpty())
           throw new AssertionError("un non-participant ne doit gagner aucun rôle");
+        // HELPER : un contributeur qui n'a PAS trouvé le boss touche HELPER + PARTICIPANT, jamais FINDER.
+        InvasionBossDamageData helperDmg = new InvasionBossDamageData();
+        helperDmg.damage = 1000L; helperDmg.lastAttackTime = wed;   // < dégâts du découvreur → ni MOST_DAMAGE ni FINISHER
+        ((java.util.Map<Object, Object>) killed.damageDone).put(77L, helperDmg);
+        java.util.List<InvasionBossRewardType> hr = ServerInvasion.earnedBossRoles(killed, 77L);
+        if (!hr.contains(InvasionBossRewardType.HELPER) || !hr.contains(InvasionBossRewardType.PARTICIPANT)
+            || hr.contains(InvasionBossRewardType.FINDER) || hr.contains(InvasionBossRewardType.MOST_DAMAGE))
+          throw new AssertionError("rôles HELPER incorrects (attendu HELPER+PARTICIPANT, sans FINDER/MOST_DAMAGE) : " + hr);
+        ((java.util.Map<?, ?>) killed.damageDone).remove(77L);   // nettoyage
         // SYNTHÈSE réclamable : entrée NON-NULLE, non réclamée, rôles renseignés.
         ServerInvasion.populateClaimStatus(g, solo, sud, wed);
         Object cs = sud.bossClaimStatus.get(kb.bossID);

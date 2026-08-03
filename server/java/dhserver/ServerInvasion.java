@@ -486,14 +486,26 @@ public final class ServerInvasion {
     if (userDmg <= 0) return roles;   // n'a pas participé → aucun rôle
     float hp = 0f;
     try { hp = com.perblue.heroes.game.logic.InvasionHelper.getBossHP(boss); } catch (Throwable ignore) {}
+    // Seuils de PV = DONNÉES DU JEU (invasion_constants.tab BOSS_10/30_PERCENT_THRESHOLD), lus via l'API du jeu
+    // (jamais codés en dur — §4). InvasionStats.Constants (pas PatchStats) → sûr à appeler ici.
+    float t10 = 0.10f, t30 = 0.30f;
+    try {
+      t10 = com.perblue.heroes.game.data.invasion.InvasionStats.getBoss10PercentRewardThreshold();
+      t30 = com.perblue.heroes.game.data.invasion.InvasionStats.getBoss30PercentRewardThreshold();
+    } catch (Throwable ignore) {}
+    boolean finder = boss.foundByUser != null && boss.foundByUser.iD == userID;
     roles.add(com.perblue.heroes.network.messages.InvasionBossRewardType.PARTICIPANT);
-    if (boss.foundByUser != null && boss.foundByUser.iD == userID)
+    if (finder)
       roles.add(com.perblue.heroes.network.messages.InvasionBossRewardType.FINDER);
+    else
+      // HELPER = a attaqué un boss trouvé par QUELQU'UN D'AUTRE (aide d'un membre de guilde). Rôle distinct de
+      // FINDER dans invasion_boss_rewards.tab (butin propre) ; le découvreur ne le touche pas.
+      roles.add(com.perblue.heroes.network.messages.InvasionBossRewardType.HELPER);
     if (userDmg >= maxDmg)
       roles.add(com.perblue.heroes.network.messages.InvasionBossRewardType.MOST_DAMAGE);
-    if (hp > 0 && userDmg >= 0.30f * hp)
+    if (hp > 0 && userDmg >= t30 * hp)
       roles.add(com.perblue.heroes.network.messages.InvasionBossRewardType.THIRTY_PERCENT_HP);
-    if (hp > 0 && userDmg >= 0.10f * hp)
+    if (hp > 0 && userDmg >= t10 * hp)
       roles.add(com.perblue.heroes.network.messages.InvasionBossRewardType.TEN_PERCENT_HP);
     if (userLastAt > 0 && userLastAt >= lastAt)
       roles.add(com.perblue.heroes.network.messages.InvasionBossRewardType.FINISHER);
