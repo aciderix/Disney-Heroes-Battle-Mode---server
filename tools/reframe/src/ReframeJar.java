@@ -73,20 +73,40 @@ public class ReframeJar {
                     return commonSuper(a, b);
                 }
             };
-            // Normalisation non-sémantique (§1) du flag `itf` des INVOKESTATIC. dex2jar émet parfois un
-            // INVOKESTATIC vers une méthode STATIQUE d'INTERFACE encodé en Methodref au lieu d'InterfaceMethodref
-            // (ex. les lambdas R8 `$r8$lambda$…` d'interfaces comme FXHandle) → la JVM lève
-            // IncompatibleClassChangeError (« must be InterfaceMethodref constant ») à la résolution du lien.
-            // Règle JVMS : pour INVOKESTATIC, itf DOIT valoir « l'owner est une interface ». On NE touche PAS
-            // INVOKESPECIAL (les appels de méthode par défaut de super-interface ont des contraintes de « super
-            // interface directe » qu'un simple flip d'itf casserait → VerifyError).
+            // Normalisation non-sémantique (§1) du flag `itf` des invocations. dex2jar émet parfois un
+            // appel dont l'entrée de constant pool a le mauvais type (Methodref de classe au lieu
+            // d'InterfaceMethodref) → la JVM lève IncompatibleClassChangeError (« must be InterfaceMethodref
+            // constant ») à la résolution du LIEN (au 1ᵉʳ appel, pas au chargement — d'où l'invisibilité jusqu'à
+            // ce que le chemin soit exercé).
+            //   • INVOKESTATIC : ex. les lambdas R8 `$r8$lambda$…` d'interfaces comme FXHandle. Règle JVMS :
+            //     itf DOIT valoir « l'owner est une interface ».
+            //   • INVOKEINTERFACE : règle JVMS 6.5 : `invokeinterface` référence TOUJOURS un InterfaceMethodref
+            //     → itf DOIT valoir true (owner toujours une interface, jamais un tableau).
+            //   • INVOKESPECIAL vers une méthode `default` de SUPER-INTERFACE DIRECTE (forme `T.super.m()`,
+            //     ex. `SimpleStudiedBuff` → `IStudiedBuff.spawnParticles`, déclenché par le skill d'un héros en
+            //     combat) : le constant pool DOIT être un InterfaceMethodref. On flip itf=true UNIQUEMENT si
+            //     l'owner est une super-interface DIRECTE de la classe visitée (`this.itfs`). ⚠️ On NE flip PAS
+            //     un invokespecial vers une super-interface INDIRECTE : JVMS 4.9.2 exige l'appartenance DIRECTE
+            //     et un flip casserait la vérif (« interface method reference is in an indirect superinterface »,
+            //     vu sur PegasusSkill3 → IRampageAbility, interface héritée via la super-classe, pas directe).
+            // INVOKEVIRTUAL n'est jamais touché (owner jamais une interface).
             ClassVisitor fix = new ClassVisitor(Opcodes.ASM9, cw) {
+                Set<String> itfs = java.util.Collections.emptySet();
+                @Override public void visit(int v, int a, String n, String sig, String sup, String[] in) {
+                    itfs = in == null ? java.util.Collections.emptySet()
+                                      : new HashSet<>(java.util.Arrays.asList(in));
+                    super.visit(v, a, n, sig, sup, in);
+                }
                 @Override public MethodVisitor visitMethod(int a, String n, String d, String s, String[] ex) {
                     MethodVisitor mv = super.visitMethod(a, n, d, s, ex);
                     return mv == null ? null : new MethodVisitor(Opcodes.ASM9, mv) {
                         @Override public void visitMethodInsn(int op, String owner, String mn, String md, boolean itf) {
                             if (op == Opcodes.INVOKESTATIC)
                                 itf = owner.charAt(0) != '[' && isInterface(owner);
+                            else if (op == Opcodes.INVOKEINTERFACE)
+                                itf = true;
+                            else if (op == Opcodes.INVOKESPECIAL && itfs.contains(owner) && isInterface(owner))
+                                itf = true;
                             super.visitMethodInsn(op, owner, mn, md, itf);
                         }
                     };
