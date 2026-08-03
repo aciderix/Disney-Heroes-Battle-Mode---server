@@ -803,9 +803,23 @@ respecté) :
 3. Le **garde-fou d'attaques** marche : la 2ᵉ tentative (l'unique attaque de base étant consommée) → fenêtre
    **« OUT OF EXTRA ATTACKS »** (attaques bonus gatées par le perk — comportement du jeu).
 
-Reste seulement à JOUER le combat lui-même via l'UI (choix des héros → 3 vagues), identique au combat
-client-autoritatif du boss d'invasion (déjà validé de bout en bout) ; l'enregistrement du résultat est couvert
-par `WarAttackTest`. Aucune modification du serveur n'a été nécessaire : le mode d'attaque de guerre **marche en
-jeu**, le blocage était l'absence d'adversaire réel.
+**Combat JOUÉ en jeu (2026-08-03, suite)** : après réinitialisation de l'attaque de base
+(`ServerUser.resetWarAttacks`), le flux UI complet a été exercé — taper la salle adverse → aperçu → FIGHT →
+**hero chooser** (3 équipes remplies : team 1 = 10 505 pow, team 2 = 8 052, team 3 = 7 308 ; scroll du roster via
+la commande pilote `drag`) → confirmation « ARE YOU SURE? … » → **FIGHT** →
+`START_WAR_ATTACK vs 2 (salle REDUCE_ATTACKER_HP_FLAT) [persisté]` + `HeroLineupUpdate(WAR_ATTACK_1/2/3)
+[persistées]` → **le COMBAT DE GUERRE se joue EN JEU** (scène de bataille dans le garage, héros animés, nombres
+de dégâts — 24 467, 10 368, « +200 Dodge », « Miss » —, AUTO-combat). La boucle d'attaque de guerre est donc
+**jouée de bout en bout côté client**, identique au combat client-autoritatif du boss.
+
+**🐛 Trouvé pendant ce combat — bug de REFRAMING (non spécifique à la guerre)** : le combat a planté en cours sur
+`java.lang.IncompatibleClassChangeError: Method 'void IStudiedBuff.spawnParticles(Entity)' must be
+InterfaceMethodref constant`. C'est un défaut de **reframing du jar** (appel d'une méthode d'INTERFACE encodé en
+Methodref de classe) déclenché par le skill d'UN héros précis — la guerre l'a exposé la première car elle
+aligne 14 héros (un skill jamais exercé auparavant). **Ce n'est PAS un bug du mode guerre** : ce héros
+planterait n'importe quel combat (campagne/arène/boss). À corriger dans `tools/reframe` (ReframeJar), séparé du
+serveur. L'enregistrement du résultat de guerre reste couvert par `WarAttackTest` (headless). Bilan : le mode
+d'attaque de guerre **marche en jeu** (émission, validation, 3 équipes, combat joué) ; le seul reliquat est ce
+bug de reframing générique du moteur de combat.
 * `server/smoke/WarRivalSeed.java` : guilde adverse inscrite en file.
 * `AdminWar` : `--status`, `--tick [--force]`, `--resync`, `--advance`, `--end`.

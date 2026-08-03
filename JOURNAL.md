@@ -1,5 +1,28 @@
 # JOURNAL — journal détaillé des modifications
 
+## 2026-08-03 (g53) — GUILD WAR : combat d'attaque JOUÉ EN JEU + bug de reframing trouvé
+
+Suite de g52 : le COMBAT d'attaque de guerre est joué de bout en bout côté client. Après
+`ServerUser.resetWarAttacks()` (rend au joueur son attaque de base ; défenseur guilde 2 affecté à la salle
+`REDUCE_ATTACKER_HP_FLAT`), flux UI COMPLET : salle adverse → aperçu → FIGHT → **hero chooser** (3 équipes
+remplies — team 1 = 10 505 pow, team 2 = 8 052, team 3 = 7 308 ; scroll du roster via la commande pilote
+existante `drag x1,y1,x2,y2`) → confirmation « ARE YOU SURE? » → **FIGHT** → serveur :
+`START_WAR_ATTACK vs 2 (salle REDUCE_ATTACKER_HP_FLAT) [persisté]` + `HeroLineupUpdate(WAR_ATTACK_1/2/3)
+[persistées]` → **le combat de guerre SE JOUE EN JEU** (scène de bataille dans le garage, héros animés, nombres
+de dégâts 24 467 / 10 368 / « +200 Dodge » / « Miss », AUTO-combat).
+
+**🐛 Bug trouvé (NON spécifique guerre) — reframing.** Le combat a planté en cours sur
+`IncompatibleClassChangeError: Method 'void IStudiedBuff.spawnParticles(Entity)' must be InterfaceMethodref
+constant` : défaut de **reframing du jar** (méthode d'INTERFACE encodée en Methodref de classe) déclenché par le
+skill d'UN héros précis. La guerre l'expose la première car elle aligne 14 héros (skill jamais exercé). Ce héros
+planterait N'IMPORTE QUEL combat (campagne/arène/boss) → à corriger dans `tools/reframe` (ReframeJar), séparé du
+serveur. L'enregistrement du résultat de guerre reste couvert par `WarAttackTest`.
+
+Ajout : `ServerUser.resetWarAttacks()` (outil opérateur/test — remet `WAR_ATTACKS_USED`+`WAR_START_TIME_LAST_
+ATTACK` à zéro, équivalent d'un changement de guerre côté jeu). Aucune autre modif serveur. Détail :
+`docs/GUILD_WAR.md` §5.8.
+
+
 ## 2026-08-03 (g52) — GUILD WAR : attaque en phase ACTIVE RÉSOLUE EN JEU (« cause non élucidée » = un BYE)
 
 Le point resté ouvert en g45/§5.5 (le client n'émettait plus `START_WAR_ATTACK` après passage en phase ACTIVE,

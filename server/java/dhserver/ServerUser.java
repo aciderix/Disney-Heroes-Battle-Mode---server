@@ -1011,6 +1011,20 @@ public final class ServerUser {
     return used;
   }
 
+  /** OPÉRATEUR/TEST : remet à zéro le compteur d'attaques de guerre ({@code WAR_ATTACKS_USED} +
+   *  {@code WAR_START_TIME_LAST_ATTACK}) — rend au joueur son attaque de base pour re-jouer un combat en jeu.
+   *  Ne contourne aucune règle du jeu : c'est l'équivalent d'un changement de guerre (le jeu remet lui-même à
+   *  zéro quand {@code WAR_START_TIME_LAST_ATTACK} diffère du début de guerre). */
+  public synchronized void resetWarAttacks() {
+    ServerContext.init();
+    User user = ClientNetworkStateConverter.getUser(userInfo, userExtra, "war-attacks-reset");
+    ServerContext.bind(user, ClientNetworkStateConverter.getIndividualUser(
+        individualUserExtra, userID, userInfo.diamonds, "war-attacks-reset"));
+    user.setCount(com.perblue.heroes.game.objects.UserFlag.WAR_ATTACKS_USED, 0);
+    user.setTime(com.perblue.heroes.network.messages.TimeType.WAR_START_TIME_LAST_ATTACK, 0L);
+    resyncCounts(user);
+  }
+
   // ===================== DONS / GUILD AID (#55) =====================
   // Le client (ClientActionHelper.requestStamina) envoie Action{REQUEST_GUILD_DONATION, TYPE=STAMINA}. Le serveur
   // AUTORITATIF valide+charge via la logique du jeu (GuildDonationHelper.requestHelp) puis SYNTHÉTISE la demande
