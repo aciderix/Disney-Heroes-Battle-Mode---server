@@ -84,6 +84,16 @@ public final class LoginServer {
    * @param replyTo le message auquel répondre, ou {@code null} pour une poussée spontanée
    */
   private void sendInvasionInfo(GruntConnection c, ServerUser user, GruntMessage replyTo) {
+    sendInvasionInfo(c, user, replyTo, false);
+  }
+
+  /** @param populateClaim renseigne {@code yourData.bossClaimStatus} (récompenses de boss réclamables). Coûteux :
+   *  déclenche {@code InvasionHelper.getBossHP} → chargement des stats patchées (PatchStats). À NE PAS activer sur
+   *  le PUSH SPONTANÉ AU BOOT : à ce stade la stat-sync du client n'a pas encore complété les tables (lignes
+   *  SAPPHIRE), donc {@code PatchStats.<clinit>} JETTE (ExceptionInInitializerError) et « empoisonne » la classe pour
+   *  toute la session — cassant getBossHP partout. On ne le fait donc que sur les chemins où le CONTENU est chargé
+   *  (GetInvasionInfo/GetInvasionBosses/après un combat de boss). Défaut trouvé EN JEU (2026-08-03). */
+  private void sendInvasionInfo(GruntConnection c, ServerUser user, GruntMessage replyTo, boolean populateClaim) {
     try {
       long inow = com.perblue.heroes.util.TimeUtil.serverTimeNow();
       com.perblue.heroes.network.messages.InvasionInfo ii = ServerInvasion.buildInfo(inow);
@@ -93,6 +103,14 @@ public final class LoginServer {
           byte[] prev = store.loadUserInvasion(user.shardID, user.userID);
           com.perblue.heroes.network.messages.UserInvasionData ud =
               ServerInvasion.loadOrResetUserData(prev, user.userID, user.currentGuildID(), invID);
+          // Vue PAR JOUEUR des récompenses de boss réclamables : sans une entrée bossClaimStatus non-nulle,
+          // taper un boss VAINCU ne déclenche RIEN côté client (cf. ServerInvasion.populateClaimStatus). Réservé
+          // aux chemins « contenu chargé » (populateClaim) — JAMAIS au boot (poison PatchStats, voir javadoc).
+          // sendInvasionInfo est sur la classe EXTERNE (currentGuild est sur le handler interne) → charge direct.
+          if (populateClaim) {
+            ServerGuild pcg = user.inGuild() ? store.loadGuild(user.shardID, user.currentGuildID()) : null;
+            ServerInvasion.populateClaimStatus(pcg, user, ud, inow);
+          }
           ii.currentInvasion.yourData = ud;
           store.saveUserInvasion(user.shardID, user.userID, ServerInvasion.userDataToBytes(ud));
         } catch (Exception e) { System.out.println("[login]     ! état invasion joueur : " + e); }
@@ -1461,9 +1479,12 @@ public final class LoginServer {
                     + ui.users.size() + " joueur(s))");
               }
             } else if (m instanceof com.perblue.heroes.network.messages.ClaimInvasionBossRewards) {
-              // INVASION #69 — réclamation des récompenses de boss. Le RÔLE du joueur sur ce boss est déterminé
-              // par l'état PARTAGÉ de la guilde (a-t-il trouvé le boss ? a-t-il infligé des dégâts ?), puis les
-              // récompenses sont tirées par la LOGIQUE DU JEU (tables invasion_boss_rewards*) et créditées.
+              // INVASION #69 — réclamation des récompenses de boss. MODÈLE CLIENT-AUTORITATIF (comme campagne/
+              // arène/breaker) établi au bytecode (2026-08-03) : le CLIENT tire lui-même le butin par rôle gagné
+              // (InvasionHelper.rollBossRewardLoot, graine RNG invasion du joueur) et l'ENVOIE dans cb.rewards
+              // (Map<InvasionBossRewardType, NodeReward{rewardDrops}>) — exactement ce que le joueur a VU. Le
+              // serveur LIT ce butin, le crédite, et MARQUE le boss réclamé (anti double-réclamation via
+              // bossClaimStatus.rewardsClaimed) au lieu de re-tirer (ce qui divergerait de l'affichage client).
               com.perblue.heroes.network.messages.ClaimInvasionBossRewards cb =
                   (com.perblue.heroes.network.messages.ClaimInvasionBossRewards) m;
               long cnow = com.perblue.heroes.util.TimeUtil.serverTimeNow();
@@ -1476,28 +1497,48 @@ public final class LoginServer {
               if (target == null) {
                 System.out.println("[login]     ⛔ ClaimInvasionBossRewards : boss " + cb.bossID + " inconnu/expiré");
               } else {
-                // RÔLE : FINDER si le joueur a trouvé le boss, sinon PARTICIPANT s'il a infligé des dégâts.
+                // ANTI-CHEAT : le joueur doit avoir un DROIT réel (découvreur ou contributeur) sur ce boss vaincu.
                 boolean isFinder = target.foundByUser != null && target.foundByUser.iD == user.userID;
                 Object dd = target.damageDone == null ? null : target.damageDone.get(user.userID);
                 boolean participated = dd instanceof com.perblue.heroes.network.messages.InvasionBossDamageData
                     && ((com.perblue.heroes.network.messages.InvasionBossDamageData) dd).damage > 0;
+                long invID = ServerInvasion.rotation(ServerInvasion.invasionStart(cnow));
+                com.perblue.heroes.network.messages.UserInvasionData cud =
+                    ServerInvasion.loadOrResetUserData(store.loadUserInvasion(user.shardID, user.userID),
+                        user.userID, user.currentGuildID(), invID);
+                if (cud.bossClaimStatus == null) cud.bossClaimStatus = new java.util.HashMap<>();
+                Object prevCs = cud.bossClaimStatus.get(cb.bossID);
+                boolean already = prevCs instanceof com.perblue.heroes.network.messages.BossClaimStatusData
+                    && ((com.perblue.heroes.network.messages.BossClaimStatusData) prevCs).rewardsClaimed;
+                java.util.List<com.perblue.heroes.network.messages.InvasionBossRewardType> roles =
+                    ServerInvasion.earnedBossRoles(target, user.userID);
                 if (!isFinder && !participated) {
                   System.out.println("[login]     ⛔ ClaimInvasionBossRewards : aucune participation à ce boss");
+                } else if (already) {
+                  System.out.println("[login]     ⛔ ClaimInvasionBossRewards : boss " + cb.bossID + " déjà réclamé");
                 } else {
-                  com.perblue.heroes.network.messages.InvasionBossRewardType role = isFinder
-                      ? com.perblue.heroes.network.messages.InvasionBossRewardType.FINDER
-                      : com.perblue.heroes.network.messages.InvasionBossRewardType.PARTICIPANT;
-                  ServerInvasionObject sio = ServerInvasionObject.at(cnow);
-                  for (Object o : user.rollInvasionBossRewards(sio, target.bossLevel, 1, role,
-                      com.perblue.heroes.network.messages.InvasionBossType.MEGA_VIRUS))
-                    if (o instanceof com.perblue.heroes.network.messages.RewardDrop)
-                      given.add((com.perblue.heroes.network.messages.RewardDrop) o);
-                  if (!given.isEmpty()) {
-                    user.grantRewards(given);
-                    try { store.save(user); } catch (Exception e) {
-                      System.out.println("[login]     ! persistance récompenses boss : " + e); }
-                  }
-                  System.out.println("[login] <== ClaimInvasionBossRewards boss=" + cb.bossID + " rôle=" + role
+                  // Butin RENVOYÉ par le client (par rôle) — on agrège tous les NodeReward.rewardDrops.
+                  if (cb.rewards != null)
+                    for (Object v : ((java.util.Map<?, ?>) cb.rewards).values())
+                      if (v instanceof com.perblue.heroes.network.messages.NodeReward
+                          && ((com.perblue.heroes.network.messages.NodeReward) v).rewardDrops != null)
+                        for (Object o : ((com.perblue.heroes.network.messages.NodeReward) v).rewardDrops)
+                          if (o instanceof com.perblue.heroes.network.messages.RewardDrop)
+                            given.add((com.perblue.heroes.network.messages.RewardDrop) o);
+                  if (!given.isEmpty()) user.grantRewards(given);
+                  // MARQUE réclamé (persisté) → l'aperçu repasse en DEFAULT et une 2e réclamation est refusée.
+                  com.perblue.heroes.network.messages.BossClaimStatusData ncs =
+                      new com.perblue.heroes.network.messages.BossClaimStatusData();
+                  ncs.rewardsClaimed = true;
+                  ncs.escapeClaimed = false;
+                  ncs.rewardsEarned = new java.util.ArrayList<>(roles);
+                  ((java.util.Map<Object, Object>) cud.bossClaimStatus).put(cb.bossID, ncs);
+                  try {
+                    store.saveUserInvasion(user.shardID, user.userID, ServerInvasion.userDataToBytes(cud));
+                    if (!given.isEmpty()) store.save(user);
+                  } catch (Exception e) {
+                    System.out.println("[login]     ! persistance récompenses boss : " + e); }
+                  System.out.println("[login] <== ClaimInvasionBossRewards boss=" + cb.bossID + " rôles=" + roles
                       + " → " + given.size() + " récompense(s) créditée(s) [persisté]");
                 }
               }
@@ -1507,6 +1548,8 @@ public final class LoginServer {
               resp.rewards = new java.util.HashMap<>();
               resp.setAsReplyTo(m);
               c.send(resp);
+              // PUSH de l'état à jour (bossClaimStatus.rewardsClaimed=true) → la carte du boss repasse en DEFAULT.
+              sendInvasionInfo(c, user, null, true);
             } else if (m instanceof com.perblue.heroes.network.messages.GetBreakerQuest) {
               // INVASION #69 — ENTRÉE du mode SOLO. Manque RÉEL trouvé EN JEU : ce message arrivait sans
               // handler, l'écran BREAKER QUEST restait donc entièrement VIDE. Cf. ServerInvasionBreaker.
@@ -1559,6 +1602,9 @@ public final class LoginServer {
               c.send(ib);
               System.out.println("[login] <== GetInvasionBosses → ==> InvasionBosses ("
                   + ib.bosses.size() + " boss actif(s))");
+              // Le joueur est SUR l'écran boss (contenu chargé) → on POUSSE l'état invasion avec bossClaimStatus
+              // renseigné, pour qu'un boss VAINCU d'une session précédente devienne réclamable sans re-login.
+              sendInvasionInfo(c, user, null, true);
             } else if (m instanceof com.perblue.heroes.network.messages.StartInvasionBossAttack) {
               // INVASION #69 — le client OUVRE un combat de BOSS : réponse StartBossAttackResponse (exigée par
               // le ctor InvasionBossAttackScreen) avec le LINEUP du boss, + acquisition du VERROU exclusif.
@@ -1615,6 +1661,12 @@ public final class LoginServer {
                 if (bg2 != null) store.saveGuild(bg2);
                 System.out.println("[login] <== InvasionBossAttack bossID=" + ba.bossID + " ×" + ba.damageMultiplier
                     + " outcome=" + (ba.base == null ? "?" : ba.base.outcome) + " → " + bo + " [persisté]");
+                // PUSH de l'état invasion à jour (yourData.bossClaimStatus) : le client ne (re)demande jamais
+                // GetInvasionInfo, et son ClientInvasionUser n'est peuplé qu'au boot. Sans ce push, un boss
+                // qu'on vient de VAINCRE reste non-réclamable (taper le boss KO ne ferait rien). Mirroir du
+                // push spontané au boot (cf. sendInvasionInfo). RÉSOLU EN JEU (2026-08-03). populateClaim=true :
+                // après un combat, le contenu (stats patchées) est chargé → getBossHP sûr.
+                sendInvasionInfo(c, user, null, true);
               } catch (Exception e) {
                 System.out.println("[login]     ! InvasionBossAttack : " + e);
               }
@@ -1665,7 +1717,7 @@ public final class LoginServer {
                 System.out.println("[login]     ! InvasionBreakerAttack : " + e);
               }
             } else if (m instanceof com.perblue.heroes.network.messages.GetInvasionInfo) {
-              sendInvasionInfo(c, user, m);
+              sendInvasionInfo(c, user, m, true);
             } else if (m instanceof com.perblue.heroes.network.messages.GetGuildGiftRewards) {
               // GUILD CRATE / cadeaux de guilde (#58/#66) — cadeaux accumulés de la guilde (offreurs + récompenses).
               com.perblue.heroes.network.messages.GetGuildGiftRewards req =

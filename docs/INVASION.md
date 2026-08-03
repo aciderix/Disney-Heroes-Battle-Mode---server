@@ -386,6 +386,56 @@ et relus** à l'écran. La boucle d'attaque de boss est donc **complète et fid�
 le compte de test n'a plus de clés) → passage `actionState` FIGHT→CLAIM → réclamation `ClaimInvasionBossRewards`
 (`rollBossRewardLoot`). Le boss réel niveau 450 reste réservé à un compte fort (ou ancrage d'ère de contenu).
 
+### ✅ KILL + CLAIM du boss — VÉRIFIÉS EN JEU (2026-08-03, g50)
+
+Le boss #3 est **tué EN JEU** en un coup via **5× DAMAGE** (`AdminInvasion --give-breaker` pour les clés) :
+aperçu → **5X DAMAGE** (3 clés) → CHOOSE HEROES → FIGHT → combat réel → **« BOSS DEFEATED! » DAMAGE DONE
+274 714 (100 %)**, serveur `InvasionBossAttack ×5 outcome=WIN → −3 clés, 274714 dégâts (cumul 452320)
+[persisté]` (dégâts plafonnés aux PV ; clés **9→6** ; le cumul 452 320 = 177 606 relus d'une session
+précédente + 274 714 → **persistance des dégâts entre redémarrages prouvée**).
+
+**🐛 Défaut RÉEL nº4 — `bossClaimStatus` jamais renseigné ⇒ boss KO INCLIQUABLE.** Établi au bytecode :
+`InvasionBossCard.onCardPressed` ne lance la réclamation QUE si `lastClaimable`, et **`lastClaimable =
+actionState==CLAIM ET getUserInvasion().getBossClaimStatus(bossID) != null`** — le gift s'affiche via
+`actionState`, mais **taper** exige l'entrée `bossClaimStatus`. Le client ne peuple JAMAIS `bossClaimStatus`
+localement (`recordBossFightOutcome` ne le fait pas) et ne redemande jamais `GetInvasionInfo` : la donnée est
+**serveur-autoritative**, transportée par `InvasionInfo.currentInvasion.yourData` (`UserInvasionData`).
+
+**Modèle CLIENT-AUTORITATIF de la réclamation** (bytecode `InvasionClientHelper.claimBossRewards`) :
+`bossClaimStatus.rewardsEarned` = **`List<InvasionBossRewardType>`** (les **RÔLES** gagnés, pas le butin) ; le
+client tire lui-même le butin par rôle (`InvasionHelper.rollBossRewardLoot`, graine RNG invasion) et le RENVOIE
+dans `ClaimInvasionBossRewards.rewards` (`Map<rôle, NodeReward{rewardDrops}>`) — même modèle que
+campagne/arène/breaker. Correctifs serveur :
+- **`ServerInvasion.earnedBossRoles(boss, userID)`** — rôles dérivés de l'état PARTAGÉ observable : FINDER
+  (découvreur), PARTICIPANT (dégâts>0), MOST_DAMAGE (max), TEN/THIRTY_PERCENT_HP (seuils de PV), FINISHER
+  (dernier attaquant). *La politique d'attribution d'origine est dans `InvasionHelperExt` — code SERVEUR ABSENT
+  du jar client ; on applique la sémantique explicite de chaque valeur d'enum. Le BUTIN reste tiré des tables
+  `invasion_boss_rewards*`.*
+- **`ServerInvasion.populateClaimStatus(g, user, ud, now)`** — synthétise l'entrée réclamable
+  `{rewardsClaimed:false, rewardsEarned:rôles}` par boss ACTIF VAINCU non réclamé ; conserve les réclamés.
+- **Handler `ClaimInvasionBossRewards` réécrit** — applique le butin **renvoyé par le client** (au lieu de
+  re-tirer, ce qui divergerait de l'affichage), **anti double-réclamation** via `rewardsClaimed`.
+- **`applyBossActionState` corrigé** — le test « réclamé » lit `BossClaimStatusData.rewardsClaimed` (les valeurs
+  de la map ne sont pas des `Boolean` : l'ancien `Boolean.TRUE.equals(...)` était toujours faux).
+- **`yourData` poussé** (`sendInvasionInfo`) après un combat de boss, sur `GetInvasionBosses`, `GetInvasionInfo`
+  et la réclamation — le client ne redemandant jamais `GetInvasionInfo`, ces PUSHs rafraîchissent son
+  `ClientInvasionUser`.
+
+**⚠️ PIÈGE (trouvé EN JEU) — `getBossHP` déclenche `PatchStats.<clinit>` : NE PAS l'appeler au PUSH DU BOOT.**
+Au boot, la stat-sync du client n'a pas encore complété les tables (lignes SAPPHIRE) → `PatchStats.<clinit>`
+JETTE (`ExceptionInInitializerError`) et **empoisonne la classe pour toute la session** (getBossHP KO partout).
+D'où le flag `sendInvasionInfo(..., populateClaim)` : `false` au boot (aucun getBossHP), `true` uniquement sur
+les chemins où le contenu est déjà chargé.
+
+**Vérifié EN JEU** : carte KO **glow + « CLAIM REWARDS »** → tap →
+`ClaimInvasionBossRewards boss=3 rôles=[PARTICIPANT,FINDER,MOST_DAMAGE,THIRTY_PERCENT_HP,TEN_PERCENT_HP,FINISHER]
+→ 18 récompenses créditées [persisté]` → **InvasionBossRewardsWindow** rend chaque rôle avec son butin de table
+(PARTICIPATED 5 stamina/20 boss tech/1 pt/1 mod, FINDER 5 stamina/1 pierre/1 pt, FINISHER 50 boss tech/2 pts/1
+mod, 10 % DAMAGE, MOST DAMAGE…) → fermeture → **« There are no current Invasion Bosses »** (boss repassé
+DEFAULT, réclamation impossible une 2ᵉ fois). Régression **77/77** (`InvasionBossTest` étoffé : KILL+CLAIM,
+rôles gagnés, anti-double-réclamation, non-participant sans rôle). **INVASION est désormais 100 % vérifiée EN
+JEU** (breaker quest + boss spawn/attaque/kill/claim).
+
 ### (historique) Boucle d'ATTAQUE du boss — CÂBLÉE (2026-08-02, g48)
 
 **Source FIDÈLE des dégâts — ÉTABLIE au bytecode.** Le client calcule `InvasionBossAttackScreen.getBossDamage`

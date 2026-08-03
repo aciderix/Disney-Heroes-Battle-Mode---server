@@ -158,6 +158,55 @@ public final class InvasionBossTest {
         throw new AssertionError("le boss devrait avoir expiré");
       System.out.println("[invasion] au-delà de la limite → boss expiré et retiré");
 
+      // ---- KILL + CLAIM (défaut trouvé EN JEU 2026-08-03) : un boss VAINCU doit devenir RÉCLAMABLE. Le client
+      //      n'ouvre la réclamation QUE si actionState==CLAIM ET getBossClaimStatus(bossID) != null
+      //      (InvasionBossCard.lastClaimable, établi au bytecode). Le serveur SYNTHÉTISE l'entrée réclamable et
+      //      calcule les RÔLES gagnés (earnedBossRoles) que le client itère pour tirer le butin. ----
+      {
+        ServerUser solo = ServerUser.newPlayer(9L, 1);
+        solo.giveResource(ResourceType.BREAKER, 50);
+        InvasionBossInfo kb = ServerInvasion.spawnBoss(g, solo, 1, wed);   // niveau 1 → PV modestes, tuable en 1 coup
+        float hp = com.perblue.heroes.game.logic.InvasionHelper.getBossHP(kb);
+        UserInvasionData sud = ServerInvasion.newUserData(9L, g.guildID, 249);
+        ServerInvasion.BossOutcome ko =
+            ServerInvasion.attackBoss(g, solo, sud, kb.bossID, 1, (long) Math.ceil(hp), wed);
+        if (!ko.accepted) throw new AssertionError("attaque fatale refusée : " + ko.refusal);
+        InvasionBossInfo killed = null;
+        for (InvasionBossInfo b : ServerInvasion.activeBosses(g, wed)) if (b.bossID == kb.bossID) killed = b;
+        if (killed == null) throw new AssertionError("boss vaincu introuvable");
+        // RÔLES gagnés par le découvreur qui a infligé 100 % des dégâts.
+        java.util.List<InvasionBossRewardType> roles = ServerInvasion.earnedBossRoles(killed, 9L);
+        for (InvasionBossRewardType need : new InvasionBossRewardType[]{InvasionBossRewardType.FINDER,
+            InvasionBossRewardType.PARTICIPANT, InvasionBossRewardType.FINISHER, InvasionBossRewardType.MOST_DAMAGE,
+            InvasionBossRewardType.TEN_PERCENT_HP, InvasionBossRewardType.THIRTY_PERCENT_HP})
+          if (!roles.contains(need)) throw new AssertionError("rôle gagné manquant " + need + " dans " + roles);
+        // Un joueur SANS dégâts n'a AUCUN rôle (anti-cheat).
+        if (!ServerInvasion.earnedBossRoles(killed, 12345L).isEmpty())
+          throw new AssertionError("un non-participant ne doit gagner aucun rôle");
+        // SYNTHÈSE réclamable : entrée NON-NULLE, non réclamée, rôles renseignés.
+        ServerInvasion.populateClaimStatus(g, solo, sud, wed);
+        Object cs = sud.bossClaimStatus.get(kb.bossID);
+        if (!(cs instanceof BossClaimStatusData) || ((BossClaimStatusData) cs).rewardsClaimed
+            || ((BossClaimStatusData) cs).rewardsEarned == null || ((BossClaimStatusData) cs).rewardsEarned.isEmpty())
+          throw new AssertionError("bossClaimStatus réclamable non renseigné : " + cs);
+        // actionState : vaincu + attaqué + non réclamé → CLAIM.
+        ServerInvasion.applyBossActionState(killed, solo, sud);
+        if (killed.actionState != InvasionBossActionState.CLAIM)
+          throw new AssertionError("boss vaincu non réclamé devrait être CLAIM, obtenu " + killed.actionState);
+        // Après réclamation (rewardsClaimed=true) → DEFAULT, et populateClaimStatus CONSERVE l'entrée réclamée.
+        ((BossClaimStatusData) cs).rewardsClaimed = true;
+        ServerInvasion.applyBossActionState(killed, solo, sud);
+        if (killed.actionState != InvasionBossActionState.DEFAULT)
+          throw new AssertionError("boss réclamé devrait être DEFAULT, obtenu " + killed.actionState);
+        ServerInvasion.populateClaimStatus(g, solo, sud, wed);
+        Object cs2 = sud.bossClaimStatus.get(kb.bossID);
+        if (!(cs2 instanceof BossClaimStatusData) || !((BossClaimStatusData) cs2).rewardsClaimed)
+          throw new AssertionError("l'entrée réclamée doit être conservée (pas de double-réclamation)");
+        System.out.println("[invasion] KILL+CLAIM : rôles=" + roles
+            + " → carte CLAIM (réclamable) puis DEFAULT après réclamation, non-participant sans rôle ✔");
+        g.replaceInvasionBoss(kb.bossID, null);   // nettoyage : ne pas perturber les blocs suivants
+      }
+
       // ---- RÉCOMPENSES DE BOSS : déléguées aux tables du jeu (invasion_boss_rewards*) ----
       {
         dhserver.ServerInvasionObject inv = dhserver.ServerInvasionObject.at(wed);

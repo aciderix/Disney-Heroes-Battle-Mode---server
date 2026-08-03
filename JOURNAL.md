@@ -1,5 +1,55 @@
 # JOURNAL — journal détaillé des modifications
 
+## 2026-08-03 (g50) — INVASION BOSS : KILL + CLAIM vérifiés EN JEU (18 récompenses, 6 rôles)
+
+Suite de g49 : le boss #3 (MAMA_BOT niveau 1) est **tué EN JEU** en un coup via **5× DAMAGE** (bouton de
+l'aperçu, coût `BOSS_FIGHT_5X_KEY_COST`=3 clés) — l'écran « BOSS DEFEATED! » affiche **DAMAGE DONE 274 714
+(100 %)**, serveur : `InvasionBossAttack ×5 outcome=WIN → −3 clés, 274714 dégâts (cumul 452320) [persisté]`
+(dégâts plafonnés aux PV, fidèles au chiffre près ; clés **9→6**). La persistance des dégâts d'une session à
+l'autre est aussi prouvée (177 606 relus + 274 714 = 452 320).
+
+**Défaut RÉEL nº4, trouvé EN JEU — `bossClaimStatus` jamais renseigné ⇒ boss KO INCLIQUABLE.** Établi au
+bytecode : `InvasionBossCard.onCardPressed` ne lance la réclamation QUE si `lastClaimable`, et
+`lastClaimable = (actionState==CLAIM) ET getUserInvasion().getBossClaimStatus(bossID) != null` (le gift
+s'affiche via `actionState`, mais **taper** exige l'entrée `bossClaimStatus`). Le client ne peuple JAMAIS
+`bossClaimStatus` localement (`recordBossFightOutcome` ne le fait pas) ni ne (re)demande `GetInvasionInfo` : la
+donnée est **serveur-autoritative**, poussée dans `InvasionInfo.currentInvasion.yourData`.
+
+**Modèle CLIENT-AUTORITATIF de la réclamation (bytecode `InvasionClientHelper.claimBossRewards`)** :
+`bossClaimStatus.rewardsEarned` est une **`List<InvasionBossRewardType>`** = les **RÔLES** gagnés (pas le
+butin). Le client tire lui-même le butin par rôle (`InvasionHelper.rollBossRewardLoot`, graine RNG invasion) et
+le RENVOIE dans `ClaimInvasionBossRewards.rewards` (`Map<rôle, NodeReward{rewardDrops}>`) — comme
+campagne/arène/breaker. Corrections serveur :
+- `ServerInvasion.earnedBossRoles(boss, userID)` : rôles dérivés de l'état PARTAGÉ observable (FINDER,
+  PARTICIPANT, MOST_DAMAGE, TEN/THIRTY_PERCENT_HP, FINISHER = dernier attaquant). *La politique d'attribution
+  d'origine est dans `InvasionHelperExt` — code SERVEUR ABSENT du jar client ; on applique la sémantique
+  explicite de chaque valeur d'enum. Le BUTIN reste tiré des tables `invasion_boss_rewards*`.*
+- `ServerInvasion.populateClaimStatus(g, user, ud, now)` : synthétise l'entrée réclamable
+  `{rewardsClaimed:false, rewardsEarned:rôles}` pour chaque boss ACTIF VAINCU non réclamé ; conserve les
+  entrées déjà réclamées.
+- Handler `ClaimInvasionBossRewards` réécrit : applique le butin **renvoyé par le client** (au lieu de re-tirer,
+  ce qui divergerait de l'affichage), **anti double-réclamation** via `bossClaimStatus.rewardsClaimed`.
+- Correctif du test « réclamé » de `applyBossActionState` (les valeurs sont des `BossClaimStatusData`, pas des
+  `Boolean` — l'ancien `Boolean.TRUE.equals(...)` était toujours faux).
+- `yourData` poussé (`sendInvasionInfo`) après un combat de boss, sur `GetInvasionBosses`, sur `GetInvasionInfo`
+  et sur la réclamation ; le client ne redemandant jamais `GetInvasionInfo`, ces PUSHs rafraîchissent son
+  `ClientInvasionUser`.
+
+**⚠️ Piège trouvé EN JEU — `getBossHP` DÉCLENCHE `PatchStats.<clinit>` : NE PAS l'appeler au PUSH DU BOOT.** Au
+boot, la stat-sync du client n'a pas encore complété les tables (lignes SAPPHIRE) → `PatchStats.<clinit>` JETTE
+(`ExceptionInInitializerError`) et **empoisonne la classe pour toute la session** (getBossHP KO partout). D'où
+le flag `sendInvasionInfo(..., populateClaim)` : `false` au boot (aucun getBossHP), `true` seulement sur les
+chemins où le contenu est chargé (`GetInvasionInfo`/`GetInvasionBosses`/après combat/réclamation).
+
+**Vérifié EN JEU** : carte KO glow + **« CLAIM REWARDS »** → tap →
+`ClaimInvasionBossRewards boss=3 rôles=[PARTICIPANT,FINDER,MOST_DAMAGE,THIRTY_PERCENT_HP,TEN_PERCENT_HP,FINISHER]
+→ 18 récompenses créditées [persisté]` → **InvasionBossRewardsWindow** rend chaque rôle avec son butin de table
+(PARTICIPATED 5 stamina/20 boss tech/1 pt/1 mod, FINDER 5 stamina/1 pierre/1 pt, FINISHER 50 boss tech/2 pts/1
+mod, 10 % DAMAGE, MOST DAMAGE…) → fermeture → **« There are no current Invasion Bosses »** (repassé DEFAULT, pas
+de re-réclamation). Régression **77/77** (`InvasionBossTest` étoffé : KILL+CLAIM, rôles, anti-double-réclamation,
+non-participant sans rôle). **INVASION est désormais 100 % vérifiée EN JEU** (breaker quest + boss
+spawn/attaque/kill/claim). Détail : `docs/INVASION.md` §BOSS BATTLES.
+
 ## 2026-08-03 (g49) — INVASION BOSS : boucle d'attaque VÉRIFIÉE EN JEU (dégâts fidèles au chiffre près)
 
 Correction méthodo (rappel utilisateur + docs §6bis/§6ter) : le « client qui meurt » des sessions précédentes

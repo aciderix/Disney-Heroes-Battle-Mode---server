@@ -62,8 +62,9 @@ public final class AdminInvasion {
           else System.out.println("[admin] option ignorée : " + k);
       }
     }
-    if (!showStatus && !spawn && !clear) {
-      System.out.println("Usage : AdminInvasion [--db <chemin>] [--shard <n>] (--status | --clear-bosses [--guild <id>] | --spawn-boss [--guild <id>] [--finder <userID>] [--level <n>])");
+    boolean giveBreaker = opt.containsKey("give-breaker");
+    if (!showStatus && !spawn && !clear && !giveBreaker) {
+      System.out.println("Usage : AdminInvasion [--db <chemin>] [--shard <n>] (--status | --clear-bosses [--guild <id>] | --spawn-boss [--guild <id>] [--finder <userID>] [--level <n>] | --give-breaker <n> --user <id>)");
       return;
     }
 
@@ -73,6 +74,15 @@ public final class AdminInvasion {
     long now = com.perblue.heroes.util.TimeUtil.serverTimeNow();
 
     try (UserStore store = new UserStore(db)) {
+      if (giveBreaker) {
+        long uid = Long.parseLong(opt.getOrDefault("user", "1"));
+        int n = Integer.parseInt(opt.get("give-breaker"));
+        ServerUser u = store.loadOrCreate(uid, shardID);
+        u.giveResource(com.perblue.heroes.network.messages.ResourceType.BREAKER, n);
+        store.save(u);
+        System.out.println("[invasion] +" + n + " BREAKER au joueur " + uid + " (total "
+            + u.resourceAmount(com.perblue.heroes.network.messages.ResourceType.BREAKER) + ") — TEST opérateur.");
+      }
       if (clear) {
         java.util.List<ServerGuild> gs = opt.containsKey("guild")
             ? java.util.Collections.singletonList(store.loadGuild(shardID, Long.parseLong(opt.get("guild"))))

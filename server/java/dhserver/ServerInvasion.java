@@ -444,13 +444,93 @@ public final class ServerInvasion {
     try { hp = com.perblue.heroes.game.logic.InvasionHelper.getBossHP(boss); } catch (Throwable ignore) {}
     boolean defeated = hp > 0f && total >= hp;
     if (defeated) {
-      boolean claimed = ud != null && ud.bossClaimStatus != null
-          && Boolean.TRUE.equals(ud.bossClaimStatus.get(boss.bossID));
+      // RÉCLAMÉ ? les valeurs de bossClaimStatus sont des BossClaimStatusData (pas des Boolean) : on lit
+      // rewardsClaimed. Sans ce correctif l'ancien test Boolean.TRUE.equals(...) était toujours faux.
+      boolean claimed = false;
+      if (ud != null && ud.bossClaimStatus != null) {
+        Object cs = ud.bossClaimStatus.get(boss.bossID);
+        if (cs instanceof com.perblue.heroes.network.messages.BossClaimStatusData)
+          claimed = ((com.perblue.heroes.network.messages.BossClaimStatusData) cs).rewardsClaimed;
+      }
       boss.actionState = (youAttacked && !claimed)
           ? com.perblue.heroes.network.messages.InvasionBossActionState.CLAIM
           : com.perblue.heroes.network.messages.InvasionBossActionState.DEFAULT;
     } else {
       boss.actionState = com.perblue.heroes.network.messages.InvasionBossActionState.FIGHT;
+    }
+  }
+
+  /** RÔLES de récompense GAGNÉS par le joueur sur un boss VAINCU, dérivés de l'état PARTAGÉ observable.
+   *  <p>Le serveur d'origine décide ces rôles dans {@code InvasionHelperExt} — code SERVEUR, ABSENT du jar
+   *  client (voir {@code InvasionHelper} : {@code ext = null} hors client). On applique donc ici la
+   *  SÉMANTIQUE explicite de chaque valeur de {@link com.perblue.heroes.network.messages.InvasionBossRewardType}
+   *  aux faits persistés : découvreur, dégâts cumulés du joueur, PV total du boss (seuils 10 %/30 %), plus gros
+   *  contributeur, dernier attaquant (= coup fatal). Le BUTIN par rôle reste tiré des DONNÉES du jeu
+   *  ({@code invasion_boss_rewards*.tab}) — c'est le CLIENT qui le tire ({@code InvasionHelper.rollBossRewardLoot})
+   *  puis le RENVOIE dans {@code ClaimInvasionBossRewards} (modèle client-autoritatif du portage). La liste des
+   *  rôles est ce que le client itère pour savoir QUELS butins tirer (cf. {@code InvasionClientHelper.claimBossRewards}). */
+  public static java.util.List<com.perblue.heroes.network.messages.InvasionBossRewardType> earnedBossRoles(
+      com.perblue.heroes.network.messages.InvasionBossInfo boss, long userID) {
+    java.util.List<com.perblue.heroes.network.messages.InvasionBossRewardType> roles = new java.util.ArrayList<>();
+    if (boss == null || boss.damageDone == null) return roles;
+    long userDmg = 0, maxDmg = 0, lastAt = 0, userLastAt = 0;
+    for (java.util.Map.Entry<?, ?> e : ((java.util.Map<?, ?>) boss.damageDone).entrySet()) {
+      Object v = e.getValue();
+      if (!(v instanceof com.perblue.heroes.network.messages.InvasionBossDamageData)) continue;
+      com.perblue.heroes.network.messages.InvasionBossDamageData d =
+          (com.perblue.heroes.network.messages.InvasionBossDamageData) v;
+      if (d.damage > maxDmg) maxDmg = d.damage;
+      if (d.lastAttackTime > lastAt) lastAt = d.lastAttackTime;
+      if (e.getKey() instanceof Long && ((Long) e.getKey()) == userID) { userDmg = d.damage; userLastAt = d.lastAttackTime; }
+    }
+    if (userDmg <= 0) return roles;   // n'a pas participé → aucun rôle
+    float hp = 0f;
+    try { hp = com.perblue.heroes.game.logic.InvasionHelper.getBossHP(boss); } catch (Throwable ignore) {}
+    roles.add(com.perblue.heroes.network.messages.InvasionBossRewardType.PARTICIPANT);
+    if (boss.foundByUser != null && boss.foundByUser.iD == userID)
+      roles.add(com.perblue.heroes.network.messages.InvasionBossRewardType.FINDER);
+    if (userDmg >= maxDmg)
+      roles.add(com.perblue.heroes.network.messages.InvasionBossRewardType.MOST_DAMAGE);
+    if (hp > 0 && userDmg >= 0.30f * hp)
+      roles.add(com.perblue.heroes.network.messages.InvasionBossRewardType.THIRTY_PERCENT_HP);
+    if (hp > 0 && userDmg >= 0.10f * hp)
+      roles.add(com.perblue.heroes.network.messages.InvasionBossRewardType.TEN_PERCENT_HP);
+    if (userLastAt > 0 && userLastAt >= lastAt)
+      roles.add(com.perblue.heroes.network.messages.InvasionBossRewardType.FINISHER);
+    return roles;
+  }
+
+  /** RENSEIGNE la vue PAR JOUEUR {@code ud.bossClaimStatus} avant l'envoi de {@code yourData} : pour chaque boss
+   *  ACTIF VAINCU auquel le joueur a droit et NON encore réclamé, SYNTHÉTISE une entrée réclamable
+   *  {@code {rewardsClaimed:false, rewardsEarned:rôles}}. INDISPENSABLE : sans cette entrée NON-NULLE, taper le boss
+   *  KO ne déclenche RIEN côté client — {@code InvasionBossCard.lastClaimable} exige
+   *  {@code actionState==CLAIM ET getBossClaimStatus(bossID) != null} (établi au bytecode 2026-08-03). Les entrées
+   *  déjà RÉCLAMÉES ({@code rewardsClaimed==true}) sont conservées telles quelles ; les boss non vaincus sont purgés. */
+  public static void populateClaimStatus(ServerGuild g, ServerUser user,
+      com.perblue.heroes.network.messages.UserInvasionData ud, long now) {
+    if (ud == null || user == null) return;
+    if (ud.bossClaimStatus == null) ud.bossClaimStatus = new java.util.HashMap<>();
+    for (com.perblue.heroes.network.messages.InvasionBossInfo boss : activeBosses(g, now)) {
+      Object existing = ud.bossClaimStatus.get(boss.bossID);
+      if (existing instanceof com.perblue.heroes.network.messages.BossClaimStatusData
+          && ((com.perblue.heroes.network.messages.BossClaimStatusData) existing).rewardsClaimed) continue; // déjà réclamé
+      long total = 0L;
+      if (boss.damageDone != null)
+        for (java.util.Map.Entry<?, ?> e : ((java.util.Map<?, ?>) boss.damageDone).entrySet())
+          if (e.getValue() instanceof com.perblue.heroes.network.messages.InvasionBossDamageData)
+            total += ((com.perblue.heroes.network.messages.InvasionBossDamageData) e.getValue()).damage;
+      float hp = 0f;
+      try { hp = com.perblue.heroes.game.logic.InvasionHelper.getBossHP(boss); } catch (Throwable ignore) {}
+      boolean defeated = hp > 0f && total >= hp;
+      java.util.List<com.perblue.heroes.network.messages.InvasionBossRewardType> roles =
+          defeated ? earnedBossRoles(boss, user.userID) : java.util.Collections.emptyList();
+      if (roles.isEmpty()) { ud.bossClaimStatus.remove(boss.bossID); continue; }  // pas (encore) réclamable
+      com.perblue.heroes.network.messages.BossClaimStatusData cs =
+          new com.perblue.heroes.network.messages.BossClaimStatusData();
+      cs.rewardsClaimed = false;
+      cs.escapeClaimed = false;
+      cs.rewardsEarned = new java.util.ArrayList<>(roles);
+      ((java.util.Map<Object, Object>) ud.bossClaimStatus).put(boss.bossID, cs);
     }
   }
 
