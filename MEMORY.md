@@ -15,9 +15,11 @@
 >    `docs/HUB_NAV.md` selon le sujet) **et tout autre document pertinent**.
 > 2. **Énumérer les RÈGLES DE TRAVAIL** (elles sont et resteront **incontournables**), + les **astuces,
 >    méthodologies et commandes documentées** (cf. §6bis/6ter ci-dessous), pour les avoir en contexte.
->    **Pour implémenter un écran/mode : lire `docs/SCREEN_PIPELINE.md` (pipeline industrialisé #73)** — l'outil
->    `tools/screentool/contract.sh <classe-écran>` EXTRAIT le contrat (champs à peupler + handlers manquants +
->    gate) du bytecode + `WireCheck` (round-trip wire) : ancrer sur les FAITS, ne plus reproduire nos défauts.
+>    **Pour implémenter un écran/mode : lire `docs/SCREEN_PIPELINE.md` (pipeline #73) ET `docs/HEADLESS_VERIFICATION.md`
+>    (chantier #74, avec son §SUIVI à maintenir)** — outils : `tools/screentool/contract.sh <classe>` (contrat
+>    bytecode + `--scaffold`), `WireCheck` (round-trip wire), `ClientOracle` (exécute le code CLIENT du jeu sur
+>    notre état, headless — attrape avant l'in-game). Ancrer sur les FAITS, ne plus reproduire nos défauts ;
+>    in-game réduit au rendu/GL mais TOUJOURS obligatoire (dernier filet).
 > 3. **Faire le point** sur l'état courant ET sur ce qui a été transmis lors de la compression, PUIS enchaîner.
 > Ne PAS sauter cette procédure : c'est la condition pour reprendre dans de bonnes conditions.
 

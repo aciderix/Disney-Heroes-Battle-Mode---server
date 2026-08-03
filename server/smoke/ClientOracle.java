@@ -1,0 +1,74 @@
+import com.perblue.heroes.game.logic.QuestHelper;
+import com.perblue.heroes.game.objects.IUser;
+
+/**
+ * ORACLE CLIENT HEADLESS (#74, levier B — cf. docs/HEADLESS_VERIFICATION.md).
+ *
+ * <p>Exécute, sur NOTRE {@code User} (l'état/réponse que le serveur produit), des vérifications que le CLIENT
+ * ferait lui-même — SANS GL, en appelant le VRAI code du jeu (§3 : on exécute, on n'invente pas). But : attraper
+ * AVANT l'in-game les états serveur qui feraient **planter ou refuser** le client.
+ *
+ * <p>Exemple : le crash R1 (g55) était `QuestHelper.hasUnclaimedDailyQuests` →
+ * `HasEnoughCollectionHeroes.isSatisfied` → `list.get(hero.getStars())` hors bornes. Ces méthodes prennent un
+ * {@code IUser} et tournent headless → l'oracle les exécute et signale le crash sans passer par le rendu.
+ *
+ * <p>Usage test : {@code ClientOracle.assertClientRenders(serverUser.gameUser());}
+ */
+public final class ClientOracle {
+
+  /** Une vérif cliente : un nom + une action qui LÈVE si le client planterait/refuserait sur cet état. */
+  interface Check { String name(); void run(IUser u); }
+
+  /** Vérifs « le hub rend sans planter » qui tournent PROPREMENT sur un User headless (B2). VRAI code client. */
+  static final Check[] HUB_RENDER = {
+    check("QuestHelper.getUnlockedAchievements", u -> QuestHelper.getUnlockedAchievements(u)),
+    check("QuestHelper.getWeeklyDailyQuestsComplete", u -> QuestHelper.getWeeklyDailyQuestsComplete(u)),
+  };
+
+  /** Vérifs À FORT INTÉRÊT (voie du crash R1) mais qui exigent une FIXTURE utilisateur plus complète —
+   *  {@code getUnlockedDailyQuests} accède aux {@code IUserChallengeData} (données de défi/City Watch) que le
+   *  BootData réel fournit mais que notre User headless n'a pas encore → NPE. À activer quand la fixture est
+   *  prête (tracker B2b dans docs/HEADLESS_VERIFICATION.md). Une fois active, l'oracle attrape le crash R1 headless. */
+  static final Check[] HUB_RENDER_PENDING_FIXTURE = {
+    check("QuestHelper.getUnlockedDailyQuests", u -> QuestHelper.getUnlockedDailyQuests(u)),   // ← voie du crash R1
+    check("QuestHelper.hasUnclaimedDailyQuests", u -> QuestHelper.hasUnclaimedDailyQuests(u)),
+  };
+
+  /** Simule « je suis le thread principal » : les stats du jeu ({@code QuestStats.getDailyQuestIDs}…) ont un
+   *  garde `currentThread == DH.app.getMainThread()` (renvoie le static {@code GameMain.MAIN_THREAD}). Headless,
+   *  ce champ est nul → garde toujours violé → repli cassé. On pose le champ sur le thread courant : shim de
+   *  HARNAIS (couche plateforme, §4), pas de logique de jeu ; n'affecte que l'exécution de l'oracle. */
+  static void becomeMainThread() {
+    try {
+      java.lang.reflect.Field f = com.perblue.heroes.GameMain.class.getDeclaredField("MAIN_THREAD");
+      f.setAccessible(true); f.set(null, Thread.currentThread());
+    } catch (Throwable ignore) {}
+  }
+
+  /** Assertion : le CLIENT rendrait cet état sans planter. Lève un AssertionError listant les vérifs en échec. */
+  public static void assertClientRenders(IUser u) {
+    becomeMainThread();
+    java.util.List<String> failures = new java.util.ArrayList<>();
+    for (Check c : HUB_RENDER) {
+      try { c.run(u); }
+      catch (Throwable t) { failures.add(c.name() + " → " + t.getClass().getSimpleName() + ": " + t.getMessage()); }
+    }
+    if (!failures.isEmpty())
+      throw new AssertionError("ClientOracle : le CLIENT planterait/refuserait sur cet état serveur :\n  - "
+          + String.join("\n  - ", failures));
+  }
+
+  interface Body { void run(IUser u); }
+  static Check check(String name, Body b) {
+    return new Check() { public String name() { return name; } public void run(IUser u) { b.run(u); } };
+  }
+
+  /** Self-test (régression) : un compte NEUF doit passer toutes les vérifs de rendu du hub. */
+  public static void main(String[] a) throws Exception {
+    dhserver.ServerContext.init();
+    dhserver.ServerUser u = dhserver.ServerUser.newPlayer(1L, 1);
+    u.bindGameContext();
+    assertClientRenders(u.gameUser());
+    System.out.println("[clientoracle] vérifs de rendu du hub OK (compte neuf) — oracle opérationnel (#74 B1/B2)");
+  }
+}

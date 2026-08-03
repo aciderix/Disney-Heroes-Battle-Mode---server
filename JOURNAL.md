@@ -1,5 +1,25 @@
 # JOURNAL — journal détaillé des modifications
 
+## 2026-08-03 (g58) — VÉRIF HEADLESS via le code du jeu : plan directeur + `ClientOracle` (#74, levier B)
+
+Idée (utilisateur) : puisqu'on a le code CLIENT du jeu, l'EXÉCUTER headless contre nos réponses/état pour
+rattraper AVANT l'in-game ce qu'un contrat statique d'un seul écran ne voit pas → réduire l'in-game au rendu/GL.
+**`docs/HEADLESS_VERIFICATION.md`** : document directeur (résistant à la compression) + pile de vérif (0 contrat
+static, 1 WireCheck, 2 ClientOracle, 3 HeadlessCombat, 4 in-game rendu) + 3 leviers (A graphe de messages du
+mode, B oracle client, C logique headless) + **§SUIVI vivant** (à mettre à jour à chaque incrément). Référencé
+dans la procédure de reprise de MEMORY.
+
+**Incrément B1 fait** : `server/smoke/ClientOracle` — exécute des vérifs CLIENTES du jeu sur notre `User`
+headless (`assertClientRenders(u)`), capture les exceptions, liste les échecs. **Découverte + shim** : les stats
+du jeu (`QuestStats.getDailyQuestIDs`…) gardent `currentThread == GameMain.MAIN_THREAD` (static, nul headless →
+garde toujours violé → repli cassé, ConcurrentModification+ClassCast). `becomeMainThread()` pose ce champ sur le
+thread courant (shim de HARNAIS, §4) → le vrai code client tourne headless. **B2** : 2 vérifs STABLES
+(`getUnlockedAchievements`, `getWeeklyDailyQuestsComplete`) → self-test vert, intégré régression (**80/80**).
+**B2b (à faire)** : `getUnlockedDailyQuests`/`hasUnclaimedDailyQuests` (LA voie du crash R1) NPE car notre User
+headless n'a pas les `IUserChallengeData` que le BootData réel fournit → construire une fixture User complète, et
+l'oracle attrapera R1 headless. Suivi complet dans `docs/HEADLESS_VERIFICATION.md` §SUIVI.
+
+
 ## 2026-08-03 (g57) — OUTIL D'INDUSTRIALISATION : extracteur de CONTRAT d'écran (bytecode) + garde-fou wire (#73)
 
 Pour « ne plus reproduire nos erreurs » et automatiser/sécuriser l'implémentation de chaque écran/mode, sans
