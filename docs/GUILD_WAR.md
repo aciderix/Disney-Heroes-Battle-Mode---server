@@ -753,11 +753,16 @@ faire quitter d'abord). **Non corrigé à ce stade — inscrit ici pour ne pas l
 | Saboter un défenseur | `WAR_SABOTAGE_DEFENDER` | ✅ `REDUCE_HP_PERCENT` sur STITCH → **coût 67, palier 1 RECALCULÉ serveur** (l'`INDEX` du client est ignoré : anti-triche vérifié en conditions réelles) |
 | Bannir un héros | `WAR_EDIT_BAN_PROTECT` | ⛔ **refusé par le CLIENT** : `WAR_BAN_PROTECT_MAX_PROTECT_SIZE` — la taille de ban/protect vient d'un perk de guilde, et la guilde de test est **niveau 0**. Gate FIDÈLE du jeu, pas un défaut serveur. |
 | S'entraîner | `WAR_SPAR_TARGET` | ⛔ **refusé par le CLIENT** : `WAR_SPARS_NOT_ENOUTH` (sic) — quota de spars = perk `WAR_SPARS`, nul au niveau 0. Même conclusion. |
-| Attaquer | `START_WAR_ATTACK` | ⚠️ **partiellement vérifié** : la commande atteint le serveur, qui valide et répond (salle `REDUCE_ATTACKER_HP_FLAT`), et le défaut de sérialisation §5.3 est corrigé. Mais après passage en phase ACTIVE, le client n'a plus ré-émis la commande (le pilote la construit, `GameStateManager.startAction` ne l'envoie pas). **Cause non élucidée — à reprendre.** |
+| Attaquer | `START_WAR_ATTACK` | ✅ **VÉRIFIÉ EN JEU (2026-08-03, g52)** — voir §5.7. La « cause non élucidée » était un **BYE** : la guerre de test n'avait qu'UNE guilde en file → adversaire nul → `ClientActionHelper.startWarAttack` **NPE** sur `warInfo.enemyGuild.guildInfo.iD` (avalé par le pilote) → rien émis. Avec un VRAI adversaire, `START_WAR_ATTACK` **part**, le serveur **valide et répond** (`StartWarAttackResponse` salle `REDUCE_ATTACKER_HP_FLAT` [persisté]), l'aperçu d'attaque rend la voiture (bonus « Reduces attacker HP ») + la défense adverse (15 héros), et le garde-fou d'attaques marche (2ᵉ attaque → « OUT OF EXTRA ATTACKS »). |
 
 ### 5.6 Restent NON vérifiés en jeu
 
-* **Attaque menée à son terme** (3 vagues → `WarAttack` → points) — bloquée par le point ci-dessus.
+* **Combat d'attaque JOUÉ jusqu'au bout** (choix des héros → 3 vagues → `WarAttack` → points). L'INITIATION
+  est vérifiée (§5.8 : `START_WAR_ATTACK` part, serveur répond, aperçu rendu) ; ne reste que jouer le combat
+  lui-même (même combat client-autoritatif que le boss d'invasion, déjà validé ; résultat couvert par
+  `WarAttackTest`). Le pilote `warattack` INITIE l'attaque côté serveur mais ne joue pas l'UI de combat ; jouer
+  le combat via l'UI (taper la salle → aperçu → FIGHT → choix héros) demande une attaque de BASE fraîche
+  (l'unique attaque a été consommée par l'initiation).
 * **Bans / protections / spars** — nécessitent une guilde avec des **perks** (niveau > 0), donc l'économie
   d'influence ; le gate est celui du jeu, les handlers serveur sont couverts headless.
 * **Clôture de guerre, MMR, boîtes de promotion/saison, réclamation d'une boîte** — l'outil
@@ -773,5 +778,34 @@ faire quitter d'abord). **Non corrigé à ce stade — inscrit ici pour ne pas l
   commandes `warban`/`warspar` demandent d'abord **son verdict au client** et l'affichent : c'est ainsi que
   les deux refus ci-dessus ont été identifiés comme des gates du jeu et non des silences.
 * `server/smoke/WarSetup.java` : héros, jetons de guerre, défense et affectation de salle d'un compte.
+
+### 5.8 🐛 `START_WAR_ATTACK` en phase ACTIVE — RÉSOLU EN JEU (2026-08-03, g52) : c'était un BYE
+
+La « cause non élucidée » (§5.5, le client n'émettait pas l'attaque en phase ACTIVE) était un **défaut de mise
+en place, pas un bug** — exactement le fil rouge « le client marche, c'est le pilotage/setup ».
+
+**Trace complète** (lecture du bytecode, ce que le prédécesseur n'avait pas fait) : `warattack` →
+`ClientActionHelper.startWarAttack` → `ActionHelper.doActionCallback` = `GameStateManager.startAction` →
+callback `WarClientHelper.doStartWarAttack` → `completeAction` (**c'est lui qui ENVOIE**, et seulement si
+`currentGroup == null`). Le callback construit les extras avec `warInfo.enemyGuild.guildInfo.iD`. **Si la
+guerre est un BYE** (une seule guilde en file → adversaire nul), `enemyGuild` est **null** → **NPE** avalé par
+le `catch` du pilote → rien n'est émis, aucun log serveur. La guerre de test précédente était un BYE.
+
+**Vérification EN JEU** (guerre #4 : *Baroness Legion* vs *Rival Syndicate*, appariées via `AdminWar --tick
+--force` + `--advance` en phase ACTIVE ; défenseur affecté à une salle — piège `sideOf`/`putSide` d'octets wire
+respecté) :
+1. `warattack` → serveur : `<== Action command=START_WAR_ATTACK extra={ID=2, GUILD_ID=2}` puis
+   `<== START_WAR_ATTACK vs 2 (salle REDUCE_ATTACKER_HP_FLAT) [persisté]` — **émis, validé, `StartWarAttack
+   Response` renvoyé et persisté**.
+2. L'écran **aperçu d'attaque** rend la voiture de salle (**BOOMER**, bonus « Reduces attacker HP » =
+   `REDUCE_ATTACKER_HP_FLAT`) et la **défense adverse** (15 héros, 3 équipes, POWER ~9,7 k–10,3 k) + bouton
+   **FIGHT**.
+3. Le **garde-fou d'attaques** marche : la 2ᵉ tentative (l'unique attaque de base étant consommée) → fenêtre
+   **« OUT OF EXTRA ATTACKS »** (attaques bonus gatées par le perk — comportement du jeu).
+
+Reste seulement à JOUER le combat lui-même via l'UI (choix des héros → 3 vagues), identique au combat
+client-autoritatif du boss d'invasion (déjà validé de bout en bout) ; l'enregistrement du résultat est couvert
+par `WarAttackTest`. Aucune modification du serveur n'a été nécessaire : le mode d'attaque de guerre **marche en
+jeu**, le blocage était l'absence d'adversaire réel.
 * `server/smoke/WarRivalSeed.java` : guilde adverse inscrite en file.
 * `AdminWar` : `--status`, `--tick [--force]`, `--resync`, `--advance`, `--end`.

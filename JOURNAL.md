@@ -1,5 +1,26 @@
 # JOURNAL — journal détaillé des modifications
 
+## 2026-08-03 (g52) — GUILD WAR : attaque en phase ACTIVE RÉSOLUE EN JEU (« cause non élucidée » = un BYE)
+
+Le point resté ouvert en g45/§5.5 (le client n'émettait plus `START_WAR_ATTACK` après passage en phase ACTIVE,
+« cause non élucidée ») était un **défaut de mise en place, pas un bug serveur** — le fil rouge « le client
+marche, c'est le pilotage/setup ».
+
+**Trace bytecode** (ce que le prédécesseur n'avait pas poussé) : `startWarAttack` → `doActionCallback` =
+`startAction` → callback `WarClientHelper.doStartWarAttack` → `completeAction` (**envoie** ssi
+`currentGroup==null`). Le callback lit `warInfo.enemyGuild.guildInfo.iD` : sur un **BYE** (une seule guilde en
+file → adversaire nul), `enemyGuild` est **null** → **NPE avalé** par le pilote → rien émis. La guerre de test
+d'alors était un BYE.
+
+**Vérifié EN JEU** : guerre #4 *Baroness Legion* vs *Rival Syndicate* (appariées via `AdminWar --tick --force`
++ `--advance` ACTIVE ; défenseur affecté à une salle en respectant le piège `sideOf`/`putSide` des octets wire).
+`warattack` → `<== START_WAR_ATTACK vs 2 (salle REDUCE_ATTACKER_HP_FLAT) [persisté]` (émis + validé + réponse) ;
+l'aperçu d'attaque rend la voiture **BOOMER** (« Reduces attacker HP ») + la défense adverse (15 héros) + FIGHT ;
+2ᵉ tentative → **« OUT OF EXTRA ATTACKS »** (garde-fou correct). Reste à JOUER le combat via l'UI (même combat
+client-autoritatif que le boss, déjà validé ; résultat couvert par `WarAttackTest`). **Aucune modif serveur** :
+le mode marchait, le blocage était l'absence d'adversaire réel. Détail : `docs/GUILD_WAR.md` §5.8.
+
+
 ## 2026-08-03 (g51) — ÈRE DE CONTENU pilotable (ancre d'horloge PERSISTÉE) + cohérence d'horloge + audit hardcode
 
 **Audit « rien en dur à tort » (demandé).** Résultat : PROPRE. Les défauts `const*(champ, dflt)` sont des replis
