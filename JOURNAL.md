@@ -27,13 +27,20 @@ que `HeadlessCombat` (simulation) **ne rejoue pas les VFX** → le crash n'appar
 (`AttackScreen`) — vérifié par A/B : la même sim (Baymax+Stitch, NORMAL 13-10) termine `DONE` sur l'ANCIEN comme
 sur le NOUVEAU jar, car la sim n'appelle jamais `spawnParticles`.
 
-**Vérif EN JEU du combat rendu — RESTE (🟢)** : le témoin UI d'un combat RENDU faisant caster le studied buff est
-bloqué par des frictions ORTHOGONALES au correctif : la guerre de g53 est CLÔTURÉE (l'ordonnanceur l'a avancée) ;
-les boutons FIGHT/DEFENSE du COLISEUM (dans une liste défilante) ne se déclenchent pas via le pilote (tap
-intercepté par le scrollpane) ; la progression campagne du compte n'ouvre que 1-1 (1 ennemi de niv.1 → combat
-trop court pour que les compétences se déclenchent) ; le HALL OF FAME (contests) reste en LOADING. Le témoin
-définitif passe par la **re-création d'une guerre** (le flux d'attaque de g53, PROUVÉ rendre le combat). Détail
-dans `docs/SHIMS.md` §12.
+**✅ VÉRIFIÉ EN JEU — combat de guerre JOUÉ JUSQU'AU RÉSULTAT.** La guerre #4 (*Baroness Legion* vs *Rival
+Syndicate*) était en réalité toujours ACTIVE (BATTLE PHASE, 7h restantes) — j'avais confondu la LISTE des guerres
+(3 DRAW clos) avec la guerre en cours (accessible en scrollant la porte de garage). Setup via nouvel outil DEV
+`WarWitnessSetup` (sync des membres des deux guildes depuis leurs `WAR_DEFENSE_1..3`, affectation du défenseur
+adverse à la salle `REDUCE_ATTACKER_HP_FLAT`, `resetWarAttacks` du joueur). Flux UI : `nav WAR` → scroll → porte
+**BATTLE PHASE** → `GetWarInfo → WarInfo #4 ACTIVE` → garage **9 salles/3 étages** → tap de la voiture ennemie
+(BOOMER, « Reduces attacker HP ») → aperçu (défense adverse = 3 équipes dont **Baymax** et **Stitch**) → FIGHT →
+hero chooser (mon équipe 1 inclut **Baymax**) → « ARE YOU SURE? » → FIGHT → `START_WAR_ATTACK vs 2 [persisté]` +
+`WAR_ATTACK_1/2/3`. **Le combat RENDU s'est joué de bout en bout sur les 3 équipes** (scène garage, héros animés,
+dégâts 29 654 / 184 391 / « +300 » / « +50 Dodge », **VFX de particules rendues en continu**) → écran **RESULTS**
+(1 victoire verte + 2 défaites rouges). **Compteur de crash `spawnParticles` = 0** sur tout le run (là où g53
+plantait en cours de combat). Baymax (équipe 1) ET Stitch (équipe 3) — les deux poseurs de `SimpleStudiedBuff` —
+ont casté avec leurs particules **sans aucun `IncompatibleClassChangeError`**. Le correctif de reframing est donc
+**✅ prouvé EN JEU** (client réel → combat rendu → résultat). Détail dans `docs/SHIMS.md` §12.
 
 
 ## 2026-08-03 (g53) — GUILD WAR : combat d'attaque JOUÉ EN JEU + bug de reframing trouvé
