@@ -1,5 +1,25 @@
 # JOURNAL — journal détaillé des modifications
 
+## 2026-08-03 (g49) — INVASION BOSS : boucle d'attaque VÉRIFIÉE EN JEU (dégâts fidèles au chiffre près)
+
+Correction méthodo (rappel utilisateur + docs §6bis/§6ter) : le « client qui meurt » des sessions précédentes
+était un **défaut de pilotage/monitoring de ma part**, pas un bug client. `exit 144` = kill du **wrapper** bash
+par le superviseur (pas un crash) ; `pgrep -f DesktopLauncher` matche **ma propre commande shell** (filtrer
+`java.*dhdesktop.DesktopLauncher`) ; **ne jamais tronquer** un log tenu ouvert par le serveur (`grep -a`). En
+suivant la procédure CANONIQUE (`./run-online.sh` détaché) + monitoring correct, le client tourne
+parfaitement (manual.ppm frais à 1 s).
+
+**Boucle d'attaque de boss vérifiée EN JEU** (boss MAMA_BOT niveau 1 via `AdminInvasion --level 1`) :
+BOSS BATTLES rend le boss (MAMA_BOT, barre de vie 274 714/274 714, « Reset in … » = chaîne overlay OK) → tap
+(`actionState=FIGHT`) → **InvasionBossPreviewScreen** → CHOOSE HEROES → FIGHT →
+`StartInvasionBossAttack → StartBossAttackResponse (lineup, verrou)` → **combat réel** →
+`InvasionBossAttack ×1 outcome=LOSS → −1 clé, 88803 dégâts (cumul 88803) [persisté]`.
+**Fidélité prouvée au chiffre près** : l'écran « BOSS DAMAGED! » affiche DAMAGE DONE **88 803** et BOSS HP
+**185 911/274 714** = exactement la valeur serveur (source `base.defenders[*].units[*].damageTaken`). Après
+CONTINUE, la carte du boss montre **185 911/274 714** et les clés BREAKER **1→0** — débit + cumul persistés et
+relus. **RESTE (gated par les clés du compte)** : tuer le boss (≈4 clés) → CLAIM (`ClaimInvasionBossRewards` /
+`rollBossRewardLoot`). Détail : `docs/INVASION.md` §BOSS BATTLES.
+
 ## 2026-08-02 (g48) — INVASION BOSS : boucle d'attaque câblée + source FIDÈLE des dégâts + chaînes manquantes
 
 **Source fidèle des dégâts — établie au bytecode.** Le client calcule `getBossDamage =

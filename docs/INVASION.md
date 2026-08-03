@@ -366,7 +366,27 @@ Nouveau `ServerInvasion.applyBossActionState(boss, user, ud)` calcule la vue PAR
 vaincu ; CLAIM si vaincu et part du joueur non réclamée ; sinon DEFAULT) ; le handler `GetInvasionBosses`
 l'applique à chaque boss servi. [`InvasionBossTest` : boss neuf ⇒ FIGHT]. Régression 77/77.
 
-### Boucle d'ATTAQUE du boss — CÂBLÉE (2026-08-02, g48)
+### ✅ Boucle d'ATTAQUE du boss — VÉRIFIÉE EN JEU (2026-08-03, g49)
+
+Chaîne complète exercée par le VRAI client (compte de test, boss MAMA_BOT niveau 1 spawné par
+`AdminInvasion --level 1`) : `nav INVASION` → BOSS BATTLES (le boss rend en **MAMA_BOT** avec barre de vie
+**274 714/274 714**, « Reset in … » — la chaîne manquante est résolue) → tap du boss (`tut=
+INVASION_BOSS_LIST_FIGHTABLE_BOSS`, `actionState=FIGHT`) → **InvasionBossPreviewScreen** (MAMA BOT, Orange+2,
+Lvl 1, boutons 1X=1 clé / 5X=3 clés) → CHOOSE HEROES → FIGHT → `StartInvasionBossAttack bossID=3 →
+StartBossAttackResponse (lineup 1, verrou acquis)` → **combat réel joué** (5 héros vs MAMA_BOT) →
+`InvasionBossAttack bossID=3 ×1 outcome=LOSS → −1 clé, 88803 dégâts (cumul 88803) [persisté]`.
+
+**Preuve de fidélité des dégâts** : l'écran de résultat affiche **DAMAGE DONE : 88 803 (32,33 %)** et
+**BOSS HP : 185 911 / 274 714** — soit **exactement** le chiffre enregistré côté serveur (274 714 − 88 803 =
+185 911). Le serveur a donc lu la BONNE valeur (`base.defenders[*].units[*].damageTaken`). Après CONTINUE, la
+carte du boss montre **185 911/274 714** et le compteur de clés BREAKER **1 → 0** — débit et cumul **persistés
+et relus** à l'écran. La boucle d'attaque de boss est donc **complète et fidèle de bout en bout EN JEU**.
+
+**RESTE (gated par l'état du compte, pas le code)** : tuer le boss (il faut cumuler 274 714 dégâts ≈ 4 clés ;
+le compte de test n'a plus de clés) → passage `actionState` FIGHT→CLAIM → réclamation `ClaimInvasionBossRewards`
+(`rollBossRewardLoot`). Le boss réel niveau 450 reste réservé à un compte fort (ou ancrage d'ère de contenu).
+
+### (historique) Boucle d'ATTAQUE du boss — CÂBLÉE (2026-08-02, g48)
 
 **Source FIDÈLE des dégâts — ÉTABLIE au bytecode.** Le client calcule `InvasionBossAttackScreen.getBossDamage`
 = `UnitCombatStats.totalDamageTaken` de la vedette et l'applique LOCALEMENT ; le message `InvasionBossAttack`
