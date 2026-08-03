@@ -1,5 +1,21 @@
 # JOURNAL — journal détaillé des modifications
 
+## 2026-08-03 (g56) — LOOT AUTORITAIRE ✅ VÉRIFIÉ EN JEU sur un COMPTE FRAIS (#25/#46)
+
+Le « reste » de #25 (SHIMS) : re-valider EN JEU l'autorité du loot sur un compte joué DEPUIS la création (le
+compte hérité BaronessDante restait désynchronisé → repli SHADOW). **Fait.** Compte neuf (DB supprimée, snapshot
+`dh-snapshot-postwar-0803.db` sauvegardé), tuto auto-joué → hub → 3 combats de campagne WIN d'affilée
+(NORMAL 1-1, 1-2, 1-3, pilote `nav CAMPAIGN` + auto-fight). Serveur : **`[loot-authoritative] #25 AUTORITAIRE ✅
+crédité=serveur (==client)` 3/3, 0 DIVERGENCE**, avec un loot DIFFÉRENT à chaque combat (1-1
+{ACE_OF_SPADES,CLEVER_FOX,EXP_VIAL,HEARTY_BREAKFAST,RAID_TICKET,SUGAR_RUSH} ; 1-2 {A_BIT_OF_PRESTIDIGITATION,
+EXP_VIAL,SUNNY_SIDE…} ; etc.). Le serveur ROULE son propre butin sur SA chaîne de graine (`getDefaultSeed(userID)`
++ avance inconditionnelle), il **MATCHE le client à CHAQUE combat** (chaîne EN PHASE, avancement correct) → il
+crédite le tirage SERVEUR et avance l'état évolutif (pool XP + pitié) → **autorité EFFECTIVE en jeu, anti-triche
+actif** (plus de repli). Confirme l'analyse #25 : un compte joué dès la création reste en phase ; seul un état
+hérité désynchronisé retombe sur le repli sûr (jamais léser l'honnête). Aucune modif de code (logique déjà en
+place depuis #25) — c'est la VÉRIFICATION EN JEU manquante. Détail : `docs/SHIMS.md` ligne #25.
+
+
 ## 2026-08-03 (g55) — ÈRE DE CONTENU : le mécanisme suit l'horloge EN JEU ; un compte HAUT NIVEAU ne peut PAS rétrograder à R1
 
 Tentative de valider EN JEU le « démarrer R1 → gagner une salle breaker » (reste de g51) sur le compte existant.
