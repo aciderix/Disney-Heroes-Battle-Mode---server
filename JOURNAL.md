@@ -1,5 +1,32 @@
 # JOURNAL — journal détaillé des modifications
 
+## 2026-08-03 (g57) — OUTIL D'INDUSTRIALISATION : extracteur de CONTRAT d'écran (bytecode) + garde-fou wire (#73)
+
+Pour « ne plus reproduire nos erreurs » et automatiser/sécuriser l'implémentation de chaque écran/mode, sans
+hallucination ni allers-retours. **Deux outils ancrés dans les FAITS** :
+
+**`tools/screentool/ScreenContract` (ASM)** — donné un préfixe de classe d'écran, lit son bytecode (+ classes
+internes) et rapporte : **A/B** les CHAMPS wire lus par l'écran (`GETFIELD` sur les messages) = ce que le serveur
+DOIT peupler (défaut nº1) ; **C** la COUVERTURE handlers (messages `new`és par l'écran vs `instanceof` de
+`LoginServer*` — inclut les classes internes du listener) ; **D** le gate `Unlockable` ; **E** la checklist des
+9 défauts récurrents (distillée de MEMORY/SHIMS/JOURNAL). Wrapper `tools/screentool/contract.sh <classe>`
+(compile l'outil + recompile les classes serveur pour une couverture à jour + rapport).
+**VALIDÉ contre la vérité terrain** : sur `InvasionBreakerScreen` (implémenté), l'outil ressort tout seul
+`BreakerQuest.activeBreakerFight` (le champ « jamais renseigné » qu'on avait dû trouver à la main en g46) et
+`GetBreakerQuest [OK routé]`. Sur `SurgeScreen` (non implémenté) : `GetSurge`/`SurgeData [MANQUE]` + la liste
+exacte des champs de `SurgeData` à peupler (opponents, waves, objectives, rewards…).
+⚠️ 2 bugs corrigés en route (instructifs) : les messages wire s'exposent en CHAMPS PUBLICS lus par `GETFIELD`
+(pas des getters) ; le routage `instanceof` de `LoginServer` est dans une classe INTERNE (le listener), pas
+l'outer class → scanner `LoginServer$*.class`.
+
+**`server/smoke/WireCheck`** — garde-fou réutilisable `assertRoundTrips(resp)` : écrit la réponse sur le fil
+(`writeAll`) + relit → attrape le défaut nº3 (typage wire faux qui explose à l'écriture, invisible headless :
+g44/g45). À appeler dans chaque test de handler. Ajouté à la régression (**79/79**).
+
+**`docs/SCREEN_PIPELINE.md`** — la procédure par écran + les 9 défauts récurrents. Référencé dans la procédure
+de reprise de `MEMORY.md`.
+
+
 ## 2026-08-03 (g56) — LOOT AUTORITAIRE ✅ VÉRIFIÉ EN JEU sur un COMPTE FRAIS (#25/#46)
 
 Le « reste » de #25 (SHIMS) : re-valider EN JEU l'autorité du loot sur un compte joué DEPUIS la création (le

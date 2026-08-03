@@ -45,3 +45,5 @@ libs/spine-libgdx-perblue.jar
 *.db-shm
 scratch_dec/
 scratchpad/
+tools/screentool/classes/
+tools/screentool/server-classes/
