@@ -1,5 +1,23 @@
 # JOURNAL — journal détaillé des modifications
 
+## 2026-08-03 (g55) — ÈRE DE CONTENU : le mécanisme suit l'horloge EN JEU ; un compte HAUT NIVEAU ne peut PAS rétrograder à R1
+
+Tentative de valider EN JEU le « démarrer R1 → gagner une salle breaker » (reste de g51) sur le compte existant.
+**Le mécanisme ère-suit-horloge est confirmé EN JEU** : `AdminClock --set-date 2016-09-06` → serveur au boot
+`InvasionInfo : rotation BLUE du 2016-09-05 au 2016-09-10 [EN COURS]` (l'invasion de 2016 est active), `Max Team
+Level = 50` (R1) relu par le probe. **MAIS** le compte (TL100, héros 2026 jusqu'à 6 étoiles) **plante au hub à R1** :
+`IndexOutOfBoundsException: Index 6 out of bounds for length 6` dans `HasEnoughCollectionHeroes.isSatisfied`
+(via `DotTracker → QuestHelper.showDailyQuestMenuDot`). **Cause racine (bytecode)** : `list.get(hero.getStars())`
+où `list` a une longueur = `UnitStats.getMaxStars(user)`+1 = **6 à R1** (indices 0-5) ; un héros du compte a **6
+étoiles** → `get(6)` hors bornes. **Ce n'est PAS un bug du portage** : c'est une **incohérence intrinsèque de
+rétrogradation d'ère** — les héros du compte dépassent le plafond d'étoiles de R1. Un compte **CRÉÉ à R1** (étoiles
+conformes à R1) n'est PAS concerné. **Conclusion** : le témoin en jeu « démarrer R1 → gagner une salle breaker »
+doit se faire sur un **compte FRAIS créé à R1** (avec un roster ≤ plafond d'étoiles R1), pas par rétrogradation.
+Horloge **réinitialisée** (offset 0 = R102, compte de nouveau cohérent) ; instantané `dh-snapshot-postwar-0803.db`.
+**RESTE (#71)** : témoin breaker EN JEU sur compte frais R1 (roster niveau ~40, ≤5 étoiles ; invasion débloquée
+par TL). Le gain breaker salle ≥1 avec points>0 reste prouvé HEADLESS (g46, `BreakerWinProbe`).
+
+
 ## 2026-08-03 (g54) — REFRAMING : bug `IStudiedBuff.spawnParticles` corrigé (INVOKESPECIAL de super-interface directe)
 
 Correctif du 🐛 trouvé en g53 (combat de guerre) : `IncompatibleClassChangeError: … IStudiedBuff.spawnParticles
