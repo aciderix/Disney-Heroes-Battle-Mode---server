@@ -7,22 +7,32 @@
 > [`JOURNAL.md`](JOURNAL.md). **Maintenir ce fichier à jour en permanence.**
 
 > ## ⚠️ PROCÉDURE DE REPRISE APRÈS COMPRESSION (obligatoire, demandée par l'utilisateur)
-> **À CHAQUE compression de contexte / reprise, exécuter dans l'ordre AVANT de continuer :**
-> 1. **Relire en ENTIER** : `MEMORY.md` (ce fichier), les **derniers commits** (`git log --oneline -20`),
->    les **dernières entrées** de `JOURNAL.md`, **`docs/SHIMS.md` en entier**, `docs/PROTOCOL.md`,
->    `docs/PRINCIPLES.md`, `docs/SERVER_PLAN.md`, `docs/ARCHITECTURE.md`, **`docs/EXPLORATION.md`** (checklist
->    d'exploration des écrans, sujet en cours) (+ `docs/TUTO_WALKTHROUGH.md`, `docs/SIGNIN_EVENTS.md`,
->    `docs/HUB_NAV.md` selon le sujet) **et tout autre document pertinent**.
-> 2. **Énumérer les RÈGLES DE TRAVAIL** (elles sont et resteront **incontournables**), + les **astuces,
->    méthodologies et commandes documentées** (cf. §6bis/6ter ci-dessous), pour les avoir en contexte.
->    **Pour implémenter un écran/mode : lire `docs/SCREEN_PIPELINE.md` (pipeline #73) ET `docs/HEADLESS_VERIFICATION.md`
->    (chantier #74, avec son §SUIVI à maintenir), + la fiche OUTILS §6quater ci-dessous** (commandes exactes) —
->    outils : `contract.sh --mode <graine>` (contrat COMPLET du mode + `--scaffold` squelettes, via `ModeGraph`),
->    `WireCheck` (round-trip wire, défaut nº3), `ClientOracle` (exécute le code CLIENT du jeu sur notre état,
->    headless : rendu + validations d'envoi — attrape avant l'in-game). Ancrer sur les FAITS, ne plus reproduire
->    nos défauts ; in-game réduit au rendu/GL mais TOUJOURS obligatoire (dernier filet).
+> **SUCCESSEUR / AGENT QUI REPREND (surtout après COMPRESSION de contexte) : AVANT TOUTE AUTRE CHOSE — avant
+> d'écrire une ligne de code, de lancer un outil ou de répondre — APPLIQUE CETTE PROCÉDURE DE REPRISE EN ENTIER
+> et RELIS TOUTE LA DOCUMENTATION qu'on a créée. C'est une CONSIGNE EXPLICITE de l'utilisateur, non négociable.
+> Ne « devine » jamais l'état : reconstitue-le par la lecture. Exécute dans l'ordre :**
+> 1. **Relire en ENTIER** : `MEMORY.md` (ce fichier), les **derniers commits** (`git log --oneline -25`),
+>    les **dernières entrées** de `JOURNAL.md`, **`docs/SHIMS.md` en entier**, `docs/PRINCIPLES.md` (règles
+>    incontournables), `docs/PROTOCOL.md`, `docs/SERVER_PLAN.md`, `docs/ARCHITECTURE.md`, **`docs/SCREEN_PIPELINE.md`**
+>    (pipeline d'implémentation #73), **`docs/HEADLESS_VERIFICATION.md`** (pile de vérif #74 + §SUIVI), **et la doc
+>    du MODE/SUJET en cours** — actuellement **`docs/SURGE.md`** (#72, avec son plan d'incréments 1-8 et son
+>    §Historique). Selon le sujet, aussi `docs/GUILD_WAR.md`, `docs/INVASION.md`, `docs/GUILD_GAPS.md`,
+>    `docs/EXPLORATION.md`, `docs/TUTO_WALKTHROUGH.md`, `docs/SIGNIN_EVENTS.md`, `docs/HUB_NAV.md`. **Et tout autre
+>    document pertinent.**
+> 2. **Énumérer les RÈGLES DE TRAVAIL** (PRINCIPLES §1-§8, incontournables : minimal, pas de rustine, serveur
+>    autoritatif « lire & exécuter », ne JAMAIS inventer une valeur/règle §4, persistance complète, reproductibilité
+>    — identifiant de modèle JAMAIS dans un artefact, vérif EN JEU obligatoire), + les **astuces, méthodologies et
+>    commandes** (cf. **§6bis lancement canonique**, **§6ter pilotage**, **§6quater OUTILS D'INDUSTRIALISATION** —
+>    commandes exactes). **Pour un écran/mode** : `docs/SCREEN_PIPELINE.md` + `docs/HEADLESS_VERIFICATION.md` (§SUIVI
+>    à maintenir) ; outils `contract.sh --mode <graine>` (contrat COMPLET + `--scaffold`, via `ModeGraph`),
+>    `WireCheck` (round-trip wire, défaut nº3), `ClientOracle` (exécute le code CLIENT du jeu headless : rendu +
+>    validations d'envoi). Ancrer sur les FAITS, ne plus reproduire nos défauts ; in-game = dernier filet mais
+>    TOUJOURS obligatoire (🟢 headless ≠ ✅).
 > 3. **Faire le point** sur l'état courant ET sur ce qui a été transmis lors de la compression, PUIS enchaîner.
-> Ne PAS sauter cette procédure : c'est la condition pour reprendre dans de bonnes conditions.
+> Ne PAS sauter cette procédure : c'est la condition, exigée par l'utilisateur, pour reprendre proprement.
+
+Dernière mise à jour : **2026-08-04 (g71)** — **SURGE (#72) : cœur JOUABLE fait headless (incréments 1→4c) ; raids bloqués sur preuve de protocole ; scoring vérifié fidèle.** Détail : **`docs/SURGE.md`** (plan 1-8 + §Historique + §Scoring) + `JOURNAL.md` g63→g71.
+**Boucle SURGE de bout en bout côté serveur** : calendrier (`ServerSurge`) → état de guilde persisté (`ServerSurgeState`, `shard_state`) → `GetSurge→SurgeData` (rendu, 27 districts + adversaires pool réel/synthétique) → combat de district `StartSurgeAttack→StartSurgeAttackResponse` (lineup défenseur) + `SurgeAttack→SurgeUpdate` (`ServerSurgeCombat.applyRegionOutcome` = `SurgeHelper.recordOutcome` autoritatif, district vaincu, delta, diffusé guilde). **7 tests SURGE, régression 87/87, zéro invention.** Scoring **fidèle** (0 pt aux paliers 0/1 par DESIGN `creep_surge_tiers.tab`, score au palier 2+). **RESTE (docs/SURGE.md)** : **raids** (params `recordRaid` résolus MAIS le client n'envoie pas de message d'issue → **protocole à OBSERVER EN JEU**, ne pas inventer §4), `SurgeClaimRewards` (récompenses), ordonnanceur de bascule, **vérif EN JEU** (débloque aussi les raids). Prochain choix proposé : session de **vérif EN JEU de SURGE** (observer le trafic réel) ou câbler `SurgeClaimRewards` headless d'abord.
 
 Dernière mise à jour : **2026-08-04 (g65)** — **SURGE (#72) incrément 3 : handler `GetSurge → SurgeData` (headless 🟢).** Détail : `docs/SURGE.md` + `JOURNAL.md` g65.
 Handler `LoginServer` : `GetSurge` → `ServerSurgeState.loadOrReset` (ou `emptySurge` hors guilde) → `SurgeData` (patron `GetInvasionInfo`). Gate `SURGE_OBJECTIVES` = TL 32 (verrou CLIENT respecté). Régression 84/84. **🟢 headless, vérif EN JEU restante** (écran SURGE s'ouvre, faisable BaronessDante TL100/guilde) — champs adversaires/districts/paliers/objectifs vides jusqu'aux incréments 4-6.
