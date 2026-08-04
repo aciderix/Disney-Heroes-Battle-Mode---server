@@ -16,10 +16,11 @@
 > 2. **Énumérer les RÈGLES DE TRAVAIL** (elles sont et resteront **incontournables**), + les **astuces,
 >    méthodologies et commandes documentées** (cf. §6bis/6ter ci-dessous), pour les avoir en contexte.
 >    **Pour implémenter un écran/mode : lire `docs/SCREEN_PIPELINE.md` (pipeline #73) ET `docs/HEADLESS_VERIFICATION.md`
->    (chantier #74, avec son §SUIVI à maintenir)** — outils : `tools/screentool/contract.sh <classe>` (contrat
->    bytecode + `--scaffold`), `WireCheck` (round-trip wire), `ClientOracle` (exécute le code CLIENT du jeu sur
->    notre état, headless — attrape avant l'in-game). Ancrer sur les FAITS, ne plus reproduire nos défauts ;
->    in-game réduit au rendu/GL mais TOUJOURS obligatoire (dernier filet).
+>    (chantier #74, avec son §SUIVI à maintenir), + la fiche OUTILS §6quater ci-dessous** (commandes exactes) —
+>    outils : `contract.sh --mode <graine>` (contrat COMPLET du mode + `--scaffold` squelettes, via `ModeGraph`),
+>    `WireCheck` (round-trip wire, défaut nº3), `ClientOracle` (exécute le code CLIENT du jeu sur notre état,
+>    headless : rendu + validations d'envoi — attrape avant l'in-game). Ancrer sur les FAITS, ne plus reproduire
+>    nos défauts ; in-game réduit au rendu/GL mais TOUJOURS obligatoire (dernier filet).
 > 3. **Faire le point** sur l'état courant ET sur ce qui a été transmis lors de la compression, PUIS enchaîner.
 > Ne PAS sauter cette procédure : c'est la condition pour reprendre dans de bonnes conditions.
 
@@ -717,6 +718,51 @@ l'acteur ; (5) rien → tap central (lanceur). Conversion stage→écran : `sx=v
 
 **D. Lire les logs** : **toujours `grep -a`** (NUL possible). Serveur = `/tmp/dh_game.log` (ou la sortie de
 tâche du LoginServer réellement à l'écoute — vérifier `readlink /proc/<pid>/fd/1` en cas de doute).
+
+---
+
+## 6quater. OUTILS D'INDUSTRIALISATION (#73/#74) — à utiliser pour CHAQUE écran/mode
+
+**But** : ne plus reproduire nos défauts, ancrer sur les FAITS (bytecode), automatiser. Docs détaillées :
+[`docs/SCREEN_PIPELINE.md`](docs/SCREEN_PIPELINE.md) (pipeline + 9 défauts récurrents) et
+[`docs/HEADLESS_VERIFICATION.md`](docs/HEADLESS_VERIFICATION.md) (pile de vérif + §SUIVI). **Pile de vérif** (du
+moins cher au plus cher) : 0 contrat statique · 1 round-trip wire · 2 oracle client · 3 combat headless ·
+4 EN JEU (rendu/GL, irréductible, **toujours obligatoire** → 🟢 headless, ✅ seulement en jeu).
+
+**A. `tools/screentool/contract.sh` — CONTRAT d'écran/mode (bytecode, ASM).**
+- `contract.sh <classe1[,classe2,…]>` : contrat d'une ou plusieurs classes. Rapporte **§A/B** champs wire lus
+  (`GETFIELD`) = ce que le serveur DOIT peupler (défaut nº1) ; **§C** couverture handlers (`[MANQUE]`/`[OK]` vs
+  `instanceof` de `LoginServer*`) ; **§D** gate `Unlockable` ; **§E** checklist des 9 défauts récurrents.
+- `contract.sh --mode <graine>` : **découverte AUTOMATIQUE** de TOUTES les classes du mode via ModeGraph (lève la
+  « Limite 1 » par-classe), puis contrat complet + recensement logique (`--logic`). **Graine** = préfixe de package
+  (`com/perblue/heroes/ui/surge/`) OU token de nom pour un mode éparpillé (`Arena`).
+- `... --scaffold <Mode> <outdir>` (aussi via `--mode`) : **GÉNÈRE les squelettes** dans `<outdir>` (scratchpad) —
+  `Server<Mode>Scaffold.java` (builder posant CHAQUE champ du contrat, placeholders NON nuls : enum→`values()[0]`,
+  sous-message→`new T()` → round-trip vert d'emblée, chaque valeur en `// TODO`), `<Mode>ScaffoldTest.java`
+  (WireCheck), `LoginServer-<Mode>.snippet.txt` (handlers). **STRUCTURE seulement** — la LOGIQUE reste à brancher
+  via le code du jeu (§3/§4). Le squelette = check-list anti-oubli, PAS le livrable (on écrit le vrai `dhserver/`).
+
+**B. `tools/screentool/src/ModeGraph.java` — GRAPHE DE MESSAGES du mode.** `java … ModeGraph <game.jar> <graine>
+[--logic] [--list] [--generic N] [--hub N]`. Scanne tout le jar → `message → {émetteurs (new), lecteurs}` → union
+des classes du mode (affinité de nom sur messages CORE + filtre HUBS génériques type `ActionHelper`/`GameMain` +
+filtre debug/test). `--logic` = **recense les méthodes `*Helper`/`*Stats` statiques prenant un `IUser`** = les
+points d'entrée serveur à EXÉCUTER (§3, ex. `SurgeHelper.recordOutcome`). `--list` = union CSV pour `contract.sh`.
+
+**C. `server/smoke/WireCheck.java` — garde-fou wire.** `WireCheck.assertRoundTrips(msg)` écrit la réponse
+serveur→client sur le fil (`writeAll`) puis relit → attrape le **défaut nº3** (typage wire faux qui explose à
+l'écriture, invisible headless). **À appeler dans CHAQUE test de handler.**
+
+**D. `server/smoke/ClientOracle.java` — ORACLE CLIENT headless (exécute le code CLIENT sur NOTRE état).**
+- `assertClientRenders(IUser)` : lance les vérifs de rendu du hub du jeu (quêtes/achievements/daily) → attrape un
+  état serveur qui **planterait le client** SANS in-game (a attrapé le crash R1 g55 : `HasEnoughCollectionHeroes`
+  hors bornes). Pose d'abord `installClientHubRenderFixtures()` (conteneurs vides `userChallengeData`/`iapProducts`
+  — RÉSERVÉ à l'oracle, jamais au `bind()` serveur, cf. cascade de shim §2).
+- `assertClientWouldSend(action, u, v)` / `assertClientWouldRefuse(action, u, reason, v)` : rejoue une **validation
+  d'ENVOI** cliente (`SendValidation`, prédicat PUR) sur notre état → « le client enverrait-il / est-ce anti-triche
+  correct ». ⚠️ **PRÉDICATS PURS seulement** — jamais un rappel qui CONSOMME l'action (`doStartWarAttack`/`doRaid`,
+  piège g45). Exemples : `ClientOracleR1Test`, `SendValidationTest`. Intégrés à la régression.
+
+**Régression** : `server/smoke/regression.sh` (compile serveur + tous les tests, exécute la vraie logique du jeu).
 
 ---
 
