@@ -1,5 +1,30 @@
 # JOURNAL — journal détaillé des modifications
 
+## 2026-08-04 (g66) — SURGE (#72) : recon FIDÈLE du combat (`recordOutcome`) — pas de câblage inventé (§4)
+
+Suite de « termine l'implémentation ». Recon en profondeur du combat de région avant tout câblage (SCREEN_PIPELINE
+étape 3). **Anatomie de `SurgeHelper.recordOutcome` (disasm)** : 12 params ; corps = `storeGold` (or depuis les
+lineups) + `recordObjectiveProgress(member, objectifs)` + itère les **héros attaquants (`IHero`)** →
+`recordHeroMastery` + `ContestHelper.onSurgeAttack` + `UserActivityTracker.onSurgeAttack` (points/activité). Le
+membre serveur = **`SurgeClientMember(surgeID, SurgeMemberSummary)`** (impl `ISurgeMember` DU JEU, réutilisable).
+
+**Ce qui est faisable direct** (comme la campagne) : `base.outcome` / `base.attackers` / `base.defenders` sont
+déjà `CombatOutcome` / `Collection<AttackLineupSummary>`.
+
+**⚠️ 2 params NON câblables sans invention (bloquants, documentés dans docs/SURGE.md incr. 4)** :
+(a) la 3ᵉ collection = **`IHero` attaquants** (pour `recordHeroMastery`) — le wire ne porte que des
+`AttackUnitSummary` (stats), pas des `IHero` → reconstruction fidèle requise ;
+(b) le **Set d'objectifs** — construit côté client par `getQualifiedObjectives`, qui exige les stats de la `Scene`
+de combat (`CombatStatsData`) **absentes du wire** → à dériver de `SurgeAttack.objectiveProgress` (map cliente),
+en vérifiant ce qu'attend `recordObjectiveProgress`.
+
+**Décision (§4/§2/§8)** : on NE câble PAS `recordOutcome` tant que (a)/(b) ne sont pas prouvés — un param deviné
+corromprait silencieusement mastery/objectifs/points/contests (rustine interdite). Recon capturée pour la suite.
+**Statut SURGE** : socle (incréments 1-3 : calendrier, état de guilde, `GetSurge→SurgeData`) fait headless 🟢 ;
+combat/raids/objectifs/récompenses/ordonnanceur + vérif EN JEU = arc multi-incréments (échelle GUILD WAR),
+poursuivi sur les FAITS, sans jamais inventer. Aucune modif code ce tour (recon + docs seulement).
+
+
 ## 2026-08-04 (g65) — SURGE (#72) incrément 3 : handler `GetSurge → SurgeData` (headless 🟢)
 
 Handler `LoginServer` : le client (GameMain) envoie `GetSurge` (sans champ) à l'ouverture de l'écran → le serveur

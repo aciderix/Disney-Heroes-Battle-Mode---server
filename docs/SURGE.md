@@ -49,8 +49,21 @@ pré-appeler côté serveur (piège g45 `doStartWarAttack`).
    `SURGE_OBJECTIVES` = **TL 32** (unlockables.tab), verrou CLIENT respecté (serveur répond, ne désactive pas).
    Headless-prouvé (routage + réponse wire-valide). **⬜ Vérif EN JEU restante** (écran s'ouvre) — faisable sur le
    compte BaronessDante (TL100, en guilde). Reste : peupler adversaires/districts/paliers/objectifs (incr. 4-6).
-4. ⬜ **Combat de région** : `StartSurgeAttack → StartSurgeAttackResponse` + `SurgeAttack` (issue) →
-   `SurgeHelper.recordOutcome` (autoritatif, client-combat) + scoring/tiers + persistance ; anti-triche (recalc).
+4. 🧭 **Combat de région** : `StartSurgeAttack → StartSurgeAttackResponse` + `SurgeAttack` (issue) →
+   `SurgeHelper.recordOutcome`. **ANATOMIE de `recordOutcome` (disasm, faits) — 12 params** :
+   `(IUser, ISurgeMember, raidID, DistrictType, boolean, CombatOutcome, Collection attackerLineupSummaries,
+   Collection defenderLineupSummaries, Collection attackerHEROES, Set objectifs, boolean, SpecialEventSnapshot)`.
+   Son corps : `storeGold` (or, depuis les lineups) · `recordObjectiveProgress(member, objectifs)` ·
+   itère **attackerHEROES (`IHero`)** → `CollectionHelper.recordHeroMastery` · `ContestHelper.onSurgeAttack` ·
+   `UserActivityTracker.onSurgeAttack` (points/activité). Membre = **réutiliser `SurgeClientMember(surgeID,
+   SurgeMemberSummary)`** (impl `ISurgeMember` du jeu, mute la summary → persistée). ✅ **FAisable direct** :
+   outcome/attacker/defender = `base.outcome`/`base.attackers`/`base.defenders` (déjà `AttackLineupSummary`,
+   comme la campagne). ⚠️ **2 params à résoudre AVANT câblage (ne pas inventer §4)** : (a) la Collection
+   **attackerHEROES** = `IHero` reconstruits depuis `base.attackers[*].units` (convertisseur du jeu) ; (b) le
+   **Set d'objectifs** — le client le calcule via `getQualifiedObjectives` qui exige les stats de `Scene`
+   (`CombatStatsData`) ABSENTES du wire → il faut le dériver de `SurgeAttack.objectiveProgress` (map cliente,
+   client-autoritatif comme le loot) via `recordObjectiveProgress` (vérifier ce qu'il attend). Tant que (a)/(b)
+   ne sont pas prouvés, on ne câble pas (sinon mastery/objectifs/points corrompus silencieusement).
 5. ⬜ **Raids** : `recordRaid` + `getMaxRaidsPerSurge` (perks) + `getGoldForSurgeRaid`.
 6. ⬜ **Objectifs & récompenses** : progression d'objectifs, `SurgeClaimRewards` (tokens/influence/or), unclaimed.
 7. ⬜ **Ordonnanceur** : bascule de surge (fin de fenêtre → résultats `SurgeResultInfo` → nouveau surge), comme
