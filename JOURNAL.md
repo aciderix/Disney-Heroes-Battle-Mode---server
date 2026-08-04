@@ -3060,3 +3060,27 @@ de `SurgeResultInfo` laissé à 0 (non prouvé headless — pas de valeur invent
 
 Fichiers : `server/java/dhserver/{ServerSurgeRewards,ServerSurgeState,LoginServer}.java`,
 `server/smoke/SurgeClaimTest.java`, `server/smoke/regression.sh`, `docs/SURGE.md`.
+
+---
+
+## 2026-08-04 (g72b) — SURGE (#72) VÉRIF EN JEU : rendu confirmé contre notre serveur
+
+Lancé la pile complète (`run-online.sh`) avec le compte TL100/en guilde (`dh-snapshot-postwar-0803.db` copié en
+`dh-server.db`, restauré après) et le vrai client, surge ACTIF (fenêtre 16:00 UTC). Sonde préalable headless
+(`SurgeGateProbe`) : `inGuild=true`, `teamLevel=100`, `SURGE_OBJECTIVES` débloqué, `ServerSurge.isActive=true`,
+GetSurge dry-run = 2 membres / 27 adversaires / 27 vagues, round-trip wire OK.
+
+**Résultat EN JEU** : `nav SURGE` (API du jeu `UINavHelper.navigateTo(Destination.SURGE)`) →
+- serveur : `[login] <== GetSurge → ==> SurgeData (surgeID=1785859200000, membres=2)` — **échange réel sur le fil**.
+- client : l'écran **`SurgeScreen` « CREEP SURGE »** s'ouvre **sans crash** (`dumpscreen`=SurgeScreen, captures
+  continues post-nav), affiche les **27 districts** (nos `activeDistricts`, régions OCEANSIDE/UPTOWN/MIDDLE
+  BURROUGHS/DOWNTOWN/SUNSET BAY), le compte à rebours (4h42), le palier « 1 Max », et l'entête **30 tokens de base
+  + 5 000 d'influence = EXACTEMENT nos constantes du code du jeu** (`getBaseTokens`/`getBaseInfluence`). Capture
+  `desktop-port/build/surge.ppm` (envoyée à l'utilisateur).
+
+Confirme EN JEU les incréments 3 (rendu), 4b (27 districts/adversaires) et l'affichage fidèle des constantes de
+récompense (6). **Reste EN JEU** : entrer dans un district (carte = widget custom → taps à driver précisément) pour
+observer `StartSurgeAttack`/`SurgeAttack`, puis un RAID (débloque l'incrément 5, protocole inconnu), puis la
+réclamation en fin de surge. Le combat de district est client-autoritatif (comme la campagne), à jouer via l'UI.
+
+Fichiers : `docs/SURGE.md` (§8 incrément 8 passé 🔶).

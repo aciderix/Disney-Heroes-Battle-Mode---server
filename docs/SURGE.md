@@ -111,7 +111,16 @@ pré-appeler côté serveur (piège g45 `doStartWarAttack`).
 7. 🟢 **Ordonnanceur** — la bascule de surge (fin de fenêtre → `SurgeResultInfo` + récompenses → nouveau surge) est
    assurée PARESSEUSEMENT par `loadOrReset` (incrément 6 ci-dessus), au prochain accès après changement de surgeID —
    même patron que le rollover de saison de guerre/contest. Pas de tâche de fond séparée nécessaire.
-8. ⬜ **Vérif EN JEU complète** (guilde + surge actif + adversaires) : rendu, combat, raid, réclamation.
+8. 🔶 **Vérif EN JEU** (compte TL100/guilde `dh-snapshot-postwar-0803.db`, surge ACTIF) :
+   - ✅ **RENDU CONFIRMÉ** (2026-08-04, g72) : le vrai client `nav SURGE` → **`GetSurge → SurgeData`** sur le fil
+     (serveur : `membres=2`), l'écran **`SurgeScreen` « CREEP SURGE »** s'ouvre sans crash, affiche les **27
+     districts** (nos `activeDistricts`), le compte à rebours (16:00 UTC), le palier, et l'entête **30 tokens /
+     5 000 influence = nos constantes `getBaseTokens`/`getBaseInfluence`**. Capture `desktop-port/build/surge.ppm`,
+     `dumpscreen`=`SurgeScreen`. Reproduction : `cp server/data/dh-snapshot-postwar-0803.db server/data/dh-server.db`
+     puis `DH_CLICKFILE=<fichier avec "nav SURGE"> ./run-online.sh` (restaurer `dh-server.db` après).
+   - ⬜ **RESTE** : entrer dans un district (carte = widget custom, taps précis à driver) → observer
+     `StartSurgeAttack`/`SurgeAttack` EN JEU, puis un **RAID** (débloque incrément 5, protocole inconnu), puis la
+     **réclamation** en fin de surge. Combat de district = client-autoritatif (comme campagne), à jouer via l'UI.
 
 ## Scoring — vérifié FIDÈLE (données du jeu, pas un manque)
 
