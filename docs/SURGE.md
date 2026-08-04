@@ -79,11 +79,28 @@ pré-appeler côté serveur (piège g45 `doStartWarAttack`).
    bot, + raidID + verrou) puis `SurgeAttack → SurgeUpdate` (`applyRegionOutcome` autoritatif + district vaincu à
    la victoire + delta points/districts), persisté, diffusé à la guilde (`pushToGuild`). `SurgeAttackFlowTest`
    (round-trip wire des 2 réponses + district vaincu + persistance). Headless 🟢.
-5. ⬜ **Raids** : `recordRaid` + `getMaxRaidsPerSurge` (perks) + `getGoldForSurgeRaid`.
+5. 🧭 **Raids** (mécanique HQ) — recon faite, **câblage BLOQUÉ sur preuve de protocole (§4/§8)**.
+   **`recordRaid` params RÉSOLUS** (disasm `SurgeHelper.doRaid`, offsets 198-218) :
+   `recordRaid(user, member, surgeID, opponent.district, false, RAID_TEAM_POWER, 0L, GOLD (getGoldForSurgeRaid),
+   raidHEROES (IHero pour mastery), snapshot)` — `getMaxRaidsPerSurge(user, perkProvider)` borne le nb de raids.
+   **⚠️ BLOQUANT** : `doRaid` appelle `recordRaid` **CÔTÉ CLIENT** et `SurgeHeroChooserScreen.doRaidSurge`
+   n'envoie au serveur qu'un **`HeroLineupUpdate`** (l'équipe SURGE) — **aucun message d'ISSUE de raid** visible
+   dans le code client. Donc le serveur ne peut pas suivre `raidsUsed`/gold de façon autoritative sans OBSERVER le
+   trafic réel pendant un raid EN JEU (peut-être un `Action` générique ou une suite de `SurgeAttack`). On NE câble
+   PAS tant que le protocole n'est pas prouvé (sinon invention interdite). → à élucider lors de la vérif EN JEU.
 6. ⬜ **Objectifs & récompenses** : progression d'objectifs, `SurgeClaimRewards` (tokens/influence/or), unclaimed.
 7. ⬜ **Ordonnanceur** : bascule de surge (fin de fenêtre → résultats `SurgeResultInfo` → nouveau surge), comme
    `ServerWarScheduler`.
 8. ⬜ **Vérif EN JEU complète** (guilde + surge actif + adversaires) : rendu, combat, raid, réclamation.
+
+## Scoring — vérifié FIDÈLE (données du jeu, pas un manque)
+
+Les points d'un combat = puissance vaincue × multiplicateur de district × **multiplicateur de PALIER**
+(`creep_surge_tiers.tab`, via `SurgeStats.getBasePointMultiplierForTier`). Fait mesuré : **tier 0 et 1 → mult
+0.0 (0 point)**, tier 2 → 1.0, tier 3 → 2.08, tier 4 → 3.24… ; goldMult idem (0 aux tiers 0/1, puis 0.1/0.2…).
+Donc une guilde à bas palier marque **0 point par design** (les points s'accumulent au palier 2+, atteint en
+vidant des districts / via les perks). Le `+0 pts` des tests `SurgeCombatTest`/`SurgeAttackFlowTest` est donc le
+comportement CORRECT du jeu (joueur/guilde sans palier), pas un bug — le pipeline `recordOutcome` est fidèle.
 
 ## Historique
 - 2026-08-04 (g63) : incrément 1 — `ServerSurge` calendrier/identité (code du jeu) + `SurgeScheduleTest`. Régression.

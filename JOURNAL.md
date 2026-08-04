@@ -1,5 +1,21 @@
 # JOURNAL — journal détaillé des modifications
 
+## 2026-08-04 (g71) — SURGE (#72) : scoring vérifié FIDÈLE + recon des raids (câblage bloqué §4)
+
+**Scoring vérifié (§8, sonde)** : les `+0 pts` des tests SURGE ne sont PAS un manque — `creep_surge_tiers.tab`
+donne un multiplicateur de points **0.0 aux paliers 0 et 1**, puis 1.0/2.08/3.24… au palier 2+. Une guilde à bas
+palier marque donc 0 point PAR DESIGN ; le pipeline `recordOutcome` (incr. 4a) est fidèle et scorera au palier 2+
+(atteint en vidant des districts). Documenté dans `docs/SURGE.md`.
+
+**Raids — recon faite, câblage BLOQUÉ sur preuve de protocole (§4/§8)** : `recordRaid` params résolus au disasm
+(`SurgeHelper.doRaid` 198-218) = `(user, member, surgeID, opponent.district, false, RAID_TEAM_POWER, 0, GOLD
+(getGoldForSurgeRaid), raidHEROES, snapshot)`. MAIS `doRaid` appelle `recordRaid` CÔTÉ CLIENT et
+`SurgeHeroChooserScreen.doRaidSurge` n'envoie au serveur qu'un `HeroLineupUpdate` — **aucun message d'issue de
+raid** dans le code client. Le serveur ne peut donc pas suivre `raidsUsed`/gold de raid de façon autoritative sans
+OBSERVER le trafic réel EN JEU. On NE câble PAS (pas d'invention de protocole). À élucider à la vérif en jeu.
+Aucune modif code (recon + docs).
+
+
 ## 2026-08-04 (g70) — SURGE (#72) incrément 4c : combat de district câblé (Start/SurgeAttack)
 
 Handlers `LoginServer` + logique testable dans `ServerSurgeState` :
