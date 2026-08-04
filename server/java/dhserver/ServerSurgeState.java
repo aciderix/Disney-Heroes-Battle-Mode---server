@@ -234,6 +234,124 @@ public final class ServerSurgeState {
     return bot;
   }
 
+  // ---- COMBAT DE RÉGION (incrément 4c) : démarrage (défenseur) + issue (recordOutcome + delta) ----
+
+  /** Adversaire posé dans un district (ou {@code null}). */
+  public static SurgeOpponentSummary opponentFor(SurgeData data, DistrictType district) {
+    if (data.opponents == null) return null;
+    for (Object o : data.opponents) {
+      SurgeOpponentSummary op = (SurgeOpponentSummary) o;
+      if (op.district == district) return op;
+    }
+    return null;
+  }
+
+  /** Summary du membre (par userID) dans le SurgeData (ou {@code null}). */
+  static SurgeMemberSummary memberSummary(SurgeData data, long userID) {
+    if (data.members == null) return null;
+    for (Object o : data.members) {
+      SurgeMemberSummary m = (SurgeMemberSummary) o;
+      if (m.user != null && m.user.iD == userID) return m;
+    }
+    return null;
+  }
+
+  /** Héros DÉFENSEURS d'un district en {@link com.perblue.heroes.network.messages.HeroData} COMPLET (le client
+   *  rejoue le combat avec) : roster RÉEL de l'adversaire si c'est un vrai joueur, sinon bot synthétique
+   *  déterministe. Miroir de {@code ServerArena.defenderHeroData}. */
+  static java.util.List<com.perblue.heroes.network.messages.HeroData> defenderHeroData(
+      UserStore store, ServerGuild guild, SurgeData data, DistrictType district) throws SQLException {
+    java.util.List<com.perblue.heroes.network.messages.HeroData> out = new java.util.ArrayList<>();
+    SurgeOpponentSummary op = opponentFor(data, district);
+    if (op != null && op.attackerID > 0) {
+      ServerUser d = store.loadIfExists(op.attackerID, guild.shardID);
+      if (d != null) {
+        User du = d.gameUser();
+        int n = 0;
+        for (Object o : du.getHeroes()) {
+          if (n >= 5) break;
+          out.add(ClientNetworkStateConverter.getHeroData((UnitData) o)); n++;
+        }
+      }
+    }
+    if (out.isEmpty()) {                                    // adversaire synthétique → bot déterministe
+      User bot = botUser(guild.shardID, district.ordinal() + 1L);
+      for (UnitType t : new UnitType[]{UnitType.RALPH, UnitType.ELASTIGIRL, UnitType.FROZONE}) {
+        try {
+          if (bot.getHero(t) == null) bot.createAndAddHero(t, Rarity.ORANGE, 40, 1, new String[]{"surge-bot"});
+          UnitData ud = (UnitData) bot.getHero(t);
+          if (ud != null) out.add(ClientNetworkStateConverter.getHeroData(ud));
+        } catch (Throwable ignore) {}
+      }
+    }
+    return out;
+  }
+
+  /**
+   * DÉMARRAGE d'une attaque de district : réponse {@link com.perblue.heroes.network.messages.StartSurgeAttackResponse}
+   * (lineup défenseur + raidID + modificateurs) ; verrouille l'adversaire (anti double-combat concurrent).
+   */
+  public static com.perblue.heroes.network.messages.StartSurgeAttackResponse startAttack(
+      UserStore store, ServerGuild guild, SurgeData data, DistrictType district, long now) throws SQLException {
+    com.perblue.heroes.network.messages.StartSurgeAttackResponse r =
+        new com.perblue.heroes.network.messages.StartSurgeAttackResponse();
+    r.district = district;
+    r.combatModifiers = new java.util.HashMap<>();
+    r.raidID = now;                                        // identifiant de session (unique par attaque)
+    r.heroes = defenderHeroData(store, guild, data, district);
+    SurgeOpponentSummary op = opponentFor(data, district);
+    if (op != null) { op.lockExpiration = now + 5 * 60_000L; op.modifyCount++; }
+    return r;
+  }
+
+  /**
+   * ISSUE d'une attaque de district : exécute la logique autoritative ({@link ServerSurgeCombat#applyRegionOutcome})
+   * sur la summary du membre, marque l'adversaire vaincu à la VICTOIRE, et renvoie le delta
+   * {@link com.perblue.heroes.network.messages.SurgeUpdate} (à diffuser à la guilde). Ne persiste pas (l'appelant
+   * sauvegarde le SurgeData).
+   */
+  public static com.perblue.heroes.network.messages.SurgeUpdate applyAttack(
+      ServerGuild guild, SurgeData data, ServerUser attacker, com.perblue.heroes.network.messages.SurgeAttack m) {
+    SurgeMemberSummary summary = memberSummary(data, attacker.userID);
+    if (summary == null) {
+      summary = new SurgeMemberSummary();
+      BasicUserInfo who = attacker.basicInfo();
+      if (who != null && who.avatar == null) who.avatar = new Avatar();
+      summary.user = who != null ? who : new BasicUserInfo();
+      summary.objectiveProgress = new java.util.HashMap<>();
+      data.members.add(summary);
+    }
+    long pointsBefore = summary.totalPointsGained;
+    User u = attacker.gameUser();
+    ServerSurgeCombat.applyRegionOutcome(u, summary, data.surgeID, 0L, m,
+        com.perblue.heroes.game.specialevent.SpecialEventSnapshot.NONE);
+
+    SurgeOpponentSummary op = opponentFor(data, m.district);
+    int districtsDelta = 0;
+    boolean win = m.base != null && m.base.outcome == com.perblue.heroes.network.messages.CombatOutcome.WIN;
+    if (win && op != null && !op.clearedThisWave) {
+      op.clearedThisWave = true; op.lockExpiration = 0L; op.modifyCount++;
+      summary.districtsCleared++; districtsDelta = 1;
+    }
+
+    com.perblue.heroes.network.messages.SurgeUpdate up = new com.perblue.heroes.network.messages.SurgeUpdate();
+    up.member = summary;
+    up.opponent = op != null ? op : freshOpponent(m.district);   // non nul (wire-sûr)
+    up.surgePointDelta = summary.totalPointsGained - pointsBefore;
+    up.districtsClearedDelta = districtsDelta;
+    up.waveRegionsClearedDelta = 0;
+    up.logEntry = new com.perblue.heroes.network.messages.SurgeLogData();
+    return up;
+  }
+
+  /** Adversaire vide wire-sûr (district sans adversaire — ne devrait pas arriver hors désync). */
+  static SurgeOpponentSummary freshOpponent(DistrictType d) {
+    SurgeOpponentSummary o = new SurgeOpponentSummary();
+    o.district = d; o.attackerName = ""; o.lineup = new LineupSummary();
+    o.lineup.lineup = new java.util.ArrayList<>(); o.lineup.combatModifiers = new java.util.HashMap<>();
+    return o;
+  }
+
   // ---- (dé)sérialisation : version + surgeID + octets wire du SurgeData ----
 
   static byte[] encode(long surgeID, SurgeData data) {

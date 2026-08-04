@@ -1,5 +1,22 @@
 # JOURNAL — journal détaillé des modifications
 
+## 2026-08-04 (g70) — SURGE (#72) incrément 4c : combat de district câblé (Start/SurgeAttack)
+
+Handlers `LoginServer` + logique testable dans `ServerSurgeState` :
+- **`StartSurgeAttack → StartSurgeAttackResponse`** (`startAttack`) : lineup DÉFENSEUR en `HeroData` complet
+  (roster RÉEL de l'adversaire du district via `getHeroData`, ou bot synthétique déterministe si pas de joueur)
+  + `raidID` + `combatModifiers` ; verrouille l'adversaire (`lockExpiration` = +5 min, anti double-combat).
+- **`SurgeAttack → SurgeUpdate`** (`applyAttack`) : exécute `ServerSurgeCombat.applyRegionOutcome` (recordOutcome
+  autoritatif) sur la summary du membre, marque l'adversaire `clearedThisWave` + `districtsCleared++` à la
+  VICTOIRE, renvoie le delta (`surgePointDelta`/`districtsClearedDelta`, `member`, `opponent`), persiste le
+  SurgeData partagé et le DIFFUSE à la guilde (`pushToGuild`). Sous-messages non nuls (wire-sûr).
+
+`SurgeAttackFlowTest` : START (lineup défenseur non vide, raidID, verrou) → ATTACK WIN (district vaincu,
+`districtsCleared`=1, deltas) → round-trip wire des DEUX réponses (défaut nº3) → persistance du district vaincu
+(round-trip DB). Headless 🟢. Régression. **Boucle de combat SURGE fonctionnelle de bout en bout côté serveur.**
+Reste : scoring/paliers (points>0 avec tier/perks de guilde), raids, objectifs/récompenses, ordonnanceur, vérif EN JEU.
+
+
 ## 2026-08-04 (g69) — SURGE (#72) incrément 4b-ii : pose des adversaires (pool réel + synthétique)
 
 `ServerSurgeState.buildOpponents` : un `SurgeOpponentSummary` par district actif (les 27 de `ServerSurgeMap`),

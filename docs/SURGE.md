@@ -73,7 +73,12 @@ pré-appeler côté serveur (piège g45 `doStartWarAttack`).
    raid, `applyRegionOutcome`, persister le SurgeData, marquer l'adversaire vaincu).
 4b-ii. ✅ **Adversaires** (`ServerSurgeState.buildOpponents`) : un par district actif (pool réel du shard +
    repli synthétique), lineup via `getHeroSummary`/`extended`. Peuplé dans `buildFresh` → `GetSurge` renvoie
-   désormais les 27 districts avec adversaires. Reste 4c.
+   désormais les 27 districts avec adversaires.
+4c. ✅ **Combat de district câblé** (handlers `LoginServer` + `ServerSurgeState.startAttack`/`applyAttack`) :
+   `StartSurgeAttack → StartSurgeAttackResponse` (lineup défenseur en `HeroData` = roster réel de l'adversaire ou
+   bot, + raidID + verrou) puis `SurgeAttack → SurgeUpdate` (`applyRegionOutcome` autoritatif + district vaincu à
+   la victoire + delta points/districts), persisté, diffusé à la guilde (`pushToGuild`). `SurgeAttackFlowTest`
+   (round-trip wire des 2 réponses + district vaincu + persistance). Headless 🟢.
 5. ⬜ **Raids** : `recordRaid` + `getMaxRaidsPerSurge` (perks) + `getGoldForSurgeRaid`.
 6. ⬜ **Objectifs & récompenses** : progression d'objectifs, `SurgeClaimRewards` (tokens/influence/or), unclaimed.
 7. ⬜ **Ordonnanceur** : bascule de surge (fin de fenêtre → résultats `SurgeResultInfo` → nouveau surge), comme

@@ -1585,6 +1585,46 @@ public final class LoginServer {
               c.send(sd);
               System.out.println("[login] <== GetSurge → ==> SurgeData (surgeID=" + sd.surgeID
                   + ", membres=" + (sd.members == null ? 0 : sd.members.size()) + ")");
+            } else if (m instanceof com.perblue.heroes.network.messages.StartSurgeAttack) {
+              // SURGE #72 — DÉMARRAGE d'un combat de district : le client (SurgeAttackScreen) envoie son lineup +
+              // le district ; le serveur renvoie le lineup DÉFENSEUR (roster réel de l'adversaire ou bot) + un
+              // raidID + les modificateurs, et verrouille l'adversaire. Combat client-autoritatif (issue via SurgeAttack).
+              com.perblue.heroes.network.messages.StartSurgeAttack ssa =
+                  (com.perblue.heroes.network.messages.StartSurgeAttack) m;
+              long ssnow = com.perblue.heroes.util.TimeUtil.serverTimeNow();
+              ServerGuild ssg = currentGuild(user);
+              if (ssg != null) {
+                com.perblue.heroes.network.messages.SurgeData ssd = ServerSurgeState.loadOrReset(store, ssg, ssnow);
+                com.perblue.heroes.network.messages.StartSurgeAttackResponse resp =
+                    ServerSurgeState.startAttack(store, ssg, ssd, ssa.district, ssnow);
+                ServerSurgeState.save(store, ssg, ssd.surgeID, ssd);
+                resp.setAsReplyTo(m);
+                c.send(resp);
+                System.out.println("[login] <== StartSurgeAttack(" + ssa.district + ") → ==> StartSurgeAttackResponse (raid="
+                    + resp.raidID + ", defenseurs=" + (resp.heroes == null ? 0 : resp.heroes.size()) + ")");
+              } else {
+                System.out.println("[login] <== StartSurgeAttack ignoré (joueur hors guilde)");
+              }
+            } else if (m instanceof com.perblue.heroes.network.messages.SurgeAttack) {
+              // SURGE #72 — ISSUE d'un combat de district : le serveur exécute la logique autoritative
+              // (SurgeHelper.recordOutcome via ServerSurgeCombat), marque l'adversaire vaincu à la victoire,
+              // persiste l'état PARTAGÉ, et diffuse le delta (SurgeUpdate) à la guilde.
+              com.perblue.heroes.network.messages.SurgeAttack sa =
+                  (com.perblue.heroes.network.messages.SurgeAttack) m;
+              long sanow = com.perblue.heroes.util.TimeUtil.serverTimeNow();
+              ServerGuild sag = currentGuild(user);
+              if (sag != null) {
+                com.perblue.heroes.network.messages.SurgeData sad = ServerSurgeState.loadOrReset(store, sag, sanow);
+                com.perblue.heroes.network.messages.SurgeUpdate up = ServerSurgeState.applyAttack(sag, sad, user, sa);
+                ServerSurgeState.save(store, sag, sad.surgeID, sad);
+                up.setAsReplyTo(m);
+                c.send(up);
+                pushToGuild(sag, user.userID, up);          // diffusion temps réel aux autres membres en ligne
+                System.out.println("[login] <== SurgeAttack(" + sa.district + ", " + (sa.base != null ? sa.base.outcome : null)
+                    + ") → ==> SurgeUpdate (+" + up.surgePointDelta + " pts, districts+" + up.districtsClearedDelta + ") [persisté]");
+              } else {
+                System.out.println("[login] <== SurgeAttack ignoré (joueur hors guilde)");
+              }
             } else if (m instanceof com.perblue.heroes.network.messages.GetInvasionBosses) {
               // INVASION #69 — boss PARTAGÉS de la guilde (état opérateur persisté, v7) : les expirés
               // (au-delà de BOSS_FIGHT_TIME_LIMIT) sont retirés à la lecture.
