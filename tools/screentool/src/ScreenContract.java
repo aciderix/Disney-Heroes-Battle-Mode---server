@@ -133,6 +133,16 @@ public final class ScreenContract {
     TreeSet<String> want = new TreeSet<>(produce);
     Map<String, LinkedHashMap<String, String>> fieldTypes = messageFieldTypes(jar, want);
 
+    // Classement des types OBJET des champs (une passe jar). Un champ écrit sur le fil ne tolère pas NULL :
+    // un ENUM appelle ordinal(), un SOUS-MESSAGE appelle writeSingle() → NPE à l'écriture (défaut nº3). Le
+    // scaffolder pose donc un placeholder NON nul de STRUCTURE (pas une règle, la vraie valeur reste un TODO) :
+    // enum → `Enum.values()[0]`, sous-message instanciable → `new Type()` — pour que le round-trip wire généré
+    // PASSE d'emblée (preuve de structure), comme notre shim `new IAPProducts()`.
+    TreeSet<String> allTypes = new TreeSet<>();
+    for (LinkedHashMap<String, String> fm : fieldTypes.values())
+      for (String d : fm.values()) { String b = objBinary(d); if (b != null) allTypes.add(b); }
+    Map<String, Character> typeKind = classifyTypes(jar, allTypes);   // 'E' enum · 'N' newable message · sinon absent
+
     new File(outDir).mkdirs();
     StringBuilder builder = new StringBuilder(), test = new StringBuilder(), snippet = new StringBuilder();
 
@@ -149,7 +159,7 @@ public final class ScreenContract {
       builder.append("    ").append(sm).append(" m = new ").append(sm).append("();\n");
       for (String f : readFields.get(m)) {
         String desc = fts.get(f);
-        builder.append("    m.").append(f).append(" = ").append(initFor(desc)).append(";   // TODO valeur réelle")
+        builder.append("    m.").append(f).append(" = ").append(initFor(desc, typeKind)).append(";   // TODO valeur réelle")
                .append(desc == null ? " (type ?)" : " (" + prettyType(desc) + ")").append("\n");
       }
       builder.append("    return m;\n  }\n");
@@ -213,7 +223,7 @@ public final class ScreenContract {
     return out;
   }
 
-  static String initFor(String desc) {
+  static String initFor(String desc, Map<String, Character> typeKind) {
     if (desc == null) return "null /* TODO type ? */";
     switch (desc) {
       case "Z": return "false"; case "B": case "C": case "S": case "I": return "0";
@@ -224,7 +234,53 @@ public final class ScreenContract {
     if (desc.startsWith("Ljava/util/Set")) return "new java.util.HashSet<>()";
     if (desc.equals("Ljava/lang/String;")) return "\"\"";
     if (desc.startsWith("[")) return "null /* array TODO */";
+    // Placeholder NON nul de STRUCTURE (sinon NPE à l'écriture wire) : enum → values()[0] ; sous-message
+    // instanciable → new Type(). Valeur de structure, pas une règle (la vraie reste un TODO).
+    String b = objBinary(desc);
+    if (b != null) {
+      Character k = typeKind.get(b);
+      String fqn = b.replace('/', '.');
+      if (k != null && k == 'E') return fqn + ".values()[0] /* TODO valeur réelle */";
+      if (k != null && k == 'N') return "new " + fqn + "() /* TODO peupler */";
+    }
     return "null /* TODO: " + prettyType(desc) + " */";
+  }
+
+  /** Nom binaire du type OBJET d'un descripteur (Lcom/foo/Bar; → com/foo/Bar), sinon null (primitif/array/collection). */
+  static String objBinary(String desc) {
+    if (desc == null || !desc.startsWith("L") || !desc.endsWith(";")) return null;
+    return desc.substring(1, desc.length() - 1);
+  }
+
+  /** Classe des types binaires (une passe jar) : 'E' = ÉNUM (ACC_ENUM/super Enum) ; 'N' = message NEWABLE
+   *  (concret, non abstrait/interface/enum, avec un ctor sans argument) ; absent sinon (à laisser null + TODO). */
+  static Map<String, Character> classifyTypes(String jar, Set<String> types) throws IOException {
+    Map<String, Character> out = new HashMap<>();
+    if (types.isEmpty()) return out;
+    try (ZipInputStream zis = new ZipInputStream(new BufferedInputStream(new FileInputStream(jar)))) {
+      ZipEntry e;
+      while ((e = zis.getNextEntry()) != null) {
+        if (!e.getName().endsWith(".class")) continue;
+        String bin = e.getName().substring(0, e.getName().length() - 6);
+        if (!types.contains(bin)) continue;
+        final String fb = bin;
+        final int[] acc = new int[1];
+        final boolean[] noArgCtor = new boolean[1];
+        new ClassReader(zis.readAllBytes()).accept(new ClassVisitor(Opcodes.ASM9) {
+          @Override public void visit(int v, int a, String n, String sig, String sup, String[] itf) {
+            acc[0] = a;
+            if ((a & Opcodes.ACC_ENUM) != 0 || "java/lang/Enum".equals(sup)) out.put(fb, 'E');
+          }
+          @Override public MethodVisitor visitMethod(int a, String n, String d, String s, String[] ex) {
+            if (n.equals("<init>") && d.equals("()V") && (a & Opcodes.ACC_PUBLIC) != 0) noArgCtor[0] = true;
+            return null;
+          }
+        }, ClassReader.SKIP_CODE);
+        boolean instantiable = (acc[0] & (Opcodes.ACC_ABSTRACT | Opcodes.ACC_INTERFACE | Opcodes.ACC_ENUM)) == 0;
+        if (!out.containsKey(fb) && instantiable && noArgCtor[0]) out.put(fb, 'N');
+      }
+    }
+    return out;
   }
 
   static String prettyType(String desc) {

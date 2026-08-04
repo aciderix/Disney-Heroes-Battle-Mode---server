@@ -1,5 +1,25 @@
 # JOURNAL — journal détaillé des modifications
 
+## 2026-08-03 (g62) — SCAFFOLDER affiné (placeholders enum/sous-message) + `--mode --scaffold` (#73/#74)
+
+Amorce de #72 avec les nouveaux outils : `contract.sh --mode` (union ModeGraph) → `ScreenContract --scaffold`
+génère le squelette d'un mode. Sur SURGE (union 17 classes) : `ServerSurgeScaffold.java` (26 builders, chaque
+champ du contrat stubbé TODO), `SurgeScaffoldTest.java` (WireCheck par réponse), `LoginServer-Surge.snippet.txt`
+(2 handlers GetSurge/StartSurgeAttack).
+
+**Défaut du scaffolder trouvé via le test généré (auto à améliorer, pas un bug d'écran passé)** : le `ScaffoldTest`
+a levé `NPE ordinal()` sur `AttackUnitSummary.rarity` puis `writeSingle()` sur `BasicUserInfo.avatar` — le
+scaffolder posait `null` pour les champs OBJET, or un ENUM (ordinal) et un SOUS-MESSAGE (writeSingle) ne tolèrent
+pas null à l'écriture wire (défaut nº3). **Correctif** (`ScreenContract`) : `classifyTypes` (une passe jar)
+classe chaque type de champ — ENUM (ACC_ENUM/super Enum) → placeholder `Type.values()[0]` ; message NEWABLE
+(concret + ctor sans arg) → `new Type()` (structure, comme le shim `new IAPProducts()`). Résultat : le round-trip
+wire du squelette **PASSE d'emblée** (`[SurgeScaffoldTest] round-trip wire OK`), chaque valeur restant `// TODO
+valeur réelle` (§4 : structure, pas une règle). `--scaffold` passe désormais aussi par `contract.sh --mode`.
+
+Outils uniquement (les squelettes générés vivent dans le scratchpad, à compléter+déplacer dans `dhserver/` lors de
+l'implémentation réelle du mode). Régression inchangée 82/82. Docs : `SCREEN_PIPELINE.md`.
+
+
 ## 2026-08-03 (g61) — GRAPHE DE MESSAGES + LOGIQUE : pile de vérif headless COMPLÈTE (#74 leviers A & C)
 
 Supprime la « Limite 1 » de `SCREEN_PIPELINE.md` (ScreenContract analyse PAR CLASSE ; un mode est MULTI-classes —

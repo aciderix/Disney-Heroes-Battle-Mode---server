@@ -23,6 +23,11 @@ s'appuyant sur les FAITS du jar (bytecode) et sur nos LEÇONS (défauts récurre
    `Server<Mode>Scaffold.java` (builder posant CHAQUE champ du contrat, TODO), `<Mode>ScaffoldTest.java`
    (WireCheck sur chaque réponse), `LoginServer-<Mode>.snippet.txt` (handlers à insérer). **STRUCTURE seulement**
    — la LOGIQUE (règles) reste à brancher via le code du jeu, jamais inventée (§3/§4).
+   **Placeholders NON nuls de structure** (sinon NPE à l'écriture wire = défaut nº3) : primitives → 0/false ;
+   List/Map/Set → collection vide ; String → "" ; **ENUM → `Type.values()[0]`** ; **sous-message instanciable →
+   `new Type()`** (ctor sans arg, comme le shim `new IAPProducts()`). Résultat : le `ScaffoldTest` généré
+   **round-trip PASSE d'emblée** (preuve de structure) ; chaque valeur reste marquée `// TODO valeur réelle`.
+   Le plus efficace : `contract.sh --mode <graine> --scaffold <Mode> <outdir>` (union ModeGraph → scaffold complet).
    Lire les sections :
    - **A/B — champs à peupler** : chaque champ listé DOIT être posé par le serveur dans la réponse (sinon
      écran vide / bouton inerte = défaut nº1). C'est la spec de la réponse.

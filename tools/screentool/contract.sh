@@ -36,7 +36,8 @@ if [ "$1" = "--mode" ]; then
   java -cp "$CLS:$ASM" ModeGraph "$GAME" "$MODE_SEED" --logic 2>&1 | grep -v 'Picked up'
   UNION="$(java -cp "$CLS:$ASM" ModeGraph "$GAME" "$MODE_SEED" --list 2>/dev/null | grep -v 'Picked up')"
   [ -n "$UNION" ] || { echo "[mode] aucune classe trouvée pour cette graine"; exit 1; }
-  set -- "$UNION"
+  shift 2                                   # retire "--mode <graine>", garde les options restantes (ex. --scaffold …)
+  set -- "$UNION" "$@"                       # l'union devient l'argument classes, suivie des options passées
   echo; echo "[mode] → CONTRAT COMPLET sur l'union ($(echo "$UNION" | tr ',' '\n' | wc -l) classes) :"; echo
 fi
 
@@ -48,5 +49,5 @@ if [ ! -d "$SRV" ] || [ -n "$(find "$ROOT/server/java" -name '*.java' -newer "$S
   javac -cp "$CPF" -d "$SRV" $(find "$ROOT/server/java" -name '*.java') 2>&1 | grep -viE 'Picked up|warning|Note:' || true
 fi
 
-# 3) rapport
-java -cp "$CLS:$ASM:$GAME" ScreenContract "$GAME" "$SRV" "$1" 2>&1 | grep -v 'Picked up'
+# 3) rapport (+ options éventuelles : --scaffold <Mode> <outdir>)
+java -cp "$CLS:$ASM:$GAME" ScreenContract "$GAME" "$SRV" "$@" 2>&1 | grep -v 'Picked up'
