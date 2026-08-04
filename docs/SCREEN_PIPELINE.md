@@ -72,15 +72,18 @@ inhérentes (pas des bugs), à connaître.
   localement par l'écran (ArenaInfo, ArenaRow…) n'est PAS un envoi → exclu (lu par l'écran = inbound ; sinon nom
   de requête Get*/Set*/…/*Attack). *(Faux positif de la 1ʳᵉ version, corrigé — pas un bug de l'arène.)*
 
-- **[LIMITE 1 — portée PAR CLASSE, un mode est MULTI-classes] l'outil analyse la/les classe(s) données, pas
-  « le mode ».** Un message peut être ENVOYÉ depuis un AUTRE écran ou un HELPER que l'écran principal. Ex. réel :
-  `ArenaLeagueScreen` n'envoie que `GetArenaInfo` ; le combat `ArenaAttack` (implémenté #44) est émis par
-  `ArenaAttackHeroChooserScreen`/`ArenaHelper`, invisible si on ne lance l'outil que sur la league screen.
-  → **Lancer sur TOUTES les classes du mode** : préfixe finissant par `/` = tout le package
-  (`…/ui/surge/`), ou lister plusieurs classes (écrans + hero choosers + `*Helper`) séparées par des virgules.
-  *(Correction : contrairement à ce que j'avais dit, l'outil NE sous-liste PAS §A/B pour l'arène — il capture bien
-  tout le contrat `ArenaInfo`/`ArenaRow`/`ArenaSeasonInfo` lu en `GETFIELD` direct. Cas théorique de sous-listage :
-  un écran qui lit via un MANAGER rendant des objets DOMAINE et non le message wire — non observé en arène/breaker.)*
+- **[LIMITE 1 — RÉSOLUE par ModeGraph (#74 levier A)] la portée PAR CLASSE est levée par `contract.sh --mode`.**
+  Un mode est MULTI-classes : un message peut être ENVOYÉ depuis un AUTRE écran ou un HELPER que l'écran principal
+  (ex. réel : `ArenaAttack` n'est pas émis par `ArenaLeagueScreen` mais par `ArenaAttackScreen`/`ArenaHelper`).
+  **`ModeGraph`** (`tools/screentool/src/ModeGraph.java`) scanne TOUT le jar, construit le graphe
+  `message → {émetteurs, lecteurs}` et DÉCOUVRE AUTOMATIQUEMENT toutes les classes du mode (écrans + hero choosers
+  + helpers, même hors package) via l'affinité de NOM (messages CORE portant le token du mode) + un filtre de HUBS
+  génériques (dispatchers > 18 messages : `ActionHelper`, `GameMain`… exclus mais SIGNALÉS pour routage manuel).
+  → **Usage** : `tools/screentool/contract.sh --mode <graine>` où la graine est un préfixe de package
+  (`com/perblue/heroes/ui/surge/`) OU un token de nom pour un mode éparpillé (`Arena` → capte `ui/screens/`,
+  `ui/herochooser/`, `ui/pvp/`, `ui/windows/`, `ui/widgets/`). Validé : arène (token) 45 classes, surge 17, heist 77
+  (précision : 0 classe cross-mode hormis un util partagé). Le mode chaîne ModeGraph → ScreenContract sur l'union.
+  *(NB : ScreenContract seul, sur une classe, reste correct pour un écran isolé ; `--mode` est la voie complète.)*
 
 - **[LIMITE 2 — CONTRAT, pas LOGIQUE] l'outil montre QUOI peupler/router, jamais COMMENT.** Toute la partie
   serveur — sélection d'adversaires (pool réel + synthétique), calcul de rang/points, barème, état/persistance,

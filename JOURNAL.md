@@ -1,5 +1,31 @@
 # JOURNAL — journal détaillé des modifications
 
+## 2026-08-03 (g61) — GRAPHE DE MESSAGES : découverte AUTO des classes d'un mode (#74 levier A)
+
+Supprime la « Limite 1 » de `SCREEN_PIPELINE.md` (ScreenContract analyse PAR CLASSE ; un mode est MULTI-classes —
+un message peut être envoyé par un helper hors du package de l'écran, ex. `ArenaAttack` via `ArenaHelper`/
+`ArenaAttackScreen`, pas `ArenaLeagueScreen`).
+
+**`tools/screentool/src/ModeGraph.java`** : scanne TOUT le jar (18 232 classes de `com/perblue/heroes`), construit
+le graphe `message → {émetteurs (new), lecteurs (GETFIELD/getter)}` (classes internes regroupées sous leur outer),
+puis à partir d'une GRAINE découvre l'union des classes du mode :
+- **graine** = préfixe de package (`com/perblue/heroes/ui/surge/`) OU token de nom pour un mode ÉPARPILLÉ
+  (`Arena` → capte `ui/screens/`, `ui/herochooser/`, `ui/pvp/`, `ui/windows/`, `ui/widgets/`) ;
+- **affinité de NOM** : on n'étend l'union que via les messages CORE (nom portant le token) → évite d'aspirer
+  d'autres modes par les messages roster/combat PARTAGÉS (mesuré : sans ce filtre, Arena ramenait Heist/Surge via
+  `HeroSummary`/`PlayerRow`) ;
+- **filtre HUBS** : un dispatcher générique référençant > 18 messages distincts (`ActionHelper` 20,
+  `ClientActionHelper` 27, `GameMain` 153 — vs helpers de mode ≤ 11) est EXCLU de l'union (sinon il pollue §A/B
+  avec tous les messages qu'il touche) mais SIGNALÉ dans le rapport (pour router à la main s'il envoie une requête
+  du mode) ; filtre debug/test aussi.
+
+**`contract.sh --mode <graine>`** (A2) : chaîne ModeGraph (union) → ScreenContract (contrat complet). Validé :
+arène 45 classes (token, 6 packages), surge 17, heist 77 (0 pollution cross-mode hormis un util partagé `UIColors`).
+Après filtre hubs, le §A/B de Surge ne liste plus que des messages Surge (avant : `ExpeditionRunData`,
+`CensoredPrivateUserInfo`… venaient des dispatchers). Docs : `SCREEN_PIPELINE.md` (Limite 1 → RÉSOLUE),
+`HEADLESS_VERIFICATION.md` §SUIVI (A1/A2 ✅). Outils uniquement (aucune modif serveur) → régression inchangée 82/82.
+
+
 ## 2026-08-03 (g60) — ORACLE CLIENT : miroir des validations d'ENVOI (#74 B4)
 
 Levier B, incrément B4. Avant d'émettre une action, le CLIENT exécute une validation ; si elle lève, il REFUSE

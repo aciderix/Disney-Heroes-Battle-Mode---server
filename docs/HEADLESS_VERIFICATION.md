@@ -96,8 +96,13 @@ Légende : ✅ fait · 🔨 en cours · ⬜ à faire
   mode (fait pour les self-tests/régression ; à étendre au fil des nouveaux modes #72).
 
 ### Levier A — Contrat complet du mode (graphe de messages)
-- ⬜ **A1. `ModeGraph`** : scan de TOUT le jar → map message → {émetteurs, lecteurs} ; regroupement par mode.
-- ⬜ **A2. Intégration** : `contract.sh --mode <nom>` → union automatique de tous les écrans/helpers du mode.
+- ✅ **A1. `ModeGraph`** (`tools/screentool/src/ModeGraph.java`) : scan de TOUT le jar → `message → {émetteurs (new),
+  lecteurs (GETFIELD/getter)}`. Découvre les classes d'un mode via AFFINITÉ DE NOM (messages CORE portant le token)
+  + filtre HUBS génériques (dispatchers > 18 msgs distincts : `ActionHelper`/`GameMain`… exclus de l'union mais
+  SIGNALÉS pour routage manuel) + filtre debug/test. Graine = préfixe de package OU token de nom (mode éparpillé).
+- ✅ **A2. Intégration** : `contract.sh --mode <graine>` → union AUTOMATIQUE (ModeGraph) → contrat complet
+  (ScreenContract) du mode. Supprime la « Limite 1 » (portée par-classe). Validé : arène 45 (token, 6 packages),
+  surge 17, heist 77 — 0 pollution cross-mode ; §A/B ne contient plus que les messages du mode.
 
 ### Levier C — Logique headless étendue
 - ⬜ **C1. Recenser** les `*Helper`/modèles de mode exécutables headless (hors GL) par mode.
@@ -114,3 +119,6 @@ Légende : ✅ fait · 🔨 en cours · ⬜ à faire
   (g55) headless (`IndexOutOfBounds 6/6`), compte neuf toujours vert. Régression étendue.
 - 2026-08-03 (g60) : **B4 fait.** Miroir des validations d'ENVOI (`assertClientWouldSend`/`assertClientWouldRefuse`,
   `SendValidationTest`) — rejoue le prédicat client sur notre état (référence `validateChestPurchase`, prédicat pur).
+- 2026-08-03 (g61) : **Levier A fait (A1+A2).** `ModeGraph` + `contract.sh --mode` : découverte automatique de
+  toutes les classes d'un mode (graphe de messages, affinité de nom, filtre hubs/debug) → contrat complet. Supprime
+  la « Limite 1 » de SCREEN_PIPELINE. Validé arène/surge/heist.
