@@ -1,6 +1,6 @@
 # JOURNAL — journal détaillé des modifications
 
-## 2026-08-03 (g61) — GRAPHE DE MESSAGES : découverte AUTO des classes d'un mode (#74 levier A)
+## 2026-08-03 (g61) — GRAPHE DE MESSAGES + LOGIQUE : pile de vérif headless COMPLÈTE (#74 leviers A & C)
 
 Supprime la « Limite 1 » de `SCREEN_PIPELINE.md` (ScreenContract analyse PAR CLASSE ; un mode est MULTI-classes —
 un message peut être envoyé par un helper hors du package de l'écran, ex. `ArenaAttack` via `ArenaHelper`/
@@ -22,8 +22,18 @@ puis à partir d'une GRAINE découvre l'union des classes du mode :
 **`contract.sh --mode <graine>`** (A2) : chaîne ModeGraph (union) → ScreenContract (contrat complet). Validé :
 arène 45 classes (token, 6 packages), surge 17, heist 77 (0 pollution cross-mode hormis un util partagé `UIColors`).
 Après filtre hubs, le §A/B de Surge ne liste plus que des messages Surge (avant : `ExpeditionRunData`,
-`CensoredPrivateUserInfo`… venaient des dispatchers). Docs : `SCREEN_PIPELINE.md` (Limite 1 → RÉSOLUE),
-`HEADLESS_VERIFICATION.md` §SUIVI (A1/A2 ✅). Outils uniquement (aucune modif serveur) → régression inchangée 82/82.
+`CensoredPrivateUserInfo`… venaient des dispatchers).
+
+**Levier C aussi (C1+C2).** `ModeGraph --logic` (intégré à `contract.sh --mode`) RECENSE, pour les `*Helper`/`*Stats`
+du mode, les méthodes STATIQUES prenant un `IUser` = les points d'entrée que le serveur EXÉCUTE headless (§3 « lire &
+exécuter », jamais réécrire). Ex. Surge : `recordOutcome`, `recordRaid`, `getGoldForSurgeFight/Raid`,
+`getMaxRaidsPerSurge`, `getRecommendedOpponent`, `getQualifiedObjectives`… — la carte des règles du jeu à câbler pour
+implémenter le mode. C2 (harnais de traversée) : le mécanisme existe déjà (`ClientOracle` exécute la logique cliente
+GL-free sur notre état ; `HeadlessCombat` #27 le combat) → à étendre par mode au fil de #72. **La pile de vérif
+headless est complète** (niveaux 0-3 outillés ; 4 = in-game irréductible).
+
+Docs : `SCREEN_PIPELINE.md` (Limite 1 → RÉSOLUE), `HEADLESS_VERIFICATION.md` §SUIVI (A1/A2/C1/C2 ✅, niveau 2 ✅).
+Outils uniquement (aucune modif serveur) → régression inchangée 82/82.
 
 
 ## 2026-08-03 (g60) — ORACLE CLIENT : miroir des validations d'ENVOI (#74 B4)

@@ -33,7 +33,7 @@ if [ "$1" = "--mode" ]; then
   [ $# -ge 2 ] || { echo "Usage: $0 --mode <graine>"; exit 1; }
   MODE_SEED="$2"
   echo "[mode] découverte des classes du mode (graine « $MODE_SEED ») via ModeGraph…"
-  java -cp "$CLS:$ASM" ModeGraph "$GAME" "$MODE_SEED" 2>&1 | grep -v 'Picked up'
+  java -cp "$CLS:$ASM" ModeGraph "$GAME" "$MODE_SEED" --logic 2>&1 | grep -v 'Picked up'
   UNION="$(java -cp "$CLS:$ASM" ModeGraph "$GAME" "$MODE_SEED" --list 2>/dev/null | grep -v 'Picked up')"
   [ -n "$UNION" ] || { echo "[mode] aucune classe trouvée pour cette graine"; exit 1; }
   set -- "$UNION"

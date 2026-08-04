@@ -20,7 +20,7 @@ premier. Statut : headless prouvé = 🟢 ; ✅ seulement après l'in-game.
 |---|---|---|---|
 | 0. Contrat statique | `tools/screentool/contract.sh` (#73) | champs à peupler, handlers manquants, gate | ✅ fait |
 | 1. Round-trip wire | `server/smoke/WireCheck` (#73) | typage wire faux (explose à l'écriture) | ✅ fait |
-| 2. **Oracle CLIENT headless** | `server/smoke/ClientOracle` (#74) | l'état/réponse serveur fait **planter ou refuser** le code CLIENT (requirements, gates, validations d'envoi) | 🔨 en cours |
+| 2. **Oracle CLIENT headless** | `server/smoke/ClientOracle` (#74) | l'état/réponse serveur fait **planter ou refuser** le code CLIENT (requirements, gates, validations d'envoi) | ✅ fait (B1-B4) |
 | 3. Combat headless | `HeadlessCombat` (#27, `CombatSpikeDriver`) | logique de combat client (issue, dégâts) | ✅ fait (existant) |
 | 4. **EN JEU (rendu/GL)** | client réel piloté | rendu visible/cliquable, layout, VFX, **erreurs de la voie de rendu** (ex. `spawnParticles`) | ♾️ irréductible |
 
@@ -105,8 +105,14 @@ Légende : ✅ fait · 🔨 en cours · ⬜ à faire
   surge 17, heist 77 — 0 pollution cross-mode ; §A/B ne contient plus que les messages du mode.
 
 ### Levier C — Logique headless étendue
-- ⬜ **C1. Recenser** les `*Helper`/modèles de mode exécutables headless (hors GL) par mode.
-- ⬜ **C2. Harnais** de « traversée de réponse » : passer notre réponse dans le modèle client GL-free du mode.
+- ✅ **C1. Recensement** : `ModeGraph --logic` (et `contract.sh --mode`) liste, pour les `*Helper`/`*Stats` du mode,
+  les méthodes STATIQUES prenant un `IUser` = les points d'entrée que le serveur EXÉCUTE headless (§3). Ex. Surge :
+  `recordOutcome`, `recordRaid`, `getGoldForSurgeFight/Raid`, `getMaxRaidsPerSurge`, `getRecommendedOpponent`… —
+  la carte des règles du jeu à exécuter (jamais réécrire) pour implémenter le mode.
+- ✅ **C2. Harnais** de traversée : le MÉCANISME existe déjà — `ClientOracle` exécute la logique CLIENTE GL-free
+  sur notre `User`/réponse (requirements/gates/validations d'envoi), et `HeadlessCombat` (#27) exécute le modèle de
+  combat. Étendre = ajouter, par mode, des `Check`/`SendValidation` sur les méthodes recensées en C1 (fait au fil
+  de l'implémentation de chaque mode #72, comme campagne/arène l'ont déjà été côté serveur).
 
 ### Application aux modes (#4) — après la pile de vérif
 - ⬜ SURGE · ⬜ CITY WATCH · ⬜ CHALLENGES · ⬜ HEIST (chacun : contrat → scaffold → logique jeu → WireCheck +
@@ -119,6 +125,8 @@ Légende : ✅ fait · 🔨 en cours · ⬜ à faire
   (g55) headless (`IndexOutOfBounds 6/6`), compte neuf toujours vert. Régression étendue.
 - 2026-08-03 (g60) : **B4 fait.** Miroir des validations d'ENVOI (`assertClientWouldSend`/`assertClientWouldRefuse`,
   `SendValidationTest`) — rejoue le prédicat client sur notre état (référence `validateChestPurchase`, prédicat pur).
-- 2026-08-03 (g61) : **Levier A fait (A1+A2).** `ModeGraph` + `contract.sh --mode` : découverte automatique de
-  toutes les classes d'un mode (graphe de messages, affinité de nom, filtre hubs/debug) → contrat complet. Supprime
-  la « Limite 1 » de SCREEN_PIPELINE. Validé arène/surge/heist.
+- 2026-08-03 (g61) : **Leviers A + C faits.** A1/A2 : `ModeGraph` + `contract.sh --mode` (découverte auto des
+  classes d'un mode, supprime la « Limite 1 »). C1 : `ModeGraph --logic` recense les méthodes `*Helper`/`*Stats`
+  statiques prenant un `IUser` (points d'entrée à exécuter §3) ; C2 : mécanisme déjà fourni par ClientOracle +
+  HeadlessCombat. **La PILE DE VÉRIFICATION HEADLESS est complète** (niveaux 0-3 outillés, 4 = in-game irréductible) —
+  prête pour l'implémentation des modes #72.

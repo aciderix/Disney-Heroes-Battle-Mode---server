@@ -47,11 +47,12 @@ public final class ModeGraph {
     boolean seedIsPrefix = seed.endsWith("/") || seed.startsWith("com/perblue/");
     // hub=18 : mesuré, les HELPERS de mode référencent ≤ ~11 messages distincts (SurgeHelper 10, ArenaHelper 11),
     // les DISPATCHERS génériques ≥ 20 (ActionHelper 20, ClientActionHelper 27, GameMain 153) → seuil net à 18.
-    int generic = 25, hub = 18; boolean listOnly = false;
+    int generic = 25, hub = 18; boolean listOnly = false, logic = false;
     for (int i = 2; i < args.length; i++) {
       if (args[i].equals("--generic") && i + 1 < args.length) generic = Integer.parseInt(args[++i]);
       else if (args[i].equals("--hub") && i + 1 < args.length) hub = Integer.parseInt(args[++i]);
       else if (args[i].equals("--list")) listOnly = true;
+      else if (args[i].equals("--logic")) logic = true;
     }
     final int hubThreshold = hub;
 
@@ -154,6 +155,65 @@ public final class ModeGraph {
 
     System.out.println("→ À passer à ScreenContract (contract.sh) pour le CONTRAT COMPLET du mode :");
     System.out.println(String.join(",", union));
+
+    if (logic) logicRecon(jar, union);
+  }
+
+  /** LEVIER C1 (recensement de la LOGIQUE headless) : pour les classes *Helper/*Stats du mode, liste les méthodes
+   *  STATIQUES prenant un IUser — ce sont les points d'entrée que le SERVEUR peut EXÉCUTER headless (comme
+   *  ClientOracle exécute QuestHelper/ChestHelper, comme le serveur exécute déjà CampaignHelper/ArenaHelper).
+   *  On EXÉCUTE ces méthodes du jeu (PRINCIPLES §3), jamais on ne réécrit la règle. NB : la GL-freeness n'est pas
+   *  prouvée ici (elle se confirme à l'exécution, cf. ClientOracle/becomeMainThread) — c'est un RECENSEMENT. */
+  static void logicRecon(String jar, TreeSet<String> union) throws IOException {
+    TreeSet<String> want = new TreeSet<>();
+    for (String c : union) if (c.endsWith("Helper") || c.endsWith("Stats")) want.add(c);
+    System.out.println();
+    System.out.println("C1. LOGIQUE HEADLESS DU MODE — méthodes STATIQUES prenant un IUser (points d'entrée à EXÉCUTER,");
+    System.out.println("    jamais réécrire §3 ; GL-freeness à confirmer à l'exécution comme ClientOracle) :");
+    try (ZipInputStream zis = new ZipInputStream(new BufferedInputStream(new FileInputStream(jar)))) {
+      ZipEntry e;
+      TreeMap<String, TreeSet<String>> byClass = new TreeMap<>();
+      while ((e = zis.getNextEntry()) != null) {
+        if (!e.getName().endsWith(".class")) continue;
+        String bin = e.getName().substring(0, e.getName().length() - 6);
+        if (!want.contains(bin)) continue;
+        TreeSet<String> methods = byClass.computeIfAbsent(bin, k -> new TreeSet<>());
+        new ClassReader(zis.readAllBytes()).accept(new ClassVisitor(Opcodes.ASM9) {
+          @Override public MethodVisitor visitMethod(int acc, String n, String d, String s, String[] ex) {
+            if ((acc & Opcodes.ACC_STATIC) != 0 && (acc & Opcodes.ACC_PUBLIC) != 0
+                && d.contains("game/objects/IUser"))
+              methods.add(n + prettyParams(d));
+            return null;
+          }
+        }, ClassReader.SKIP_CODE);
+      }
+      if (byClass.isEmpty()) { System.out.println("  (aucune méthode statique IUser dans les Helper/Stats du mode)"); return; }
+      for (Map.Entry<String, TreeSet<String>> en : byClass.entrySet()) {
+        if (en.getValue().isEmpty()) continue;
+        System.out.println("  " + simple(en.getKey()) + " :");
+        for (String m : en.getValue()) System.out.println("        " + m);
+      }
+    }
+  }
+
+  /** Rend « (Type1, Type2) » depuis un descripteur de méthode (types d'objet en nom simple). */
+  static String prettyParams(String desc) {
+    int end = desc.indexOf(')'); StringBuilder sb = new StringBuilder("(");
+    int i = 1; boolean first = true;
+    while (i < end) {
+      int arr = 0; while (desc.charAt(i) == '[') { arr++; i++; }
+      char c = desc.charAt(i);
+      String t;
+      if (c == 'L') { int semi = desc.indexOf(';', i); String cn = desc.substring(i + 1, semi); t = cn.substring(cn.lastIndexOf('/') + 1); i = semi + 1; }
+      else { t = prim(c); i++; }
+      for (int k = 0; k < arr; k++) t += "[]";
+      if (!first) sb.append(", "); sb.append(t); first = false;
+    }
+    return sb.append(")").toString();
+  }
+  static String prim(char c) {
+    switch (c) { case 'Z': return "boolean"; case 'B': return "byte"; case 'C': return "char"; case 'S': return "short";
+      case 'I': return "int"; case 'J': return "long"; case 'F': return "float"; case 'D': return "double"; default: return "?"; }
   }
 
   /** Classe pertinente pour l'union : UI, ou un helper/stats/manager/objet de logique de jeu (pas un message). */
