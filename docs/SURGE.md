@@ -61,9 +61,16 @@ pré-appeler côté serveur (piège g45 `doStartWarAttack`).
    comme la campagne). ⚠️ **2 params à résoudre AVANT câblage (ne pas inventer §4)** : (a) la Collection
    **attackerHEROES** = `IHero` reconstruits depuis `base.attackers[*].units` (convertisseur du jeu) ; (b) le
    **Set d'objectifs** — le client le calcule via `getQualifiedObjectives` qui exige les stats de `Scene`
-   (`CombatStatsData`) ABSENTES du wire → il faut le dériver de `SurgeAttack.objectiveProgress` (map cliente,
-   client-autoritatif comme le loot) via `recordObjectiveProgress` (vérifier ce qu'il attend). Tant que (a)/(b)
-   ne sont pas prouvés, on ne câble pas (sinon mastery/objectifs/points corrompus silencieusement).
+   (`CombatStatsData`) ABSENTES du wire → à dériver de `SurgeAttack.objectiveProgress` (map cliente).
+   **✅ (a)/(b) RÉSOLUS PAR LES FAITS (disasm site d'appel, offsets 239-261) — zéro invention** : (a) `IHero`
+   reconstruits via `user.getHero(unit.type)` depuis `base.attackers[*].units` (mercenaires exclus) ; (b) Set =
+   `SurgeAttack.objectiveProgress.keySet()` (le client met `(SurgeObjectiveInfo→1)` par objectif QUALIFIÉ) ;
+   **les DEUX booléens sont `iconst_0` au site d'appel → `false, false` (prouvé)**.
+   **Incrément 4a LIVRÉ** (`ServerSurgeCombat.applyRegionOutcome`) : exécute `SurgeHelper.recordOutcome` headless
+   (membre = `SurgeClientMember` du jeu) ; `SurgeCombatTest` prouve la progression d'objectif appliquée par le code
+   du jeu (slot0=1 ; points/or=0 attendu pour un joueur sans guilde/tier). **Reste 4b/4c** : opponents +
+   `StartSurgeAttack→StartSurgeAttackResponse` (raidID + lineup défenseur) puis handler `SurgeAttack` (correler le
+   raid, `applyRegionOutcome`, persister le SurgeData, marquer l'adversaire vaincu).
 5. ⬜ **Raids** : `recordRaid` + `getMaxRaidsPerSurge` (perks) + `getGoldForSurgeRaid`.
 6. ⬜ **Objectifs & récompenses** : progression d'objectifs, `SurgeClaimRewards` (tokens/influence/or), unclaimed.
 7. ⬜ **Ordonnanceur** : bascule de surge (fin de fenêtre → résultats `SurgeResultInfo` → nouveau surge), comme
@@ -76,3 +83,5 @@ pré-appeler côté serveur (piège g45 `doStartWarAttack`).
   `shard_state`, reset sur surgeID) + `SurgeStateTest` (roster + round-trip wire/DB + reset). Régression.
 - 2026-08-04 (g65) : incrément 3 — handler `GetSurge → SurgeData` (LoginServer) + `emptySurge` (hors guilde).
   Headless 🟢 (routage + réponse wire-valide) ; vérif EN JEU restante.
+- 2026-08-04 (g67) : incrément 4a — `ServerSurgeCombat.applyRegionOutcome` (recordOutcome autoritatif, params
+  prouvés au bytecode) + `SurgeCombatTest`. Recon combat entièrement résolue (a/b/booléens). Régression.

@@ -1,5 +1,26 @@
 # JOURNAL — journal détaillé des modifications
 
+## 2026-08-04 (g67) — SURGE (#72) incrément 4a : enregistrement de combat AUTORITATIF (recordOutcome)
+
+Les 2 params bloquants de g66 sont **RÉSOLUS PAR LES FAITS** (désassemblage du site d'appel unique
+`SurgeAttackScreen`, offsets 239-261) — zéro invention :
+- (a) 3ᵉ collection = `IHero` attaquants : `recordOutcome` n'y appelle que `getType()`/`isMercenary()` →
+  reconstruits via `user.getHero(unit.type)` depuis `base.attackers[*].units` (mercenaires exclus) = les héros
+  RÉELS du joueur ;
+- (b) Set d'objectifs = `SurgeAttack.objectiveProgress.keySet()` : le client met `(SurgeObjectiveInfo → 1)` par
+  objectif QUALIFIÉ (scène-dépendant, client-autoritatif) — le serveur relit simplement les clés ;
+- **les DEUX booléens sont `iconst_0` au site d'appel → `false, false` (prouvé, plus une inférence)** ;
+- `outcome`/`attackers`/`defenders` = `base.outcome`/`base.attackers`/`base.defenders` (déjà `AttackLineupSummary`).
+
+`dhserver/ServerSurgeCombat.applyRegionOutcome(user, summary, surgeID, raidID, SurgeAttack, snapshot)` exécute
+`SurgeHelper.recordOutcome` sur le `SurgeClientMember(surgeID, summary)` DU JEU (mutations → summary → persistée).
+`SurgeCombatTest` : WIN RALPH vs défenseur → `recordOutcome` tourne headless et la progression d'objectif slot 0
+est appliquée **par le code du jeu** (=1) ; points/or = 0 attendu (joueur sans guilde → tier 0, pas de multiplicateur).
+Régression. **Reste 4b/4c** : opponents + `StartSurgeAttack→StartSurgeAttackResponse` (raidID + lineup défenseur),
+handler `SurgeAttack` (correler le raid, persister, marquer l'adversaire vaincu), puis scoring/tiers, raids,
+récompenses, ordonnanceur, vérif EN JEU.
+
+
 ## 2026-08-04 (g66) — SURGE (#72) : recon FIDÈLE du combat (`recordOutcome`) — pas de câblage inventé (§4)
 
 Suite de « termine l'implémentation ». Recon en profondeur du combat de région avant tout câblage (SCREEN_PIPELINE
