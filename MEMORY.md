@@ -24,6 +24,9 @@
 > 3. **Faire le point** sur l'état courant ET sur ce qui a été transmis lors de la compression, PUIS enchaîner.
 > Ne PAS sauter cette procédure : c'est la condition pour reprendre dans de bonnes conditions.
 
+Dernière mise à jour : **2026-08-04 (g64)** — **SURGE (#72) incrément 2 : ÉTAT PARTAGÉ DE GUILDE (persisté).** Détail : `docs/SURGE.md` + `JOURNAL.md` g64.
+`dhserver/ServerSurgeState` : `SurgeData` par (guilde, surgeID), stocké wire dans `shard_state` (clé `surge:<guildID>`), **membres = roster** (`SurgeMemberSummary`/`BasicUserInfo`), **remis à zéro** au changement de surgeID (`loadOrReset`). `SurgeStateTest` : roster + round-trip wire/DB + reset. Reste (docs/SURGE.md incr. 3-8) : `GetSurge`→`SurgeData` (rendu), combat/raids, objectifs/récompenses, ordonnanceur, vérif EN JEU.
+
 Dernière mise à jour : **2026-08-04 (g63)** — **SURGE (#72) incrément 1 : CALENDRIER via le code du jeu + recon.** Détail : `docs/SURGE.md` + `JOURNAL.md` g63.
 Premier mode hub via le pipeline industrialisé. SURGE = mode de GUILDE saisonnier (districts/QG, vagues de régions, paliers, objectifs, raids, tokens/influence), gaté `SURGE_OBJECTIVES` + perks ; logique CLIENTE (`SurgeHelper`/`SurgeStats`), demandé via `GetSurge` (pas dans BootData). `dhserver/ServerSurge` = calendrier/identité 100 % code du jeu (`getNextSurgeStartTime`/`getSurgeEndTime`/`getIntermission`=15min ; **actif ⟺ nextStart > end**, prouvé §8), `SurgeScheduleTest`. Plan d'incréments 1-8 dans `docs/SURGE.md` (reste : état guilde, `GetSurge`→`SurgeData`, combat/raids, objectifs/récompenses, ordonnanceur, vérif EN JEU).
 

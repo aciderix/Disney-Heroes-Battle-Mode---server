@@ -1,5 +1,22 @@
 # JOURNAL — journal détaillé des modifications
 
+## 2026-08-04 (g64) — SURGE (#72) incrément 2 : ÉTAT PARTAGÉ DE GUILDE (persisté)
+
+`dhserver/ServerSurgeState` : un `SurgeData` par (guilde, surgeID), partagé par toute la guilde. Stocké en octets
+wire dans `shard_state` (clé `surge:<guildID>`) — comme les autres états opérateur (contests/horloge/graines de
+guerre), pour rester ISOLÉ et REMIS À ZÉRO proprement à chaque nouveau surge (`loadOrReset` reconstruit si absent
+ou si le surgeID stocké ≠ surgeID courant, comme `InvasionHelper.resetUserInvasion`/la bascule de guerre).
+
+**Membres = ROSTER** : une entrée `SurgeMemberSummary` par membre (chargé via `store.loadIfExists`), identité
+`BasicUserInfo` (avatar forcé non nul → wire-sûr). Fenêtre (raidEndTime/nextRaidStartTime) depuis `ServerSurge`
+(code du jeu). Conteneurs (opponents/log/objectives/unclaimedRewards/waveRegionsCleared) et sous-messages
+(surgeScoringInfo/previousResults) initialisés NON nuls (défaut nº3). Adversaires/districts/paliers/objectifs/
+scoring restent aux incréments 3-6 (peuplés via le code du jeu, jamais inventés).
+
+`SurgeStateTest` : membres = roster (2), round-trip WIRE (WireCheck), round-trip DB (persistance), et remise à
+zéro sur changement de surgeID. Régression. Doc `docs/SURGE.md` (incrément 2 ✅).
+
+
 ## 2026-08-04 (g63) — SURGE (#72) incrément 1 : CALENDRIER via le code du jeu + recon complète
 
 Premier mode hub attaqué avec le pipeline industrialisé. **Recon (preuve d'abord)** : SURGE est un mode de GUILDE

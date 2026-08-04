@@ -39,8 +39,11 @@ pré-appeler côté serveur (piège g45 `doStartWarAttack`).
 
 1. ✅ **Calendrier & identité** (`ServerSurge` : `isActive`/`surgeEndTime`/`nextSurgeStartTime`/`intermission`/
    `currentSurgeID`, 100 % code du jeu) + `SurgeScheduleTest`. Régression.
-2. ⬜ **État partagé de guilde** : `SurgeData` par (guilde, surgeID) persisté (`ServerGuild`/table dédiée, comme
-   WAR/INVASION) — membres (roster de guilde → `SurgeMemberSummary`), districts/régions, paliers, objectifs.
+2. ✅ **État partagé de guilde** (`ServerSurgeState`) : `SurgeData` par (guilde, surgeID) persisté dans
+   `shard_state` (clé `surge:<guildID>`), **membres = roster** (`SurgeMemberSummary`, identité `BasicUserInfo`),
+   **remis à zéro** quand le surgeID change (`loadOrReset`). Conteneurs/sous-messages non nuls (wire-sûr).
+   `SurgeStateTest` : membres=roster, round-trip wire + DB, reset. Districts/régions/paliers/objectifs peuplés
+   aux incréments 3-6.
 3. ⬜ **`GetSurge` → `SurgeData`** (l'écran rend) : peupler TOUS les champs du contrat depuis l'état ; pousser au
    besoin ; gate `SURGE_OBJECTIVES`. Vérif EN JEU (écran s'ouvre).
 4. ⬜ **Combat de région** : `StartSurgeAttack → StartSurgeAttackResponse` + `SurgeAttack` (issue) →
@@ -53,3 +56,5 @@ pré-appeler côté serveur (piège g45 `doStartWarAttack`).
 
 ## Historique
 - 2026-08-04 (g63) : incrément 1 — `ServerSurge` calendrier/identité (code du jeu) + `SurgeScheduleTest`. Régression.
+- 2026-08-04 (g64) : incrément 2 — `ServerSurgeState` (SurgeData partagé par guilde, membres=roster, persisté
+  `shard_state`, reset sur surgeID) + `SurgeStateTest` (roster + round-trip wire/DB + reset). Régression.
