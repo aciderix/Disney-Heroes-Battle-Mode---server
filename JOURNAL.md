@@ -1,5 +1,27 @@
 # JOURNAL — journal détaillé des modifications
 
+## 2026-08-04 (g63) — SURGE (#72) incrément 1 : CALENDRIER via le code du jeu + recon complète
+
+Premier mode hub attaqué avec le pipeline industrialisé. **Recon (preuve d'abord)** : SURGE est un mode de GUILDE
+saisonnier (districts/QG=`FF`, vagues de 3 régions, paliers, objectifs, raids, tokens/influence/or), gaté
+`SURGE_OBJECTIVES` + perks de guilde. Logique CLIENTE (`SurgeHelper`/`SurgeClientHelper`/`SurgeStats`, modèle
+`ISurgeMember`) → le serveur EXÉCUTE ses helpers (§3). Pas dans le BootData → demandé via `GetSurge` (comme arène/
+invasion). `ModeGraph --logic` a recensé les points d'entrée serveur (`recordOutcome`/`recordRaid`/`getGoldFor…`/
+`getMaxRaidsPerSurge`/`getTier`…). ⚠️ `SurgeHelper.doRaid` = rappel d'action CLIENT (consomme) — ne pas pré-appeler
+(piège g45).
+
+**Faits de calendrier (sonde headless, §8)** : `getEndHour`=11, `getIntermission`=**900000 ms (15 min)**,
+`getRegionsPerWave`=3, `getHQDistrict`=FF ; `getNextSurgeStartTime`/`getSurgeEndTime` = la fenêtre (surges
+quotidiens). **Règle « actif » établie** : actif à `now` ⟺ `getNextSurgeStartTime(now) > getSurgeEndTime(now)`
+(vérifié : sonde → nextStart 16:15 > end 16:00 ⇒ actif).
+
+**Incrément 1 livré** : `dhserver/ServerSurge` = calendrier/identité 100 % code du jeu (`isActive`,
+`surgeEndTime`, `nextSurgeStartTime`, `intermission`, `currentSurgeID` = fin de fenêtre si actif, `isEnabledOnServer`),
+aucune date inventée. `SurgeScheduleTest` (assertions relationnelles déterministes) intégré à la régression.
+Doc de suivi `docs/SURGE.md` (recon + plan d'incréments 1-8). Reste : état partagé de guilde, `GetSurge`→`SurgeData`,
+combat/raids, objectifs/récompenses, ordonnanceur, vérif EN JEU.
+
+
 ## 2026-08-03 (g62) — SCAFFOLDER affiné (placeholders enum/sous-message) + `--mode --scaffold` (#73/#74)
 
 Amorce de #72 avec les nouveaux outils : `contract.sh --mode` (union ModeGraph) → `ScreenContract --scaffold`
