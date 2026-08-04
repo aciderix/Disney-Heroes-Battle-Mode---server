@@ -1,5 +1,15 @@
 # JOURNAL — journal détaillé des modifications
 
+## 2026-08-04 (g68) — SURGE (#72) incrément 4b-i : carte des districts (données du jeu)
+
+`dhserver/ServerSurgeMap` : la carte SURGE vient des DONNÉES du jeu (§3/§4). `map_districts.tab` associe 27
+`DistrictType` actifs à un `EnvironmentType` (BLACK_MARKET/ESPORTS_ARENA/SUBWAY/HACKER_ENCLAVE) ;
+`creep_surge_nodes.tab` donne le multiplicateur de points (3.5→1). On lit via `MapDistrictStats.getEnvironment`
+(district → env ; `DEFAULT` = hors carte, mesuré : 82/109 districts) et `SurgeStats.getMultiplier`. `activeDistricts()`
+= les 27 districts (env ≠ DEFAULT, hors QG=FF), triés par multiplicateur décroissant. `SurgeMapTest` (27 districts,
+env réel, mult > 0, tri). Base de la pose d'adversaires (4b-ii). Régression.
+
+
 ## 2026-08-04 (g67) — SURGE (#72) incrément 4a : enregistrement de combat AUTORITATIF (recordOutcome)
 
 Les 2 params bloquants de g66 sont **RÉSOLUS PAR LES FAITS** (désassemblage du site d'appel unique

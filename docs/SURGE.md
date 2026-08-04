@@ -85,3 +85,6 @@ pré-appeler côté serveur (piège g45 `doStartWarAttack`).
   Headless 🟢 (routage + réponse wire-valide) ; vérif EN JEU restante.
 - 2026-08-04 (g67) : incrément 4a — `ServerSurgeCombat.applyRegionOutcome` (recordOutcome autoritatif, params
   prouvés au bytecode) + `SurgeCombatTest`. Recon combat entièrement résolue (a/b/booléens). Régression.
+- 2026-08-04 (g68) : incrément 4b-i — `ServerSurgeMap` (27 districts actifs via `MapDistrictStats.getEnvironment`
+  + `SurgeStats.getMultiplier`, données `map_districts.tab`/`creep_surge_nodes.tab`, §3/§4) + `SurgeMapTest`.
+  Base de la pose d'adversaires (4b-ii). Régression.
