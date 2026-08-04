@@ -1581,6 +1581,8 @@ public final class LoginServer {
               ServerGuild sg = currentGuild(user);
               com.perblue.heroes.network.messages.SurgeData sd =
                   sg != null ? ServerSurgeState.loadOrReset(store, sg, snow) : ServerSurgeState.emptySurge(snow);
+              // Personnalisation par-viewer (§6) : récompenses NON réclamées du surge précédent + yourRaidsUsed.
+              if (sg != null) ServerSurgeState.personalize(store, sg, sd, user.userID);
               sd.setAsReplyTo(m);
               c.send(sd);
               System.out.println("[login] <== GetSurge → ==> SurgeData (surgeID=" + sd.surgeID
@@ -1624,6 +1626,23 @@ public final class LoginServer {
                     + ") → ==> SurgeUpdate (+" + up.surgePointDelta + " pts, districts+" + up.districtsClearedDelta + ") [persisté]");
               } else {
                 System.out.println("[login] <== SurgeAttack ignoré (joueur hors guilde)");
+              }
+            } else if (m instanceof com.perblue.heroes.network.messages.SurgeClaimRewards) {
+              // SURGE #72 — RÉCLAMATION des récompenses du surge précédent : le client (SurgeResultsWindow) envoie
+              // SurgeClaimRewards{surgeID} PUIS se crédite localement CRYPT_TOKENS + GOLD ; le serveur applique le
+              // MÊME crédit de façon autoritative (montants figés au registre de bascule), une seule fois.
+              com.perblue.heroes.network.messages.SurgeClaimRewards scr =
+                  (com.perblue.heroes.network.messages.SurgeClaimRewards) m;
+              ServerGuild scg = currentGuild(user);
+              if (scg != null) {
+                com.perblue.heroes.network.messages.SurgeRewards r =
+                    ServerSurgeState.claimRewards(store, scg, user, scr.surgeID);
+                r.setAsReplyTo(m);
+                c.send(r);
+                System.out.println("[login] <== SurgeClaimRewards(surge=" + scr.surgeID + ") → ==> SurgeRewards (+"
+                    + r.totalTokens + " tokens, +" + r.totalGold + " or)");
+              } else {
+                System.out.println("[login] <== SurgeClaimRewards ignoré (joueur hors guilde)");
               }
             } else if (m instanceof com.perblue.heroes.network.messages.GetInvasionBosses) {
               // INVASION #69 — boss PARTAGÉS de la guilde (état opérateur persisté, v7) : les expirés

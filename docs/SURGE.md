@@ -88,9 +88,29 @@ pré-appeler côté serveur (piège g45 `doStartWarAttack`).
    dans le code client. Donc le serveur ne peut pas suivre `raidsUsed`/gold de façon autoritative sans OBSERVER le
    trafic réel pendant un raid EN JEU (peut-être un `Action` générique ou une suite de `SurgeAttack`). On NE câble
    PAS tant que le protocole n'est pas prouvé (sinon invention interdite). → à élucider lors de la vérif EN JEU.
-6. ⬜ **Objectifs & récompenses** : progression d'objectifs, `SurgeClaimRewards` (tokens/influence/or), unclaimed.
-7. ⬜ **Ordonnanceur** : bascule de surge (fin de fenêtre → résultats `SurgeResultInfo` → nouveau surge), comme
-   `ServerWarScheduler`.
+6. 🟢 **Récompenses & bascule** (`ServerSurgeRewards` + `ServerSurgeState.rollover/personalize/claimRewards`,
+   handler `SurgeClaimRewards`) — **montants 100 % code du jeu, zéro invention (§3/§4)** :
+   - **tokens** (`CRYPT_TOKENS`) = `SurgeClientHelper.getPlayerSurgeCoins(surge)` = `getTokensPerClearedRegion()×régions
+     + getBaseTokens()` (régions = `wavesCompleted×3 + waveRegionsCleared.size()`). Sondé : base **30**, /région **14**.
+   - **or** (`GOLD`) = `member.storedGold` (accumulé par `recordOutcome→storeGold`).
+   - **influence** de GUILDE (`GUILD_INFLUENCE`) = `SurgeHelper.getInfluenceProgress(surge) + SurgeStats.getBaseInfluence()`
+     — la somme EXACTE affichée par `SurgeClearedWindow` (disasm offsets 96-102). Sondé : base **5000**, /région **1350**.
+   - **Flux client PROUVÉ** (disasm `SurgeScreen.checkAnimations` + `SurgeResultsWindow.lambda$createRewardsContent$1`) :
+     le serveur pose un `SurgeRewards` par membre dans `SurgeData.unclaimedRewards[surgeID_terminé]` (clé = `previousResults.surgeID`,
+     livré par `GetSurge`) ; le client ouvre la fenêtre si `totalGold≠0 || totalTokens≠0`, et au clic envoie
+     `SurgeClaimRewards{surgeID}` **puis** se crédite localement `UserHelper.giveUser(CRYPT_TOKENS,totalTokens)` +
+     `(GOLD,totalGold)` (`RewardSourceType.NORMAL`). Le serveur applique le MÊME crédit de façon autoritative,
+     **une seule fois** (anti double-réclamation via le registre `surgeprev:<guildID>`).
+   - **Bascule (rollover)** : au changement de surgeID (`loadOrReset`), l'état du surge terminé est figé (registre
+     résultats + récompense par membre + set réclamé), l'influence est créditée UNE fois à la guilde (plafond
+     `getMaxGuildInfluence`), et le `SurgeData` neuf embarque `previousResults`. Paresseux, comme la bascule de saison
+     de guerre. `SurgeClaimTest` : montants (128 tokens/or), crédit persistant, anti-double, influence (+14450), round-trip.
+   - **⚠️ 1 inférence de PLACEMENT (documentée, §4)** : le MONTANT d'influence est 100 % code du jeu ; le MOMENT de crédit
+     (à la bascule, une fois) est un choix d'ingénierie cohérent avec war/contest — **à confirmer EN JEU** (incr. 8).
+     Le crédit tokens/or personnel est, lui, DÉFINITIF (disasm). `achievedTier` de `SurgeResultInfo` laissé à 0 (non prouvé).
+7. 🟢 **Ordonnanceur** — la bascule de surge (fin de fenêtre → `SurgeResultInfo` + récompenses → nouveau surge) est
+   assurée PARESSEUSEMENT par `loadOrReset` (incrément 6 ci-dessus), au prochain accès après changement de surgeID —
+   même patron que le rollover de saison de guerre/contest. Pas de tâche de fond séparée nécessaire.
 8. ⬜ **Vérif EN JEU complète** (guilde + surge actif + adversaires) : rendu, combat, raid, réclamation.
 
 ## Scoring — vérifié FIDÈLE (données du jeu, pas un manque)
@@ -117,3 +137,9 @@ comportement CORRECT du jeu (joueur/guilde sans palier), pas un bug — le pipel
   actif, tiré du POOL RÉEL du shard (`listUserIDs` hors membres de guilde) → lineup depuis leur roster
   (`getHeroSummary`/`extended`, comme l'arène #43), repli SYNTHÉTIQUE déterministe (bot `createAndAddHero`) si pool
   vide. `SurgeStateTest` étendu (27 adversaires, lineups non vides, pool réel utilisé, round-trip wire). Régression.
+- 2026-08-04 (g72) : incréments 6+7 — RÉCOMPENSES & BASCULE. `ServerSurgeRewards` (tokens=`getPlayerSurgeCoins`,
+  or=`storedGold`, influence=`getInfluenceProgress+getBaseInfluence` — 100 % code du jeu) + registre `surgeprev:<guildID>`.
+  `ServerSurgeState.rollover` (fige résultats + récompense/membre, crédite l'influence guilde une fois), `personalize`
+  (`GetSurge` livre `unclaimedRewards`/`yourRaidsUsed` par-viewer), `claimRewards` (handler `SurgeClaimRewards` :
+  crédit autoritatif `CRYPT_TOKENS`+`GOLD` miroir du client, anti-double). `SurgeClaimTest` (128 tokens/12345 or,
+  influence +14450, persistance, anti-double, round-trip). **88/88.** Reste : raids (protocole EN JEU) + vérif EN JEU.

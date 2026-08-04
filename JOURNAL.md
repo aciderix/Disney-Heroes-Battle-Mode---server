@@ -3022,3 +3022,41 @@ débloqué (`getLatestCompletedLevel`) pour enchaîner la campagne.
 (fuite de gen-time dans la phase TUTO — `recordCampaignAttack` la gère bien, 114 en test isolé).
 Fichiers : `server/java/dhserver/ServerUser.java` (resyncCampaign), `server/smoke/CampaignPersistTest.java`,
 `desktop-port/src/main/java/dhdesktop/{TutorialDriver,DesktopLauncher}.java`.
+
+---
+
+## 2026-08-04 (g72) — SURGE (#72) incrément 6+7 : RÉCOMPENSES & BASCULE (headless 🟢, 88/88)
+
+**Livré** : le mode SURGE boucle désormais jusqu'au bout côté serveur. `ServerSurgeRewards` (calcul 100 % code
+du jeu) + `ServerSurgeState.{rollover, personalize, claimRewards}` + handler `SurgeClaimRewards` dans `LoginServer`.
+
+**Montants — TOUS extraits du code du jeu (§3/§4), zéro invention** (sondés + disasm) :
+- **tokens** (`CRYPT_TOKENS`) = `SurgeClientHelper.getPlayerSurgeCoins(surge)` = `getTokensPerClearedRegion()×régions
+  + getBaseTokens()`, régions = `wavesCompleted×3 + waveRegionsCleared.size()` — base **30**, /région **14**.
+- **or** (`GOLD`) = `member.storedGold` (accumulé par `recordOutcome→storeGold`).
+- **influence** de GUILDE = `SurgeHelper.getInfluenceProgress + SurgeStats.getBaseInfluence` = la somme EXACTE
+  affichée par `SurgeClearedWindow` (disasm offsets 96-102) — base **5000**, /région **1350**.
+
+**Flux client PROUVÉ au bytecode** (`SurgeScreen.checkAnimations` + `SurgeResultsWindow.lambda$createRewardsContent$1`) :
+le serveur pose un `SurgeRewards` par membre dans `SurgeData.unclaimedRewards[surgeID_terminé]` (clé =
+`previousResults.surgeID`) livré par `GetSurge` ; le client ouvre la fenêtre si `totalGold≠0 || totalTokens≠0` et
+au clic envoie `SurgeClaimRewards{surgeID}` **puis** se crédite localement `UserHelper.giveUser(CRYPT_TOKENS,
+totalTokens)` + `(GOLD, totalGold)` (`RewardSourceType.NORMAL`, offsets 163/249). Le serveur MIROITE ce crédit de
+façon autoritative, **une seule fois** (anti double-réclamation via le registre).
+
+**Bascule (rollover) paresseuse** (= incrément 7, sans tâche de fond) : au changement de surgeID, `loadOrReset`
+fige un registre `surgeprev:<guildID>` (résultats `SurgeResultInfo` + récompense par membre + set réclamé),
+crédite l'influence à la guilde (plafond `getMaxGuildInfluence`, comme `applyStaminaBurnInfluence`), et embarque
+`previousResults` dans le `SurgeData` neuf. Même patron que le rollover de saison de guerre/contest.
+
+**Test** `SurgeClaimTest` : montants (128 tokens / 12345 or pour 2 vagues+1 région), influence guilde **+14450**,
+crédit PERSISTANT (round-trip DB), **anti-double-réclamation**, disparition d'`unclaimedRewards` après réclamation,
+round-trip wire du `SurgeData` personnalisé et du `SurgeRewards`. Régression **88/88**.
+
+**⚠️ 1 inférence de PLACEMENT documentée (§4)** : le MONTANT d'influence est 100 % code du jeu ; le MOMENT du
+crédit (à la bascule, une fois) est un choix d'ingénierie cohérent avec war/contest — **à confirmer EN JEU**
+(incrément 8, qui débloque aussi les raids). Le crédit tokens/or personnel est DÉFINITIF (disasm). `achievedTier`
+de `SurgeResultInfo` laissé à 0 (non prouvé headless — pas de valeur inventée).
+
+Fichiers : `server/java/dhserver/{ServerSurgeRewards,ServerSurgeState,LoginServer}.java`,
+`server/smoke/SurgeClaimTest.java`, `server/smoke/regression.sh`, `docs/SURGE.md`.

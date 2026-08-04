@@ -61,13 +61,108 @@ public final class ServerSurgeState {
     ServerContext.init();
     long curID = ServerSurge.currentSurgeID(now);
     byte[] blob = store.loadShardState(guild.shardID, key(guild.guildID));
+    long storedID = Long.MIN_VALUE;
     if (blob != null && blob.length > 0) {
-      long storedID = peekSurgeID(blob);
+      storedID = peekSurgeID(blob);
       if (storedID == curID) return decode(blob);      // même surge → on conserve la progression persistée
     }
+    // Le surgeID a changé → BASCULE : on fige l'état du surge terminé (registre + influence de guilde), puis
+    // on (re)construit un état neuf embarquant les résultats précédents (comme la bascule de saison de guerre).
+    SurgeResultInfo prev = null;
+    if (blob != null && blob.length > 0 && storedID != 0 && storedID != Long.MIN_VALUE) {
+      prev = rollover(store, guild, decode(blob), storedID);
+    }
     SurgeData fresh = buildFresh(store, guild, now, curID);
+    if (prev != null) fresh.previousResults = prev;
     store.saveShardState(guild.shardID, key(guild.guildID), encode(curID, fresh));
     return fresh;
+  }
+
+  /**
+   * BASCULE d'un surge terminé (§6/§7) : fige un {@link ServerSurgeRewards.Ledger} ({@code surgeprev:<guildID>})
+   * avec les résultats et la récompense PAR MEMBRE (or stocké + tokens calculés par le jeu), et crédite UNE fois
+   * l'influence de guilde ({@code getInfluenceProgress + getBaseInfluence}, plafonnée). Idempotente de fait :
+   * n'est appelée qu'au changement de surgeID, avant réécriture de l'état neuf. Renvoie les résultats à embarquer
+   * dans {@code previousResults}.
+   */
+  static SurgeResultInfo rollover(UserStore store, ServerGuild guild, SurgeData old, long oldSurgeID)
+      throws SQLException {
+    ServerSurgeRewards.Ledger led = new ServerSurgeRewards.Ledger();
+    led.prevSurgeID = oldSurgeID;
+    led.result = ServerSurgeRewards.resultFor(old);
+    if (old.members != null) {
+      for (Object o : old.members) {
+        SurgeMemberSummary mem = (SurgeMemberSummary) o;
+        if (mem == null || mem.user == null) continue;
+        led.rewards.put(mem.user.iD, ServerSurgeRewards.rewardFor(old, mem));
+      }
+    }
+    store.saveShardState(guild.shardID, ServerSurgeRewards.ledgerKey(guild.guildID), led.encode());
+    creditGuildInfluence(store, guild, old);
+    return led.result;
+  }
+
+  /** Crédite l'influence de surge à la guilde (plafond via {@code getMaxGuildInfluence}, comme
+   *  {@code applyStaminaBurnInfluence}). Amount = {@link ServerSurgeRewards#guildInfluenceFor} (100 % code du jeu). */
+  static void creditGuildInfluence(UserStore store, ServerGuild guild, SurgeData old) throws SQLException {
+    if (guild == null || guild.info == null) return;
+    long gain = ServerSurgeRewards.guildInfluenceFor(old);
+    if (gain <= 0) return;
+    com.perblue.heroes.game.objects.GuildInfoPerkProvider perks =
+        new com.perblue.heroes.game.objects.GuildInfoPerkProvider(guild.info);
+    long max;
+    try { max = com.perblue.heroes.game.logic.GuildPerkHelper.getMaxGuildInfluence(perks); }
+    catch (Throwable t) { max = com.perblue.heroes.game.data.guild.GuildStats.getBaseInfluenceCap(); }
+    guild.info.influence = Math.min(guild.info.influence + gain, max);
+    store.saveGuild(guild);
+  }
+
+  /**
+   * Personnalise un {@link SurgeData} PARTAGÉ pour le VIEWER (champs « your… ») avant l'envoi par {@code GetSurge} :
+   * pose la récompense NON réclamée du surge précédent dans {@code unclaimedRewards[surgeID]} (le client ouvre la
+   * fenêtre de résultats si {@code totalGold≠0 || totalTokens≠0}) et renseigne {@code yourRaidsUsed}. Ne mute pas
+   * l'état partagé persisté (copie par référence dans un champ par-viewer uniquement).
+   */
+  public static void personalize(UserStore store, ServerGuild guild, SurgeData data, long userID)
+      throws SQLException {
+    if (data.unclaimedRewards == null) data.unclaimedRewards = new java.util.HashMap<>();
+    SurgeMemberSummary mine = memberSummary(data, userID);
+    if (mine != null) { data.yourRaidsUsed = mine.raidsUsed; }
+    byte[] lb = store.loadShardState(guild.shardID, ServerSurgeRewards.ledgerKey(guild.guildID));
+    if (lb == null || lb.length == 0) return;
+    ServerSurgeRewards.Ledger led = ServerSurgeRewards.Ledger.decode(lb);
+    if (led.prevSurgeID == 0 || led.claimed.contains(userID)) return;
+    com.perblue.heroes.network.messages.SurgeRewards r = led.rewards.get(userID);
+    if (r == null || (r.totalGold == 0 && r.totalTokens == 0)) return;   // rien à afficher (client n'ouvrirait pas)
+    data.unclaimedRewards.put(led.prevSurgeID, r);
+    if (led.result != null) data.previousResults = led.result;
+  }
+
+  /**
+   * RÉCLAMATION autoritative des récompenses du surge précédent ({@code SurgeClaimRewards{surgeID}}) : crédite
+   * l'or + les tokens ({@code CRYPT_TOKENS}) EXACTEMENT comme le client (mêmes montants figés au registre), une
+   * seule fois (anti double-réclamation via le set {@code claimed}), persiste le joueur et le registre. Renvoie le
+   * {@link SurgeRewards} crédité (récompense vide si rien à réclamer — surgeID inconnu, déjà réclamé, ou nul).
+   */
+  public static com.perblue.heroes.network.messages.SurgeRewards claimRewards(
+      UserStore store, ServerGuild guild, ServerUser attacker, long surgeID) throws SQLException {
+    com.perblue.heroes.network.messages.SurgeRewards empty = new com.perblue.heroes.network.messages.SurgeRewards();
+    empty.surgeID = surgeID;
+    byte[] lb = store.loadShardState(guild.shardID, ServerSurgeRewards.ledgerKey(guild.guildID));
+    if (lb == null || lb.length == 0) return empty;
+    ServerSurgeRewards.Ledger led = ServerSurgeRewards.Ledger.decode(lb);
+    if (led.prevSurgeID != surgeID) return empty;                        // ne réclame QUE le surge précédent
+    if (led.claimed.contains(attacker.userID)) return empty;             // déjà réclamé (anti-triche)
+    com.perblue.heroes.network.messages.SurgeRewards r = led.rewards.get(attacker.userID);
+    if (r == null) return empty;
+    if (r.totalTokens > 0)
+      attacker.giveResource(com.perblue.heroes.network.messages.ResourceType.CRYPT_TOKENS, r.totalTokens);
+    if (r.totalGold > 0)
+      attacker.giveResource(com.perblue.heroes.network.messages.ResourceType.GOLD, r.totalGold);
+    store.save(attacker);
+    led.claimed.add(attacker.userID);
+    store.saveShardState(guild.shardID, ServerSurgeRewards.ledgerKey(guild.guildID), led.encode());
+    return r;
   }
 
   /** Écrit l'état à jour (après une mutation d'un incrément ultérieur : combat/raid/objectif). */
@@ -247,7 +342,7 @@ public final class ServerSurgeState {
   }
 
   /** Summary du membre (par userID) dans le SurgeData (ou {@code null}). */
-  static SurgeMemberSummary memberSummary(SurgeData data, long userID) {
+  public static SurgeMemberSummary memberSummary(SurgeData data, long userID) {
     if (data.members == null) return null;
     for (Object o : data.members) {
       SurgeMemberSummary m = (SurgeMemberSummary) o;
