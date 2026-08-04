@@ -44,8 +44,11 @@ pré-appeler côté serveur (piège g45 `doStartWarAttack`).
    **remis à zéro** quand le surgeID change (`loadOrReset`). Conteneurs/sous-messages non nuls (wire-sûr).
    `SurgeStateTest` : membres=roster, round-trip wire + DB, reset. Districts/régions/paliers/objectifs peuplés
    aux incréments 3-6.
-3. ⬜ **`GetSurge` → `SurgeData`** (l'écran rend) : peupler TOUS les champs du contrat depuis l'état ; pousser au
-   besoin ; gate `SURGE_OBJECTIVES`. Vérif EN JEU (écran s'ouvre).
+3. 🟢 **`GetSurge` → `SurgeData`** (handler `LoginServer`) : charge l'état via `ServerSurgeState.loadOrReset`
+   (ou `emptySurge` hors guilde), renvoie `SurgeData` (patron `GetInvasionInfo → InvasionInfo`). Gate
+   `SURGE_OBJECTIVES` = **TL 32** (unlockables.tab), verrou CLIENT respecté (serveur répond, ne désactive pas).
+   Headless-prouvé (routage + réponse wire-valide). **⬜ Vérif EN JEU restante** (écran s'ouvre) — faisable sur le
+   compte BaronessDante (TL100, en guilde). Reste : peupler adversaires/districts/paliers/objectifs (incr. 4-6).
 4. ⬜ **Combat de région** : `StartSurgeAttack → StartSurgeAttackResponse` + `SurgeAttack` (issue) →
    `SurgeHelper.recordOutcome` (autoritatif, client-combat) + scoring/tiers + persistance ; anti-triche (recalc).
 5. ⬜ **Raids** : `recordRaid` + `getMaxRaidsPerSurge` (perks) + `getGoldForSurgeRaid`.
@@ -58,3 +61,5 @@ pré-appeler côté serveur (piège g45 `doStartWarAttack`).
 - 2026-08-04 (g63) : incrément 1 — `ServerSurge` calendrier/identité (code du jeu) + `SurgeScheduleTest`. Régression.
 - 2026-08-04 (g64) : incrément 2 — `ServerSurgeState` (SurgeData partagé par guilde, membres=roster, persisté
   `shard_state`, reset sur surgeID) + `SurgeStateTest` (roster + round-trip wire/DB + reset). Régression.
+- 2026-08-04 (g65) : incrément 3 — handler `GetSurge → SurgeData` (LoginServer) + `emptySurge` (hors guilde).
+  Headless 🟢 (routage + réponse wire-valide) ; vérif EN JEU restante.

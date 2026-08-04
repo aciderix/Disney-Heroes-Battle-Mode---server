@@ -24,6 +24,9 @@
 > 3. **Faire le point** sur l'état courant ET sur ce qui a été transmis lors de la compression, PUIS enchaîner.
 > Ne PAS sauter cette procédure : c'est la condition pour reprendre dans de bonnes conditions.
 
+Dernière mise à jour : **2026-08-04 (g65)** — **SURGE (#72) incrément 3 : handler `GetSurge → SurgeData` (headless 🟢).** Détail : `docs/SURGE.md` + `JOURNAL.md` g65.
+Handler `LoginServer` : `GetSurge` → `ServerSurgeState.loadOrReset` (ou `emptySurge` hors guilde) → `SurgeData` (patron `GetInvasionInfo`). Gate `SURGE_OBJECTIVES` = TL 32 (verrou CLIENT respecté). Régression 84/84. **🟢 headless, vérif EN JEU restante** (écran SURGE s'ouvre, faisable BaronessDante TL100/guilde) — champs adversaires/districts/paliers/objectifs vides jusqu'aux incréments 4-6.
+
 Dernière mise à jour : **2026-08-04 (g64)** — **SURGE (#72) incrément 2 : ÉTAT PARTAGÉ DE GUILDE (persisté).** Détail : `docs/SURGE.md` + `JOURNAL.md` g64.
 `dhserver/ServerSurgeState` : `SurgeData` par (guilde, surgeID), stocké wire dans `shard_state` (clé `surge:<guildID>`), **membres = roster** (`SurgeMemberSummary`/`BasicUserInfo`), **remis à zéro** au changement de surgeID (`loadOrReset`). `SurgeStateTest` : roster + round-trip wire/DB + reset. Reste (docs/SURGE.md incr. 3-8) : `GetSurge`→`SurgeData` (rendu), combat/raids, objectifs/récompenses, ordonnanceur, vérif EN JEU.
 

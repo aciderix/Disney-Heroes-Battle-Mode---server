@@ -1572,6 +1572,19 @@ public final class LoginServer {
               System.out.println("[login] <== GetBreakerQuest → ==> BreakerQuest ("
                   + bq.basicBreakerFights.size() + " combat(s), à partir de la salle "
                   + (qud != null ? qud.breakerBattlesWon : 0) + ")");
+            } else if (m instanceof com.perblue.heroes.network.messages.GetSurge) {
+              // SURGE #72 — OUVERTURE de l'écran : le client (GameMain) envoie GetSurge, le serveur renvoie l'état
+              // PARTAGÉ de la guilde (ServerSurgeState, reconstruit si nouveau surge). GetSurge → SurgeData
+              // (même patron que GetInvasionInfo → InvasionInfo). Le gate Unlockable.SURGE_OBJECTIVES est un
+              // verrou CLIENT (le client n'envoie pas GetSurge s'il est gaté) — le serveur RÉPOND, ne désactive rien.
+              long snow = com.perblue.heroes.util.TimeUtil.serverTimeNow();
+              ServerGuild sg = currentGuild(user);
+              com.perblue.heroes.network.messages.SurgeData sd =
+                  sg != null ? ServerSurgeState.loadOrReset(store, sg, snow) : ServerSurgeState.emptySurge(snow);
+              sd.setAsReplyTo(m);
+              c.send(sd);
+              System.out.println("[login] <== GetSurge → ==> SurgeData (surgeID=" + sd.surgeID
+                  + ", membres=" + (sd.members == null ? 0 : sd.members.size()) + ")");
             } else if (m instanceof com.perblue.heroes.network.messages.GetInvasionBosses) {
               // INVASION #69 — boss PARTAGÉS de la guilde (état opérateur persisté, v7) : les expirés
               // (au-delà de BOSS_FIGHT_TIME_LIMIT) sont retirés à la lecture.

@@ -1,5 +1,19 @@
 # JOURNAL — journal détaillé des modifications
 
+## 2026-08-04 (g65) — SURGE (#72) incrément 3 : handler `GetSurge → SurgeData` (headless 🟢)
+
+Handler `LoginServer` : le client (GameMain) envoie `GetSurge` (sans champ) à l'ouverture de l'écran → le serveur
+charge l'état PARTAGÉ de la guilde (`ServerSurgeState.loadOrReset`, reconstruit si nouveau surge) et renvoie un
+`SurgeData` (`setAsReplyTo`), même patron que `GetInvasionInfo → InvasionInfo`. Hors guilde → `emptySurge` (réponse
+vide fidèle, wire-sûre). Le gate `Unlockable.SURGE_OBJECTIVES` (= **TL 32**, unlockables.tab) est un verrou CLIENT
+— le serveur RÉPOND, ne le désactive jamais (§8). `SurgeStateTest` étendu (round-trip wire de `emptySurge`).
+Compile serveur OK, régression **84/84**.
+
+**Statut : 🟢 headless** (routage + réponse wire-valide prouvés). **Vérif EN JEU restante** (l'écran SURGE s'ouvre)
+— faisable sur BaronessDante (TL100, en guilde ≥ gate TL32). Les champs adversaires/districts/paliers/objectifs
+sont encore vides (peuplés incréments 4-6) : l'écran rendra le socle (fenêtre + membres), pas encore le combat.
+
+
 ## 2026-08-04 (g64) — SURGE (#72) incrément 2 : ÉTAT PARTAGÉ DE GUILDE (persisté)
 
 `dhserver/ServerSurgeState` : un `SurgeData` par (guilde, surgeID), partagé par toute la guilde. Stocké en octets

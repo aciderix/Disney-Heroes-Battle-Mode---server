@@ -63,6 +63,11 @@ public final class SurgeStateTest {
       SurgeData d3 = ServerSurgeState.loadOrReset(store, g, now);
       check(d3.surgeID == curID, "un surgeID stocké différent doit déclencher la reconstruction (→ " + curID + ")");
 
+      // 5. Branche HORS GUILDE : réponse vide wire-sûre (handler GetSurge sans guilde).
+      SurgeData empty = ServerSurgeState.emptySurge(now);
+      check(empty.members.isEmpty(), "emptySurge sans membre");
+      WireCheck.assertRoundTrips(empty);
+
       System.out.println("[surge-state] OK — SurgeData partagé (surgeID=" + curID + ", membres=" + d.members.size()
           + ") : roster + round-trip wire + round-trip DB + reset sur nouveau surge — #72 incrément 2");
     }

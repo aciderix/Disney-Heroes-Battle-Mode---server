@@ -61,6 +61,24 @@ public final class ServerSurgeState {
     store.saveShardState(guild.shardID, key(guild.guildID), encode(surgeID, data));
   }
 
+  /** SurgeData VIDE wire-sûr (joueur hors guilde : pas de surge — réponse fidèle, aucun membre). */
+  public static SurgeData emptySurge(long now) {
+    ServerContext.init();
+    SurgeData d = new SurgeData();
+    d.surgeID = ServerSurge.currentSurgeID(now);
+    d.raidEndTime = ServerSurge.surgeEndTime(now);
+    d.nextRaidStartTime = ServerSurge.nextSurgeStartTime(now);
+    d.members = new java.util.ArrayList<>();
+    d.opponents = new java.util.ArrayList<>();
+    d.log = new java.util.ArrayList<>();
+    d.waveRegionsCleared = new java.util.ArrayList<>();
+    d.objectives = new java.util.HashMap<>();
+    d.unclaimedRewards = new java.util.HashMap<>();
+    d.surgeScoringInfo = new SurgeScoringInfo();
+    d.previousResults = new SurgeResultInfo();
+    return d;
+  }
+
   /** Construit un {@link SurgeData} NEUF pour {@code surgeID} : fenêtre (ServerSurge) + membres (roster) + conteneurs
    *  vides non nuls (wire-sûr). Aucune valeur inventée : timings du code du jeu, identités du roster. */
   static SurgeData buildFresh(UserStore store, ServerGuild guild, long now, long surgeID) throws SQLException {
