@@ -2,13 +2,27 @@ package dhserver;
 
 import com.perblue.grunt.translate.util.GruntInputStream;
 import com.perblue.grunt.translate.util.GruntOutputStream;
+import com.perblue.heroes.game.ClientNetworkStateConverter;
+import com.perblue.heroes.game.data.item.StatType;
+import com.perblue.heroes.game.objects.IndividualUser;
+import com.perblue.heroes.game.objects.UnitData;
+import com.perblue.heroes.game.objects.User;
 import com.perblue.heroes.network.messages.Avatar;
 import com.perblue.heroes.network.messages.BasicUserInfo;
+import com.perblue.heroes.network.messages.DistrictType;
+import com.perblue.heroes.network.messages.ExtendedHeroSummary;
+import com.perblue.heroes.network.messages.IndividualUserExtra;
+import com.perblue.heroes.network.messages.LineupSummary;
 import com.perblue.heroes.network.messages.MessageFactory;
+import com.perblue.heroes.network.messages.Rarity;
 import com.perblue.heroes.network.messages.SurgeData;
 import com.perblue.heroes.network.messages.SurgeMemberSummary;
+import com.perblue.heroes.network.messages.SurgeOpponentSummary;
 import com.perblue.heroes.network.messages.SurgeResultInfo;
 import com.perblue.heroes.network.messages.SurgeScoringInfo;
+import com.perblue.heroes.network.messages.UnitType;
+import com.perblue.heroes.network.messages.UserExtra;
+import com.perblue.heroes.network.messages.UserInfo;
 
 import java.io.ByteArrayInputStream;
 import java.io.ByteArrayOutputStream;
@@ -89,7 +103,8 @@ public final class ServerSurgeState {
     d.nextRaidStartTime = ServerSurge.nextSurgeStartTime(now);
     // Conteneurs NON nuls (sinon NPE à l'écriture wire — défaut nº3). Peuplés aux incréments suivants.
     d.members = buildMembers(store, guild);
-    d.opponents = new java.util.ArrayList<>();
+    d.opponents = buildOpponents(store, guild);
+    d.totalWaves = ServerSurgeMap.activeDistricts().size();
     d.log = new java.util.ArrayList<>();
     d.waveRegionsCleared = new java.util.ArrayList<>();
     d.objectives = new java.util.HashMap<>();
@@ -115,6 +130,108 @@ public final class ServerSurgeState {
       out.add(m);
     }
     return out;
+  }
+
+  // ---- ADVERSAIRES (incrément 4b-ii) : un par district actif, pool réel du shard + repli synthétique ----
+
+  /**
+   * Un {@link SurgeOpponentSummary} par district actif ({@link ServerSurgeMap}). Modèle ARÈNE #43 : on tire des
+   * JOUEURS RÉELS du shard (hors membres de la guilde) et on prend leur équipe (roster) comme lineup adverse ;
+   * si le pool est vide, repli SYNTHÉTIQUE déterministe (bot par district). Le combat reste client-autoritatif
+   * (le lineup n'est qu'un instantané d'affichage + l'équipe à affronter).
+   */
+  static java.util.List<SurgeOpponentSummary> buildOpponents(UserStore store, ServerGuild guild) throws SQLException {
+    java.util.List<DistrictType> districts = ServerSurgeMap.activeDistricts();
+    java.util.List<Long> pool = store.listUserIDs(guild.shardID, 0L);
+    pool.removeAll(guild.memberIDs);                        // pas d'adversaires de sa propre guilde
+    java.util.List<SurgeOpponentSummary> out = new java.util.ArrayList<>();
+    int pi = 0;
+    for (DistrictType d : districts) {
+      SurgeOpponentSummary o = new SurgeOpponentSummary();
+      o.district = d;
+      o.clearedThisWave = false;
+      o.lockExpiration = 0L;
+      o.modifyCount = 0L;
+      o.points = 0L;                                        // points réels calculés par recordOutcome à la défaite
+      ServerUser src = null;
+      if (!pool.isEmpty()) { src = store.loadIfExists(pool.get(pi % pool.size()), guild.shardID); pi++; }
+      if (src != null) {
+        BasicUserInfo who = src.basicInfo();
+        o.attackerID = src.userID;
+        o.attackerName = who != null && who.name != null ? who.name : "";
+        o.lineup = lineupFromUser(src.gameUser());
+      }
+      if (o.lineup == null || o.lineup.lineup == null || o.lineup.lineup.isEmpty()) {
+        o.attackerID = o.attackerID != 0 ? o.attackerID : 0L;
+        if (o.attackerName == null || o.attackerName.isEmpty()) o.attackerName = "Rival " + d.name();
+        o.lineup = syntheticLineup(guild.shardID, d.ordinal() + 1L);
+      }
+      out.add(o);
+    }
+    return out;
+  }
+
+  /** Équipe d'un joueur (≤ 5 héros de son roster) en {@link LineupSummary} (mêmes convertisseurs que l'arène). */
+  static LineupSummary lineupFromUser(User u) {
+    LineupSummary ls = new LineupSummary();
+    ls.lineup = new java.util.ArrayList<>();
+    ls.combatModifiers = new java.util.HashMap<>();
+    ls.power = 0L;
+    try {
+      int n = 0;
+      for (Object o : u.getHeroes()) {
+        if (n >= 5) break;
+        UnitData ud = (UnitData) o;
+        ls.lineup.add(extended(ud));
+        try { ls.power += Math.max(0L, ud.getPower(0)); } catch (Throwable t) { /* ignore */ }
+        n++;
+      }
+    } catch (Throwable t) { /* roster vide → lineup vide, repli synthétique en amont */ }
+    return ls;
+  }
+
+  /** {@link ExtendedHeroSummary} d'un héros (résumé + PV), comme {@code ServerArena.extended}. */
+  static ExtendedHeroSummary extended(UnitData ud) {
+    ExtendedHeroSummary e = new ExtendedHeroSummary();
+    e.summary = ClientNetworkStateConverter.getHeroSummary(ud);
+    try { e.health = (long) ud.getCachedStat(StatType.HP_MAX, ud.getLevel()); } catch (Throwable t) { e.health = 0; }
+    e.energy = 0;
+    return e;
+  }
+
+  /** Repli SYNTHÉTIQUE (bot) déterministe par district — utilisé seulement si aucun joueur réel sur le shard.
+   *  Équipe générée par la logique du jeu ({@code createAndAddHero}), pas de stats inventées. */
+  static LineupSummary syntheticLineup(int shardID, long seed) {
+    LineupSummary ls = new LineupSummary();
+    ls.lineup = new java.util.ArrayList<>();
+    ls.combatModifiers = new java.util.HashMap<>();
+    ls.power = 0L;
+    try {
+      User bot = botUser(shardID, seed);
+      java.util.List<UnitType> pool = new java.util.ArrayList<>(java.util.Arrays.asList(
+          UnitType.RALPH, UnitType.ELASTIGIRL, UnitType.FROZONE));
+      for (UnitType t : pool) {
+        try {
+          if (bot.getHero(t) == null) bot.createAndAddHero(t, Rarity.ORANGE, 40, 1, new String[]{"surge-bot"});
+          UnitData ud = (UnitData) bot.getHero(t);
+          if (ud != null) { ls.lineup.add(extended(ud)); ls.power += Math.max(0L, ud.getPower(0)); }
+        } catch (Throwable perHero) { /* héros refusé → suivant */ }
+      }
+    } catch (Throwable t) { /* jamais fatal */ }
+    return ls;
+  }
+
+  /** Bot lié au contexte de jeu (TL élevé, shard du joueur) — comme {@code ServerArena.botUser}. */
+  static User botUser(int shardID, long id) {
+    UserInfo ui = new UserInfo();
+    ui.shardID = shardID;
+    ui.basicInfo = new BasicUserInfo();
+    ui.basicInfo.teamLevel = 65;
+    User bot = com.perblue.heroes.game.ClientNetworkStateConverter.getUser(ui, new UserExtra(), "surge-bot");
+    IndividualUser iu = com.perblue.heroes.game.ClientNetworkStateConverter.getIndividualUser(
+        new IndividualUserExtra(), id, 0, "surge-bot");
+    ServerContext.bind(bot, iu);
+    return bot;
   }
 
   // ---- (dé)sérialisation : version + surgeID + octets wire du SurgeData ----

@@ -1,5 +1,18 @@
 # JOURNAL — journal détaillé des modifications
 
+## 2026-08-04 (g69) — SURGE (#72) incrément 4b-ii : pose des adversaires (pool réel + synthétique)
+
+`ServerSurgeState.buildOpponents` : un `SurgeOpponentSummary` par district actif (les 27 de `ServerSurgeMap`),
+peuplé dans `buildFresh` (donc `GetSurge` renvoie désormais la carte complète). **Modèle ARÈNE #43** : on tire
+des JOUEURS RÉELS du shard (`UserStore.listUserIDs` hors membres de la guilde) et on prend leur équipe (≤ 5 héros
+du roster) comme lineup adverse via `ClientNetworkStateConverter.getHeroSummary` + `extended` (résumé + PV), power
+sommée ; repli SYNTHÉTIQUE déterministe par district (bot `createAndAddHero` RALPH/ELASTIGIRL/FROZONE) si le pool
+est vide. `points`=0 (calculés par `recordOutcome` à la défaite, pas inventés). `totalWaves` = nb de districts.
+`SurgeStateTest` étendu : 3 joueurs hors guilde semés → 27 adversaires, chacun avec un lineup non vide, chaque
+district couvert, au moins un adversaire issu du pool RÉEL, round-trip wire (valide les types `SurgeOpponentSummary`
+/`LineupSummary`/`ExtendedHeroSummary` = défaut nº3). Régression.
+
+
 ## 2026-08-04 (g68) — SURGE (#72) incrément 4b-i : carte des districts (données du jeu)
 
 `dhserver/ServerSurgeMap` : la carte SURGE vient des DONNÉES du jeu (§3/§4). `map_districts.tab` associe 27

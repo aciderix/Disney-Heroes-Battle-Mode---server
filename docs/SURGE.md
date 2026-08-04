@@ -71,6 +71,9 @@ pré-appeler côté serveur (piège g45 `doStartWarAttack`).
    du jeu (slot0=1 ; points/or=0 attendu pour un joueur sans guilde/tier). **Reste 4b/4c** : opponents +
    `StartSurgeAttack→StartSurgeAttackResponse` (raidID + lineup défenseur) puis handler `SurgeAttack` (correler le
    raid, `applyRegionOutcome`, persister le SurgeData, marquer l'adversaire vaincu).
+4b-ii. ✅ **Adversaires** (`ServerSurgeState.buildOpponents`) : un par district actif (pool réel du shard +
+   repli synthétique), lineup via `getHeroSummary`/`extended`. Peuplé dans `buildFresh` → `GetSurge` renvoie
+   désormais les 27 districts avec adversaires. Reste 4c.
 5. ⬜ **Raids** : `recordRaid` + `getMaxRaidsPerSurge` (perks) + `getGoldForSurgeRaid`.
 6. ⬜ **Objectifs & récompenses** : progression d'objectifs, `SurgeClaimRewards` (tokens/influence/or), unclaimed.
 7. ⬜ **Ordonnanceur** : bascule de surge (fin de fenêtre → résultats `SurgeResultInfo` → nouveau surge), comme
@@ -88,3 +91,7 @@ pré-appeler côté serveur (piège g45 `doStartWarAttack`).
 - 2026-08-04 (g68) : incrément 4b-i — `ServerSurgeMap` (27 districts actifs via `MapDistrictStats.getEnvironment`
   + `SurgeStats.getMultiplier`, données `map_districts.tab`/`creep_surge_nodes.tab`, §3/§4) + `SurgeMapTest`.
   Base de la pose d'adversaires (4b-ii). Régression.
+- 2026-08-04 (g69) : incrément 4b-ii — `ServerSurgeState.buildOpponents` : un `SurgeOpponentSummary` par district
+  actif, tiré du POOL RÉEL du shard (`listUserIDs` hors membres de guilde) → lineup depuis leur roster
+  (`getHeroSummary`/`extended`, comme l'arène #43), repli SYNTHÉTIQUE déterministe (bot `createAndAddHero`) si pool
+  vide. `SurgeStateTest` étendu (27 adversaires, lineups non vides, pool réel utilisé, round-trip wire). Régression.

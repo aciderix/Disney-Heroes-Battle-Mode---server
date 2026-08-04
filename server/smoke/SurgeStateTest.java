@@ -35,6 +35,14 @@ public final class SurgeStateTest {
       if (!g.memberIDs.contains(2L)) g.memberIDs.add(2L);
       store.save(ruler); store.save(m2); store.saveGuild(g);
 
+      // Joueurs RÉELS hors guilde sur le shard (pool d'adversaires SURGE, comme l'arène #43).
+      for (long id = 10L; id <= 12L; id++) {
+        ServerUser rival = ServerUser.newPlayer(id, 1);
+        rival.grantHero(UnitType.RALPH, Rarity.ORANGE, 40, 5);
+        rival.grantHero(UnitType.ELASTIGIRL, Rarity.ORANGE, 40, 5);
+        store.save(rival);
+      }
+
       long now = com.perblue.heroes.util.TimeUtil.serverTimeNow();
       long curID = ServerSurge.currentSurgeID(now);
 
@@ -48,6 +56,23 @@ public final class SurgeStateTest {
       check(ids.contains(1L) && ids.contains(2L), "les identités des membres doivent venir du roster : " + ids);
       check(d.opponents != null && d.objectives != null && d.log != null && d.surgeScoringInfo != null,
           "conteneurs/sous-messages non nuls (wire-sûr)");
+
+      // ADVERSAIRES (4b-ii) : un par district actif (27), chacun avec un lineup non vide ; issus du pool réel.
+      int nDistricts = dhserver.ServerSurgeMap.activeDistricts().size();
+      check(d.opponents.size() == nDistricts,
+          "un adversaire par district actif : attendu " + nDistricts + ", obtenu " + d.opponents.size());
+      java.util.Set<DistrictType> districtsSeen = new java.util.HashSet<>();
+      boolean anyReal = false;
+      for (Object oo : d.opponents) {
+        SurgeOpponentSummary op = (SurgeOpponentSummary) oo;
+        check(op.district != null, "adversaire sans district");
+        districtsSeen.add(op.district);
+        check(op.lineup != null && op.lineup.lineup != null && !op.lineup.lineup.isEmpty(),
+            "adversaire du district " + op.district + " sans lineup");
+        if (op.attackerID >= 10L && op.attackerID <= 12L) anyReal = true;
+      }
+      check(districtsSeen.size() == nDistricts, "chaque district doit avoir SON adversaire (pas de doublon/trou)");
+      check(anyReal, "au moins un adversaire doit provenir du pool RÉEL du shard (joueurs 10-12)");
 
       // 2. Round-trip WIRE (défaut nº3) — l'état s'écrit et se relit sur le fil.
       WireCheck.assertRoundTrips(d);
