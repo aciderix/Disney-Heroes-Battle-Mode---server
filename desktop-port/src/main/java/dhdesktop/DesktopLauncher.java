@@ -348,6 +348,10 @@ public final class DesktopLauncher {
                     TutorialDriver.surgeState(game);
                     continue;
                 }
+                if (low.equals("surgeclaim")) {                  // surgeclaim — réclamer les récompenses (SurgeClaimRewards)
+                    TutorialDriver.surgeClaim(game);
+                    continue;
+                }
                 if (low.equals("surgefight")) {                  // surgefight — ouvrir le combat du 1er district jouable
                     TutorialDriver.surgeFight(game);
                     continue;

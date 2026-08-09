@@ -814,6 +814,26 @@ public final class TutorialDriver {
         } catch (Throwable t) { System.out.println("[surgenav] échec: " + t); }
     }
 
+    /** DEV : RÉCLAME les récompenses du surge précédent — envoie le VRAI {@code SurgeClaimRewards{surgeID}} (même
+     *  message que le bouton CLAIM de SurgeResultsWindow) via le network provider du jeu, pour exercer le handler
+     *  serveur. surgeID = clé de {@code unclaimedRewards} (= previousResults.surgeID). Invoqué via "surgeclaim". */
+    public static void surgeClaim(GameMain game) {
+        try {
+            com.perblue.heroes.network.messages.SurgeData d = game.getSurgeData();
+            if (d == null) { System.out.println("[surgeclaim] getSurgeData()=null"); return; }
+            long sid = 0L;
+            if (d.unclaimedRewards != null && !d.unclaimedRewards.isEmpty())
+                sid = ((Number) d.unclaimedRewards.keySet().iterator().next()).longValue();
+            else if (d.previousResults != null) sid = d.previousResults.surgeID;
+            if (sid == 0L) { System.out.println("[surgeclaim] aucune récompense non réclamée (unclaimedRewards vide)"); return; }
+            com.perblue.heroes.network.messages.SurgeClaimRewards scr =
+                new com.perblue.heroes.network.messages.SurgeClaimRewards();
+            scr.surgeID = sid;
+            com.perblue.heroes.DH.app.getNetworkProvider().sendMessage(scr);
+            System.out.println("[surgeclaim] SurgeClaimRewards{surgeID=" + sid + "} envoyé [chemin réel du jeu]");
+        } catch (Throwable t) { System.out.println("[surgeclaim] échec: " + t); }
+    }
+
     /** DEV : imprime l'état SURGE côté client (districts jouables, verrous, raid). Invoqué via "surgestate". */
     public static void surgeState(GameMain game) {
         try {

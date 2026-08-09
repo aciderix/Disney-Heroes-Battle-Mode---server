@@ -3212,3 +3212,34 @@ sans marquer le district vaincu).
 
 Fichiers : `server/java/dhserver/{ServerSurgeCombat,ServerSurgeState,LoginServer}.java`, `server/smoke/SurgeRaidTest.java`,
 `server/smoke/regression.sh`, `docs/SURGE.md` §5, `MEMORY.md`.
+
+---
+
+## 2026-08-09 (g72g) — SURGE 100 % VÉRIFIÉ EN JEU : raid + récompenses/réclamation + anti-double
+
+Achèvement de la vérif EN JEU de SURGE (« Termine quand même les vérifs in game »).
+
+**RAID (incr. 5) — bout en bout EN JEU** : `surgeraid` (auto-équipe via bouton AUTO + `doRaidSurge`) → le vrai
+client envoie `HeroLineupUpdate{SURGE}` + `Action RAID_SURGE{extra TYPE=P, COUNT=0, UPSELL=false,
+MODE=MANUAL_SELECT}` → **notre handler** : `Action RAID_SURGE(P) → SurgeUpdate (+9 225 000 or, raidsUsed=1)
+[persisté]`. Écran « RAID (1 LEFT) ». `COUNT=0` CONFIRME que ce n'est pas un multiplicateur (1 raid/Action — décision
+serveur validée, pas d'invention). La connexion TIENT désormais (l'ancien serveur SANS handler RAID_SURGE coupait
+la connexion — cause de la coupure g72e, résolue par le handler).
+
+**RÉCOMPENSES + RÉCLAMATION (incr. 6/7) — bout en bout EN JEU** : horloge serveur avancée +13h
+(`DH_SERVER_OPTS=-Ddh.clock.offset.hours=13`) → bascule (surgeID 1786291200000→1786377600000) → `GetSurge` livre
+`unclaimedRewards` → le client ouvre **« SURGE REWARDS »** : MY REWARDS **18,45 M or + 30 tokens**, GUILD **5 000
+influence** — valeurs EXACTES du serveur (storedGold combat+raid ; `getPlayerSurgeCoins`=30 ; `getBaseInfluence`=5000).
+`surgeclaim` (envoie le vrai `SurgeClaimRewards{surgeID}`) → **notre handler** : `SurgeClaimRewards(1786291200000)
+→ SurgeRewards (+30 tokens, +18 450 000 or)`. Crédit **persisté** (DB : `CRYPT_TOKENS=30`, GOLD +18,45 M).
+**Anti-double CONFIRMÉ EN JEU** : 2ᵉ claim → `(+0 tokens, +0 or)`. ⇒ l'inférence de placement du crédit d'influence
+(à la bascule) est VALIDÉE.
+
+**⇒ SURGE est 100 % vérifié EN JEU** : rendu, combat de district, raid, bascule/récompenses/réclamation, anti-double,
++ le fix serveur `youAreInRaid`. Aucune invention (§4) : tous les montants/params du code du jeu, prouvés au bytecode
+et confirmés sur le fil.
+
+**Pilote SURGE complet** (`TutorialDriver`+`DesktopLauncher`) : `nav SURGE`, `surgenav`, `surgestate`, `surgefight`,
+`surgeteamfight`, `surgequick`, `surgeraid`, `surgeclaim`. Recette de restauration du client dans `docs/SURGE.md §8`.
+
+Fichiers : `desktop-port/src/main/java/dhdesktop/{TutorialDriver,DesktopLauncher}.java` (surgeclaim), `docs/SURGE.md` §8, `MEMORY.md`.
