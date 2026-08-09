@@ -1,5 +1,35 @@
 # JOURNAL — journal détaillé des modifications
 
+## 2026-08-09 (g78) — CHALLENGES (#72) : achats/annulation ✅ EN JEU + fix pilote pour les MODALES (réutilisable)
+
+**Fix pilote (outillage, réutilisable TOUS les modes).** `TutorialDriver.fireClick` ne hit-testait que le stage de
+l'ÉCRAN (`getRootStack` = `belowBlurStage`) → il ratait les boutons des fenêtres MODALES (confirmations d'achat, de
+reset…) qui vivent sur `ScreenManager.aboveBlurStage` (au-dessus du blur) → il tapait le bouton DERRIÈRE la modale.
+Correctif : `fireClick` détecte une modale ouverte via `hasModal(aboveBlurStage.getRoot())` (acteur VISIBLE dont la
+classe/super-classe évoque `ModalWindow`/`Prompt`/`Confirm*` — les modales du jeu sont des `DHWindow` : `DecisionPrompt`,
+`GenericPurchasePrompt`, `*ConfirmationWindow`…). Si modale ouverte → hit-test `aboveBlurStage` ; sinon → stage
+d'écran/fenêtres. Filtre « acteur réellement cliquable » (self/ancêtre a des listeners) pour ne pas taper le HUD inerte
+d'`aboveBlur`. Pure lecture de la scène (réflexion sur les champs privés `aboveBlurStage`/`belowBlurStage`), aucune
+modif du jeu.
+
+**Vérifs EN JEU** (compte userID=1 TL100, +20000 diamants via outil DEV `GrantDiamonds`) contre notre serveur :
+- **BUY_STICKER_CHALLENGE_SLOT ✅** : carte `BUY 1,000` (bleue car diamants OK) → tap → modale **« EXTRA SLOT? Buy
+  extra challenge slot for 1,000 diamonds? »** → YES (atteint via le fix) → le client émet
+  `Action{command=BUY_STICKER_CHALLENGE_SLOT, extra={SLOT=NORMAL_2}}` → handler `<== BUY_STICKER_CHALLENGE_SLOT
+  (NORMAL_2) appliqué [persisté]` → **DIAMONDS 20000→19000 (-1000 = CHALLENGE_SLOT_2_COST), CHALLENGE_SLOT_2=true**
+  (relu DB) → le client rend un **2ᵉ slot « ADD A CHALLENGE »**. Prouve le chemin d'ACHAT (purchaseSlot autoritatif +
+  débit diamants + flag + persistance) de bout en bout en jeu.
+- **CANCEL_STICKER_CHALLENGE ✅** (comble le dernier trou de l'incr. 2) : détail livre STARTER → **RESTART** sur le
+  défi actif → modale **« RESTART CHALLENGE? »** → YES → `Action{command=CANCEL_STICKER_CHALLENGE, extra={SLOT=STARTER,
+  TYPE=THE_NAMES_NICK, TIME}}` → `<== CANCEL_STICKER_CHALLENGE(THE_NAMES_NICK/STARTER) appliqué [persisté]` → minuterie
+  remise à 7 j (le jeu ré-avance via `setupStarterChallenges`). Confirme aussi la PERSISTANCE inter-lancements :
+  `CATCH A STAR` toujours **COMPLETE** (le claim g75 a survécu à 2 relances).
+
+**Bilan mutations CHALLENGES #72 en jeu** : CLAIM (g75) + BUY_STICKER_CHALLENGE_SLOT + CANCEL — **toutes ✅**.
+Restent non exercés en jeu (NON bloquants, même chemin handler/modale prouvé, + headless + bytecode) : BUY_STICKER,
+BUY_STICKER_BOOK, START_STICKER_CHALLENGE (gaté : slot STARTER unique / défis NORMAL à débloquer), SET_FAVORITE_STICKER.
+Aucune modif serveur (les handlers étaient commités g74/g76) — seul le pilote (`TutorialDriver`) change + docs.
+
 ## 2026-08-09 (g77) — CHALLENGES (#72) incrément 4 : handler GetUserChallengeDataExtra (🟢 headless, 93/93)
 
 **`GetUserChallengeDataExtra{targetUserID}` → `UserChallengeDataExtra`** (requête/réponse, patron `GetSurge`).

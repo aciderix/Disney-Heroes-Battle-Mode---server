@@ -51,9 +51,13 @@ joueur ; **seul handler « MANQUE » au niveau du mode**).
      récompense en jeu) + **auto-avance** du slot STARTER → **« The Name's Wilde »** (0/20, 7d) — le comportement
      `setupStarterChallenges` du jeu, piloté serveur. **Persistance DB confirmée** : `CHALLENGE_TOKENS=500`,
      `slot STARTER=THE_NAMES_NICK 0/20`, `completionTime={TO_CATCH_A_STAR}`. La fixture `historicWeeklyChallenges`
-     tourne dans le VRAI client (aucun NPE). *(START player-initiated + CANCEL : mêmes extras/handler/persistance,
-     prouvés HEADLESS + protocole bytecode ; en jeu, START est gaté (slot STARTER unique / défis NORMAL à débloquer)
-     et le bouton modal de RESTART n'est pas atteignable par le pilote `fire` — non bloquant.)*
+     tourne dans le VRAI client (aucun NPE). **CANCEL ✅ EN JEU (g78)** : RESTART sur le défi actif → modale
+     « RESTART CHALLENGE? » → YES → `Action{CANCEL_STICKER_CHALLENGE, extra{SLOT=STARTER, TYPE=THE_NAMES_NICK, TIME}}`
+     → handler `appliqué [persisté]` → minuterie remise à 7 j (ré-avance par `setupStarterChallenges`). Débloqué par
+     le **fix pilote modale (g78)** : `TutorialDriver.fireClick` hit-teste désormais `ScreenManager.aboveBlurStage`
+     (fenêtres modales `DHWindow`/`*Prompt`) **quand une modale est ouverte** (`hasModal`), sinon le stage d'écran —
+     réutilisable pour TOUTES les confirmations, tous modes. *(START player-initiated reste gaté en jeu — slot STARTER
+     unique / défis NORMAL à débloquer ; mêmes extras/handler prouvés HEADLESS + bytecode.)*
    - **Fixture** (`ServerContext.init`) : `DH.app.historicWeeklyChallenges = new HistoricWeeklyChallenges()` — la
    - **Fixture** (`ServerContext.init`) : `DH.app.historicWeeklyChallenges = new HistoricWeeklyChallenges()` — la
      valeur EXACTE du ctor du jeu (notre shim l'alloue sans ctor → null → l'extension `StickerHelper$1
@@ -107,7 +111,12 @@ joueur ; **seul handler « MANQUE » au niveau du mode**).
      favori posé dans `userExtra` (source lue par `getUser` ; `User.setFavoriteSticker` n'écrit PAS dans extra).
    - `ChallengeShopTest` : buySlot (**-1000 diamants**, `CHALLENGE_SLOT_2`, anti-double), setFavorite, buyBook
      **CITY_PATROL** (**-900 diamants**, 5 stickers `purchaseTime`) + persistance DB. Valeurs EXACTES des données du
-     jeu (= « BUY 1,000 »/« BUY 900 » vus en jeu). **Vérif EN JEU restante** (nécessite des diamants sur le compte).
+     jeu (= « BUY 1,000 »/« BUY 900 » vus en jeu).
+   - **✅ EN JEU (g78)** : `BUY 1,000` → modale **« EXTRA SLOT? Buy extra challenge slot for 1,000 diamonds? »** →
+     YES → client émet `Action{BUY_STICKER_CHALLENGE_SLOT, extra{SLOT=NORMAL_2}}` → handler `appliqué [persisté]` →
+     **-1000 diamants (20000→19000), `CHALLENGE_SLOT_2`=true** (relu DB) → le client rend un **2ᵉ slot « ADD A
+     CHALLENGE »**. (BUY_STICKER/BUY_STICKER_BOOK/SET_FAVORITE : même chemin handler+modale, prouvés headless +
+     bytecode.) Débloqué par le **fix pilote modale** (cf. ci-dessous).
 4. 🟢 **`GetUserChallengeDataExtra` handler** — **LIVRÉ HEADLESS (g77)** : requête/réponse (patron `GetSurge`) ;
    `GetUserChallengeDataExtra{targetUserID}` → le serveur charge l'état de défis PERSISTÉ du joueur ciblé (soi-même
    ou un autre membre via `store.loadIfExists`) et renvoie un `UserChallengeDataExtra` wire-sûr (`freshData` si absent,

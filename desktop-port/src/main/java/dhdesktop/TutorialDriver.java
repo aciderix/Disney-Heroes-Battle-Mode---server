@@ -631,20 +631,60 @@ public final class TutorialDriver {
      *  est enregistré comme {@code InputProcessor} courant (certains sous-écrans ont un stage propre non branché sur
      *  {@code Gdx.input}, d'où des taps « perdus » via le chemin processor). Log l'acteur touché + ses listeners.
      *  Renvoie true si un acteur a été touché. Invoqué via dh.clickfile "fire x,y". */
+    /** Vrai si le sous-arbre contient une fenêtre MODALE / un prompt VISIBLE (classe ou super-classe évoquant
+     *  {@code *ModalWindow}/{@code *Prompt}/{@code *Confirm*}). Sert à savoir si {@code aboveBlurStage} tient une
+     *  modale (⇒ le pilote doit y taper) plutôt que le seul HUD. Pure lecture de la scène. */
+    private static boolean hasModal(Actor a) {
+        if (a == null || !a.isVisible()) return false;
+        for (Class<?> c = a.getClass(); c != null && c != Object.class; c = c.getSuperclass()) {
+            String n = c.getSimpleName();
+            if (n.contains("ModalWindow") || n.contains("Prompt") || n.contains("ConfirmationWindow")
+                || n.contains("ConfirmWindow")) return true;
+        }
+        if (a instanceof Group)
+            for (Actor child : ((Group) a).getChildren()) if (hasModal(child)) return true;
+        return false;
+    }
+
     public static boolean fireClick(GameMain game, int cx, int cy) {
         try {
             Object screen = game.getScreenManager().getScreen();
-            Stage st = null;
+            // Stages candidats, DU PLUS HAUT AU PLUS BAS : (1) aboveBlurStage du ScreenManager — les fenêtres
+            // MODALES (confirmations BUY/RESTART/« ARE YOU SURE ») y vivent AU-DESSUS du blur ; le pilote les
+            // ratait car il ne visait que le stage de l'ÉCRAN (belowBlur) → il touchait le bouton DERRIÈRE la
+            // modale. (2) le root stack de l'écran. (3) une fenêtre ouverte. On hit-teste dans l'ordre et on
+            // retient le 1er stage où un VRAI acteur (≠ racine) est touchable au point → la modale gagne.
+            java.util.List<Stage> stages = new java.util.ArrayList<>();
+            // aboveBlurStage porte le HUD ET les fenêtres MODALES. On ne l'utilise QUE si une modale est
+            // réellement ouverte (sinon on taperait le HUD au lieu du bouton d'écran derrière). Détection : un
+            // acteur visible dont la classe (ou une super-classe) évoque une fenêtre modale / un prompt.
+            Stage above = null;
+            try {
+                Object sm = game.getScreenManager();
+                java.lang.reflect.Field f = sm.getClass().getDeclaredField("aboveBlurStage"); f.setAccessible(true);
+                above = (Stage) f.get(sm);
+            } catch (Throwable ignore) {}
+            if (above != null && hasModal(above.getRoot())) stages.add(above);
             try { Group root = (Group) screen.getClass().getMethod("getRootStack").invoke(screen);
-                  if (root != null) st = root.getStage(); } catch (Throwable ignore) {}
-            if (st == null) {
-                List<?> ws = screenWindows(screen);
-                if (ws != null) for (Object w : ws) if (w instanceof Actor && ((Actor) w).getStage() != null) { st = ((Actor) w).getStage(); break; }
+                  if (root != null && root.getStage() != null && !stages.contains(root.getStage())) stages.add(root.getStage()); } catch (Throwable ignore) {}
+            List<?> ws0 = screenWindows(screen);
+            if (ws0 != null) for (Object w : ws0) if (w instanceof Actor && ((Actor) w).getStage() != null && !stages.contains(((Actor) w).getStage())) { stages.add(((Actor) w).getStage()); break; }
+            if (stages.isEmpty()) { System.out.println("[fire] pas de stage"); return false; }
+            // On retient le 1er stage (du plus haut au plus bas) où le point touche un acteur CLIQUABLE (lui-même
+            // ou un ancêtre proche a des listeners) — sinon on saute (ex. aboveBlurStage porte un Group INERTE de
+            // fond même SANS modale ; sans ce filtre, il masquerait le vrai bouton du belowBlurStage derrière).
+            Stage st = null; Actor hit = null; Vector2 sc = null;
+            for (Stage s : stages) {
+                Vector2 p = s.screenToStageCoordinates(new Vector2(cx, cy));
+                Actor h = s.hit(p.x, p.y, true);
+                if (h == null || h == s.getRoot()) continue;
+                boolean clickable = false;
+                int depth = 0;
+                for (Actor a = h; a != null && depth < 6; a = a.getParent(), depth++)
+                    if (!a.getListeners().isEmpty()) { clickable = true; break; }
+                if (clickable) { st = s; hit = h; sc = p; break; }
             }
-            if (st == null) { System.out.println("[fire] pas de stage"); return false; }
-            Vector2 sc = st.screenToStageCoordinates(new Vector2(cx, cy));
-            Actor hit = st.hit(sc.x, sc.y, true);
-            if (hit == null) { System.out.println("[fire] aucun acteur en (" + cx + "," + cy + ")"); return false; }
+            if (hit == null) { System.out.println("[fire] aucun acteur cliquable en (" + cx + "," + cy + ")"); return false; }
             java.util.List<String> ls = new java.util.ArrayList<>();
             for (com.badlogic.gdx.scenes.scene2d.EventListener l : hit.getListeners()) ls.add(l.getClass().getSimpleName());
             System.out.println("[fire] cible=" + hit.getClass().getSimpleName() + " stage(" + (int) sc.x + "," + (int) sc.y
