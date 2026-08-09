@@ -332,6 +332,17 @@ public final class ServerUser {
     resyncDiamonds(user);
   }
 
+  /** Outillage TEST/DEV (#72 incr. 3c) : avance les MISSIONS IDLE de {@code cycles} cycles via la méthode DEBUG
+   *  DU JEU {@code MissionHelper.debugHurryAllMissions} (complète les timers → génère les {@code MissionClaimData}),
+   *  puis re-synchronise la liste des missions. Utile pour vérifier la réclamation sans attendre les heures réelles
+   *  (headless ET en jeu). Ne persiste pas (appelant). */
+  public synchronized void debugHurryMissions(int cycles) {
+    ServerContext.init();
+    User user = gameUser();
+    com.perblue.heroes.game.missions.MissionHelper.debugHurryAllMissions(user, cycles);
+    resyncMissions(user.getIndividual());
+  }
+
   /** Lie CE joueur au contexte de jeu ({@code DH.app}) pour les appels de logique du jeu qui consultent
    *  l'utilisateur courant de façon implicite — notamment les TABLES DE DROP (le tirage des compositions de
    *  breakers d'invasion produit de vrais héros du joueur si un utilisateur est lié, des mobs génériques sinon).
@@ -2981,6 +2992,29 @@ public final class ServerUser {
     } catch (Throwable t) { System.out.println("[resync] friendships: " + t); }
   }
 
+  /** Re-sync des MISSIONS IDLE d'amitié (#72 incr. 3c) : la liste runtime {@code IndividualUser.missions}
+   *  ({@code List<ClientMission>}) est CONSTRUITE au chargement depuis {@code individualUserExtra.missions}
+   *  ({@code List<MissionData>}, cf. {@code setExtra}→{@code setMissions}) ; {@code addMission}/{@code removeMission}
+   *  ne touchent QUE la liste runtime → à re-sérialiser vers le wire. {@code ClientMission} est un simple
+   *  wrapper write-through de {@code MissionData} (getters/setters lisent/écrivent {@code data}), donc pour une
+   *  mission EXISTANTE {@code data} EST déjà l'instance du wire ; pour une mission AJOUTÉE c'est une instance neuve.
+   *  On reconstruit {@code extra.missions} depuis les {@code data} sous-jacents (réflexion, aucune règle réécrite).
+   *  {@code missionClaimData} est écrit DIRECTEMENT dans {@code extra} par {@code addMissionClaimData}/
+   *  {@code clearMissionClaimData} (write-through) → aucun resync nécessaire pour lui. Package-private : {@link ServerMissions}. */
+  @SuppressWarnings("unchecked")
+  void resyncMissions(IndividualUser iu) {
+    try {
+      java.lang.reflect.Field df =
+          com.perblue.heroes.game.missions.ClientMission.class.getDeclaredField("data");
+      df.setAccessible(true);
+      java.util.List<Object> out = new java.util.ArrayList<>();
+      Iterable<?> missions = iu.getMissions();
+      if (missions != null) for (Object cm : missions) out.add(df.get(cm));
+      individualUserExtra.missions.clear();
+      individualUserExtra.missions.addAll((java.util.List) out);
+    } catch (Throwable t) { System.out.println("[resync] missions: " + t); }
+  }
+
   /** Re-sync des FAVORIS d'amitié (#72) : {@code IndividualUser.favoriteFriendships} est un {@code Set<FriendPairID>}
    *  COPIÉ depuis {@code individualUserExtra.favoriteFriendships} au chargement (comme flags/counts) → les mutations
    *  ({@code setFavoriteFriendship}) restent en mémoire ; on ré-écrit l'ensemble dans le wire ({@code List<Long>} via
@@ -3014,9 +3048,10 @@ public final class ServerUser {
     } catch (Throwable t) { System.out.println("[resync] counts/flags: " + t); }
   }
 
-  /** Re-sync des héros (état hors {@code this.extra}) vers le wire — persistance complète. */
+  /** Re-sync des héros (état hors {@code this.extra}) vers le wire — persistance complète.
+   *  Package-private : {@link ServerMissions} resynchronise les récompenses de mission éventuelles. */
   @SuppressWarnings("unchecked")
-  private void resyncHeroes(User user) {
+  void resyncHeroes(User user) {
     userExtra.heroes.clear();
     for (Object o : user.getHeroes()) {
       UnitData ud = (UnitData) o;

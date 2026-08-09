@@ -1,5 +1,56 @@
 # JOURNAL — journal détaillé des modifications
 
+## 2026-08-09 (g84) — FRIENDSHIPS (#72) incrément 3c : MISSIONS IDLE d'amitié (🟢 headless, 98/98)
+
+Le système de MISSIONS IDLE révélé en jeu (g83) — cœur de l'écran MISSIONS de 12.1.0 — implémenté côté serveur.
+Nouveau `dhserver/ServerMissions` + handlers `LoginServer`, TOUT par le code du jeu (§3,
+`com.perblue.heroes.game.missions.MissionHelper`), zéro invention (§4).
+
+**Recon bytecode (pipeline #73/#74, `javap`)** :
+- `ClientMission implements IMission` = simple WRAPPER write-through de `MissionData` (getters/setters lisent/écrivent
+  `data` ; seule `friendship` est un cache de `data.friendshipPairID`). La liste runtime `IndividualUser.missions`
+  (`List<ClientMission>`) est bâtie au chargement depuis `individualUserExtra.missions` (`List<MissionData>`, cf.
+  `setExtra`→`setMissions`) ; `addMission`/`removeMission` ne touchent QUE le runtime → resync requis.
+- `MissionHelper.addMission(user, type, pair, time)` : gates qui LÈVENT (paire non débloquée `FRIENDSHIP_NOT_UNLOCKED`,
+  héros déjà en mission `MISSION_HERO_USED`, `TOO_MANY_MISSIONS`/`_OF_TYPE`, `ALREADY_HAVE_ENOUGH_BITS`), puis
+  `chargeMissionCosts` (débit items/ressources via `removeItem`, **ne lève PAS** sur stock insuffisant), crée la
+  mission (`IndividualUser.addMission`), pose startTime/lastUpdateTime/baseDuration/speed(`calculateMissionSpeed`).
+- `updateAllMissions(user, time)`→`updateMissionProgress` : avance chaque mission par (temps écoulé × speed) ; timer à
+  zéro → crée une `MissionClaimData{type, pair, startTime, endTime, empowerment=getEmpowermentReward, drops=
+  MissionStats.getOtherRewards, costsPaid, count, cycleID}` → `addMissionClaimData` (**write-through** extra) → puis
+  retire la mission (ou recharge le cycle si répétable).
+- `claimMissionRewards(user, time)` : `updateAllMissions(time)` PUIS applique chaque `MissionClaimData`
+  (`setEmpowerment` sur l'amitié si empowerment>0, `RewardHelper.giveRewards(drops)`, contest burns) →
+  `clearMissionClaimData` + `incDailyUses`/`setTime`/`setCount`. Renvoie true si réclamé.
+- `cancelMissionByHero(user, unitType, time)` : retrouve la mission portant ce héros (`getMissionWithHero`), rembourse,
+  retire. Le client (`ClientActionHelper.cancelMission`) identifie la mission par `friendship.getPrimary()` (heroType).
+
+**Protocoles (disasm `ClientActionHelper`)** : `ADD_MISSION{TYPE=MissionType, ID=FriendPairID.getAsLong(), TIME}` ;
+`CLAIM_MISSION_REWARDS{TIME}` ; `CANCEL_MISSION{heroType=friendship.getPrimary(), TIME}`. Le serveur utilise SON
+horloge (`TimeUtil.serverTimeNow()`), pas le `TIME` client (anti-triche sur le timing idle).
+
+**Anti-triche** : `addMission` ne couvrant pas l'affordabilité, `ServerMissions.applyAddMission` miroite la garde
+cliente COMPLÈTE via `canStartMission(user, type, pair)` (prédicat pur, `null`=OK ; sinon refus :
+`CANT_AFFORD`/`FRIEND_ON_MISSION`/`MISSION_LIMIT`/`FRIEND_PAIR_LOCKED`/`DISK_AT_MAX_STARS`).
+
+**Persistance** : nouveau `ServerUser.resyncMissions` (extrait le `MissionData` sous-jacent de chaque `ClientMission`
+par réflexion → `extra.missions`) ; `missionClaimData` write-through (aucun resync) ; empowerment via
+`resyncFriendships` ; récompenses items/ressources write-through ; diamants/héros/compteurs via resyncs standard.
+Outil DEV `ServerUser.debugHurryMissions(cycles)` (avance les timers via la méthode DEBUG du jeu
+`MissionHelper.debugHurryAllMissions` — utile headless ET pour la vérif en jeu de la réclamation sans attendre les heures).
+
+**Faits du jeu SONDÉS** (`MissionStats`, compte RALPH+VANELLOPE ORANGE 60/5) : POWER_UP = sans coût, empReward=1,
+dur=60h ; MEMORY = coûte 1 `STONE_VANELLOPE` (→ `CANT_AFFORD` sur compte frais) ; DISK_POWER = sans coût,
+otherRewards=`GEAR_JUICE` 100 ; **limite combinée = 1** (TL100).
+
+`MissionLoopTest` : ADD POWER_UP → 1 mission (survit DB) ; 2ᵉ ADD refusé (limite/coût, anti-triche) ; CANCEL par héros
+primaire → 0 (persiste) ; `debugHurryMissions(1)` → un `MissionClaimData` en attente → `CLAIM_MISSION_REWARDS` →
+**empowerment 0→1** (empReward POWER_UP) + `missionClaimData` vidé, persistance DB + round-trip wire. Régression
+**98/98**.
+
+**RESTE** : incr. 4 vérif EN JEU (ADD une mission → avancer/hurry → CLAIM en jeu ; localiser les entrées UI empower/
+campagne) ; `SPEEDUP_MISSION`/`SET_MISSION_ITEM_COST_LIMIT` si le flux en jeu les exerce (mêmes patrons, non bloquant).
+
 ## 2026-08-09 (g83) — FRIENDSHIPS (#72) vérif EN JEU → découverte du système de MISSIONS IDLE (incr. 3c requis)
 
 Vérif EN JEU de l'incrément 4 (contre notre serveur). Compte userID=1 préparé par le **nouvel outil DEV

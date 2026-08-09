@@ -101,13 +101,34 @@ pas sur l'écran MISSIONS de 12.1.0 — à confirmer : legacy ou accessible aill
    Persistance via `resyncFriendships` (+héros/diamants/compteurs). `FriendshipCampaignTest` : paire débloquée +
    FRIEND_STAMINA → combat WIN nœud 1 → **-6 stamina, lastBattle{node=1, won=true}**, persistance DB. **Vérif EN
    JEU restante.** (`giveChapterRewards` = réclamation de chapitre, Action séparée — à câbler si besoin.)
-3c. ⬜ **MISSIONS IDLE (cœur de l'écran MISSIONS — REQUIS, révélé en jeu g83)** : `ADD_MISSION{MissionType,
-   FriendPairID}` → `MissionHelper.addMission` (gate `canStartMission`→`MissionFailType` = anti-triche : héros
-   disponibles, coûts abordables `canAffordMissionCosts`) ; `CLAIM_MISSION_REWARDS` → `claimMissionRewards(user,
-   time)` (mission terminée par le TEMPS → récompenses POWER_UP/MEMORY/DISK_POWER) ; `CANCEL_MISSION` →
-   `cancelMission` ; `SPEEDUP_MISSION` ; `SET_MISSION_ITEM_COST_LIMIT`. Persistance : `friendshipMissionData` +
-   `inProgressFriendshipMissions` (individualUserExtra ; resync à ajouter si `ClientMission` ≠ wire). Handlers
-   `LoginServer` + `ServerFriendships`/`ServerMissions` + test + **vérif EN JEU**.
+3c. 🟢 **MISSIONS IDLE (cœur de l'écran MISSIONS — REQUIS, révélé en jeu g83) — LIVRÉ HEADLESS (g84)** :
+   nouveau `ServerMissions` + handlers `LoginServer`, code du jeu (§3, `com.perblue.heroes.game.missions.MissionHelper`),
+   zéro invention (§4). Protocoles PROUVÉS au bytecode (`ClientActionHelper`) :
+   - `ADD_MISSION{TYPE=MissionType, ID=FriendPairID.getAsLong(), TIME}` → `MissionHelper.addMission(user, type, pair,
+     serverTimeNow())`. `addMission` LÈVE sur la plupart des gates (paire non débloquée, héros déjà en mission,
+     limites, bits max) MAIS **pas** sur coûts insuffisants (`chargeMissionCosts`=`removeItem`, client-autoritatif) →
+     **anti-triche** : on MIROITE la garde cliente complète via `canStartMission(user, type, pair)` (prédicat pur,
+     `null`=OK ; `CANT_AFFORD`/`FRIEND_ON_MISSION`/`MISSION_LIMIT`/`FRIEND_PAIR_LOCKED`/`DISK_AT_MAX_STARS`).
+   - `CLAIM_MISSION_REWARDS{TIME}` → `claimMissionRewards(user, serverTimeNow())` = `updateAllMissions(time)` (fait
+     avancer par le temps ; un timer à zéro produit une `MissionClaimData` — récompenses `MissionStats.getOtherRewards`,
+     empowerment `getEmpowermentReward` — via `addMissionClaimData`) PUIS applique chaque `MissionClaimData`
+     (`setEmpowerment` + `RewardHelper.giveRewards`) et `clearMissionClaimData`.
+   - `CANCEL_MISSION{heroType=friendship.getPrimary(), TIME}` → `cancelMissionByHero(user, hero, serverTimeNow())`
+     (retrouve la mission portant ce héros, rembourse, retire).
+   - **Persistance** : la liste runtime `IndividualUser.missions` (`List<ClientMission>`) est bâtie au chargement
+     depuis `individualUserExtra.missions` (`List<MissionData>`, cf. `setExtra`→`setMissions`) ; `addMission`/
+     `removeMission` ne touchent QUE le runtime → **`ServerUser.resyncMissions`** ré-écrit `extra.missions` en
+     extrayant le `MissionData` sous-jacent de chaque `ClientMission` (write-through wrapper, réflexion sur `data`).
+     `missionClaimData` est écrit DIRECTEMENT dans `extra` par `addMissionClaimData`/`clearMissionClaimData`
+     (write-through) → aucun resync. Empowerment via `resyncFriendships` ; récompenses items/ressources write-through ;
+     diamants/héros/compteurs via resyncs standard.
+   - **Faits du jeu (sondés)** : POWER_UP = sans coût, empReward=1, dur=60h ; MEMORY = coûte 1 STONE_VANELLOPE
+     (→ `CANT_AFFORD` sur compte frais) ; DISK_POWER = sans coût, otherRewards=GEAR_JUICE 100 ; **limite combinée=1**.
+   - `MissionLoopTest` : ADD POWER_UP → 1 mission (persiste DB) ; 2ᵉ ADD refusé (limite/coût, anti-triche) ; CANCEL
+     par héros primaire → 0 (persiste) ; avance du temps (`debugHurryAllMissions`, méthode DEBUG du jeu, via l'outil
+     `ServerUser.debugHurryMissions`) → CLAIM → **empowerment +1** + `missionClaimData` vidé, persistance DB.
+     Régression **98/98**. **Vérif EN JEU restante** (incr. 4). `SPEEDUP_MISSION`/`SET_MISSION_ITEM_COST_LIMIT` =
+     à câbler si le flux en jeu les exerce (non bloquant, mêmes patrons).
 4. ⬜ **Vérif EN JEU complète** : missions idle (3c) START→collect ; empower → disk (localiser la vue FRIENDSHIPS) ;
    campagne (3b) si accessible dans 12.1.0. **Localiser les points d'entrée UI** d'empower et du combat de campagne
    (l'écran MISSIONS = missions idle, pas le combat).

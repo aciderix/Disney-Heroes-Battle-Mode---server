@@ -1089,6 +1089,41 @@ public final class LoginServer {
                 System.out.println("[login] <== " + act.command + "(" + dbg + ")"
                     + (ok ? " appliqué [persisté]" : " refusé"));
 
+              } else if (act.command == com.perblue.heroes.network.messages.CommandType.ADD_MISSION
+                  || act.command == com.perblue.heroes.network.messages.CommandType.CLAIM_MISSION_REWARDS
+                  || act.command == com.perblue.heroes.network.messages.CommandType.CANCEL_MISSION) {
+                // FRIENDSHIPS #72 incr. 3c — MISSIONS IDLE d'amitié (cœur de l'écran MISSIONS 12.1.0). Protocole
+                // client (disasm ClientActionHelper) :
+                //   ADD_MISSION            extra{TYPE=MissionType, ID=FriendPairID.getAsLong(), TIME=serverTimeNow} → MissionHelper.addMission
+                //   CLAIM_MISSION_REWARDS  extra{TIME}                                                              → claimMissionRewards
+                //   CANCEL_MISSION         heroType=friendship.getPrimary(), extra{TIME}                            → cancelMissionByHero
+                // Serveur AUTORITATIF (durées/coûts/récompenses = code+données du jeu ; horloge SERVEUR). Fire-and-forget.
+                boolean ok = false; String dbg = "";
+                if (act.command == com.perblue.heroes.network.messages.CommandType.CLAIM_MISSION_REWARDS) {
+                  dbg = "claim"; ok = ServerMissions.applyClaimMissionRewards(user);
+                } else if (act.command == com.perblue.heroes.network.messages.CommandType.CANCEL_MISSION) {
+                  dbg = "cancel " + act.heroType; ok = ServerMissions.applyCancelMission(user, act.heroType);
+                } else {
+                  long pairLong = extraLong(act, com.perblue.heroes.network.messages.ActionExtraType.ID, 0);
+                  com.perblue.heroes.game.objects.FriendPairID pair =
+                      com.perblue.heroes.game.objects.FriendPairID.from(pairLong);
+                  Object tv = act.extra == null ? null
+                      : act.extra.get(com.perblue.heroes.network.messages.ActionExtraType.TYPE);
+                  com.perblue.heroes.network.messages.MissionType type = null;
+                  try { if (tv != null)
+                      type = com.perblue.heroes.network.messages.MissionType.valueOf(tv.toString()); }
+                  catch (Throwable t) { type = null; }
+                  if (type == null) {
+                    System.out.println("[login]     ! ADD_MISSION type manquant/invalide: " + tv);
+                  } else {
+                    dbg = type + " " + pair; ok = ServerMissions.applyAddMission(user, type, pair);
+                  }
+                }
+                if (ok) { try { store.save(user); } catch (Exception e) {
+                  System.out.println("[login]     ! persist mission: " + e); } }
+                System.out.println("[login] <== " + act.command + "(" + dbg + ")"
+                    + (ok ? " appliqué [persisté]" : " refusé"));
+
               } else {
                 boolean applied = user.applyAction(act);
                 if (applied) { try { store.save(user); } catch (Exception e) {
