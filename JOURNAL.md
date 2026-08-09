@@ -1,5 +1,33 @@
 # JOURNAL — journal détaillé des modifications
 
+## 2026-08-09 (g82) — FRIENDSHIPS (#72) incrément 3b : combat de campagne d'amitié (🟢 headless)
+
+Combat de la campagne d'amitié (MISSIONS), patron campagne/SURGE (client-autoritatif + serveur ré-exécute).
+Message `FriendshipCampaignAttack{base:AttackBase, friendPairID:long, nodeNumber, lootEarned, memoryChanges,
+stagesCleared}` — **pas de handshake Start** (le client joue puis envoie l'issue). Handler `LoginServer` →
+`ServerUser.recordFriendCampaignAttack` → `FriendshipCampaignHelper.recordOutcome(user, pair, node, m.base.outcome,
+loot, m.base.attackers, m.base.defenders, SpecialEventSnapshot.NONE, chapter, level, false)` (code du jeu §3).
+
+**Mapping des params** (relevé au call-site client `CampaignAttackScreen`) : arg2=node, arg8=chapter, arg9=level ;
+chapter/level = campagne NORMALE sous-jacente (échelle XP via `CampaignStats.getExpReward`) DÉRIVÉE par le jeu :
+`getNormalCampaignChapter(user)` + `getNormalCampaignLevel(pair, node, chapter)` (aucune invention §4).
+
+**Gates du jeu (anti-triche, dans recordOutcome)** : `FRIEND_STAMINA >= FriendshipCampaignStats.getStaminaCost(node)`
+(=6/nœud, sinon no-op) ; `getLevelLockStatus(user, pair, node)==UNLOCKED` sinon `FRIENDSHIP_CAMPAIGN_LEVEL_LOCKED`.
+**🔑 Nœuds 1-INDEXÉS** : `getLevelLockStatus` exige `node == getFriendshipCampaignProgress(pair)+1` (nœud 0 =
+ALREADY_COMPLETE) → le 1er nœud jouable d'une amitié fraîche est **1**, pas 0. `canUseHeroes(pair, node, attackers)`
+(les héros de la paire). Le combat débite l'énergie, `doNodeUpdate` (progression), `setLastBattle`, crédite le loot
+reçu (client, PARTIEL §4bis/#25 — graine non rejouée) + XP.
+
+Persistance : `resyncFriendships` (map amitiés) + héros/diamants/compteurs. `FriendshipCampaignTest` : paire
+débloquée (2 héros grantés) + `FRIEND_STAMINA` → `FriendshipCampaignAttack` WIN au nœud 1 → **-6 stamina,
+`lastBattle{node=1, won=true}`**, survit à la persistance DB + round-trip wire.
+
+**Bilan FRIENDSHIPS #72** : incréments **1-3 livrés côté serveur** (1 ✅ en jeu ; 2 favori/stamina, 3a empower,
+3b campagne 🟢 headless). Régression **97/97**. **RESTE** : incr. 4 vérif EN JEU (favori/empower via le fix pilote
+modale + campagne d'amitié jouée) ; `giveChapterRewards` (réclamation de récompense de chapitre) si le flux le
+demande. Détail : `docs/FRIENDSHIPS.md`.
+
 ## 2026-08-09 (g81) — FRIENDSHIPS (#72) incrément 3a : EMPOWER d'amitié (🟢 headless)
 
 `EMPOWER_FRIENDSHIP{TYPE=<FriendPairID.getAsLong()>, COUNT=<nb pierres>}` → `FriendshipHelper.empowerFriendship`

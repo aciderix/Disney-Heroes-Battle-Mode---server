@@ -73,9 +73,17 @@ Hero chooser : `FriendCampaignHeroChooserScreen`.
    lit `lastBattle.serverTime` sans garde) ; items consommés dans `individualUserExtra.items` (write-through).
    `FriendshipEmpowerTest` : déblocage (2 héros grantés) + empower (consomme 2 pierres) + anti-triche (refus sans
    pierre) + persistance DB. **Vérif EN JEU restante.**
-3b. ⬜ **Campagne d'amitié (combat)** : `FriendshipCampaignAttack` → `FriendshipCampaignHelper.recordOutcome`
-   (autoritatif, patron combat) + `giveChapterRewards` ; réutilise `resyncFriendships` (campaignBitsEarned/lastBattle/
-   history mutés par le combat).
+3b. 🟢 **Campagne d'amitié (combat) — LIVRÉ HEADLESS (g82)** : message `FriendshipCampaignAttack{base, friendPairID,
+   nodeNumber, lootEarned, memoryChanges, stagesCleared}` (PAS de handshake Start) → handler `LoginServer` →
+   `ServerUser.recordFriendCampaignAttack` → `FriendshipCampaignHelper.recordOutcome(user, pair, node, outcome,
+   loot, attackers, defenders, snap, chapter, level, false)` (code du jeu §3, autoritatif). **Gates du jeu**
+   (anti-triche) : `FRIEND_STAMINA >= getStaminaCost(node)` (=6/nœud), `getLevelLockStatus==UNLOCKED`
+   (⚠️ **nœuds 1-indexés** : jouable = `getFriendshipCampaignProgress(pair)+1`), `canUseHeroes(pair,node,attackers)`.
+   **Chapitre/niveau normaux** (échelle XP) DÉRIVÉS par le code du jeu : `getNormalCampaignChapter(user)` +
+   `getNormalCampaignLevel(pair, node, chapter)` (mapping du call-site client). Loot = client (PARTIEL §4bis/#25).
+   Persistance via `resyncFriendships` (+héros/diamants/compteurs). `FriendshipCampaignTest` : paire débloquée +
+   FRIEND_STAMINA → combat WIN nœud 1 → **-6 stamina, lastBattle{node=1, won=true}**, persistance DB. **Vérif EN
+   JEU restante.** (`giveChapterRewards` = réclamation de chapitre, Action séparée — à câbler si besoin.)
 4. ⬜ **Vérif EN JEU complète** (empower → disk débloqué, campagne jouée → récompenses de chapitre).
 
 ## Notes §3/§4

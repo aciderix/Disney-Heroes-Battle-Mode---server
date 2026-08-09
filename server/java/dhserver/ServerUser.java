@@ -1820,6 +1820,42 @@ public final class ServerUser {
   }
 
   /**
+   * <b>CAMPAGNE D'AMITIÉ</b> (#72, MISSIONS) — message {@link com.perblue.heroes.network.messages.FriendshipCampaignAttack}
+   * {@code {base:AttackBase, friendPairID:long, nodeNumber, lootEarned, memoryChanges, stagesCleared}}. Le combat est
+   * joué CÔTÉ CLIENT (client-autoritatif, patron campagne) ; le serveur AUTORITATIF ré-exécute
+   * {@code FriendshipCampaignHelper.recordOutcome} : il VALIDE (assez de {@code FRIEND_STAMINA} = {@code getStaminaCost
+   * (node)}, {@code getLevelLockStatus==UNLOCKED}, {@code canUseHeroes(pair,node,attackers)} — sinon no-op = anti-triche)
+   * puis débite l'énergie, progresse le nœud ({@code doNodeUpdate}), pose {@code lastBattle}, crédite le loot reçu
+   * ({@code RewardHelper.giveRewards}) + XP. Chapitre/niveau normaux (pour l'XP) DÉRIVÉS par le code du jeu :
+   * {@code getNormalCampaignChapter(user)} + {@code getNormalCampaignLevel(pair, node, chapter)} (mapping du call-site
+   * client, §3/§4). Loot = client (PARTIEL, cohérent §4bis/#25 — graine non rejouée). Persistance via
+   * {@code resyncFriendships} (map amitiés) + héros/diamants/compteurs.
+   */
+  public synchronized void recordFriendCampaignAttack(
+      com.perblue.heroes.network.messages.FriendshipCampaignAttack m) {
+    ServerContext.init();
+    User user = ClientNetworkStateConverter.getUser(userInfo, userExtra, "friendcamp");
+    IndividualUser iu = ClientNetworkStateConverter.getIndividualUser(
+        individualUserExtra, userID, userInfo.diamonds, "friendcamp");
+    ServerContext.bind(user, iu);
+    if (m == null || m.base == null) return;
+    com.perblue.heroes.game.objects.FriendPairID pair =
+        com.perblue.heroes.game.objects.FriendPairID.from(m.friendPairID);
+    int node = m.nodeNumber;
+    int chapter = com.perblue.heroes.game.logic.FriendshipCampaignHelper.getNormalCampaignChapter(user);
+    int level = com.perblue.heroes.game.logic.FriendshipCampaignHelper.getNormalCampaignLevel(pair, node, chapter);
+    java.util.List loot = m.lootEarned != null ? m.lootEarned : new java.util.ArrayList<>();
+    com.perblue.heroes.game.logic.FriendshipCampaignHelper.recordOutcome(
+        user, pair, node, m.base.outcome, loot, m.base.attackers, m.base.defenders,
+        SpecialEventSnapshot.NONE, chapter, level, false);
+    resyncFriendships(iu);   // amitié (campaignBitsEarned/lastBattle/history/progression) → wire
+    resyncHeroes(user);      // XP héros
+    resyncDiamonds(user);
+    resyncCounts(user);
+    userInfo.basicInfo.teamLevel = user.getTeamLevel();
+  }
+
+  /**
    * <b>RAID de campagne</b> (écran ELITE_CAMPAIGN / raid d'un niveau NORMAL ou ELITE) — message
    * {@link com.perblue.heroes.network.messages.RaidCampaign}{@code {campaignType, chapter, level, raidCount,
    * outcomes:List<RaidOutcome>, rewards}}. Le RAID rejoue le niveau {@code raidCount} fois <b>sans combat</b>

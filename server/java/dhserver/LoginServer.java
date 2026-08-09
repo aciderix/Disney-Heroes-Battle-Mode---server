@@ -303,6 +303,23 @@ public final class LoginServer {
                 System.out.println("[login]     ! recordCampaignAttack échec: " + t);
                 t.printStackTrace();
               }
+            } else if (m instanceof com.perblue.heroes.network.messages.FriendshipCampaignAttack) {
+              // FRIENDSHIPS #72 incr. 3b — combat de CAMPAGNE D'AMITIÉ (MISSIONS). Le client a joué le combat
+              // (client-autoritatif) et envoie l'issue (fire-and-forget). Le serveur AUTORITATIF ré-exécute
+              // FriendshipCampaignHelper.recordOutcome (valide FRIEND_STAMINA/déblocage/canUseHeroes, progresse le
+              // nœud, pose lastBattle, crédite loot+XP) puis persiste (resyncFriendships). Pas de réponse.
+              try {
+                com.perblue.heroes.network.messages.FriendshipCampaignAttack fca =
+                    (com.perblue.heroes.network.messages.FriendshipCampaignAttack) m;
+                user.recordFriendCampaignAttack(fca);
+                try { store.save(user); } catch (Exception e) {
+                  System.out.println("[login]     ! persistance échouée: " + e); }
+                System.out.println("[login] <== FriendshipCampaignAttack : pair="
+                    + com.perblue.heroes.game.objects.FriendPairID.from(fca.friendPairID) + " node=" + fca.nodeNumber
+                    + " outcome=" + (fca.base == null ? "?" : fca.base.outcome) + " → recordOutcome appliqué [persisté]");
+              } catch (Throwable t) {
+                System.out.println("[login]     ! recordFriendCampaignAttack échec: " + t); t.printStackTrace();
+              }
             } else if (m instanceof com.perblue.heroes.network.messages.RaidCampaign) {
               // RAID d'un niveau (ELITE_CAMPAIGN / raid d'un niveau) : le client a rejoué le niveau raidCount
               // fois en local (charge tickets/énergie + record) et envoie l'issue (fire-and-forget). Le serveur
