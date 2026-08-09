@@ -3264,3 +3264,24 @@ Régression **90/90**. Reste : boucle START/CLAIM (persistée), stickers, handle
 
 Fichiers : `docs/CHALLENGES.md`, `server/java/dhserver/ServerChallenges.java`, `server/java/dhserver/ServerUser.java`
 (bootData), `server/smoke/ChallengeBootTest.java`, `server/smoke/regression.sh`.
+
+---
+
+## 2026-08-09 (g73b) — CHALLENGES : architecture de l'incrément 2 (boucle START/CLAIM) résolue par recon
+
+Recon complète de la boucle de défi (docs/CHALLENGES.md incr. 2). Points d'entrée §3 identifiés :
+- Conversion : `ClientNetworkStateConverter.getUserChallengeData(UserChallengeDataExtra)` ↔ `setUserChallengeData`.
+- START `Action{START_STICKER_CHALLENGE, extra={TYPE=StickerType, TIME}}` (pas de SLOT → serveur choisit via
+  `StickerHelper.canStart`) ; handle via `StickerHelper.createHandleExtra` : `endTime=serverTime()+ChallengeSticker.
+  getDuration()`, `maxProgress=ChallengeSticker.getMaxProgress()` (données `challenge_stickers.tab`, zéro invention).
+- PROGRESSION : hooks `ChallengeImpl` (`onCampaignAttack`/`onChestOpen`/`onBreakerAttack`/`onArenaPromotion`/
+  `checkAttackBase`…) = intégration TRANSVERSALE ; défis purement temporels complétés à `endTime`.
+- CLAIM `StickerHelper.claimSticker(user, data, long, StickerType, ChallengeSlots)` ; CANCEL `cancelChallenge(…)`.
+- Persistance : `UserChallengeDataExtra` hors `UserExtra` → nouveau champ persisté dans le blob `ServerUser`.
+
+**Décision (§4, qualité)** : la boucle est un sous-système transversal (hooks ChallengeImpl + choix de slot +
+autorité de progression client/serveur) ; comme pour le raid SURGE, une **observation EN JEU du START/CLAIM** (extras
+exacts, sélection de slot, `UpdateChallengeProgress`) est recommandée AVANT câblage pour ne rien inventer. L'incrément
+1 (livraison BootData) reste livré et testé (90/90). L'architecture est prête pour un câblage propre.
+
+Fichiers : `docs/CHALLENGES.md` (incr. 2 détaillé).

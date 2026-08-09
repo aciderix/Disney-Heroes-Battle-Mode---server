@@ -40,9 +40,25 @@ joueur ; **seul handler « MANQUE » au niveau du mode**).
 1. ⬜ **Livraison BootData** : `ServerChallenges.freshData/load` → `bd.userChallengeDataExtra` avec le **bon userID**
    + état persisté (slots/progression), wire-sûr ; `historicWeeklyChallenges` non-null. Écran CHALLENGES rend.
    Test headless (WireCheck + userID). **Vérif EN JEU** (écran s'ouvre, TL100).
-2. ⬜ **Boucle de défi** : `START_STICKER_CHALLENGE` (assigne un défi à un slot : type/maxProgress/endTime) →
-   progression (temps/`UpdateChallengeProgress`) → `CLAIM_STICKER_CHALLENGE` (sticker + récompenses, slot vidé,
-   `completedChallenges++`/`nextChallengeID`). Persisté. `CANCEL_STICKER_CHALLENGE`.
+2. 🧭 **Boucle de défi** — **ARCHITECTURE RÉSOLUE (recon g73b), à implémenter** :
+   - **Conversion (§3)** : `ClientNetworkStateConverter.getUserChallengeData(UserChallengeDataExtra)` →
+     `ClientUserChallengeData` (impl `IUserChallengeData`) ; `setUserChallengeData(client, msg)` → re-sérialise pour
+     persistance/BootData. ⇒ le serveur charge notre message persisté en objet du jeu, mute via les helpers, resérialise.
+   - **START** `Action{START_STICKER_CHALLENGE, extra={TYPE=StickerType, TIME=<t>}}` (pas de SLOT → **le serveur choisit
+     le slot** via `canStart(data, type, slot)` sur les slots libres). Handle créé par `StickerHelper.createHandleExtra
+     (long, StickerType, int)` : `endTime = serverTime() + ChallengeSticker.getDuration()`, `maxProgress =
+     ChallengeSticker.getMaxProgress()` (données `challenge_stickers.tab`, **zéro invention**), puis `data.setHandle(slot,…)`.
+   - **PROGRESSION** : un défi avance via les **hooks `ChallengeImpl`** (`onCampaignAttack`, `onChestOpen`,
+     `onBreakerAttack`, `onArenaPromotion`, `checkAttackBase`, `onChallengeComplete`…) — **transversal** : à brancher
+     dans les handlers d'événements existants (campagne/chest/arène/breaker). Défis à `maxProgress>0` = gameplay ;
+     défis PUREMENT temporels = complétés à `endTime`. (Autorité de progression client vs serveur : **à confirmer EN
+     JEU**, comme le loot/raid — observer `UpdateChallengeProgress`.)
+   - **CLAIM** `Action{CLAIM_STICKER_CHALLENGE, extra={TYPE, SLOT, …}}` → `StickerHelper.claimSticker(user, data, long,
+     StickerType, ChallengeSlots)` (autoritatif : sticker + récompenses) ; **CANCEL** → `StickerHelper.cancelChallenge(…)`.
+   - **Persistance** : `UserChallengeDataExtra` n'est PAS dans `UserExtra` → **nouveau champ persisté dans le blob
+     `ServerUser`** (bootData() n'a pas accès au store → doit vivre dans l'état du joueur), livré à l'incr. 1.
+   - **⚠️ Recommandé avant câblage** : une observation EN JEU du START/CLAIM (extras exacts, sélection de slot,
+     `UpdateChallengeProgress`) — comme pour le raid SURGE — pour ne rien inventer (§4).
 3. ⬜ **Stickers** : `BUY_STICKER`/`BUY_STICKER_BOOK`/`BUY_STICKER_CHALLENGE_SLOT`/`SET_FAVORITE_STICKER`
    (`favoriteSticker` déjà dans UserExtra) + livre de stickers.
 4. ⬜ **`GetUserChallengeDataExtra` handler** (vue StickerOverviewWindow).
