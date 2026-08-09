@@ -3084,3 +3084,35 @@ observer `StartSurgeAttack`/`SurgeAttack`, puis un RAID (débloque l'incrément 
 réclamation en fin de surge. Le combat de district est client-autoritatif (comme la campagne), à jouer via l'UI.
 
 Fichiers : `docs/SURGE.md` (§8 incrément 8 passé 🔶).
+
+---
+
+## 2026-08-09 (g72c) — SURGE pilote en jeu (suite) : outillage prêt + LACUNE de repro du client exposée
+
+**Contexte** : le conteneur de session a été REPROVISIONNÉ entre deux tours. Le code est intact (récupéré depuis
+`origin/claude/disney-heroes-port-rhhtuj` = f83becc ; `main` du dépôt est un autre projet, cf. incident du jour),
+mais **tous les artefacts git-ignorés ont été perdus** : `/server/data/` (toutes les DB de comptes, dont le
+snapshot TL100 postwar), et les dérivés de build du client (`spine-libgdx-perblue.jar`, `gdx-1.9.7.jar`, caches
+gradle, `.so` natifs partiels). `game.jar` et l'APK (`game/disney-heroes-12.1.0.apk`) sont committés → OK.
+
+**Fait cette session** :
+- **`server/smoke/SurgeAcctSetup.java`** — outil DEV qui RECONSTRUIT un compte apte à SURGE (TL100 + 5 héros +
+  guilde). Vérifié : `TL=100 héros=7 inGuild=true guildID=1`. Remplace le snapshot perdu, reproductible.
+- **Pilote SURGE en jeu** (`TutorialDriver` + dispatcher `DesktopLauncher`) : commandes clickfile `surgestate`
+  (dump), `surgefight` (ouvre le combat du 1er district jouable via `SurgeScreen.fightPressed` → chooser qui envoie
+  `StartSurgeAttack`), `surgequick` (`quickFightPressed` → combat résolu client + `SurgeAttack`), `surgeraid`
+  (`onRaidButtonClick`/`doRaidSurge` → OBSERVER le protocole de raid, incrément 5). API vérifiée par signature
+  (javap) ; **non exécutée end-to-end** car le client ne compile pas (deps manquantes, ci-dessous).
+
+**⛔ BLOCAGE (repro client)** : le module desktop ne compile plus — `package com.esotericsoftware.spine does not
+exist`. `libs/spine-libgdx-perblue.jar` (runtime spine custom de l'Opt.3 #28) **n'a aucune recette de
+régénération committée** (`tools/decompile.sh` ne produit que `game.jar` ; les 3 classes spine de `game.jar` ne
+suffisent pas), et `gdx-1.9.7.jar`/caches gradle sont absents. Donc le pilote combat/raid EN JEU est bloqué tant
+que l'environnement de build du client n'est pas reconstitué. **Le rendu SURGE, lui, a DÉJÀ été vérifié en jeu
+cette session (g72b, avant le reprovision).**
+
+**Recommandation repro (§7)** : committer `spine-libgdx-perblue.jar` (ou un script qui le régénère depuis l'APK)
+et figer les deps gradle, pour que le client survive à un reprovision — sinon la vérif EN JEU n'est pas
+reproductible.
+
+Fichiers : `server/smoke/SurgeAcctSetup.java`, `desktop-port/src/main/java/dhdesktop/{TutorialDriver,DesktopLauncher}.java`.

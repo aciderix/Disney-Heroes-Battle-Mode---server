@@ -778,6 +778,106 @@ public final class TutorialDriver {
         } catch (Throwable t) { System.out.println("[createguild] échec: " + t); }
     }
 
+    // ===================== SURGE (#72) — pilotage en jeu =====================
+    // La carte des districts est un widget dessiné sur mesure (taps pixel peu fiables). On emprunte donc les
+    // MÊMES chemins d'envoi que l'UI, par réflexion : SurgeScreen.fightPressed (→ SurgeHeroChooserScreen qui
+    // envoie StartSurgeAttack) puis SurgeHeroChooserScreen.quickFightPressed (résout le combat côté client et
+    // envoie SurgeAttack), et doRaidSurge/onRaidButtonClick pour un RAID. Aucune logique réinventée : on
+    // déclenche les rappels réels du jeu.
+
+    private static java.lang.reflect.Method findMethod(Object o, String name, Class<?>... params) {
+        for (Class<?> c = o.getClass(); c != null; c = c.getSuperclass()) {
+            try { java.lang.reflect.Method m = c.getDeclaredMethod(name, params); m.setAccessible(true); return m; }
+            catch (NoSuchMethodException ignore) {}
+        }
+        return null;
+    }
+
+    /** DEV : imprime l'état SURGE côté client (districts jouables, verrous, raid). Invoqué via "surgestate". */
+    public static void surgeState(GameMain game) {
+        try {
+            com.perblue.heroes.network.messages.SurgeData d = game.getSurgeData();
+            if (d == null) { System.out.println("[surgestate] getSurgeData()=null"); return; }
+            System.out.println("[surgestate] surgeID=" + d.surgeID + " youAreInRaid=" + d.youAreInRaid
+                + " yourRaidsUsed=" + d.yourRaidsUsed + " wavesCompleted=" + d.wavesCompleted
+                + " raidEnd=" + new java.util.Date(d.raidEndTime));
+            int i = 0;
+            if (d.opponents != null) for (Object o : d.opponents) {
+                com.perblue.heroes.network.messages.SurgeOpponentSummary op =
+                    (com.perblue.heroes.network.messages.SurgeOpponentSummary) o;
+                if (i++ < 6) System.out.println("[surgestate]   district=" + op.district + " cleared="
+                    + op.clearedThisWave + " lockExp=" + op.lockExpiration + " power="
+                    + (op.lineup != null ? op.lineup.power : -1));
+            }
+        } catch (Throwable t) { System.out.println("[surgestate] échec: " + t); }
+    }
+
+    /** DEV : ouvre le combat du 1er district JOUABLE (non vaincu) — appelle SurgeScreen.fightPressed, qui pousse
+     *  SurgeHeroChooserScreen (lequel envoie StartSurgeAttack au serveur). Invoqué via "surgefight". */
+    public static void surgeFight(GameMain game) {
+        try {
+            Object screen = game.getScreenManager().getScreen();
+            if (screen == null || !screen.getClass().getSimpleName().contains("SurgeScreen")) {
+                System.out.println("[surgefight] écran courant = "
+                    + (screen == null ? "null" : screen.getClass().getSimpleName()) + " (pas SurgeScreen)"); return;
+            }
+            com.perblue.heroes.network.messages.SurgeData d = game.getSurgeData();
+            if (d == null || d.opponents == null) { System.out.println("[surgefight] pas de SurgeData/opponents"); return; }
+            com.perblue.heroes.network.messages.SurgeOpponentSummary target = null;
+            for (Object o : d.opponents) {
+                com.perblue.heroes.network.messages.SurgeOpponentSummary op =
+                    (com.perblue.heroes.network.messages.SurgeOpponentSummary) o;
+                if (!op.clearedThisWave) { target = op; break; }
+            }
+            if (target == null) { System.out.println("[surgefight] aucun district jouable (tous vaincus)"); return; }
+            java.lang.reflect.Method fp = findMethod(screen, "fightPressed",
+                com.perblue.heroes.network.messages.SurgeOpponentSummary.class,
+                com.perblue.heroes.network.messages.SurgeData.class, boolean.class);
+            if (fp == null) { System.out.println("[surgefight] fightPressed introuvable"); return; }
+            fp.invoke(screen, target, d, false);
+            System.out.println("[surgefight] fightPressed(district=" + target.district
+                + ") → SurgeHeroChooserScreen (envoi StartSurgeAttack) [chemin réel]");
+        } catch (Throwable t) { System.out.println("[surgefight] échec: " + t); }
+    }
+
+    /** DEV : sur SurgeHeroChooserScreen, résout le combat en QUICK FIGHT (combat côté client) — envoie SurgeAttack
+     *  au serveur (issue autoritative recordOutcome). Invoqué via "surgequick". */
+    public static void surgeQuick(GameMain game) {
+        try {
+            Object screen = game.getScreenManager().getScreen();
+            if (screen == null || !screen.getClass().getSimpleName().contains("SurgeHeroChooser")) {
+                System.out.println("[surgequick] écran courant = "
+                    + (screen == null ? "null" : screen.getClass().getSimpleName()) + " (pas SurgeHeroChooserScreen)"); return;
+            }
+            java.lang.reflect.Method can = findMethod(screen, "canStartQuickFight");
+            if (can != null) {
+                Object ok = can.invoke(screen);
+                if (Boolean.FALSE.equals(ok)) { System.out.println("[surgequick] canStartQuickFight=false (StartSurgeAttackResponse pas encore là) — je réessaierai"); return; }
+            }
+            java.lang.reflect.Method qf = findMethod(screen, "quickFightPressed");
+            if (qf == null) { System.out.println("[surgequick] quickFightPressed introuvable"); return; }
+            qf.invoke(screen);
+            System.out.println("[surgequick] quickFightPressed() → combat résolu + SurgeAttack [chemin réel]");
+        } catch (Throwable t) { System.out.println("[surgequick] échec: " + t); }
+    }
+
+    /** DEV : sur SurgeHeroChooserScreen, déclenche un RAID (onRaidButtonClick / doRaidSurge) pour OBSERVER le
+     *  protocole de raid côté fil (incrément 5, inconnu). Invoqué via "surgeraid". */
+    public static void surgeRaid(GameMain game) {
+        try {
+            Object screen = game.getScreenManager().getScreen();
+            if (screen == null || !screen.getClass().getSimpleName().contains("SurgeHeroChooser")) {
+                System.out.println("[surgeraid] écran courant = "
+                    + (screen == null ? "null" : screen.getClass().getSimpleName()) + " (pas SurgeHeroChooserScreen)"); return;
+            }
+            java.lang.reflect.Method rb = findMethod(screen, "onRaidButtonClick");
+            if (rb != null) { rb.invoke(screen); System.out.println("[surgeraid] onRaidButtonClick() [chemin réel]"); return; }
+            java.lang.reflect.Method dr = findMethod(screen, "doRaidSurge", com.perblue.heroes.game.ActionListener.class);
+            if (dr != null) { dr.invoke(screen, (Object) null); System.out.println("[surgeraid] doRaidSurge(null) [chemin réel]"); return; }
+            System.out.println("[surgeraid] ni onRaidButtonClick ni doRaidSurge trouvés");
+        } catch (Throwable t) { System.out.println("[surgeraid] échec: " + t); }
+    }
+
     /** DEV : envoie un message dans le CHAT de guilde (salon GUILD) — même chemin d'envoi que
      *  {@code ChatWindow.sendChatMessage} (construit un SendChat et l'envoie au serveur), en contournant le
      *  clavier virtuel. Le serveur renvoie le Chat autoritatif que la ChatWindow affiche. Invoqué via
