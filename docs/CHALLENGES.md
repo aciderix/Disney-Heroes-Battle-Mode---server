@@ -40,7 +40,30 @@ joueur ; **seul handler « MANQUE » au niveau du mode**).
 1. ⬜ **Livraison BootData** : `ServerChallenges.freshData/load` → `bd.userChallengeDataExtra` avec le **bon userID**
    + état persisté (slots/progression), wire-sûr ; `historicWeeklyChallenges` non-null. Écran CHALLENGES rend.
    Test headless (WireCheck + userID). **Vérif EN JEU** (écran s'ouvre, TL100).
-2. 🧭 **Boucle de défi** — **ARCHITECTURE RÉSOLUE (recon g73b), à implémenter** :
+2. 🟢 **Boucle de défi** — **LIVRÉE HEADLESS (g74), vérif EN JEU restante** :
+   - **Fixture** (`ServerContext.init`) : `DH.app.historicWeeklyChallenges = new HistoricWeeklyChallenges()` — la
+     valeur EXACTE du ctor du jeu (notre shim l'alloue sans ctor → null → l'extension `StickerHelper$1
+     .getHistoricChallenges()` NPE). Couche plateforme (§4), zéro invention ; posée GLOBALEMENT (contrairement à
+     `userChallengeData` réservé à l'oracle, g59 : ce champ n'est que LU, aucune cascade `notifyChallenges`).
+   - **Sérialiseur FERMÉ** `ServerChallenges.toMessage(ClientUserChallengeData) → UserChallengeDataExtra` : le jeu
+     n'a PAS de sérialiseur inverse (le client ne renvoie jamais tout l'état). Miroir du sync héros de §3 ; réflexion
+     lecture seule sur `nextChallengeID`/`attemptID`/`userID` (aucun getter). Validé par round-trip (`ChallengeLoopTest`).
+   - **SETUP** `ServerChallenges.ensureSetup(su)` (appelé au boot par `LoginServer`, gaté `Unlockable.CHALLENGES`
+     TL20) : exécute `StickerHelper.setupStarterChallenges` (auto-population — le jeu choisit le 1er défi STARTER non
+     complété par `starterChallenge` croissant : `TO_CATCH_A_STAR`→`THE_NAMES_NICK`→…) + `setupWeeklyChallenges`.
+   - **START/CLAIM/CANCEL** (handlers `LoginServer`) — **protocole client PROUVÉ au bytecode** (`ClientActionHelper`) :
+     `START Action{TYPE, TIME}` (sans SLOT → serveur choisit via `canStart`), `CLAIM`/`CANCEL Action{TYPE, SLOT, TIME}`
+     (extras en `.name()` String). Serveur ré-exécute `createHandleExtra`/`claimSticker`/`cancelChallenge` (autoritatif)
+     + persiste (fire-and-forget, le client a appliqué localement — patron loot/raid).
+   - **CLAIM autoritatif** (`claimSticker`) : crédite le sticker cosmétique + `CHALLENGE_TOKENS` (`getTokenReward`,
+     ex. 500) + bonus de livre, pose `completionTime`, marque `claimed`, RETIRE le handle du slot puis (STARTER)
+     ré-avance au défi suivant. **Anti-double** : re-claim → 0 token (handle retiré / `claimed`). Prouvé `ChallengeLoopTest`.
+   - **Persistance** : `challengeData BLOB` (`UserStore` migration + `ServerUser.challengeData`), livré au boot par
+     `bootData()`. Round-trip DB prouvé (`ChallengeLoopTest`).
+   - **PROGRESSION** (transversale, hooks `ChallengeImpl`) et **autorité client vs serveur de la progression** :
+     **RESTENT à observer EN JEU** (comme loot/raid SURGE). Le test force `currentProgress = maxProgress` pour
+     exercer la réclamation. **⚠️ Vérif EN JEU obligatoire** (rendu du défi + claim + auto-avance).
+2bis. 🧭 (archive recon g73b) **ARCHITECTURE RÉSOLUE** :
    - **Conversion (§3)** : `ClientNetworkStateConverter.getUserChallengeData(UserChallengeDataExtra)` →
      `ClientUserChallengeData` (impl `IUserChallengeData`) ; `setUserChallengeData(client, msg)` → re-sérialise pour
      persistance/BootData. ⇒ le serveur charge notre message persisté en objet du jeu, mute via les helpers, resérialise.

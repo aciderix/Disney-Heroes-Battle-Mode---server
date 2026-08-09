@@ -67,6 +67,10 @@ public final class ServerUser {
   // remboursements, admin GLOBAL…) ; ré-hébergés, on n'a pas encore ces événements → on livre au moins le
   // courrier d'ONBOARDING NEW_USER_WELCOME (geste opérateur, type authentique). Nullable → liste vide.
   private java.util.List<com.perblue.heroes.network.messages.MailMessage> mail;
+  // CHALLENGES #72 (Sticker Challenges) : progression des défis (UserChallengeDataExtra : slots en cours,
+  // completedChapters, nextChallengeID, times). Hors userExtra/individualUserExtra → persisté à part (colonne BLOB).
+  // Nullable → état frais (aucun défi) recréé au boot par ServerChallenges.freshData.
+  private com.perblue.heroes.network.messages.UserChallengeDataExtra challengeData;
 
   // Graines RNG que le client annonce (Action SET_SEED) avant chaque combat, pour que le serveur puisse
   // REPRODUIRE/valider le tirage (combat COMBAT, loot LOOT ; cf. SERVER_PLAN §Partiels C→E). État de SESSION
@@ -204,10 +208,10 @@ public final class ServerUser {
     bd.userInfo = userInfo;
     bd.userExtra = userExtra;
     bd.individualUserExtra = individualUserExtra;
-    // CHALLENGES (#72) — l'écran « Sticker Challenges » (TL20) lit BootData.userChallengeDataExtra. Le défaut
-    // `new BootData()` est non-null mais `userID=0` ; on livre l'état PAR JOUEUR (userID correct). Progression
-    // persistée à l'incrément 2 (START/CLAIM). historicWeeklyChallenges reste le défaut non-null (wire-sûr).
-    bd.userChallengeDataExtra = ServerChallenges.freshData(userID);
+    // CHALLENGES (#72) — l'écran « Sticker Challenges » (TL20) lit BootData.userChallengeDataExtra. On livre l'état
+    // PAR JOUEUR : la progression PERSISTÉE (slots/défis en cours) si présente, sinon un état frais (userID correct).
+    // historicWeeklyChallenges reste le défaut non-null (wire-sûr).
+    bd.userChallengeDataExtra = challengeData != null ? challengeData : ServerChallenges.freshData(userID);
     // BATTLE PASS V2 : le client pose DH.app.userBattlePassV2 depuis bd.battlePassV2Data. Un défaut
     // `new BattlePassV2Data()` a `type = BattlePassType.DEFAULT` → l'écran QUESTS (QuestsScreen.showDot →
     // BattlePassV2Helper.hasUnclaimedRewards → computeRewards) LÈVE « Battle Pass types other than 'Quest'
@@ -2886,7 +2890,7 @@ public final class ServerUser {
    * loot, achat) mute ce champ en mémoire ; sans re-sync le gain est perdu au round-trip wire. Même schéma
    * que le niveau d'équipe / le nom. Vérifié `server/smoke/SigninMultiDayTest` (récompense DIAMONDS créditée).
    */
-  private void resyncDiamonds(User user) {
+  void resyncDiamonds(User user) {   // package-private : ServerChallenges resynchronise après un claim de sticker
     userInfo.diamonds = user.getResource(com.perblue.heroes.network.messages.ResourceType.DIAMONDS);
   }
 
@@ -2955,6 +2959,19 @@ public final class ServerUser {
   public synchronized void setBattlePassWire(byte[] bytes) {
     if (bytes != null && bytes.length > 0) battlePassV2Data = read(bytes);
   }
+
+  /** CHALLENGES #72 — octets wire du {@code UserChallengeDataExtra} persisté (NULL si aucun défi en cours). */
+  public synchronized byte[] challengeWire() {
+    return challengeData == null ? null : wire(challengeData);
+  }
+  /** Restaure la progression de défis persistée (au chargement DB ; NULL = état frais recréé au boot). */
+  public synchronized void setChallengeWire(byte[] bytes) {
+    if (bytes != null && bytes.length > 0) challengeData = read(bytes);
+  }
+  /** État de défis courant (persisté), ou {@code null} si frais. Accès pour {@link ServerChallenges}. */
+  public synchronized com.perblue.heroes.network.messages.UserChallengeDataExtra challengeDataOrNull() { return challengeData; }
+  /** Remplace l'état de défis (après START/CLAIM/CANCEL) — l'appelant persiste ensuite via {@code store.save}. */
+  public synchronized void setChallengeData(com.perblue.heroes.network.messages.UserChallengeDataExtra d) { challengeData = d; }
 
   /**
    * Sérialise la MAILBOX (liste de {@link com.perblue.heroes.network.messages.MailMessage}) en un BLOB :

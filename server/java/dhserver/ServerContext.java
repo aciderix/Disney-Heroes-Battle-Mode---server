@@ -131,6 +131,20 @@ public final class ServerContext {
         ext.setAccessible(true);
         ext.set(null, (com.badlogic.gdx.utils.Predicate<String>) s -> true);
       } catch (Throwable t) { System.out.println("[ctx] isNameLegalExt (serveur) non posé: " + t); }
+      // CHALLENGES (#72) — le vrai GameMain(ctor) pose historicWeeklyChallenges = new HistoricWeeklyChallenges()
+      // (conteneur VIDE non-null, offset 370 du ctor). Notre shim (alloué SANS ctor) le laisse null → l'extension
+      // du jeu StickerHelper$1.getHistoricChallenges() (= DH.app.getHistoricWeeklyChallenges()) NPE dès qu'une
+      // logique sticker CLIENTE tourne headless (canStart/isUnlocked/createHandleExtra/setupStarterChallenges).
+      // On pose la MÊME valeur que le ctor du jeu — couche plateforme (§4), zéro donnée inventée (conteneur vide
+      // ⇒ getCurrentChallenges/getNextChallenges/getHistoricChallenges rendent des collections vides = aucune
+      // règle changée). Contrairement à userChallengeData (RÉSERVÉ à l'oracle, g59 — le poser globalement réactive
+      // la cascade notifyChallenges → setupWeeklyChallenges à chaque action), CE champ n'est que LU (aucune cascade)
+      // → sûr globalement, et REQUIS par les opérations serveur de défis ({@code ServerChallenges}).
+      try {
+        Field hwc = field(GameMain.class, "historicWeeklyChallenges");
+        if (hwc.get(app) == null)
+          hwc.set(app, new com.perblue.heroes.game.data.stickerbook.HistoricWeeklyChallenges());
+      } catch (Throwable t) { System.out.println("[ctx] fixture historicWeeklyChallenges non posée: " + t); }
       // WARM-UP GuildStats (guildes #7) : la 1ʳᵉ lecture des perks de guilde déclenche le PARSE PARESSEUX de
       // guild_perk_levels.tab, dont les lignes TIMED_* ont un CONTENT_TL vide (parseInt("") lève, journalisé
       // SEVERE par onStatError pendant le chargement). Sous accès concurrent (l'écran de guilde demande le

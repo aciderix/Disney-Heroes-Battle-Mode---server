@@ -1,5 +1,54 @@
 # JOURNAL — journal détaillé des modifications
 
+## 2026-08-09 (g74) — CHALLENGES (#72) incrément 2 : boucle setup/claim/cancel + persistance (🟢 headless, 91/91)
+
+**Objectif (option (b) choisie par l'utilisateur)** : câbler la boucle de défis EN HEADLESS avec les valeurs déjà
+prouvées (code du jeu + données `.tab`), puis vérifier EN JEU. Tout par le CODE DU JEU (§3), zéro invention (§4).
+
+**Blocage résolu — fixture `historicWeeklyChallenges` (§8, disasm)** : `canStart/getStartError` NPE-aient headless.
+Cause tracée au bytecode : `getStartError → getUserStickerInfo(...).isUnlocked() → isCurrentWeeklySticker →
+StickerHelper.extension.getHistoricChallenges().getCurrentChallenges()`. L'extension (`StickerHelper$1`, posée par
+le `<clinit>`, toujours non-null) délègue à `DH.app.getHistoricWeeklyChallenges()`. Le VRAI `GameMain(ctor)` pose
+`historicWeeklyChallenges = new HistoricWeeklyChallenges()` (offset 370) ; notre shim alloué SANS ctor le laisse
+null → NPE. **Correctif** : `ServerContext.init()` pose la MÊME valeur (conteneur vide) — couche plateforme (§4),
+zéro donnée inventée. Posée GLOBALEMENT (sûr) car ce champ n'est que LU ; contrairement à `userChallengeData`
+(RÉSERVÉ à l'oracle, g59 — le poser globalement réactive la cascade `notifyChallenges → setupWeeklyChallenges`).
+
+**Sérialiseur inverse (§3)** : le jeu n'a PAS de sérialiseur `client→message` (le client ne renvoie jamais tout
+l'état ; `ClientNetworkStateConverter.setUserChallengeData` va aussi `message→client`). On écrit un sérialiseur à
+JEU DE CHAMPS FERMÉ `ServerChallenges.toMessage(ClientUserChallengeData) → UserChallengeDataExtra` — miroir du
+sync héros de §3 ; réflexion LECTURE SEULE sur `nextChallengeID`/`attemptID`/`userID` (aucun getter). Validé par
+round-trip (`ChallengeLoopTest`).
+
+**SETUP auto par le jeu** : `ServerChallenges.ensureSetup(su)` (appelé au boot par `LoginServer`, gaté
+`Unlockables.isUnlocked(Unlockable.CHALLENGES, user)` TL20) exécute `StickerHelper.setupStarterChallenges` — le jeu
+choisit le 1er sticker de catégorie STARTER non complété par `starterChallenge` croissant (`challenge_stickers.tab` :
+`TO_CATCH_A_STAR`(1, 0/7, 500 tokens) → `THE_NAMES_NICK`(2) → `RIDE_THE_FERRIS_WHEEL`(3) → `SOCIAL_BUTTERFLY`(4) →
+`YOURE_NUMBER_ONE`(5)) — + `setupWeeklyChallenges` (no-op tant qu'aucune rotation hebdo poussée). Idempotent.
+
+**Protocole client PROUVÉ au bytecode** (`ClientActionHelper`, `ActionExtraBuilder`) : `startStickerChallenge` →
+`Action{START_STICKER_CHALLENGE, extra{TYPE=StickerType, TIME}}` (SANS SLOT → serveur choisit via `canStart`) ;
+`claimSticker`/`cancelStickerChallenge` → `Action{…, extra{TYPE, SLOT=ChallengeSlots, TIME}}`. Extras stockés en
+`.name()` (String, `with(ActionExtraType,String)`). Handlers `LoginServer` : ré-exécutent `createHandleExtra`
+(START, niveau message : `endTime=serverTime()+getDuration()`, `maxProgress=getMaxProgress()`) / `claimSticker`
+(CLAIM) / `cancelChallenge` (CANCEL) de façon autoritative + persistent. Fire-and-forget (le client a appliqué
+localement — patron loot/raid).
+
+**CLAIM autoritatif (`claimSticker`, disasm)** : pose `completionTime`, crédite le sticker cosmétique +
+`CHALLENGE_TOKENS` (`getTokenReward`) + bonus de livre (si livre complété), `setClaimed(true)`, RETIRE le handle
+du slot (`setHandle(slot, null)` hors WEEKLY) puis (STARTER) ré-appelle `setupStarterChallenges` → ré-avance au
+défi suivant. **Anti-double** : re-claim → handle retiré/`claimed` → 0 token.
+
+**Persistance** : colonne `challengeData BLOB` (`UserStore` migration + `ServerUser.challengeData` + `bootData()`),
+livrée au boot. **`ChallengeLoopTest`** : setup STARTER → complétion forcée (`currentProgress=maxProgress`) →
+claim (+500 tokens, `completionTime` posé, ré-avance `TO_CATCH_A_STAR`→`THE_NAMES_NICK`) → anti-double (0 token) →
+round-trip DB (`UserStore`) → cancel. Régression **91/91**.
+
+**RESTE** : progression transversale (hooks `ChallengeImpl` : campagne/chest/arène/breaker) + autorité de la
+progression (client vs serveur) — à OBSERVER EN JEU (comme loot/raid) ; **vérif EN JEU obligatoire** (§8 : rendu du
+défi, claim, auto-avance) ; stickers (incr. 3 : `BUY_STICKER*`/`SET_FAVORITE_STICKER`), `GetUserChallengeDataExtra`
+(incr. 4). Détail : `docs/CHALLENGES.md`.
+
 ## 2026-08-04 (g71) — SURGE (#72) : scoring vérifié FIDÈLE + recon des raids (câblage bloqué §4)
 
 **Scoring vérifié (§8, sonde)** : les `+0 pts` des tests SURGE ne sont PAS un manque — `creep_surge_tiers.tab`

@@ -198,6 +198,12 @@ public final class LoginServer {
             // restée sans réponse laissera son écran en attente, ce qui rend le trou VISIBLE en jeu aussi.
             try {
             if (m instanceof ClientInfo) {
+              // CHALLENGES (#72) — AUTO-POPULATION du défi STARTER par le jeu (StickerHelper.setupStarterChallenges),
+              // gaté Unlockable.CHALLENGES (TL20). Fait AVANT bootData() pour que l'écran « Sticker Challenges »
+              // rende le défi en cours dès le boot ; persiste si l'état a changé (colonne challengeData). Idempotent.
+              try {
+                if (ServerChallenges.ensureSetup(user)) store.save(user);
+              } catch (Throwable t) { System.out.println("[login]     ! setup défis (boot) échoué: " + t); }
               BootData bd = user.bootData();
               // GUILDES #7 — si le joueur est en guilde, LIVRER son GuildInfo au boot (bd.guildInfo). Sans ça le
               // client sait « en guilde » (guildID>0 persisté) mais sans données de guilde → écran vide au
@@ -967,6 +973,38 @@ public final class LoginServer {
                 } else {
                   System.out.println("[login] <== Action RAID_SURGE ignoré (guilde=" + (rg != null) + ", district=" + rdist + ")");
                 }
+
+              } else if (act.command == com.perblue.heroes.network.messages.CommandType.START_STICKER_CHALLENGE
+                  || act.command == com.perblue.heroes.network.messages.CommandType.CLAIM_STICKER_CHALLENGE
+                  || act.command == com.perblue.heroes.network.messages.CommandType.CANCEL_STICKER_CHALLENGE) {
+                // CHALLENGES #72 incrément 2 — boucle sticker. Protocole client (disasm ClientActionHelper) :
+                //   START  Action{START_STICKER_CHALLENGE,  extra{TYPE=StickerType, TIME}}          (sans SLOT → serveur choisit)
+                //   CLAIM  Action{CLAIM_STICKER_CHALLENGE,  extra{TYPE=StickerType, SLOT=ChallengeSlots, TIME}}
+                //   CANCEL Action{CANCEL_STICKER_CHALLENGE, extra{TYPE=StickerType, SLOT=ChallengeSlots, TIME}}
+                // Le serveur RÉ-EXÉCUTE la logique du jeu (StickerHelper) de façon autoritative + persiste. Le client
+                // a déjà appliqué localement (patron loot/raid) — fire-and-forget. Extras stockés en .name() (String).
+                com.perblue.heroes.network.messages.StickerType st = null;
+                com.perblue.heroes.network.messages.ChallengeSlots slot = null;
+                try {
+                  Object tn = act.extra == null ? null : act.extra.get(com.perblue.heroes.network.messages.ActionExtraType.TYPE);
+                  if (tn != null) st = com.perblue.heroes.network.messages.StickerType.valueOf(tn.toString());
+                  Object sn = act.extra == null ? null : act.extra.get(com.perblue.heroes.network.messages.ActionExtraType.SLOT);
+                  if (sn != null) slot = com.perblue.heroes.network.messages.ChallengeSlots.valueOf(sn.toString());
+                } catch (Throwable t) { System.out.println("[login]     ! " + act.command + " extras illisibles: " + t); }
+                boolean ok = false;
+                if (st != null) {
+                  if (act.command == com.perblue.heroes.network.messages.CommandType.START_STICKER_CHALLENGE) {
+                    ok = ServerChallenges.applyStart(user, st) != null;
+                  } else if (act.command == com.perblue.heroes.network.messages.CommandType.CLAIM_STICKER_CHALLENGE) {
+                    ok = ServerChallenges.applyClaim(user, st, slot);
+                  } else {
+                    ok = ServerChallenges.applyCancel(user, st, slot);
+                  }
+                }
+                if (ok) { try { store.save(user); } catch (Exception e) {
+                  System.out.println("[login]     ! persist défi: " + e); } }
+                System.out.println("[login] <== " + act.command + "(" + st + (slot != null ? "/" + slot : "") + ")"
+                    + (ok ? " appliqué [persisté]" : " refusé"));
 
               } else {
                 boolean applied = user.applyAction(act);
