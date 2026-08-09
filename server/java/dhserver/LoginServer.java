@@ -1676,6 +1676,25 @@ public final class LoginServer {
               System.out.println("[login] <== GetBreakerQuest → ==> BreakerQuest ("
                   + bq.basicBreakerFights.size() + " combat(s), à partir de la salle "
                   + (qud != null ? qud.breakerBattlesWon : 0) + ")");
+            } else if (m instanceof com.perblue.heroes.network.messages.GetUserChallengeDataExtra) {
+              // CHALLENGES #72 incrément 4 — VUE des stickers d'un joueur (StickerOverviewWindow) : le client envoie
+              // GetUserChallengeDataExtra{targetUserID} et attend un UserChallengeDataExtra en réponse. Le serveur
+              // charge l'état de défis PERSISTÉ du joueur ciblé (soi-même ou un autre membre) et le renvoie
+              // (freshData si le joueur n'a pas encore d'état). Requête/réponse (patron GetSurge).
+              com.perblue.heroes.network.messages.GetUserChallengeDataExtra gq =
+                  (com.perblue.heroes.network.messages.GetUserChallengeDataExtra) m;
+              ServerUser target = user;
+              if (gq.targetUserID != user.userID) {
+                try { target = store.loadIfExists(gq.targetUserID, user.shardID); }
+                catch (Exception e) { System.out.println("[login]     ! chargement joueur défis: " + e); target = null; }
+              }
+              com.perblue.heroes.network.messages.UserChallengeDataExtra reply =
+                  target != null ? ServerChallenges.load(target) : ServerChallenges.freshData(gq.targetUserID);
+              reply.userID = gq.targetUserID;
+              reply.setAsReplyTo(m);
+              c.send(reply);
+              System.out.println("[login] <== GetUserChallengeDataExtra(" + gq.targetUserID
+                  + ") → ==> UserChallengeDataExtra (" + (reply.slots == null ? 0 : reply.slots.size()) + " slots)");
             } else if (m instanceof com.perblue.heroes.network.messages.GetSurge) {
               // SURGE #72 — OUVERTURE de l'écran : le client (GameMain) envoie GetSurge, le serveur renvoie l'état
               // PARTAGÉ de la guilde (ServerSurgeState, reconstruit si nouveau surge). GetSurge → SurgeData

@@ -1,5 +1,23 @@
 # JOURNAL — journal détaillé des modifications
 
+## 2026-08-09 (g77) — CHALLENGES (#72) incrément 4 : handler GetUserChallengeDataExtra (🟢 headless, 93/93)
+
+**`GetUserChallengeDataExtra{targetUserID}` → `UserChallengeDataExtra`** (requête/réponse, patron `GetSurge`).
+La fenêtre `StickerOverviewWindow` envoie ce message (disasm : `sendMessage(msg, UserChallengeDataExtra.class,
+listener)`) pour afficher les stickers d'un joueur. Handler `LoginServer` : charge le joueur ciblé (soi-même = `user` ;
+sinon `store.loadIfExists(targetUserID, shardID)`), renvoie `ServerChallenges.load(target)` (état persisté) ou
+`freshData` si absent — `userID = targetUserID`, jamais null (écran non vide), `setAsReplyTo`. `ChallengeViewTest`
+(état persisté d'un AUTRE joueur relu + wire round-trip + cible inconnue → freshData).
+
+**`VIEW_CHALLENGES`** (Action émise à l'ouverture des livres) : au bytecode c'est un `VIEW_*` (marqueur/analytics
+groupé avec `VIEW_SINGLE_CHALLENGE`/`VIEW_COSTUME`…), sans effet serveur observé. Laissée **non gérée HONNÊTEMENT**
+(§2 : pas de faux OK) — NON bloquante : le client navigue en local (vérifié EN JEU g75, les livres s'affichent).
+
+**Bilan CHALLENGES #72** : incréments **1-4 livrés côté serveur** (1 ✅ boot en jeu, 2 ✅ en jeu, 3 🟢, 4 🟢),
+régression **93/93**. Reste : vérif EN JEU de l'incr. 3 (achats — nécessite des diamants) et de la fenêtre
+`StickerOverviewWindow` (incr. 4) ; progression transversale (hooks `ChallengeImpl` campagne/chest/arène/breaker,
+autorité de progression à observer en jeu). Détail : `docs/CHALLENGES.md`.
+
 ## 2026-08-09 (g76) — CHALLENGES (#72) incrément 3 : économie stickers (🟢 headless, 92/92)
 
 4 Actions d'économie, tout par le CODE DU JEU (§3), zéro invention (§4). Protocoles PROUVÉS au bytecode

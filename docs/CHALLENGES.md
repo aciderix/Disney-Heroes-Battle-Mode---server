@@ -108,9 +108,13 @@ joueur ; **seul handler « MANQUE » au niveau du mode**).
    - `ChallengeShopTest` : buySlot (**-1000 diamants**, `CHALLENGE_SLOT_2`, anti-double), setFavorite, buyBook
      **CITY_PATROL** (**-900 diamants**, 5 stickers `purchaseTime`) + persistance DB. Valeurs EXACTES des données du
      jeu (= « BUY 1,000 »/« BUY 900 » vus en jeu). **Vérif EN JEU restante** (nécessite des diamants sur le compte).
-4. ⬜ **`GetUserChallengeDataExtra` handler** (vue StickerOverviewWindow) + `VIEW_CHALLENGES` (Action de NAVIGATION
-   émise à l'ouverture des livres — actuellement « non gérée (PARTIEL) », NON bloquante : le client navigue en local ;
-   à traiter avec la vue des livres/stickers).
+4. 🟢 **`GetUserChallengeDataExtra` handler** — **LIVRÉ HEADLESS (g77)** : requête/réponse (patron `GetSurge`) ;
+   `GetUserChallengeDataExtra{targetUserID}` → le serveur charge l'état de défis PERSISTÉ du joueur ciblé (soi-même
+   ou un autre membre via `store.loadIfExists`) et renvoie un `UserChallengeDataExtra` wire-sûr (`freshData` si absent,
+   jamais null → écran non vide). `ChallengeViewTest`. **`VIEW_CHALLENGES`** (Action de NAVIGATION émise à l'ouverture
+   des livres) : au bytecode c'est un `VIEW_*` (marqueur/analytics, aucun effet serveur observé) → laissée non gérée
+   HONNÊTEMENT (§2 : pas de faux OK) — NON bloquante (le client navigue en local ; vérifié EN JEU g75). Vérif EN JEU
+   de la fenêtre `StickerOverviewWindow` restante.
 5. 🟡 **Vérif EN JEU** : rendu + **CLAIM ✅ fait (g75)** ; reste START/CANCEL en jeu (voir incr. 2) + stickers (incr. 3).
 
 ## Notes §3/§4
