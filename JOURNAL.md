@@ -1,5 +1,41 @@
 # JOURNAL — journal détaillé des modifications
 
+## 2026-08-09 (g79) — FRIENDSHIPS/MISSIONS (#72) : recon pipeline + incrément 1 (livraison/rendu) ✅ EN JEU
+
+Nouveau mode (choix utilisateur), attaqué au **pipeline #73/#74** : `contract.sh --mode Friendship` (ModeGraph →
+ScreenContract) a donné le contrat complet — gate `Unlockable.FRIENDSHIPS` (TL24), écran `MissionsMainScreen` +
+fenêtres `FriendshipCampaignWindow`/`DiskUnlockWindow`/`WallWindow`/`FriendFinderWindow`, messages
+`FriendshipBattleInfo`/`HeroLineup`/`FriendshipCampaignAttack`.
+
+**Modèle** (recon bytecode) : deux systèmes liés — **amitiés** (chaque paire `FriendPairID{primary,secondary}` monte
+en `empowerment` → disk) et **campagne d'amitié (MISSIONS)** (mini-campagne par paire, combat via
+`FriendshipCampaignHelper.recordOutcome`, récompenses de chapitre). Logique §3 : `FriendshipHelper`
+(`empowerFriendship`/`buyFriendStamina`/`setFavoritedFriendship`) + `FriendshipCampaignHelper`
+(`recordOutcome`/`giveChapterRewards`/`doNodeUpdate`/`getRewardsForChapter`).
+
+**Persistance quasi-GRATUITE** : l'état vit dans `IndividualUserExtra` (`friendships`, `friendshipCampaignProgress`,
+`friendshipMissionData`, `favoriteFriendships`, `inProgressFriendshipMissions`, `lastFriendRequestTimes`) — DÉJÀ
+persisté par write-through (le `User`/`IndividualUser` est bâti dessus). Contraste avec CHALLENGES (blob dédié).
+`BootData.friendshipOffsetData` = config d'échelle CONTENU (lue au boot par `FriendshipOffsets.setOffsets` — NULL ⇒
+NPE) ; **non-null vide par défaut** (`new BootData()`), offsets vides ⇒ `getLevelOffset/getRarityOffset = 0` = pas de
+dérive = baseline fidèle pour une version de contenu figée.
+
+**Incrément 1 — livraison/rendu** : les conteneurs (`friendshipOffsetData` + maps d'`IndividualUserExtra`) sont
+**déjà non-null par les défauts** → AUCUN changement serveur nécessaire. `FriendshipBootTest` verrouille le contrat
+(non-null, listes d'offsets de même longueur, `FriendshipOffsets.setOffsets(offset)` rejoué HEADLESS sans NPE,
+round-trip wire `friendshipOffsetData` + `BootData`). **✅ EN JEU** (compte TL100) : `nav MISSIONS` → l'écran
+**MISSIONS** rend « **0/1 missions** », **ADD MISSION**, « No rewards to claim yet! » / CLAIM ALL — état frais
+correct, aucun NPE `setOffsets`. Le catalogue de paires est de la donnée CLIENTE (`friendship_pairs.tab`).
+
+**Fix d'outillage annexe** : découvert que le **`sleep` en avant-plan est bloqué** dans l'environnement (exit 144 /
+SIGSTKFLT) → les lancements client qui faisaient `sleep` avant le `nohup … &` étaient tués AVANT de démarrer (logs
+périmés trompeurs). Correctif de méthode : lancer sans `sleep` (run-online.sh tue les anciens via DH_KILL_OLD), et
+attendre via `run_in_background`/boucle `until` (jamais `sleep` en avant-plan).
+
+**RESTE** : incr. 2 (empower + favori : Actions `EMPOWER_FRIENDSHIP`/`SET_FAVORITE_FRIENDSHIP` → `FriendshipHelper`),
+incr. 3 (campagne d'amitié : `FriendshipCampaignAttack` → `recordOutcome` + `giveChapterRewards` + stamina), incr. 4
+vérif en jeu complète. Détail : `docs/FRIENDSHIPS.md`.
+
 ## 2026-08-09 (g78) — CHALLENGES (#72) : achats/annulation ✅ EN JEU + fix pilote pour les MODALES (réutilisable)
 
 **Fix pilote (outillage, réutilisable TOUS les modes).** `TutorialDriver.fireClick` ne hit-testait que le stage de
