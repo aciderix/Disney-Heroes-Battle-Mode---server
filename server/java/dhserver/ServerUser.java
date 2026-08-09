@@ -204,6 +204,10 @@ public final class ServerUser {
     bd.userInfo = userInfo;
     bd.userExtra = userExtra;
     bd.individualUserExtra = individualUserExtra;
+    // CHALLENGES (#72) — l'écran « Sticker Challenges » (TL20) lit BootData.userChallengeDataExtra. Le défaut
+    // `new BootData()` est non-null mais `userID=0` ; on livre l'état PAR JOUEUR (userID correct). Progression
+    // persistée à l'incrément 2 (START/CLAIM). historicWeeklyChallenges reste le défaut non-null (wire-sûr).
+    bd.userChallengeDataExtra = ServerChallenges.freshData(userID);
     // BATTLE PASS V2 : le client pose DH.app.userBattlePassV2 depuis bd.battlePassV2Data. Un défaut
     // `new BattlePassV2Data()` a `type = BattlePassType.DEFAULT` → l'écran QUESTS (QuestsScreen.showDot →
     // BattlePassV2Helper.hasUnclaimedRewards → computeRewards) LÈVE « Battle Pass types other than 'Quest'

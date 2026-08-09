@@ -3243,3 +3243,24 @@ et confirmés sur le fil.
 `surgeteamfight`, `surgequick`, `surgeraid`, `surgeclaim`. Recette de restauration du client dans `docs/SURGE.md §8`.
 
 Fichiers : `desktop-port/src/main/java/dhdesktop/{TutorialDriver,DesktopLauncher}.java` (surgeclaim), `docs/SURGE.md` §8, `MEMORY.md`.
+
+---
+
+## 2026-08-09 (g73) — CHALLENGES (#72) : recon pipeline + incrément 1 (livraison BootData, 90/90)
+
+Nouveau mode attaqué avec le pipeline #73/#74 (`contract.sh --mode` + ModeGraph). **Recon** (docs/CHALLENGES.md) :
+mode « Sticker Challenges » gaté TL20, 15 classes `ui/challenges`, système IDLE (défis dans des slots →
+sticker/récompenses), contenu data-driven (`challenge_*.tab`). Données via **`BootData.userChallengeDataExtra`**
+(+ `historicWeeklyChallenges`) ; actions `START/CLAIM/CANCEL_STICKER_CHALLENGE`, `BUY_STICKER*`,
+`SET_FAVORITE_STICKER` ; seul handler « MANQUE » = `GetUserChallengeDataExtra` (vue StickerOverviewWindow).
+
+**Écartés à la recon** : HEIST (`unlockables.tab` TL **9999** = désactivé → vérif §8 impossible ; + 82 classes coop
+temps réel) ; CITY WATCH (aucun Destination/écran — vestiges de tuto legacy, pas un mode autonome).
+
+**Incrément 1 LIVRÉ** : `ServerChallenges.freshData(userID)` → `bd.userChallengeDataExtra` avec le **bon userID**
+(le défaut `new BootData()` est non-null mais userID=0, or l'écran le lit) + conteneurs wire-sûrs ;
+`historicWeeklyChallenges` reste le défaut non-null. `ChallengeBootTest` (userID, conteneurs, round-trip BootData).
+Régression **90/90**. Reste : boucle START/CLAIM (persistée), stickers, handler GetUserChallengeDataExtra, vérif EN JEU.
+
+Fichiers : `docs/CHALLENGES.md`, `server/java/dhserver/ServerChallenges.java`, `server/java/dhserver/ServerUser.java`
+(bootData), `server/smoke/ChallengeBootTest.java`, `server/smoke/regression.sh`.
