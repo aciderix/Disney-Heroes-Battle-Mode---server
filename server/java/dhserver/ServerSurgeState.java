@@ -445,6 +445,42 @@ public final class ServerSurgeState {
     return up;
   }
 
+  /**
+   * ISSUE d'un RAID (incrément 5) : exécute {@link ServerSurgeCombat#applyRaidOutcome} (recordRaid autoritatif :
+   * or + consommation du pass) sur la summary du membre, incrémente le compteur PARTAGÉ {@code raidsUsed} (comme
+   * {@code applyAttack} incrémente {@code districtsCleared} — recordRaid ne touche que le compteur quotidien du
+   * joueur, pas l'état partagé de guilde), et renvoie le delta {@link com.perblue.heroes.network.messages.SurgeUpdate}.
+   * Ne persiste pas (l'appelant sauvegarde). {@code district} vient de l'{@code Action RAID_SURGE} (extra TYPE).
+   */
+  public static com.perblue.heroes.network.messages.SurgeUpdate applyRaid(
+      ServerGuild guild, SurgeData data, ServerUser attacker, DistrictType district) {
+    SurgeMemberSummary summary = memberSummary(data, attacker.userID);
+    if (summary == null) {
+      summary = new SurgeMemberSummary();
+      BasicUserInfo who = attacker.basicInfo();
+      if (who != null && who.avatar == null) who.avatar = new Avatar();
+      summary.user = who != null ? who : new BasicUserInfo();
+      summary.objectiveProgress = new java.util.HashMap<>();
+      data.members.add(summary);
+    }
+    long goldBefore = summary.storedGold;
+    User u = attacker.gameUser();
+    SurgeOpponentSummary op = opponentFor(data, district);
+    LineupSummary oppLineup = op != null && op.lineup != null ? op.lineup : new LineupSummary();
+    ServerSurgeCombat.applyRaidOutcome(u, summary, data.surgeID, district, oppLineup,
+        com.perblue.heroes.game.specialevent.SpecialEventSnapshot.NONE);
+    summary.raidsUsed++;                       // compteur PARTAGÉ (recordRaid ne mute que le quotidien du joueur)
+
+    com.perblue.heroes.network.messages.SurgeUpdate up = new com.perblue.heroes.network.messages.SurgeUpdate();
+    up.member = summary;
+    up.opponent = op != null ? op : freshOpponent(district);   // non nul (wire-sûr)
+    up.surgePointDelta = summary.storedGold - goldBefore;       // or du raid (crédité par storeGold)
+    up.districtsClearedDelta = 0;
+    up.waveRegionsClearedDelta = 0;
+    up.logEntry = new com.perblue.heroes.network.messages.SurgeLogData();
+    return up;
+  }
+
   /** Adversaire vide wire-sûr (district sans adversaire — ne devrait pas arriver hors désync). */
   static SurgeOpponentSummary freshOpponent(DistrictType d) {
     SurgeOpponentSummary o = new SurgeOpponentSummary();

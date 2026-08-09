@@ -941,6 +941,33 @@ public final class LoginServer {
                 // compteur ici violerait §4.
                 System.out.println("[login] <== RECORD_PHONY_WAR_ACTIVITY (notification, sans effet serveur)");
 
+              } else if (act.command == com.perblue.heroes.network.messages.CommandType.RAID_SURGE) {
+                // SURGE #72 incrément 5 — ISSUE d'un RAID (mécanique HQ). Protocole prouvé (disasm + EN JEU) :
+                // le client envoie d'abord HeroLineupUpdate{SURGE} (équipe, déjà persistée) + SET_SEED{SURGE},
+                // puis cette Action RAID_SURGE avec extra{TYPE=<district>, COUNT, UPSELL, MODE}. Le serveur rejoue
+                // SurgeHelper.recordRaid (autoritatif) via ServerSurgeState.applyRaid, persiste, diffuse le delta.
+                com.perblue.heroes.network.messages.DistrictType rdist = null;
+                try {
+                  String dn = act.extra == null ? null
+                      : (String) act.extra.get(com.perblue.heroes.network.messages.ActionExtraType.TYPE);
+                  if (dn != null) rdist = com.perblue.heroes.network.messages.DistrictType.valueOf(dn);
+                } catch (Throwable t) { System.out.println("[login]     ! RAID_SURGE district illisible: " + t); }
+                ServerGuild rg = currentGuild(user);
+                if (rg != null && rdist != null) {
+                  long rnow = com.perblue.heroes.util.TimeUtil.serverTimeNow();
+                  com.perblue.heroes.network.messages.SurgeData rd = ServerSurgeState.loadOrReset(store, rg, rnow);
+                  com.perblue.heroes.network.messages.SurgeUpdate up = ServerSurgeState.applyRaid(rg, rd, user, rdist);
+                  ServerSurgeState.save(store, rg, rd.surgeID, rd);
+                  try { store.save(user); } catch (Exception e) { System.out.println("[login]     ! persist user: " + e); }
+                  up.setAsReplyTo(m);
+                  c.send(up);
+                  pushToGuild(rg, user.userID, up);
+                  System.out.println("[login] <== Action RAID_SURGE(" + rdist + ") → ==> SurgeUpdate (+"
+                      + up.surgePointDelta + " or, raidsUsed=" + (up.member != null ? up.member.raidsUsed : -1) + ") [persisté]");
+                } else {
+                  System.out.println("[login] <== Action RAID_SURGE ignoré (guilde=" + (rg != null) + ", district=" + rdist + ")");
+                }
+
               } else {
                 boolean applied = user.applyAction(act);
                 if (applied) { try { store.save(user); } catch (Exception e) {

@@ -53,6 +53,49 @@ public final class ServerSurgeCombat {
         m.base.attackers, m.base.defenders, attackerHeroes, objectives, false, snap);
   }
 
+  /**
+   * SURGE (#72) incrément 5 — ISSUE AUTORITATIVE d'un RAID (mécanique HQ). Le CLIENT joue le raid puis envoie
+   * {@code Action{command=RAID_SURGE, extra={TYPE=district, COUNT, UPSELL, MODE}}} (précédé de
+   * {@code HeroLineupUpdate{SURGE}} + {@code SET_SEED{SURGE}}). Le serveur rejoue {@code SurgeHelper.recordRaid}
+   * (§3, jamais réinventé), qui fait l'autorité : {@code storeGold} (or du raid), {@code incDailyUses} (consommation
+   * du pass de raid), {@code UserActivityTracker.onSurgeRaid}.
+   *
+   * <p><b>Params PROUVÉS au bytecode</b> (site d'appel {@code SurgeHelper.doRaid}, offsets 181-218) — zéro invention :
+   * équipe = {@code user.getHeroLineup(SURGE)} (persistée par le {@code HeroLineupUpdate} précédent) ;
+   * {@code RAID_TEAM_POWER} = Σ {@code PowerCalculator.getPower(hero, 0)} sur cette équipe ;
+   * {@code GOLD} = {@code getGoldForSurgeRaid(user, lineup, opponent.lineup, emptyList, snap)} ;
+   * appel = {@code recordRaid(user, member, surgeID, district, false, RAID_TEAM_POWER, 0L, GOLD, raidHeroes, snap)}.
+   * Renvoie l'or crédité (delta {@code member.storedGold}).
+   */
+  public static long applyRaidOutcome(User user, SurgeMemberSummary summary, long surgeID,
+      com.perblue.heroes.network.messages.DistrictType district,
+      com.perblue.heroes.network.messages.LineupSummary opponentLineup, SpecialEventSnapshot snap) {
+    SurgeClientMember member = new SurgeClientMember(surgeID, summary);
+    com.perblue.heroes.network.messages.HeroLineup lineup =
+        user.getHeroLineup(com.perblue.heroes.network.messages.HeroLineupType.SURGE, 0L);
+    java.util.List<IHero> raidHeroes = new java.util.ArrayList<>();
+    long teamPower = 0L;
+    if (lineup != null && lineup.heroes != null) {
+      for (Object o : lineup.heroes) {
+        com.perblue.heroes.network.messages.UnitType t = (com.perblue.heroes.network.messages.UnitType) o;
+        if (t == null) continue;
+        com.perblue.heroes.game.objects.UnitData h = user.getHero(t);
+        if (h != null) {
+          raidHeroes.add(h);
+          try { teamPower += com.perblue.heroes.game.data.combat.PowerCalculator.getPower(h, 0); }
+          catch (Throwable ignore) {}
+        }
+      }
+    }
+    long before = summary.storedGold;
+    long gold;
+    try { gold = SurgeHelper.getGoldForSurgeRaid(user, lineup, opponentLineup,
+        java.util.Collections.<Object>emptyList(), snap); }
+    catch (Throwable t) { gold = 0L; }
+    SurgeHelper.recordRaid(user, member, surgeID, district, false, teamPower, 0L, gold, raidHeroes, snap);
+    return summary.storedGold - before;      // or réellement crédité par storeGold (autoritatif)
+  }
+
   /** Les {@code IHero} attaquants = les héros RÉELS du joueur des types du lineup rapporté (mercenaires exclus :
    *  {@code recordHeroMastery} les ignore et ils ne sont pas au roster). Aucune invention — types = ce que le
    *  client a rapporté dans {@code base.attackers}. */

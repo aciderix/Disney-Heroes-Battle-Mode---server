@@ -37,7 +37,7 @@ TESTS=(
   ClockAnchorTest
   WireCheck
   ClientOracle ClientOracleR1Test SendValidationTest
-  SurgeScheduleTest SurgeStateTest SurgeCombatTest SurgeMapTest SurgeAttackFlowTest SurgeClaimTest
+  SurgeScheduleTest SurgeStateTest SurgeCombatTest SurgeMapTest SurgeAttackFlowTest SurgeClaimTest SurgeRaidTest
 )
 
 echo "[reg] compilation (serveur + ${#TESTS[@]} tests) ..."

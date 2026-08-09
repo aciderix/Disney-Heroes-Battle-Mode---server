@@ -3185,3 +3185,30 @@ le clear-district se confirment sur un raid abouti EN JEU (ne pas inventer, §4)
 **Pilote** : `surgeraid` amélioré (auto-sélection d'équipe via le bouton AUTO du jeu, puis `doRaidSurge`).
 
 Fichiers : `docs/SURGE.md` §5, `desktop-port/src/main/java/dhdesktop/TutorialDriver.java` (surgeraid), `MEMORY.md`.
+
+---
+
+## 2026-08-09 (g72f) — SURGE incrément 5 : handler serveur RAID_SURGE (recordRaid autoritatif, headless 🟢, 89/89)
+
+Suite de g72e (protocole résolu). Implémentation serveur du raid, params 100 % prouvés au bytecode (site d'appel
+`SurgeHelper.doRaid`, offsets 181-218) :
+- `ServerSurgeCombat.applyRaidOutcome(user, summary, surgeID, district, opponentLineup, snap)` : équipe =
+  `user.getHeroLineup(SURGE)` (persistée par le HeroLineupUpdate précédent), `RAID_TEAM_POWER`=Σ`PowerCalculator.
+  getPower(hero,0)`, `GOLD`=`getGoldForSurgeRaid(user, lineup, opponent.lineup, emptyList, snap)`, puis
+  `recordRaid(user, member, surgeID, district, false, RAID_TEAM_POWER, 0L, GOLD, raidHeroes, snap)` (ordre des 3
+  longs confirmé au bytecode). recordRaid fait l'autorité : `storeGold` (or), `incDailyUses` (pass), `onSurgeRaid`.
+- `ServerSurgeState.applyRaid` : applyRaidOutcome + incrémente le compteur PARTAGÉ `summary.raidsUsed` (recordRaid
+  ne mute que le compteur QUOTIDIEN du joueur, pas l'état de guilde — comme applyAttack incrémente districtsCleared)
+  → renvoie SurgeUpdate (delta or).
+- `LoginServer` : handler `Action RAID_SURGE` — lit `extra[TYPE]`=district (DistrictType.valueOf), loadOrReset,
+  applyRaid, persiste (SurgeData + user), diffuse SurgeUpdate (`pushToGuild`).
+- `SurgeRaidTest` : équipe SURGE posée d'abord (HeroLineupUpdate, comme en jeu), raid headless → `raidsUsed=1`,
+  or +3,69 M (storeGold), persistance + round-trip wire. Régression **89/89**.
+
+**RESTE (§8)** : vérif EN JEU d'un raid COMPLET (le run g72e a coupé la connexion pendant le combat de raid AVANT
+l'Action RAID_SURGE — stabilité du combat de raid, distincte du protocole). Sémantique `COUNT` (raids groupés ?) et
+un éventuel clear-district à confirmer sur un raid abouti EN JEU (non présumés : le handler traite 1 raid/Action,
+sans marquer le district vaincu).
+
+Fichiers : `server/java/dhserver/{ServerSurgeCombat,ServerSurgeState,LoginServer}.java`, `server/smoke/SurgeRaidTest.java`,
+`server/smoke/regression.sh`, `docs/SURGE.md` §5, `MEMORY.md`.

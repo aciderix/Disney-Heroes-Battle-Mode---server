@@ -79,7 +79,7 @@ pré-appeler côté serveur (piège g45 `doStartWarAttack`).
    bot, + raidID + verrou) puis `SurgeAttack → SurgeUpdate` (`applyRegionOutcome` autoritatif + district vaincu à
    la victoire + delta points/districts), persisté, diffusé à la guilde (`pushToGuild`). `SurgeAttackFlowTest`
    (round-trip wire des 2 réponses + district vaincu + persistance). Headless 🟢.
-5. 🧭 **Raids** (mécanique HQ) — **PROTOCOLE RÉSOLU (2026-08-09, g72e) : le blocage §4 est levé.** Recon combat +
+5. 🟢 **Raids** (mécanique HQ) — **PROTOCOLE RÉSOLU (2026-08-09, g72e) : le blocage §4 est levé.** Recon combat +
    disasm de `SurgeHeroChooserScreen.doRaidSurge` → `ClientActionHelper.raidSurge` (offsets prouvés) + observation
    EN JEU partielle. **Le raid envoie TROIS messages, dans l'ordre** :
    1. **`HeroLineupUpdate{type=SURGE, lineup=équipe de raid}`** — équipe SURGE (déjà géré serveur : `applyHeroLineupUpdate`,
@@ -95,11 +95,17 @@ pré-appeler côté serveur (piège g45 `doStartWarAttack`).
    GOLD, raidHEROES, snapshot)` — `district`=`extra[TYPE]`, équipe/`raidHEROES`/`RAID_TEAM_POWER` depuis la SURGE
    `HeroLineup` persistée (msg 1), `GOLD`=`getGoldForSurgeRaid(user, heroLineup, opponent.lineup, raidHeroes, snap)`,
    nb de raids borné par `getMaxRaidsPerSurge(user, perkProvider)`.
-   **RESTE (implémentation + §8)** : câbler le handler `RAID_SURGE` (mirroir de `ServerSurgeCombat.applyRegionOutcome`)
-   + test headless ; PUIS **vérif EN JEU d'un raid COMPLET** — bloquée ce run car le combat de raid a coupé la
+   **✅ HANDLER SERVEUR LIVRÉ (g72f, headless)** : `ServerSurgeCombat.applyRaidOutcome` (recordRaid autoritatif,
+   params ci-dessus prouvés au site d'appel `doRaid` offsets 181-218 : `RAID_TEAM_POWER`=Σ`getPower(hero,0)`,
+   `GOLD`=`getGoldForSurgeRaid`, ordre `false, TEAM_POWER, 0L, GOLD` confirmé) + `ServerSurgeState.applyRaid`
+   (recordRaid + incrémente le compteur PARTAGÉ `raidsUsed`, car recordRaid ne mute que le compteur quotidien du
+   joueur via `incDailyUses`) + handler `Action RAID_SURGE` dans `LoginServer` (lit `extra[TYPE]`=district, applique,
+   persiste, diffuse `SurgeUpdate`). `SurgeRaidTest` (équipe SURGE posée d'abord, raid headless, `raidsUsed++`,
+   or crédité par `storeGold`, persistance + round-trip wire). **89/89.**
+   **RESTE (§8)** : **vérif EN JEU d'un raid COMPLET** — bloquée le run g72e car le combat de raid a coupé la
    connexion client (`Socket closed`/`Connection refused`) avant l'`Action RAID_SURGE` (stabilité du combat de raid
-   à régler, distincte du protocole). Les sous-valeurs `RAID_TEAM_POWER`/`GOLD`/sémantique `COUNT`+clear-district
-   se confirment sur un raid abouti EN JEU (ne pas inventer §4). **Pilote** : `surgeraid` (auto-équipe + `doRaidSurge`).
+   à régler, distincte du protocole). Sémantique `COUNT`+clear-district à confirmer sur un raid abouti EN JEU (le
+   handler traite 1 raid par Action ; le clear-district n'est pas présumé). **Pilote** : `surgeraid`.
 6. 🟢 **Récompenses & bascule** (`ServerSurgeRewards` + `ServerSurgeState.rollover/personalize/claimRewards`,
    handler `SurgeClaimRewards`) — **montants 100 % code du jeu, zéro invention (§3/§4)** :
    - **tokens** (`CRYPT_TOKENS`) = `SurgeClientHelper.getPlayerSurgeCoins(surge)` = `getTokensPerClearedRegion()×régions
