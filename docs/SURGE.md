@@ -118,9 +118,29 @@ pré-appeler côté serveur (piège g45 `doStartWarAttack`).
      5 000 influence = nos constantes `getBaseTokens`/`getBaseInfluence`**. Capture `desktop-port/build/surge.ppm`,
      `dumpscreen`=`SurgeScreen`. Reproduction : `cp server/data/dh-snapshot-postwar-0803.db server/data/dh-server.db`
      puis `DH_CLICKFILE=<fichier avec "nav SURGE"> ./run-online.sh` (restaurer `dh-server.db` après).
-   - ⬜ **RESTE** : entrer dans un district (carte = widget custom, taps précis à driver) → observer
-     `StartSurgeAttack`/`SurgeAttack` EN JEU, puis un **RAID** (débloque incrément 5, protocole inconnu), puis la
-     **réclamation** en fin de surge. Combat de district = client-autoritatif (comme campagne), à jouer via l'UI.
+   - ✅ **COMBAT DE DISTRICT CONFIRMÉ EN JEU** (2026-08-09, g72d, compte reconstruit `SurgeAcctSetup`) : sélection
+     d'équipe (bouton AUTO du jeu → `autoSelectHeroes`) + quick-fight → **`StartSurgeAttack(O) → StartSurgeAttackResponse`
+     (3 défenseurs) → `SurgeAttack(O, WIN) → SurgeUpdate` (district vaincu, +0 pts au tier 0 = fidèle, or→coffre 9,22 M,
+     influence→banque de guilde 80 552)**, enregistré autoritativement (`recordOutcome`) + **persisté**. Écran
+     « DISTRICT 2 CLEARED! » (capture). Pilote : commandes clickfile `surgefight`/`surgeteamfight` (chemins réels par
+     réflexion : `SurgeScreen.fightPressed` → `SurgeHeroChooserScreen` → auto-sélection → `quickFightPressed`).
+   - 🐛 **BUG SERVEUR TROUVÉ & CORRIGÉ EN JEU (raison d'être de §8)** : le serveur ne posait pas `SurgeData.youAreInRaid`
+     pour un membre → `SurgeScreen.fightPressed` refusait TOUT combat (`CRYPT_JOINED_LATE_ERROR`). Champ 100 %
+     serveur-autoritaire (aucun flux client ne l'écrit). Corrigé : `ServerSurgeState.personalize` pose
+     `youAreInRaid = true` pour le membre participant. Sans cette vérif EN JEU, le mode était injouable.
+   - ⬜ **RESTE** : le **RAID** (mécanique HQ, incrément 5, protocole à observer — `doRaidSurge`/`onRaidButtonClick`
+     câblés côté pilote via `surgeraid`, à déclencher depuis le HQ) et la **réclamation** en fin de surge en jeu.
+
+### Restaurer le client pour la vérif EN JEU (après un environnement neuf / reprovision)
+Les artefacts de build du client sont git-ignorés (dérivés). Recette (tout depuis les sources committées) :
+1. `tools/build_spine_jar.sh` → `libs/spine-libgdx-perblue.jar` (spine-runtimes 3.6 + gdx-1.9.7). Sinon le module
+   desktop ne compile pas.
+2. `tools/fetch_assets.sh` → assets ETC1 (world/ui) depuis l'archive.org du projet (le base APK n'a pas les textures).
+3. `SurgeAcctSetup server/data/dh-server.db` → compte apte à SURGE (TL100 + roster + guilde + **tutoriel complété**,
+   sinon `canNavigateTo(SURGE)=false`).
+4. `desktop-port/run-online.sh` (compile serveur+client, lance) ; piloter via `DH_CLICKFILE` : `nav SURGE`,
+   `surgestate`, `surgefight`, `surgeteamfight`, `surgeraid`. NB : `nav SURGE` doit être émis APRÈS que le hub est
+   pleinement chargé (l'état guilde/tuto arrive un peu après le boot ; sinon `canNavigateTo` est momentanément faux).
 
 ## Scoring — vérifié FIDÈLE (données du jeu, pas un manque)
 

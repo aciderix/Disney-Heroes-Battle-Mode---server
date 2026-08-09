@@ -340,12 +340,20 @@ public final class DesktopLauncher {
                     TutorialDriver.invasionState(game);
                     continue;
                 }
+                if (low.equals("surgenav")) {                    // surgenav — diagnostic de navigabilité SURGE
+                    TutorialDriver.surgeNav(game);
+                    continue;
+                }
                 if (low.equals("surgestate")) {                  // surgestate — dumper l'état SURGE côté client
                     TutorialDriver.surgeState(game);
                     continue;
                 }
                 if (low.equals("surgefight")) {                  // surgefight — ouvrir le combat du 1er district jouable
                     TutorialDriver.surgeFight(game);
+                    continue;
+                }
+                if (low.equals("surgeteamfight")) {              // surgeteamfight — auto-sélection + quick fight
+                    TutorialDriver.surgeTeamFight(game);
                     continue;
                 }
                 if (low.equals("surgequick")) {                  // surgequick — résoudre le combat SURGE en quick-fight

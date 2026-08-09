@@ -127,7 +127,13 @@ public final class ServerSurgeState {
       throws SQLException {
     if (data.unclaimedRewards == null) data.unclaimedRewards = new java.util.HashMap<>();
     SurgeMemberSummary mine = memberSummary(data, userID);
-    if (mine != null) { data.yourRaidsUsed = mine.raidsUsed; }
+    if (mine != null) {
+      data.yourRaidsUsed = mine.raidsUsed;
+      // PARTICIPATION : le membre d'une guilde EST dans le surge courant. Le client exige {@code youAreInRaid}
+      // pour autoriser le combat de district (SurgeScreen.fightPressed : sinon « JOINED_LATE_ERROR »). Champ
+      // 100 % serveur-autoritaire (aucun flux client ne l'écrit) → prouvé EN JEU (§8) : sans lui, aucun combat.
+      data.youAreInRaid = true;
+    }
     byte[] lb = store.loadShardState(guild.shardID, ServerSurgeRewards.ledgerKey(guild.guildID));
     if (lb == null || lb.length == 0) return;
     ServerSurgeRewards.Ledger led = ServerSurgeRewards.Ledger.decode(lb);

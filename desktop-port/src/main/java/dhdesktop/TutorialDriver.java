@@ -793,6 +793,27 @@ public final class TutorialDriver {
         return null;
     }
 
+    /** DEV : diagnostique pourquoi SURGE est (in)navigable — chaque prédicat du jeu, côté CLIENT. "surgenav". */
+    public static void surgeNav(GameMain game) {
+        try {
+            com.perblue.heroes.game.objects.User u = game.getYourUser();
+            System.out.println("[surgenav] teamLevel=" + u.getTeamLevel() + " guildID(client)=" + u.getGuildID());
+            System.out.println("[surgenav] isUnlocked(SURGE_OBJECTIVES)=" + com.perblue.heroes.game.data.misc.Unlockables.isUnlocked(
+                com.perblue.heroes.game.data.misc.Unlockable.SURGE_OBJECTIVES, u));
+            try {
+                java.lang.reflect.Method msb = null;
+                for (java.lang.reflect.Method mm : com.perblue.heroes.ui.UINavHelper.class.getDeclaredMethods())
+                    if (mm.getName().equals("mainScreenTutorialBlocked")) { msb = mm; break; }
+                if (msb != null) { msb.setAccessible(true);
+                    System.out.println("[surgenav] mainScreenTutorialBlocked(SURGE)=" + msb.invoke(null,
+                        com.perblue.heroes.ui.UINavHelper.Destination.SURGE)); }
+            } catch (Throwable t) { System.out.println("[surgenav] mainScreenTutorialBlocked introuvable: " + t); }
+            System.out.println("[surgenav] canNavigateTo(SURGE,true)=" + com.perblue.heroes.ui.UINavHelper.canNavigateTo(
+                com.perblue.heroes.ui.UINavHelper.Destination.SURGE, true, new String[0]));
+            System.out.println("[surgenav] getSurgeData()=" + (game.getSurgeData() == null ? "null" : "present"));
+        } catch (Throwable t) { System.out.println("[surgenav] échec: " + t); }
+    }
+
     /** DEV : imprime l'état SURGE côté client (districts jouables, verrous, raid). Invoqué via "surgestate". */
     public static void surgeState(GameMain game) {
         try {
@@ -801,6 +822,16 @@ public final class TutorialDriver {
             System.out.println("[surgestate] surgeID=" + d.surgeID + " youAreInRaid=" + d.youAreInRaid
                 + " yourRaidsUsed=" + d.yourRaidsUsed + " wavesCompleted=" + d.wavesCompleted
                 + " raidEnd=" + new java.util.Date(d.raidEndTime));
+            try {
+                com.perblue.heroes.game.objects.User u = game.getYourUser();
+                int hc = 0; for (Object h : u.getHeroes()) hc++;
+                System.out.println("[surgestate] clientHeroes=" + hc + " areHeroesAvailable(SURGE)="
+                    + com.perblue.heroes.game.logic.SurgeHelper.areHeroesAvailable(u));
+                com.perblue.heroes.game.objects.surge.SurgeClientMember me =
+                    com.perblue.heroes.ui.surge.SurgeClientHelper.getYourMember(d);
+                System.out.println("[surgestate] yourMember=" + (me == null ? "null"
+                    : ("raidsUsed=" + me.getRaidsUsed() + " storedGold=" + me.getStoredGold())));
+            } catch (Throwable t) { System.out.println("[surgestate] avail check: " + t); }
             int i = 0;
             if (d.opponents != null) for (Object o : d.opponents) {
                 com.perblue.heroes.network.messages.SurgeOpponentSummary op =
@@ -838,6 +869,32 @@ public final class TutorialDriver {
             System.out.println("[surgefight] fightPressed(district=" + target.district
                 + ") → SurgeHeroChooserScreen (envoi StartSurgeAttack) [chemin réel]");
         } catch (Throwable t) { System.out.println("[surgefight] échec: " + t); }
+    }
+
+    /** DEV : sur SurgeHeroChooserScreen, AUTO-SÉLECTIONNE l'équipe (lambda du bouton AUTO du jeu →
+     *  SurgeHelper.autoSelectHeroes → setSelectedUnits) puis lance le QUICK FIGHT → StartSurgeAttack + SurgeAttack.
+     *  Invoqué via "surgeteamfight". */
+    public static void surgeTeamFight(GameMain game) {
+        try {
+            Object screen = game.getScreenManager().getScreen();
+            if (screen == null || !screen.getClass().getSimpleName().contains("SurgeHeroChooser")) {
+                System.out.println("[surgeteamfight] pas sur SurgeHeroChooserScreen ("
+                    + (screen == null ? "null" : screen.getClass().getSimpleName()) + ")"); return;
+            }
+            long id = 0L;
+            com.perblue.heroes.network.messages.SurgeData d = game.getSurgeData();
+            if (d != null) id = d.surgeID;
+            // AUTO : lambda$createRightSideExtraUI$2(long) — bouton AUTO réel (autoSelectHeroes + setSelectedUnits).
+            java.lang.reflect.Method auto = findMethod(screen, "lambda$createRightSideExtraUI$2", long.class);
+            if (auto != null) { auto.invoke(screen, id); System.out.println("[surgeteamfight] auto-sélection (id=" + id + ")"); }
+            else System.out.println("[surgeteamfight] lambda auto-sélection introuvable");
+            java.lang.reflect.Method can = findMethod(screen, "canStartQuickFight");
+            boolean ready = can != null && Boolean.TRUE.equals(can.invoke(screen));
+            System.out.println("[surgeteamfight] canStartQuickFight=" + ready);
+            java.lang.reflect.Method qf = findMethod(screen, "quickFightPressed");
+            if (qf != null && ready) { qf.invoke(screen); System.out.println("[surgeteamfight] quickFightPressed() → StartSurgeAttack + combat + SurgeAttack [chemin réel]"); }
+            else System.out.println("[surgeteamfight] quick fight non lancé (ready=" + ready + ")");
+        } catch (Throwable t) { System.out.println("[surgeteamfight] échec: " + t); }
     }
 
     /** DEV : sur SurgeHeroChooserScreen, résout le combat en QUICK FIGHT (combat côté client) — envoie SurgeAttack

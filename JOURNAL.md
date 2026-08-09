@@ -3116,3 +3116,42 @@ et figer les deps gradle, pour que le client survive à un reprovision — sinon
 reproductible.
 
 Fichiers : `server/smoke/SurgeAcctSetup.java`, `desktop-port/src/main/java/dhdesktop/{TutorialDriver,DesktopLauncher}.java`.
+
+---
+
+## 2026-08-09 (g72d) — SURGE : BOUCLE DE COMBAT VÉRIFIÉE EN JEU + bug serveur corrigé + build client reconstruit
+
+Reprise du pilote EN JEU après le reprovision (cf. g72c). Le dépôt local avait été re-cloné sur `main` (projet
+web-archiving sans rapport partageant le repo) ; travail récupéré depuis `origin/claude/disney-heroes-port-rhhtuj`
+(f83becc) par `git reset --hard`. Tous les artefacts git-ignorés (DB comptes + dérivés de build client) étaient
+perdus → reconstruits DEPUIS LES SOURCES COMMITTÉES (l'utilisateur avait raison : la recette est dans nos scripts) :
+- `tools/build_spine_jar.sh` (NOUVEAU) : régénère `libs/spine-libgdx-perblue.jar` depuis spine-runtimes 3.6 (le
+  clone officiel de native/build.sh) compilé contre gdx-1.9.7. Sans lui le module desktop ne compile pas.
+- `tools/fetch_assets.sh` : assets ETC1 (world/ui) depuis l'archive.org du projet (le base APK n'a que fonts/SDK).
+- `server/smoke/SurgeAcctSetup.java` : compte apte à SURGE — TL100 + 5 héros + guilde + **tutoriel complété**
+  (`TutorialHelper.getMaxStep` par acte ; sans ça `canNavigateTo(SURGE)=false`).
+
+**Vérif EN JEU (compte reconstruit, surge actif)** — le vrai client contre notre serveur :
+- rendu « CREEP SURGE » (27 districts) + `GetSurge→SurgeData`.
+- **combat de district COMPLET** : `surgefight` (SurgeScreen.fightPressed → SurgeHeroChooserScreen) puis
+  `surgeteamfight` (bouton AUTO du jeu → autoSelectHeroes + quickFightPressed) →
+  `[login] StartSurgeAttack(O) → StartSurgeAttackResponse (3 défenseurs)` →
+  `[login] SurgeAttack(O, WIN) → SurgeUpdate (+0 pts, districts+1) [persisté]`.
+  Écran « DISTRICT 2 CLEARED! » : or 9,22 M → Mon Coffre, influence 80 552 → Banque de Guilde. District O
+  cleared=true après combat (persisté). `+0 pts` = fidèle (tier 0, cf. §Scoring).
+
+**🐛 BUG SERVEUR trouvé & corrigé EN JEU (exactement le rôle de §8)** : le serveur ne posait jamais
+`SurgeData.youAreInRaid` pour un membre → `SurgeScreen.fightPressed` refusait TOUT combat de district
+(`CRYPT_JOINED_LATE_ERROR`, garde offset 81-97). Champ 100 % serveur-autoritaire (recon : SEUL `SurgeData` l'écrit,
+aucun flux client). Fix : `ServerSurgeState.personalize` pose `youAreInRaid=true` pour le membre participant.
+Vérifié EN JEU : `youAreInRaid=true` → combat autorisé → boucle complète OK.
+
+**Pilote SURGE en jeu** (`TutorialDriver` + dispatcher) : `surgenav` (diagnostic canNavigateTo), `surgestate`,
+`surgefight`, `surgeteamfight` (auto-équipe + quick fight), `surgequick`, `surgeraid` (à déclencher depuis le HQ).
+
+**Reste EN JEU** : le RAID (incr. 5, protocole à observer via `surgeraid` depuis le HQ) + la réclamation de fin de
+surge. Le CŒUR du mode (rendu + combat de district + enregistrement autoritatif + persistance) est vérifié EN JEU.
+
+Fichiers : `server/java/dhserver/ServerSurgeState.java` (youAreInRaid), `tools/build_spine_jar.sh` (nouveau),
+`server/smoke/SurgeAcctSetup.java`, `desktop-port/src/main/java/dhdesktop/{TutorialDriver,DesktopLauncher}.java`,
+`docs/SURGE.md` §8, `MEMORY.md`.

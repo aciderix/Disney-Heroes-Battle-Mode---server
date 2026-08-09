@@ -27,6 +27,22 @@ public final class SurgeAcctSetup {
         catch (Throwable ex) { System.out.println("[setup] héros " + t + " refusé : " + ex); }
       }
       u.giveResource(ResourceType.GOLD, 50000);              // pour createGuild
+
+      // TUTORIEL COMPLET : sans ça le client refuse de naviguer (canNavigateTo=false, verrou tuto). Un compte
+      // frais a tous les actes NEW_USER à step 0 ; on les porte à leur step MAX du registre du jeu
+      // (TutorialHelper.getMaxStep) → isActCompleted=true, comme un compte ayant joué l'intro. §3 (registre du jeu).
+      com.perblue.heroes.game.objects.User gu = u.gameUser();
+      int done = 0;
+      for (Object o : bd.individualUserExtra.tutorialActs) {
+        TutorialAct t = (TutorialAct) o;
+        try {
+          com.perblue.heroes.game.objects.IUserTutorialAct ita = gu.getTutorialAct(t.type);
+          int max = com.perblue.heroes.game.tutorial.TutorialHelper.getMaxStep(ita);
+          t.step = max; t.maxStep = max;
+          if (com.perblue.heroes.game.tutorial.TutorialHelper.isActCompleted(gu, t.type)) done++;
+        } catch (Throwable ex) { /* acte hors registre → ignoré */ }
+      }
+      System.out.println("[setup] tutoriel : " + done + "/" + bd.individualUserExtra.tutorialActs.size() + " actes complétés");
       store.save(u);
 
       if (!u.inGuild()) {
