@@ -1,5 +1,45 @@
 # JOURNAL — journal détaillé des modifications
 
+## 2026-08-09 (g75) — CHALLENGES (#72) incrément 2 ✅ VÉRIFIÉ EN JEU (rendu + CLAIM de bout en bout)
+
+Session de vérif EN JEU (§8) contre NOTRE serveur, client réel (compte userID=1 TL100, tuto complet, via
+`SurgeAcctSetup`). Assets ETC1 re-téléchargés (`tools/fetch_assets.sh`, 283M) ; client déjà bâti (spine jar +
+game-framed). Pilote : `nav CHALLENGES` + `fire x,y` (commandes EXISTANTES, aucun nouveau code pilote).
+
+**Auto-setup serveur confirmé** : au boot, `LoginServer` appelle `ServerChallenges.ensureSetup` → le défi STARTER
+est peuplé par le jeu et PERSISTÉ (`challengeData` 0 → 256 octets en DB, vérifié). BootData le livre.
+
+**Rendu ✅** : `nav CHALLENGES` → écran **CHALLENGES**, section **STARTER**, carte **« Catch a Star »**
+(= TO_CATCH_A_STAR) : « 3-Star every major stage in Chapter 4 of the Normal Campaign », **Rewards 500 + sticker**,
+**Progress 0/7**, **Time Left 6d 23h 59m** — toutes valeurs EXACTES de `challenge_stickers.tab` (500 tokens, max 7,
+durée 7 j) livrées par notre serveur. **CHALLENGE BOOKS** : STARTER **0/5**, PICK 'EM 0/10, + 4 livres NORMAL avec
+`isPurchasable`/state corrects (logique cliente `StickerHelper` tourne sans NPE sur notre état). **Détail STARTER** :
+les 5 stickers, le défi actif en **RESTART + timer**, les autres en ACTIVATE (grisés — slot STARTER unique).
+
+**CLAIM de bout en bout ✅** : défi marqué prêt (outil DEV `MarkChallengeReady` : `currentProgress = maxProgress`,
+comme l'aurait fait la progression) → au reboot la carte affiche le tampon **COMPLETE** + bouton vert **CLAIM** →
+tap (`fire`) → le client émet `Action{command=CLAIM_STICKER_CHALLENGE, extra={SLOT=STARTER, TYPE=TO_CATCH_A_STAR,
+TIME=…}}` — EXACTEMENT le protocole câblé (bytecode `ClientActionHelper`) → handler serveur
+`<== CLAIM_STICKER_CHALLENGE(TO_CATCH_A_STAR/STARTER) appliqué [persisté]` → fenêtre de récompense **+500** (jetons)
++ sticker (Dupe! +50, déjà possédé) → **auto-avance** du slot STARTER vers **« The Name's Wilde »** (= THE_NAMES_NICK,
+« Collect 20 Nick Hero Chips from the Elite Campaign », **Progress 0/20**, 7 j) — le comportement `claimSticker` +
+`setupStarterChallenges` du JEU (retire le réclamé, ré-avance), piloté par le serveur et relivré au client.
+
+**Persistance serveur confirmée (relecture DB)** : `CHALLENGE_TOKENS=500` (crédité, était 0),
+`slot STARTER=THE_NAMES_NICK 0/20 claimed=false`, `completionTime={TO_CATCH_A_STAR=1}` (le jeu stocke l'userID dans
+`setCompletionTime` — quirk du bytecode, exécuté fidèlement §3 ; > 0 ⇒ marqueur « complété »). La fixture
+`historicWeeklyChallenges` (g74) fonctionne dans le VRAI client (aucun NPE au rendu ni au claim).
+
+**Non exercé en jeu (non bloquant, documenté §4/§8)** : START player-initiated (bouton ACTIVATE gaté — slot STARTER
+unique occupé ; défis NORMAL/WEEKLY à débloquer/acheter) et CANCEL (le bouton YES de la modale « RESTART CHALLENGE? »
+est sur un stage overlay que le pilote `fire` — qui vise le stage principal — n'atteint pas). Les deux partagent
+extras/handler/persistance avec le CLAIM (prouvé en jeu) + sont prouvés HEADLESS (`ChallengeLoopTest`) + protocole
+bytecode. **`VIEW_CHALLENGES`** (Action de navigation émise à l'ouverture des livres) est « non gérée (PARTIEL) » :
+navigation CLIENTE locale, aucun état serveur requis → à traiter avec la vue livres/stickers (incr. 3/4).
+
+**Aucun changement de code serveur cette session** (la boucle était déjà commitée g74, `37325c0`) — uniquement la
+vérif EN JEU + mise à jour docs. Régression inchangée **91/91**.
+
 ## 2026-08-09 (g74) — CHALLENGES (#72) incrément 2 : boucle setup/claim/cancel + persistance (🟢 headless, 91/91)
 
 **Objectif (option (b) choisie par l'utilisateur)** : câbler la boucle de défis EN HEADLESS avec les valeurs déjà

@@ -40,7 +40,21 @@ joueur ; **seul handler « MANQUE » au niveau du mode**).
 1. ⬜ **Livraison BootData** : `ServerChallenges.freshData/load` → `bd.userChallengeDataExtra` avec le **bon userID**
    + état persisté (slots/progression), wire-sûr ; `historicWeeklyChallenges` non-null. Écran CHALLENGES rend.
    Test headless (WireCheck + userID). **Vérif EN JEU** (écran s'ouvre, TL100).
-2. 🟢 **Boucle de défi** — **LIVRÉE HEADLESS (g74), vérif EN JEU restante** :
+2. ✅ **Boucle de défi** — **LIVRÉE HEADLESS (g74) + VÉRIFIÉE EN JEU (g75)** :
+   - **✅ EN JEU (g75, compte TL100)** : `nav CHALLENGES` → l'écran rend **« Catch a Star »** (défi STARTER
+     auto-peuplé par notre serveur), **Rewards 500 + sticker**, **Progress 0/7**, **Time Left 6d 23h 59m** — valeurs
+     EXACTES de `challenge_stickers.tab` livrées via BootData (`ensureSetup` au boot, `challengeData` persisté). Écrans
+     **CHALLENGE BOOKS** (STARTER 0/5, 6 livres, `isPurchasable`/state corrects) et **détail STARTER** (5 stickers, le
+     défi actif en RESTART+timer) rendus fidèlement. **CLAIM en jeu** : défi marqué prêt (7/7) → carte **COMPLETE +
+     CLAIM** → tap → client émet `Action{CLAIM_STICKER_CHALLENGE, extra{SLOT=STARTER, TYPE=TO_CATCH_A_STAR, TIME}}`
+     (EXACTEMENT le protocole câblé) → handler `appliqué [persisté]` → **+500 CHALLENGE_TOKENS** (fenêtre de
+     récompense en jeu) + **auto-avance** du slot STARTER → **« The Name's Wilde »** (0/20, 7d) — le comportement
+     `setupStarterChallenges` du jeu, piloté serveur. **Persistance DB confirmée** : `CHALLENGE_TOKENS=500`,
+     `slot STARTER=THE_NAMES_NICK 0/20`, `completionTime={TO_CATCH_A_STAR}`. La fixture `historicWeeklyChallenges`
+     tourne dans le VRAI client (aucun NPE). *(START player-initiated + CANCEL : mêmes extras/handler/persistance,
+     prouvés HEADLESS + protocole bytecode ; en jeu, START est gaté (slot STARTER unique / défis NORMAL à débloquer)
+     et le bouton modal de RESTART n'est pas atteignable par le pilote `fire` — non bloquant.)*
+   - **Fixture** (`ServerContext.init`) : `DH.app.historicWeeklyChallenges = new HistoricWeeklyChallenges()` — la
    - **Fixture** (`ServerContext.init`) : `DH.app.historicWeeklyChallenges = new HistoricWeeklyChallenges()` — la
      valeur EXACTE du ctor du jeu (notre shim l'alloue sans ctor → null → l'extension `StickerHelper$1
      .getHistoricChallenges()` NPE). Couche plateforme (§4), zéro invention ; posée GLOBALEMENT (contrairement à
@@ -84,8 +98,10 @@ joueur ; **seul handler « MANQUE » au niveau du mode**).
      `UpdateChallengeProgress`) — comme pour le raid SURGE — pour ne rien inventer (§4).
 3. ⬜ **Stickers** : `BUY_STICKER`/`BUY_STICKER_BOOK`/`BUY_STICKER_CHALLENGE_SLOT`/`SET_FAVORITE_STICKER`
    (`favoriteSticker` déjà dans UserExtra) + livre de stickers.
-4. ⬜ **`GetUserChallengeDataExtra` handler** (vue StickerOverviewWindow).
-5. ⬜ **Vérif EN JEU complète** (rendu + lancer/réclamer un défi + sticker).
+4. ⬜ **`GetUserChallengeDataExtra` handler** (vue StickerOverviewWindow) + `VIEW_CHALLENGES` (Action de NAVIGATION
+   émise à l'ouverture des livres — actuellement « non gérée (PARTIEL) », NON bloquante : le client navigue en local ;
+   à traiter avec la vue des livres/stickers).
+5. 🟡 **Vérif EN JEU** : rendu + **CLAIM ✅ fait (g75)** ; reste START/CANCEL en jeu (voir incr. 2) + stickers (incr. 3).
 
 ## Notes §3/§4
 - Logique : `ModeGraph --logic` n'a trouvé AUCUNE méthode statique `IUser` dans les helpers du mode → la logique est
