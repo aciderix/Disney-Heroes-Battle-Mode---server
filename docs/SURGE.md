@@ -79,15 +79,27 @@ pré-appeler côté serveur (piège g45 `doStartWarAttack`).
    bot, + raidID + verrou) puis `SurgeAttack → SurgeUpdate` (`applyRegionOutcome` autoritatif + district vaincu à
    la victoire + delta points/districts), persisté, diffusé à la guilde (`pushToGuild`). `SurgeAttackFlowTest`
    (round-trip wire des 2 réponses + district vaincu + persistance). Headless 🟢.
-5. 🧭 **Raids** (mécanique HQ) — recon faite, **câblage BLOQUÉ sur preuve de protocole (§4/§8)**.
-   **`recordRaid` params RÉSOLUS** (disasm `SurgeHelper.doRaid`, offsets 198-218) :
-   `recordRaid(user, member, surgeID, opponent.district, false, RAID_TEAM_POWER, 0L, GOLD (getGoldForSurgeRaid),
-   raidHEROES (IHero pour mastery), snapshot)` — `getMaxRaidsPerSurge(user, perkProvider)` borne le nb de raids.
-   **⚠️ BLOQUANT** : `doRaid` appelle `recordRaid` **CÔTÉ CLIENT** et `SurgeHeroChooserScreen.doRaidSurge`
-   n'envoie au serveur qu'un **`HeroLineupUpdate`** (l'équipe SURGE) — **aucun message d'ISSUE de raid** visible
-   dans le code client. Donc le serveur ne peut pas suivre `raidsUsed`/gold de façon autoritative sans OBSERVER le
-   trafic réel pendant un raid EN JEU (peut-être un `Action` générique ou une suite de `SurgeAttack`). On NE câble
-   PAS tant que le protocole n'est pas prouvé (sinon invention interdite). → à élucider lors de la vérif EN JEU.
+5. 🧭 **Raids** (mécanique HQ) — **PROTOCOLE RÉSOLU (2026-08-09, g72e) : le blocage §4 est levé.** Recon combat +
+   disasm de `SurgeHeroChooserScreen.doRaidSurge` → `ClientActionHelper.raidSurge` (offsets prouvés) + observation
+   EN JEU partielle. **Le raid envoie TROIS messages, dans l'ordre** :
+   1. **`HeroLineupUpdate{type=SURGE, lineup=équipe de raid}`** — équipe SURGE (déjà géré serveur : `applyHeroLineupUpdate`,
+      journalisé « HeroLineupUpdate(SURGE) → lineup enregistrée [persistée] » EN JEU ✅).
+   2. **`Action{command=SET_SEED, TYPE=SURGE, ID=<graine>}`** — graine RNG du combat de raid (déjà géré : handler
+      SET_SEED, observé EN JEU ✅).
+   3. **`Action{command=RAID_SURGE, extra={TYPE=<nom du district>, COUNT=<long>, UPSELL=<bool>,
+      MODE=AUTO_SELECT|MANUAL_SELECT}}`** — l'ISSUE du raid (c'était le « message manquant »). Construit par
+      `raidSurge(district, count, upsell, autoSelect, snap, listener)` : `withType(district)`→`extra[TYPE]=district.name()`,
+      `COUNT=count`, `UPSELL=upsell`, `MODE=` selon auto/manuel. **⇒ le serveur doit ajouter un handler d'Action
+      `RAID_SURGE`** qui rejoue `SurgeHelper.recordRaid` (params RÉSOLUS ci-dessous) sur le membre.
+   **`recordRaid` (10 params, prouvés)** : `recordRaid(user, member, surgeID, district, false, RAID_TEAM_POWER, 0L,
+   GOLD, raidHEROES, snapshot)` — `district`=`extra[TYPE]`, équipe/`raidHEROES`/`RAID_TEAM_POWER` depuis la SURGE
+   `HeroLineup` persistée (msg 1), `GOLD`=`getGoldForSurgeRaid(user, heroLineup, opponent.lineup, raidHeroes, snap)`,
+   nb de raids borné par `getMaxRaidsPerSurge(user, perkProvider)`.
+   **RESTE (implémentation + §8)** : câbler le handler `RAID_SURGE` (mirroir de `ServerSurgeCombat.applyRegionOutcome`)
+   + test headless ; PUIS **vérif EN JEU d'un raid COMPLET** — bloquée ce run car le combat de raid a coupé la
+   connexion client (`Socket closed`/`Connection refused`) avant l'`Action RAID_SURGE` (stabilité du combat de raid
+   à régler, distincte du protocole). Les sous-valeurs `RAID_TEAM_POWER`/`GOLD`/sémantique `COUNT`+clear-district
+   se confirment sur un raid abouti EN JEU (ne pas inventer §4). **Pilote** : `surgeraid` (auto-équipe + `doRaidSurge`).
 6. 🟢 **Récompenses & bascule** (`ServerSurgeRewards` + `ServerSurgeState.rollover/personalize/claimRewards`,
    handler `SurgeClaimRewards`) — **montants 100 % code du jeu, zéro invention (§3/§4)** :
    - **tokens** (`CRYPT_TOKENS`) = `SurgeClientHelper.getPlayerSurgeCoins(surge)` = `getTokensPerClearedRegion()×régions

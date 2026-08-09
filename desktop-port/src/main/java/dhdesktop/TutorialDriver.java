@@ -927,11 +927,18 @@ public final class TutorialDriver {
                 System.out.println("[surgeraid] écran courant = "
                     + (screen == null ? "null" : screen.getClass().getSimpleName()) + " (pas SurgeHeroChooserScreen)"); return;
             }
+            // Le raid exige une équipe sélectionnée (doRaidSurge → getSelectedLineup). On auto-sélectionne d'abord
+            // (bouton AUTO du jeu), comme surgeteamfight, puis on lance doRaidSurge → HeroLineupUpdate + Action RAID_SURGE.
+            long id = 0L;
+            com.perblue.heroes.network.messages.SurgeData d = game.getSurgeData();
+            if (d != null) id = d.surgeID;
+            java.lang.reflect.Method auto = findMethod(screen, "lambda$createRightSideExtraUI$2", long.class);
+            if (auto != null) { auto.invoke(screen, id); System.out.println("[surgeraid] auto-sélection (id=" + id + ")"); }
+            java.lang.reflect.Method dr = findMethod(screen, "doRaidSurge", com.perblue.heroes.game.ActionListener.class);
+            if (dr != null) { dr.invoke(screen, (Object) null); System.out.println("[surgeraid] doRaidSurge(null) → HeroLineupUpdate + Action RAID_SURGE [chemin réel]"); return; }
             java.lang.reflect.Method rb = findMethod(screen, "onRaidButtonClick");
             if (rb != null) { rb.invoke(screen); System.out.println("[surgeraid] onRaidButtonClick() [chemin réel]"); return; }
-            java.lang.reflect.Method dr = findMethod(screen, "doRaidSurge", com.perblue.heroes.game.ActionListener.class);
-            if (dr != null) { dr.invoke(screen, (Object) null); System.out.println("[surgeraid] doRaidSurge(null) [chemin réel]"); return; }
-            System.out.println("[surgeraid] ni onRaidButtonClick ni doRaidSurge trouvés");
+            System.out.println("[surgeraid] ni doRaidSurge ni onRaidButtonClick trouvés");
         } catch (Throwable t) { System.out.println("[surgeraid] échec: " + t); }
     }
 

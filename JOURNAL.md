@@ -3155,3 +3155,33 @@ surge. Le CŒUR du mode (rendu + combat de district + enregistrement autoritatif
 Fichiers : `server/java/dhserver/ServerSurgeState.java` (youAreInRaid), `tools/build_spine_jar.sh` (nouveau),
 `server/smoke/SurgeAcctSetup.java`, `desktop-port/src/main/java/dhdesktop/{TutorialDriver,DesktopLauncher}.java`,
 `docs/SURGE.md` §8, `MEMORY.md`.
+
+---
+
+## 2026-08-09 (g72e) — SURGE : PROTOCOLE DE RAID RÉSOLU (incrément 5 débloqué)
+
+Suite du pilote EN JEU (« Continue »). Objectif : élucider le protocole de raid SURGE (le blocage §4 de longue date).
+
+**Recon (disasm) + observation EN JEU** — `SurgeHeroChooserScreen.doRaidSurge(ActionListener)` envoie, dans l'ordre :
+1. `HeroLineupUpdate{type=SURGE, lineup}` (équipe de raid) — **observé EN JEU** (« HeroLineupUpdate(SURGE) → lineup
+   enregistrée [persistée] »).
+2. `Action{command=SET_SEED, TYPE=SURGE, ID=<graine>}` (graine du combat de raid) — **observé EN JEU**.
+3. puis `ClientActionHelper.raidSurge(district, count, upsell, autoSelect, snap, listener)` →
+   **`Action{command=RAID_SURGE, extra={TYPE=<district.name()>, COUNT=<long>, UPSELL=<bool>,
+   MODE=AUTO_SELECT|MANUAL_SELECT}}`** = l'ISSUE du raid (le « message manquant » qui bloquait §4). Prouvé au
+   bytecode (`withType(district)`→`extra[TYPE]`, offsets 17-77 de `raidSurge`).
+
+⇒ **Le blocage est levé** : le serveur doit ajouter un handler d'Action `RAID_SURGE` qui rejoue
+`SurgeHelper.recordRaid(user, member, surgeID, district=extra[TYPE], false, RAID_TEAM_POWER, 0L, GOLD, raidHeroes,
+snap)` — mêmes params que résolus (docs/SURGE.md incr 5), équipe depuis la SURGE HeroLineup persistée (msg 1),
+`GOLD=getGoldForSurgeRaid`, borne `getMaxRaidsPerSurge`.
+
+**RESTE** : (a) câbler le handler `RAID_SURGE` (miroir de `ServerSurgeCombat.applyRegionOutcome`) + test headless ;
+(b) **vérif EN JEU d'un raid COMPLET** — non atteinte ce run : le combat de raid a coupé la connexion client
+(`java.net.SocketException: Socket is closed` / `Connection refused`) AVANT l'`Action RAID_SURGE` (stabilité du
+combat de raid à régler, distincte du protocole). Les sous-valeurs `RAID_TEAM_POWER`/`GOLD`/sémantique `COUNT` et
+le clear-district se confirment sur un raid abouti EN JEU (ne pas inventer, §4).
+
+**Pilote** : `surgeraid` amélioré (auto-sélection d'équipe via le bouton AUTO du jeu, puis `doRaidSurge`).
+
+Fichiers : `docs/SURGE.md` §5, `desktop-port/src/main/java/dhdesktop/TutorialDriver.java` (surgeraid), `MEMORY.md`.
