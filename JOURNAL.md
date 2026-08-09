@@ -1,5 +1,36 @@
 # JOURNAL — journal détaillé des modifications
 
+## 2026-08-09 (g76) — CHALLENGES (#72) incrément 3 : économie stickers (🟢 headless, 92/92)
+
+4 Actions d'économie, tout par le CODE DU JEU (§3), zéro invention (§4). Protocoles PROUVÉS au bytecode
+(`ClientActionHelper` + `ActionExtraBuilder`), extras en `.name()` (String) :
+- `BUY_STICKER{TYPE=StickerType}` → `StickerHelper.purchaseSticker(user, type)` (débite DIAMONDS=getUserStickerPrice,
+  cosmétique + `purchaseTime`).
+- `BUY_STICKER_BOOK{TYPE=StickerBookType}` → `StickerHelper.purchaseBook(user, book)` (débite DIAMONDS=coût remisé,
+  `purchaseTime` de chaque sticker du livre).
+- `BUY_STICKER_CHALLENGE_SLOT{SLOT=ChallengeSlots}` → `StickerHelper.purchaseSlot(user, slot)` (débite DIAMONDS=
+  `StickerChallengeStats.getSlotCost`, pose `UserFlag.CHALLENGE_SLOT_2`).
+- `SET_FAVORITE_STICKER{TYPE=StickerType}` → `userExtra.favoriteSticker`.
+
+**Liaison SCOPED de la donnée de défis** : `purchaseSticker`/`purchaseBook` accèdent à la donnée via
+`extension.getChallengeData(userID)` = `DH.app.getYourChallengeData()` (champ `GameMain.userChallengeData`). On lie
+NOTRE `ClientUserChallengeData` au champ le TEMPS de l'appel (`ServerChallenges.withBoundData`, restauré en `finally`)
+puis re-sérialise (`toMessage`). Scoped → on NE réactive PAS globalement la cascade `notifyChallenges` (g59) ; et de
+toute façon elle est sûre depuis le fixture `historicWeeklyChallenges` non-null (g74). Persistance : `resyncDiamonds`
+(diamants) + `resyncCounts` (drapeaux `CHALLENGE_SLOT_2`/`SPENT_DIAMONDS_ON_CHALLENGE`/`FREE_STICKER_PURCHASE`).
+
+**Favori (§6 persistance)** : `User.setFavoriteSticker` n'écrit QUE le champ `User` (pas `extra`, disasm) → ne
+persiste pas. `getUser` lit `userExtra.favoriteSticker`. Donc nouveau `ServerUser.setFavoriteSticker` pose
+`userExtra.favoriteSticker` (+ miroir `BasicUserInfo`) = source lue au chargement.
+
+**`ChallengeShopTest`** : buySlot → `CHALLENGE_SLOT_2` posé, **-1000 diamants** (= `CHALLENGE_SLOT_2_COST`), anti-double
+refusé ; setFavorite → `TO_CATCH_A_STAR` ; buyBook `CITY_PATROL` → **-900 diamants**, **5** stickers `purchaseTime` ;
+tout survit à la persistance DB (`UserStore` round-trip). Valeurs EXACTES des données du jeu (= « BUY 1,000 » /
+« BUY 900 » observés en jeu g75). `resyncCounts` rendu package-private. Régression **92/92**.
+
+**RESTE** : vérif EN JEU (nécessite des diamants sur le compte — grant + achat en jeu) ; incrément 4
+(`GetUserChallengeDataExtra` = vue d'un autre joueur + `VIEW_CHALLENGES` navigation). Détail : `docs/CHALLENGES.md`.
+
 ## 2026-08-09 (g75) — CHALLENGES (#72) incrément 2 ✅ VÉRIFIÉ EN JEU (rendu + CLAIM de bout en bout)
 
 Session de vérif EN JEU (§8) contre NOTRE serveur, client réel (compte userID=1 TL100, tuto complet, via

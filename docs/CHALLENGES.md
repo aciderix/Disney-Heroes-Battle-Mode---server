@@ -96,8 +96,18 @@ joueur ; **seul handler « MANQUE » au niveau du mode**).
      `ServerUser`** (bootData() n'a pas accès au store → doit vivre dans l'état du joueur), livré à l'incr. 1.
    - **⚠️ Recommandé avant câblage** : une observation EN JEU du START/CLAIM (extras exacts, sélection de slot,
      `UpdateChallengeProgress`) — comme pour le raid SURGE — pour ne rien inventer (§4).
-3. ⬜ **Stickers** : `BUY_STICKER`/`BUY_STICKER_BOOK`/`BUY_STICKER_CHALLENGE_SLOT`/`SET_FAVORITE_STICKER`
-   (`favoriteSticker` déjà dans UserExtra) + livre de stickers.
+3. 🟢 **Stickers / économie** — **LIVRÉ HEADLESS (g76), vérif EN JEU restante** : handlers `LoginServer` +
+   `ServerChallenges`, tout par le code du jeu (§3), zéro invention (§4) :
+   - `BUY_STICKER{TYPE}` → `StickerHelper.purchaseSticker` · `BUY_STICKER_BOOK{TYPE=book}` → `purchaseBook` ·
+     `BUY_STICKER_CHALLENGE_SLOT{SLOT}` → `purchaseSlot` (débit **DIAMONDS** autoritatif) · `SET_FAVORITE_STICKER{TYPE}`
+     → `userExtra.favoriteSticker` (protocoles PROUVÉS au bytecode `ClientActionHelper`).
+   - `purchaseSticker`/`purchaseBook` lisent+mutent la donnée de défis via `DH.app.getYourChallengeData()` → on lie
+     NOTRE objet **SCOPED** (`withBoundData`, restauré après ; pas de cascade globale g59) puis re-sérialise (`toMessage`).
+   - Flags (`CHALLENGE_SLOT_2`, `SPENT_DIAMONDS_ON_CHALLENGE`, `FREE_STICKER_PURCHASE`) persistés via `resyncCounts` ;
+     favori posé dans `userExtra` (source lue par `getUser` ; `User.setFavoriteSticker` n'écrit PAS dans extra).
+   - `ChallengeShopTest` : buySlot (**-1000 diamants**, `CHALLENGE_SLOT_2`, anti-double), setFavorite, buyBook
+     **CITY_PATROL** (**-900 diamants**, 5 stickers `purchaseTime`) + persistance DB. Valeurs EXACTES des données du
+     jeu (= « BUY 1,000 »/« BUY 900 » vus en jeu). **Vérif EN JEU restante** (nécessite des diamants sur le compte).
 4. ⬜ **`GetUserChallengeDataExtra` handler** (vue StickerOverviewWindow) + `VIEW_CHALLENGES` (Action de NAVIGATION
    émise à l'ouverture des livres — actuellement « non gérée (PARTIEL) », NON bloquante : le client navigue en local ;
    à traiter avec la vue des livres/stickers).

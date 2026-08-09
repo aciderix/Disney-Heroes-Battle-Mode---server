@@ -1006,6 +1006,45 @@ public final class LoginServer {
                 System.out.println("[login] <== " + act.command + "(" + st + (slot != null ? "/" + slot : "") + ")"
                     + (ok ? " appliqué [persisté]" : " refusé"));
 
+              } else if (act.command == com.perblue.heroes.network.messages.CommandType.BUY_STICKER
+                  || act.command == com.perblue.heroes.network.messages.CommandType.BUY_STICKER_BOOK
+                  || act.command == com.perblue.heroes.network.messages.CommandType.BUY_STICKER_CHALLENGE_SLOT
+                  || act.command == com.perblue.heroes.network.messages.CommandType.SET_FAVORITE_STICKER) {
+                // CHALLENGES #72 incrément 3 — ÉCONOMIE stickers. Protocole client (disasm ClientActionHelper) :
+                //   BUY_STICKER               extra{TYPE=StickerType}       → StickerHelper.purchaseSticker
+                //   BUY_STICKER_BOOK          extra{TYPE=StickerBookType}   → StickerHelper.purchaseBook
+                //   BUY_STICKER_CHALLENGE_SLOT extra{SLOT=ChallengeSlots}   → StickerHelper.purchaseSlot
+                //   SET_FAVORITE_STICKER      extra{TYPE=StickerType}       → userExtra.favoriteSticker
+                // Serveur AUTORITATIF (débite DIAMONDS via le code du jeu) + persiste. Fire-and-forget (client local).
+                boolean ok = false; String dbg = "";
+                try {
+                  Object tn = act.extra == null ? null : act.extra.get(com.perblue.heroes.network.messages.ActionExtraType.TYPE);
+                  Object sn = act.extra == null ? null : act.extra.get(com.perblue.heroes.network.messages.ActionExtraType.SLOT);
+                  if (act.command == com.perblue.heroes.network.messages.CommandType.BUY_STICKER_CHALLENGE_SLOT) {
+                    com.perblue.heroes.network.messages.ChallengeSlots slot = sn == null ? null
+                        : com.perblue.heroes.network.messages.ChallengeSlots.valueOf(sn.toString());
+                    dbg = String.valueOf(slot);
+                    ok = slot != null && ServerChallenges.applyBuySlot(user, slot);
+                  } else if (act.command == com.perblue.heroes.network.messages.CommandType.BUY_STICKER_BOOK) {
+                    com.perblue.heroes.network.messages.StickerBookType book = tn == null ? null
+                        : com.perblue.heroes.network.messages.StickerBookType.valueOf(tn.toString());
+                    dbg = String.valueOf(book);
+                    ok = book != null && ServerChallenges.applyBuyBook(user, book);
+                  } else {
+                    com.perblue.heroes.network.messages.StickerType t = tn == null ? null
+                        : com.perblue.heroes.network.messages.StickerType.valueOf(tn.toString());
+                    dbg = String.valueOf(t);
+                    if (act.command == com.perblue.heroes.network.messages.CommandType.BUY_STICKER)
+                      ok = t != null && ServerChallenges.applyBuySticker(user, t);
+                    else
+                      ok = t != null && ServerChallenges.applySetFavorite(user, t);
+                  }
+                } catch (Throwable t) { System.out.println("[login]     ! " + act.command + " extras illisibles: " + t); }
+                if (ok) { try { store.save(user); } catch (Exception e) {
+                  System.out.println("[login]     ! persist défi (shop): " + e); } }
+                System.out.println("[login] <== " + act.command + "(" + dbg + ")"
+                    + (ok ? " appliqué [persisté]" : " refusé"));
+
               } else {
                 boolean applied = user.applyAction(act);
                 if (applied) { try { store.save(user); } catch (Exception e) {

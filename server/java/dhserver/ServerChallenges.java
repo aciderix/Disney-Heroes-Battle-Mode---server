@@ -182,6 +182,91 @@ public final class ServerChallenges {
     return true;
   }
 
+  // ---- INCRÉMENT 3 : ÉCONOMIE STICKERS (achats + favori) ------------------------------------------------------
+
+  /** Champ {@code GameMain.userChallengeData} (= {@code getYourChallengeData()}), lié SCOPED pour les achats. */
+  private static java.lang.reflect.Field yourChallengeDataField() throws NoSuchFieldException {
+    java.lang.reflect.Field f = com.perblue.heroes.GameMain.class.getDeclaredField("userChallengeData");
+    f.setAccessible(true);
+    return f;
+  }
+
+  /**
+   * Exécute une op du jeu qui lit/mute la donnée de défis via {@code DH.app.getYourChallengeData()}
+   * ({@code purchaseSticker}/{@code purchaseBook} passent par {@code extension.getChallengeData}). On lie NOTRE
+   * objet {@code c} au champ le temps de l'appel puis on RESTAURE (scoped — on ne réactive PAS globalement la
+   * cascade {@code notifyChallenges}, cf. g59). {@code c} est muté en place → l'appelant re-sérialise via {@link #toMessage}.
+   */
+  private static void withBoundData(ClientUserChallengeData c, Runnable op) {
+    try {
+      java.lang.reflect.Field f = yourChallengeDataField();
+      Object prev = f.get(com.perblue.heroes.DH.app);
+      f.set(com.perblue.heroes.DH.app, c);
+      try { op.run(); } finally { f.set(com.perblue.heroes.DH.app, prev); }
+    } catch (ReflectiveOperationException e) { throw new RuntimeException("bind challenge data (scoped)", e); }
+  }
+
+  /**
+   * BUY_STICKER — achat individuel d'un sticker ({@code StickerHelper.purchaseSticker}, autoritatif : débite
+   * {@code DIAMONDS}=getUserStickerPrice, pose le cosmétique + {@code purchaseTime}). Ne persiste pas (appelant).
+   */
+  public static boolean applyBuySticker(ServerUser su, StickerType type) {
+    ServerContext.init();
+    User user = su.gameUser();
+    ClientUserChallengeData c = toClient(load(su));
+    final boolean[] ok = { false };
+    withBoundData(c, () -> {
+      try { StickerHelper.purchaseSticker(user, type); ok[0] = true; }
+      catch (Throwable t) { System.out.println("[challenge] buySticker refusé (" + type + ") : " + t); }
+    });
+    if (!ok[0]) return false;
+    su.setChallengeData(toMessage(c));
+    su.resyncDiamonds(user); su.resyncCounts(user);            // diamants + drapeaux (FREE_STICKER_PURCHASE, SPENT_*)
+    return true;
+  }
+
+  /**
+   * BUY_STICKER_BOOK — achat d'un livre PAYANT ({@code StickerHelper.purchaseBook}, autoritatif : débite
+   * {@code DIAMONDS}=coût remisé, pose {@code purchaseTime} de chaque sticker du livre). Ne persiste pas (appelant).
+   */
+  public static boolean applyBuyBook(ServerUser su, com.perblue.heroes.network.messages.StickerBookType book) {
+    ServerContext.init();
+    User user = su.gameUser();
+    ClientUserChallengeData c = toClient(load(su));
+    final boolean[] ok = { false };
+    withBoundData(c, () -> {
+      try { StickerHelper.purchaseBook(user, book); ok[0] = true; }
+      catch (Throwable t) { System.out.println("[challenge] buyBook refusé (" + book + ") : " + t); }
+    });
+    if (!ok[0]) return false;
+    su.setChallengeData(toMessage(c));
+    su.resyncDiamonds(user); su.resyncCounts(user);            // diamants + drapeau SPENT_DIAMONDS_ON_CHALLENGE
+    return true;
+  }
+
+  /**
+   * BUY_STICKER_CHALLENGE_SLOT — déverrouille le 2ᵉ slot NORMAL ({@code StickerHelper.purchaseSlot} : débite
+   * {@code DIAMONDS}=StickerChallengeStats.getSlotCost, pose {@code UserFlag.CHALLENGE_SLOT_2}). État sur le joueur
+   * (drapeaux/diamants), pas sur la donnée de défis. Ne persiste pas (appelant).
+   */
+  public static boolean applyBuySlot(ServerUser su, ChallengeSlots slot) {
+    ServerContext.init();
+    User user = su.gameUser();
+    if (StickerHelper.hasPurchasedSlot2(user)) return false;    // déjà acheté (garde-fou du jeu)
+    try { StickerHelper.purchaseSlot(user, slot); }
+    catch (Throwable t) { System.out.println("[challenge] buySlot refusé (" + slot + ") : " + t); return false; }
+    su.resyncDiamonds(user); su.resyncCounts(user);            // diamants + drapeau CHALLENGE_SLOT_2
+    return true;
+  }
+
+  /** SET_FAVORITE_STICKER — pose le sticker favori du joueur ({@code User.setFavoriteSticker}, dans {@code UserExtra}
+   *  → auto-persisté). Ne persiste pas explicitement la donnée de défis (favori = état joueur). */
+  public static boolean applySetFavorite(ServerUser su, StickerType type) {
+    ServerContext.init();
+    su.setFavoriteSticker(type);   // écrit userExtra.favoriteSticker (source lue par getUser) → persisté (§6)
+    return true;
+  }
+
   /** CANCEL d'un défi en cours ({@code StickerHelper.cancelChallenge}, code du jeu). Ne persiste pas (appelant). */
   public static boolean applyCancel(ServerUser su, StickerType type, ChallengeSlots slot) {
     ServerContext.init();

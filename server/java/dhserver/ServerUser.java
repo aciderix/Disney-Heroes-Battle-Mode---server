@@ -2906,7 +2906,7 @@ public final class ServerUser {
    * sont, eux, partagés avec {@code this.extra.times} → déjà persistés, cf. VIEWED_CHESTS.)
    */
   @SuppressWarnings("unchecked")
-  private void resyncCounts(User user) {
+  void resyncCounts(User user) {   // package-private : ServerChallenges resynchronise les flags après un achat sticker
     try {
       java.lang.reflect.Field cf = User.class.getDeclaredField("counts");
       cf.setAccessible(true);
@@ -2972,6 +2972,13 @@ public final class ServerUser {
   public synchronized com.perblue.heroes.network.messages.UserChallengeDataExtra challengeDataOrNull() { return challengeData; }
   /** Remplace l'état de défis (après START/CLAIM/CANCEL) — l'appelant persiste ensuite via {@code store.save}. */
   public synchronized void setChallengeData(com.perblue.heroes.network.messages.UserChallengeDataExtra d) { challengeData = d; }
+  /** Sticker FAVORI (SET_FAVORITE_STICKER) : posé dans {@code userExtra} (source lue par {@code getUser}) + miroir
+   *  {@code BasicUserInfo} — {@code User.setFavoriteSticker} n'écrit PAS dans extra (champ User seul). Auto-persisté. */
+  public synchronized void setFavoriteSticker(com.perblue.heroes.network.messages.StickerType type) {
+    userExtra.favoriteSticker = type;
+    if (userInfo != null && userInfo.basicInfo != null) userInfo.basicInfo.favoriteSticker = type;
+  }
+  public synchronized com.perblue.heroes.network.messages.StickerType favoriteSticker() { return userExtra.favoriteSticker; }
 
   /**
    * Sérialise la MAILBOX (liste de {@link com.perblue.heroes.network.messages.MailMessage}) en un BLOB :
