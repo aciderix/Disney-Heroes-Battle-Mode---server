@@ -51,10 +51,23 @@ Hero chooser : `FriendCampaignHeroChooserScreen`.
    rejoué headless sans NPE + round-trip wire). **✅ EN JEU (compte TL100)** : `nav MISSIONS` → écran **MISSIONS**
    rend « **0/1 missions** », **ADD MISSION**, « No rewards to claim yet! » / CLAIM ALL — état frais correct, aucun
    NPE `FriendshipOffsets.setOffsets`. Le catalogue de paires est de la donnée CLIENTE (`friendship_pairs.tab`).
-2. ⬜ **Empower + favori** : Actions `EMPOWER_FRIENDSHIP`/`SET_FAVORITE_FRIENDSHIP` → `FriendshipHelper` (autoritatif),
-   persistance (individualUserExtra). Mur/historique (`viewedWall`).
-3. ⬜ **Campagne d'amitié (combat)** : `FriendshipCampaignAttack` → `FriendshipCampaignHelper.recordOutcome`
-   (autoritatif) + `giveChapterRewards` ; stamina d'amitié (`buyFriendStamina`).
+2. 🟢 **Favori + stamina — LIVRÉ HEADLESS (g80)** : handlers `LoginServer` + `ServerFriendships`, code du jeu (§3),
+   zéro invention (§4). Protocoles PROUVÉS au bytecode (`ClientActionHelper`) :
+   - `SET_FAVORITE_FRIENDSHIP{TYPE=FriendPairID.getAsLong(), COUNT=0/1}` → `FriendshipHelper.setFavoritedFriendship`
+     (= `IndividualUser.setFavoriteFriendship`, aucun verrou). Persistance : l'ensemble `favoriteFriendships` est un
+     champ de `IndividualUser` COPIÉ de l'extra au chargement → **`ServerUser.resyncFriendFavorites`** ré-écrit la
+     `List<Long>` dans `individualUserExtra` (patron flags/counts).
+   - `BUY_FRIEND_STAMINA{}` → `FriendshipHelper.buyFriendStamina` (débit **DIAMONDS**=getFriendStaminaBuyCost + crédit
+     **FRIEND_STAMINA**=getFriendStaminaBuyAmount, dans les limites/plafond du jeu ; `FRIEND_STAMINA` dans
+     `individualUserExtra.resources` = write-through). `resyncDiamonds` pour les diamants.
+   - `FriendshipShopTest` : favori set/persist/reload/unfavorite ✅ ; buyStamina — chemin de refus (compte frais au
+     plafond) géré ; **succès (débit/crédit) à exercer EN JEU** (stamina consommée par la campagne). **Vérif EN JEU restante.**
+3. ⬜ **Empower + campagne d'amitié (combat)** : `EMPOWER_FRIENDSHIP{TYPE=pair, COUNT=level}` →
+   `FriendshipHelper.empowerFriendship` (GATÉ `FRIENDSHIP_NOT_UNLOCKED` — anti-triche : la paire doit être débloquée,
+   deux héros possédés au niveau requis) ; `FriendshipCampaignAttack` → `FriendshipCampaignHelper.recordOutcome`
+   (autoritatif) + `giveChapterRewards`. **Persistance commune** : re-sérialisation COMPLÈTE de la map `friendships`
+   (`ClientFriendship`→`FriendPairData` : empowerment/campaignBitsEarned/lastBattle/history/viewedUnlock/lastHistoryView)
+   — `ClientFriendship` ne wrappe PAS `FriendPairData` (champs à part) → `resyncFriendships` à écrire (patron héros).
 4. ⬜ **Vérif EN JEU complète** (empower → disk débloqué, campagne jouée → récompenses de chapitre).
 
 ## Notes §3/§4

@@ -1045,6 +1045,28 @@ public final class LoginServer {
                 System.out.println("[login] <== " + act.command + "(" + dbg + ")"
                     + (ok ? " appliqué [persisté]" : " refusé"));
 
+              } else if (act.command == com.perblue.heroes.network.messages.CommandType.SET_FAVORITE_FRIENDSHIP
+                  || act.command == com.perblue.heroes.network.messages.CommandType.BUY_FRIEND_STAMINA) {
+                // FRIENDSHIPS #72 incrément 2 — favori + stamina. Protocole client (disasm ClientActionHelper) :
+                //   SET_FAVORITE_FRIENDSHIP  extra{TYPE=<FriendPairID.getAsLong()>, COUNT=<0/1>} → FriendshipHelper.setFavoritedFriendship
+                //   BUY_FRIEND_STAMINA       (sans extra)                                         → FriendshipHelper.buyFriendStamina
+                // Serveur AUTORITATIF (débite DIAMONDS via le code du jeu) + persiste. Fire-and-forget (client local).
+                boolean ok = false; String dbg = "";
+                if (act.command == com.perblue.heroes.network.messages.CommandType.BUY_FRIEND_STAMINA) {
+                  dbg = "stamina"; ok = ServerFriendships.applyBuyStamina(user);
+                } else {
+                  long pairLong = extraLong(act, com.perblue.heroes.network.messages.ActionExtraType.TYPE, 0);
+                  boolean fav = extraLong(act, com.perblue.heroes.network.messages.ActionExtraType.COUNT, 0) != 0;
+                  com.perblue.heroes.game.objects.FriendPairID pair =
+                      com.perblue.heroes.game.objects.FriendPairID.from(pairLong);
+                  dbg = pair + "=" + fav;
+                  ok = ServerFriendships.applySetFavorite(user, pair, fav);
+                }
+                if (ok) { try { store.save(user); } catch (Exception e) {
+                  System.out.println("[login]     ! persist amitié: " + e); } }
+                System.out.println("[login] <== " + act.command + "(" + dbg + ")"
+                    + (ok ? " appliqué [persisté]" : " refusé"));
+
               } else {
                 boolean applied = user.applyAction(act);
                 if (applied) { try { store.save(user); } catch (Exception e) {

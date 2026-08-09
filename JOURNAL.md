@@ -1,5 +1,31 @@
 # JOURNAL — journal détaillé des modifications
 
+## 2026-08-09 (g80) — FRIENDSHIPS (#72) incrément 2 : favori + stamina (🟢 headless)
+
+Deux Actions « légères » du mode, par le CODE DU JEU (§3), zéro invention (§4). Protocoles PROUVÉS au bytecode
+(`ClientActionHelper` : `with(TYPE, FriendPairID.getAsLong())` + `withCount`) :
+- `SET_FAVORITE_FRIENDSHIP{TYPE=<pair long>, COUNT=0/1}` → `FriendshipHelper.setFavoritedFriendship(user, pair, fav)`
+  (= `IndividualUser.setFavoriteFriendship`, AUCUN verrou). L'ensemble `favoriteFriendships` est un champ de
+  `IndividualUser` COPIÉ de l'extra au chargement (comme flags/counts) → nouveau **`ServerUser.resyncFriendFavorites`**
+  ré-écrit la `List<Long>` (`getAsLong`) dans `individualUserExtra.favoriteFriendships`.
+- `BUY_FRIEND_STAMINA{}` (sans extra) → `FriendshipHelper.buyFriendStamina(user)` : débite `DIAMONDS`
+  (`getFriendStaminaBuyCost`) + crédite `FRIEND_STAMINA` (`getFriendStaminaBuyAmount`), dans les limites/plafond du
+  jeu. `resyncDiamonds` (diamants) ; `FRIEND_STAMINA` vit dans `individualUserExtra.resources` (write-through).
+
+`ServerFriendships` (nouveau) + handlers `LoginServer` (`SET_FAVORITE_FRIENDSHIP`/`BUY_FRIEND_STAMINA`). Fire-and-forget
+(le client applique localement). `FriendshipShopTest` : favori set → `isFavoriteFriendship` + re-sync extra →
+persistance DB (save/reload) → dé-favori ; buyStamina — chemin de REFUS géré (compte frais au plafond de
+`FRIEND_STAMINA` → pas d'achat) ; succès (débit/crédit) à exercer EN JEU (stamina consommée par la campagne).
+
+**Découvertes persistance** (recon) : `ClientFriendship` (runtime, impl `IFriendship`) a ses PROPRES champs
+(empowerment/campaignBitsEarned/history/lastBattle/…) — il ne wrappe PAS `FriendPairData` (le wire) ; `getExtra()`
+renvoie l'extra STOCKÉ sans re-sérialiser. Donc empower/campagne (incr. 3) exigeront un `resyncFriendships` COMPLET
+(map `friendships` : `ClientFriendship`→`FriendPairData`, y c. la conversion `history` FriendshipEvent↔EventData).
+`empowerFriendship` est GATÉ `FRIENDSHIP_NOT_UNLOCKED` (anti-triche : paire débloquée = 2 héros possédés au niveau).
+
+**RESTE** : incr. 3 (empower + campagne d'amitié = `FriendshipCampaignAttack`→`recordOutcome`+`giveChapterRewards` +
+`resyncFriendships`), incr. 4 vérif en jeu complète. Détail : `docs/FRIENDSHIPS.md`.
+
 ## 2026-08-09 (g79) — FRIENDSHIPS/MISSIONS (#72) : recon pipeline + incrément 1 (livraison/rendu) ✅ EN JEU
 
 Nouveau mode (choix utilisateur), attaqué au **pipeline #73/#74** : `contract.sh --mode Friendship` (ModeGraph →

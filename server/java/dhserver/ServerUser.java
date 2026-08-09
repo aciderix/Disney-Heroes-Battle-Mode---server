@@ -2905,6 +2905,22 @@ public final class ServerUser {
    * {@code userExtra.counts}/{@code flags} (clés String = {@code name()}). (Les <b>times</b> {@code TimeType}
    * sont, eux, partagés avec {@code this.extra.times} → déjà persistés, cf. VIEWED_CHESTS.)
    */
+  /** Re-sync des FAVORIS d'amitié (#72) : {@code IndividualUser.favoriteFriendships} est un {@code Set<FriendPairID>}
+   *  COPIÉ depuis {@code individualUserExtra.favoriteFriendships} au chargement (comme flags/counts) → les mutations
+   *  ({@code setFavoriteFriendship}) restent en mémoire ; on ré-écrit l'ensemble dans le wire ({@code List<Long>} via
+   *  {@code getAsLong}). Package-private : appelé par {@link ServerFriendships}. */
+  @SuppressWarnings("unchecked")
+  void resyncFriendFavorites(IndividualUser iu) {
+    try {
+      java.lang.reflect.Field f = IndividualUser.class.getDeclaredField("favoriteFriendships");
+      f.setAccessible(true);
+      java.util.Set<Object> favs = (java.util.Set<Object>) f.get(iu);
+      individualUserExtra.favoriteFriendships.clear();
+      for (Object p : favs)
+        individualUserExtra.favoriteFriendships.add(((com.perblue.heroes.game.objects.FriendPairID) p).getAsLong());
+    } catch (Throwable t) { System.out.println("[resync] friend favorites: " + t); }
+  }
+
   @SuppressWarnings("unchecked")
   void resyncCounts(User user) {   // package-private : ServerChallenges resynchronise les flags après un achat sticker
     try {
