@@ -62,12 +62,20 @@ Hero chooser : `FriendCampaignHeroChooserScreen`.
      `individualUserExtra.resources` = write-through). `resyncDiamonds` pour les diamants.
    - `FriendshipShopTest` : favori set/persist/reload/unfavorite ✅ ; buyStamina — chemin de refus (compte frais au
      plafond) géré ; **succès (débit/crédit) à exercer EN JEU** (stamina consommée par la campagne). **Vérif EN JEU restante.**
-3. ⬜ **Empower + campagne d'amitié (combat)** : `EMPOWER_FRIENDSHIP{TYPE=pair, COUNT=level}` →
-   `FriendshipHelper.empowerFriendship` (GATÉ `FRIENDSHIP_NOT_UNLOCKED` — anti-triche : la paire doit être débloquée,
-   deux héros possédés au niveau requis) ; `FriendshipCampaignAttack` → `FriendshipCampaignHelper.recordOutcome`
-   (autoritatif) + `giveChapterRewards`. **Persistance commune** : re-sérialisation COMPLÈTE de la map `friendships`
-   (`ClientFriendship`→`FriendPairData` : empowerment/campaignBitsEarned/lastBattle/history/viewedUnlock/lastHistoryView)
-   — `ClientFriendship` ne wrappe PAS `FriendPairData` (champs à part) → `resyncFriendships` à écrire (patron héros).
+3a. 🟢 **Empower — LIVRÉ HEADLESS (g81)** : `EMPOWER_FRIENDSHIP{TYPE=FriendPairID.getAsLong(), COUNT=<nb pierres>}` →
+   `FriendshipHelper.empowerFriendship` (code du jeu §3) : exige la paire **DÉBLOQUÉE** (`getUnlockStatus`==UNLOCKED,
+   sinon `FRIENDSHIP_NOT_UNLOCKED`), `count>=1`, **CONSOMME `count` × `FRIENDSHIP_EMPOWER_STONE`** (`useItem`) puis
+   `empowerment += getEmpowermentPerConsumable*count`. **Anti-triche** : `useItem`→`removeItem` NE lève PAS sur stock
+   insuffisant (client-autoritatif) → `ServerFriendships.applyEmpower` MIROITE la garde cliente (`getItemAmount>=count`,
+   donnée du jeu) → refus autoritatif si pierres insuffisantes. **Persistance** : nouveau **`ServerUser.resyncFriendships`**
+   (map `friendships` : `ClientFriendship`→`FriendPairData`, `FriendshipEvent`↔`FriendshipEventData` mêmes champs ;
+   ⚠️ ne pas écraser `lastBattle` avec null — `new FriendPairData()` l'initialise non-null et `getClientFriendship`
+   lit `lastBattle.serverTime` sans garde) ; items consommés dans `individualUserExtra.items` (write-through).
+   `FriendshipEmpowerTest` : déblocage (2 héros grantés) + empower (consomme 2 pierres) + anti-triche (refus sans
+   pierre) + persistance DB. **Vérif EN JEU restante.**
+3b. ⬜ **Campagne d'amitié (combat)** : `FriendshipCampaignAttack` → `FriendshipCampaignHelper.recordOutcome`
+   (autoritatif, patron combat) + `giveChapterRewards` ; réutilise `resyncFriendships` (campaignBitsEarned/lastBattle/
+   history mutés par le combat).
 4. ⬜ **Vérif EN JEU complète** (empower → disk débloqué, campagne jouée → récompenses de chapitre).
 
 ## Notes §3/§4

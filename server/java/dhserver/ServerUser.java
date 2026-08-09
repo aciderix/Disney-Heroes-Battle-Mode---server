@@ -2905,6 +2905,46 @@ public final class ServerUser {
    * {@code userExtra.counts}/{@code flags} (clés String = {@code name()}). (Les <b>times</b> {@code TimeType}
    * sont, eux, partagés avec {@code this.extra.times} → déjà persistés, cf. VIEWED_CHESTS.)
    */
+  /** Re-sync de la MAP DES AMITIÉS (#72) vers le wire. {@code IndividualUser.friendships}
+   *  ({@code Map<FriendPairID, ClientFriendship>}) est construit depuis {@code individualUserExtra.friendships}
+   *  ({@code Map<Long, FriendPairData>}) au chargement ; {@code ClientFriendship} a ses PROPRES champs (il ne
+   *  wrappe pas {@code FriendPairData}) → les mutations ({@code empowerment}/{@code campaignBitsEarned}/
+   *  {@code lastBattle}/{@code history}…) restent en mémoire. On ré-sérialise l'objet du jeu → wire (jeu de champs
+   *  FERMÉ, {@code FriendshipEvent}↔{@code FriendshipEventData} = mêmes champs). Clé = {@code getAsLong()}.
+   *  Package-private : appelé par {@link ServerFriendships} après empower / combat de campagne d'amitié. */
+  @SuppressWarnings("unchecked")
+  void resyncFriendships(IndividualUser iu) {
+    try {
+      java.util.Map<Object, Object> fs = (java.util.Map<Object, Object>) (java.util.Map<?, ?>) iu.getFriendships();
+      individualUserExtra.friendships.clear();
+      for (java.util.Map.Entry<Object, Object> e : fs.entrySet()) {
+        com.perblue.heroes.game.objects.FriendPairID pair = (com.perblue.heroes.game.objects.FriendPairID) e.getKey();
+        com.perblue.heroes.game.objects.IFriendship cf = (com.perblue.heroes.game.objects.IFriendship) e.getValue();
+        com.perblue.heroes.network.messages.FriendPairData d = new com.perblue.heroes.network.messages.FriendPairData();
+        d.empowerment = cf.getEmpowerment();
+        d.campaignBitsEarned = cf.getCampaignBitsEarned();
+        d.viewedUnlockAnimation = cf.viewedUnlockAnimation();
+        d.lastHistoryViewTime = cf.getLastHistoryViewTime();
+        // NE PAS écraser avec null : new FriendPairData() initialise lastBattle = new FriendshipBattleInfo()
+        // (non-null), et getClientFriendship lit lastBattle.serverTime SANS garde → NPE si null. Un fresh
+        // ClientFriendship (jamais combattu) renvoie getLastBattle()==null → on garde le défaut non-null du wire.
+        if (cf.getLastBattle() != null) d.lastBattle = cf.getLastBattle();
+        d.history = new java.util.ArrayList<>();
+        Iterable<?> hist = cf.getHistory();
+        if (hist != null) for (Object o : hist) {
+          com.perblue.heroes.game.data.friendships.FriendshipEvent fe =
+              (com.perblue.heroes.game.data.friendships.FriendshipEvent) o;
+          com.perblue.heroes.network.messages.FriendshipEventData ed =
+              new com.perblue.heroes.network.messages.FriendshipEventData();
+          ed.level = fe.level; ed.missionNumber = fe.missionNumber; ed.storyNoteNumber = fe.storyNoteNumber;
+          ed.time = fe.time; ed.type = fe.type;
+          d.history.add(ed);
+        }
+        individualUserExtra.friendships.put(pair.getAsLong(), d);
+      }
+    } catch (Throwable t) { System.out.println("[resync] friendships: " + t); }
+  }
+
   /** Re-sync des FAVORIS d'amitié (#72) : {@code IndividualUser.favoriteFriendships} est un {@code Set<FriendPairID>}
    *  COPIÉ depuis {@code individualUserExtra.favoriteFriendships} au chargement (comme flags/counts) → les mutations
    *  ({@code setFavoriteFriendship}) restent en mémoire ; on ré-écrit l'ensemble dans le wire ({@code List<Long>} via

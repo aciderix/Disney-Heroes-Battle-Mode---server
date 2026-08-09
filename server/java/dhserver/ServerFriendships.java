@@ -33,6 +33,37 @@ public final class ServerFriendships {
   }
 
   /**
+   * EMPOWER_FRIENDSHIP — monte le niveau d'amitié d'une paire ({@code FriendshipHelper.empowerFriendship} :
+   * exige la paire DÉBLOQUÉE ({@code FRIENDSHIP_NOT_UNLOCKED} sinon) + {@code count>=1} + CONSOMME {@code count} ×
+   * {@code FRIENDSHIP_EMPOWER_STONE} ({@code UserHelper.useItem}, anti-triche), puis {@code empowerment +=
+   * getEmpowermentPerConsumable * count}). Re-synchronise la map des amitiés (empowerment) ; items consommés dans
+   * {@code individualUserExtra.items} (write-through). Ne persiste pas (appelant). Renvoie {@code false} si refusé
+   * (verrouillé / pierres insuffisantes / count invalide).
+   */
+  public static boolean applyEmpower(ServerUser su, FriendPairID pair, int count) {
+    ServerContext.init();
+    User user = su.gameUser();
+    // ANTI-TRICHE : le coût du jeu est `count` × FRIENDSHIP_EMPOWER_STONE, consommé par `useItem`→`removeItem` qui
+    // NE LÈVE PAS sur stock insuffisant (modèle client-autoritatif, cf. loot). On MIROITE la garde CLIENTE (le client
+    // n'active l'empower que si assez de pierres) avec la donnée du jeu `getItemAmount` → refus autoritatif si le
+    // stock est insuffisant (empêche un client modifié de sur-empower). Pas une règle inventée : c'est la garde
+    // d'entrée que le client applique déjà (§3).
+    if (count < 1) return false;
+    if (user.getIndividual().getItemAmount(com.perblue.heroes.network.messages.ItemType.FRIENDSHIP_EMPOWER_STONE) < count) {
+      System.out.println("[friendship] empower refusé (" + pair + " x" + count + ") : pierres insuffisantes");
+      return false;
+    }
+    try {
+      FriendshipHelper.empowerFriendship(user, pair, count);
+    } catch (Throwable t) {
+      System.out.println("[friendship] empower refusé (" + pair + " x" + count + ") : " + t);
+      return false;
+    }
+    su.resyncFriendships(user.getIndividual());
+    return true;
+  }
+
+  /**
    * BUY_FRIEND_STAMINA — achat d'énergie d'amitié ({@code FriendshipHelper.buyFriendStamina} : débite
    * {@code DIAMONDS}=getFriendStaminaBuyCost, crédite {@code FRIEND_STAMINA}=getFriendStaminaBuyAmount, dans les
    * limites quotidiennes/plafond du jeu). Ne persiste pas (appelant).

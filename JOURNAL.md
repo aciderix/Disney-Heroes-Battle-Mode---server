@@ -1,5 +1,37 @@
 # JOURNAL — journal détaillé des modifications
 
+## 2026-08-09 (g81) — FRIENDSHIPS (#72) incrément 3a : EMPOWER d'amitié (🟢 headless)
+
+`EMPOWER_FRIENDSHIP{TYPE=<FriendPairID.getAsLong()>, COUNT=<nb pierres>}` → `FriendshipHelper.empowerFriendship`
+(code du jeu §3, disasm) : (1) `getUnlockStatus(user, pair)==UNLOCKED` sinon `FRIENDSHIP_NOT_UNLOCKED` (déblocage =
+`Unlockable.FRIENDSHIPS` TL24 + les DEUX héros de la paire possédés au niveau/contenu requis — statuts `TL_LOCKED`/
+`HERO_MISSING_LOCKED`/`HERO_CONTENT_LOCKED`/`UNLOCKED`) ; (2) `count>=1` ; (3) **`UserHelper.useItem(user,
+FRIENDSHIP_EMPOWER_STONE, count)`** (le COÛT) ; (4) `setEmpowerment(empowerment + getEmpowermentPerConsumable*count)`.
+
+**Anti-triche** : `useItem`→`IUser.removeItem` NE lève PAS sur stock insuffisant (modèle client-autoritatif, comme
+le loot) → un client modifié pourrait sur-empower sans pierres. `ServerFriendships.applyEmpower` MIROITE la garde
+d'entrée CLIENTE avec la donnée du jeu (`getItemAmount(FRIENDSHIP_EMPOWER_STONE) >= count`) → refus autoritatif.
+Pas une règle inventée (§3) : c'est la condition que le client applique déjà avant d'émettre l'action.
+
+**Persistance — nouveau `ServerUser.resyncFriendships(IndividualUser)`** : `ClientFriendship` (runtime) a ses propres
+champs et ne wrappe pas `FriendPairData` (wire), et `getExtra()` ne re-sérialise pas → on ré-écrit la map
+`individualUserExtra.friendships` (clé `getAsLong()`) depuis `iu.getFriendships()` : empowerment, campaignBitsEarned,
+viewedUnlockAnimation, lastHistoryViewTime, lastBattle, history (`FriendshipEvent`→`FriendshipEventData`, mêmes
+champs level/missionNumber/storyNoteNumber/time/type). **🐛 Piège résolu** : ne PAS écraser `lastBattle` avec null —
+`new FriendPairData()` l'initialise à `new FriendshipBattleInfo()` (non-null) et `getClientFriendship` lit
+`data.lastBattle.serverTime` SANS garde → NPE au rechargement si null (un `ClientFriendship` jamais combattu a
+`getLastBattle()==null`). On ne pose `lastBattle` que s'il est non-null. Items consommés dans
+`individualUserExtra.items` (write-through).
+
+`ServerFriendships.applyEmpower` + handler `LoginServer` (`EMPOWER_FRIENDSHIP`, groupé avec favori/stamina).
+`FriendshipEmpowerTest` : `grantHero(RALPH/VANELLOPE, ORANGE, 60, 5)` → `getUnlockStatus`==UNLOCKED ; refus sans
+pierre (anti-triche) ; donne 3 pierres, empower ×2 → empowerment=`perStone*2`, 2 pierres consommées (reste 1) ;
+persistance DB (empowerment + stock de pierres survivent) ; round-trip wire `individualUserExtra`. `perStone`=
+`FriendshipStats.getEmpowermentPerConsumable()` (=1 mesuré, donnée du jeu).
+
+**RESTE** : incr. 3b campagne d'amitié (`FriendshipCampaignAttack` → `FriendshipCampaignHelper.recordOutcome` +
+`giveChapterRewards`, réutilise `resyncFriendships`) ; incr. 4 vérif EN JEU (favori/stamina/empower/campagne).
+
 ## 2026-08-09 (g80) — FRIENDSHIPS (#72) incrément 2 : favori + stamina (🟢 headless)
 
 Deux Actions « légères » du mode, par le CODE DU JEU (§3), zéro invention (§4). Protocoles PROUVÉS au bytecode
