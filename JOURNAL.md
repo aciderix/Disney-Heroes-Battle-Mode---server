@@ -1,5 +1,41 @@
 # JOURNAL — journal détaillé des modifications
 
+## 2026-08-09 (g83) — FRIENDSHIPS (#72) vérif EN JEU → découverte du système de MISSIONS IDLE (incr. 3c requis)
+
+Vérif EN JEU de l'incrément 4 (contre notre serveur). Compte userID=1 préparé par le **nouvel outil DEV
+`FriendAcctSetup`** (RALPH+VANELLOPE ORANGE 60/5 → paire 1 débloquée, `FRIEND_STAMINA=350`, 20
+`FRIENDSHIP_EMPOWER_STONE`). `nav MISSIONS` → écran MISSIONS (« 0/1 missions », ADD MISSION) → **ADD MISSION** ouvre
+`MissionsSelectFriendsWindow` (« CHOOSE FRIENDS FOR MISSION », roster rendu) → **sélection de Ralph confirmée EN JEU**
+(coche verte ; le grid filtre les partenaires valides : Vanellope, Sulley) → **`MissionsChooseWindow`** (« CHOOSE A
+MISSION TYPE ») : trois types **POWER-UPS / MEMORIES / DISK POWER**, chacun avec un timer (« Every 1d13h / 18h41m /
+5h55m ») + « MISSION SPEED +60,5 % » + START.
+
+**Découverte (le point de la vérif en jeu)** : l'écran MISSIONS de 12.1.0 pilote un **système de MISSIONS IDLE
+temporisées** (envoyer une paire d'amis en mission → attendre → récompenses power-ups/mémoires/disk-power), et **NON**
+le combat de campagne que j'avais câblé en 3b. Ce sous-système n'est **pas implémenté** côté serveur :
+- Actions : `ADD_MISSION{MissionType, FriendPairID}`, `CLAIM_MISSION_REWARDS`, `CANCEL_MISSION`, `SPEEDUP_MISSION`,
+  `UPDATE_MISSION`, `SET_MISSION_ITEM_COST_LIMIT` (`ClientActionHelper`/`CommandType`).
+- MissionType : `POWER_UP_MISSION`, `MEMORY_MISSION`, `DISK_POWER_MISSION`.
+- Logique du jeu (§3) : `com.perblue.heroes.game.missions.MissionHelper` — statiques IUser propres :
+  `addMission(user, type, pair, time)`, `canStartMission(user, type, pair)→MissionFailType` (anti-triche),
+  `claimMissionRewards(user, time)`, `cancelMission(user, mission, time)`, `calculateMissionSpeed`,
+  `canAffordMissionCosts`. État : `individualUserExtra.friendshipMissionData` + `inProgressFriendshipMissions`.
+
+**Conséquence (consigne utilisateur « rien d'optionnel tant que pas prouvé optionnel »)** : ce système est **REQUIS**
+→ **incrément 3c** (ADD/CLAIM/CANCEL/SPEEDUP_MISSION + persistance + vérif en jeu). Par ailleurs, **empower** (disks)
+et le **combat de campagne** (3b) ne s'atteignent pas depuis l'écran MISSIONS → leurs points d'entrée UI restent à
+LOCALISER en jeu (empower = vue FRIENDSHIPS/détail d'une amitié ; le combat de campagne est peut-être legacy en
+12.1.0). Les incréments 2/3a/3b restent **prouvés HEADLESS** (code du jeu exécuté, 97/97) — leur vérif EN JEU est à
+compléter une fois les entrées UI localisées.
+
+**Frictions de pilotage notées** (outillage, pas serveur) : les cartes de `MissionsSelectFriendsWindow` ont un
+overlay `UnitViewStars` sans listener + `PressableStack` sans listener apparent → `fire` sélectionne par bulle
+d'événement (a marché pour Ralph) mais la sélection du 2ᵉ héros / START est capricieuse. `sleep` avant-plan reste
+BLOQUÉ (exit 144) → boucles `until`/`run_in_background`.
+
+**RESTE** : incr. 3c (missions idle) ; incr. 4 (vérif en jeu missions idle + localiser empower/campagne). Rien de
+commité côté serveur cette session (découverte + docs + outil `FriendAcctSetup`).
+
 ## 2026-08-09 (g82) — FRIENDSHIPS (#72) incrément 3b : combat de campagne d'amitié (🟢 headless)
 
 Combat de la campagne d'amitié (MISSIONS), patron campagne/SURGE (client-autoritatif + serveur ré-exécute).

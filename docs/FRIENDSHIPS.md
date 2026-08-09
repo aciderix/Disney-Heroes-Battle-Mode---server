@@ -44,6 +44,23 @@ Hero chooser : `FriendCampaignHeroChooserScreen`.
 - Combat de campagne d'amitié : `FriendshipCampaignAttack` (issue, patron des attaques de campagne).
 - (À confirmer au bytecode/en jeu : messages de mur/historique, requêtes d'amis.)
 
+## ⚠️ DÉCOUVERTE EN JEU (g83) — le cœur de l'écran MISSIONS = MISSIONS IDLE (non implémenté !)
+La vérif EN JEU de l'incr. 4 a révélé que l'écran **MISSIONS** (`MissionsMainScreen`) ne pilote PAS le combat de
+campagne, mais un **système de MISSIONS IDLE temporisées** : on choisit une **paire** (fenêtre `MissionsSelectFriendsWindow` :
+sélectionne un héros → ses partenaires valides ✓) puis un **TYPE de mission** (`MissionsChooseWindow` :
+**POWER-UPS / MEMORIES / DISK POWER**, chacune avec un timer « Every Xd Yh » + « MISSION SPEED +60,5 % »). START →
+mission en cours → au bout du temps, réclamation des récompenses. **Actions** (`ClientActionHelper` + `CommandType`) :
+`ADD_MISSION{MissionType, FriendPairID}` · `CLAIM_MISSION_REWARDS` · `CANCEL_MISSION` · `SPEEDUP_MISSION` ·
+`UPDATE_MISSION` · `SET_MISSION_ITEM_COST_LIMIT`. **MissionType** : `POWER_UP_MISSION`, `MEMORY_MISSION`,
+`DISK_POWER_MISSION`. **Logique du jeu (§3, `com.perblue.heroes.game.missions.MissionHelper`, statiques IUser)** :
+`addMission(user, type, pair, time)`, `canStartMission(user, type, pair)→MissionFailType` (anti-triche),
+`claimMissionRewards(user, time)`, `cancelMission(user, mission, time)`, `calculateMissionSpeed`, `canAffordMissionCosts`.
+État persisté : `individualUserExtra.friendshipMissionData` + `inProgressFriendshipMissions` (write-through à valider).
+**⇒ C'est REQUIS (pas optionnel — cf. consigne utilisateur) → nouvel incrément 3c**, non couvert par 2/3a/3b.
+Corollaire : **empower** (disks) et le **combat de campagne** (`FriendshipCampaignAttack`, incr. 3b) ont leurs propres
+points d'entrée UI à LOCALISER en jeu (empower = vue FRIENDSHIPS/détail d'une amitié ; le combat de campagne n'apparaît
+pas sur l'écran MISSIONS de 12.1.0 — à confirmer : legacy ou accessible ailleurs). 2/3a/3b restent prouvés HEADLESS.
+
 ## Plan d'incréments
 1. ✅ **Livraison / rendu — LIVRÉ (g79) + VÉRIFIÉ EN JEU** : `BootData.friendshipOffsetData` + conteneurs
    `IndividualUserExtra` non-null (**déjà OK par les défauts `new BootData()`/`new IndividualUserExtra()`** — aucun
@@ -84,7 +101,16 @@ Hero chooser : `FriendCampaignHeroChooserScreen`.
    Persistance via `resyncFriendships` (+héros/diamants/compteurs). `FriendshipCampaignTest` : paire débloquée +
    FRIEND_STAMINA → combat WIN nœud 1 → **-6 stamina, lastBattle{node=1, won=true}**, persistance DB. **Vérif EN
    JEU restante.** (`giveChapterRewards` = réclamation de chapitre, Action séparée — à câbler si besoin.)
-4. ⬜ **Vérif EN JEU complète** (empower → disk débloqué, campagne jouée → récompenses de chapitre).
+3c. ⬜ **MISSIONS IDLE (cœur de l'écran MISSIONS — REQUIS, révélé en jeu g83)** : `ADD_MISSION{MissionType,
+   FriendPairID}` → `MissionHelper.addMission` (gate `canStartMission`→`MissionFailType` = anti-triche : héros
+   disponibles, coûts abordables `canAffordMissionCosts`) ; `CLAIM_MISSION_REWARDS` → `claimMissionRewards(user,
+   time)` (mission terminée par le TEMPS → récompenses POWER_UP/MEMORY/DISK_POWER) ; `CANCEL_MISSION` →
+   `cancelMission` ; `SPEEDUP_MISSION` ; `SET_MISSION_ITEM_COST_LIMIT`. Persistance : `friendshipMissionData` +
+   `inProgressFriendshipMissions` (individualUserExtra ; resync à ajouter si `ClientMission` ≠ wire). Handlers
+   `LoginServer` + `ServerFriendships`/`ServerMissions` + test + **vérif EN JEU**.
+4. ⬜ **Vérif EN JEU complète** : missions idle (3c) START→collect ; empower → disk (localiser la vue FRIENDSHIPS) ;
+   campagne (3b) si accessible dans 12.1.0. **Localiser les points d'entrée UI** d'empower et du combat de campagne
+   (l'écran MISSIONS = missions idle, pas le combat).
 
 ## Notes §3/§4
 - Persistance quasi-gratuite (état dans `individualUserExtra` write-through). Zéro invention : niveaux/récompenses/
