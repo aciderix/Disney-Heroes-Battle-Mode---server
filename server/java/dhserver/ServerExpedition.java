@@ -322,8 +322,62 @@ public final class ServerExpedition {
     // Le codec écrit currentExpedition.writeSingle SANS garde null → non-null obligatoire.
     r.currentExpedition = run != null ? run : new ExpeditionRunData();
     r.wasReset = false;
-    r.weeklyWardInfo = new ExpeditionWeeklyInfo();   // wards réels = incrément 5 (baseline non-null sûre)
+    r.weeklyWardInfo = weeklyWardInfo(com.perblue.heroes.util.TimeUtil.serverTimeNow());   // incr. 5
     return r;
+  }
+
+  // --- EXPEDITION #72 incr. 5 : WARDS HEBDOMADAIRES ------------------------------------------------------------
+  // Les wards (CombatModifier) sont des MODIFICATEURS DE COMBAT qui tournent CHAQUE SEMAINE et s'appliquent aux
+  // difficultés ≥ 3 (HARD/EPIC ; getWardsFor renvoie EMPTY pour diff < 3). Le POOL vient de la DONNÉE du jeu
+  // (ExpeditionStats$WardStats.wardsByDifficulty : diff 3 et 4 → 13 wards chacun ; §4). La ROTATION exacte
+  // (quel ward chaque semaine) est calculée par le BACKEND (absente du jar client, comme ArenaInfo/Surge) → on la
+  // GÉNÈRE serveur, DÉTERMINISTE par l'INDICE DE SEMAINE DU JEU (TimeUtil.getServerWeek) — calibration serveur
+  // documentée (patron incr. 2 : pool = donnée du jeu, arrangement = serveur). getWardsFor(info, diff) tranche :
+  // diff 3 → currentWards[0] ; diff 4 → currentWards[0..1]. On expose donc 2 wards (HARD partagé + EPIC additionnel).
+  private static volatile List<Object> WARD_POOL_3, WARD_POOL_4;
+
+  @SuppressWarnings("unchecked")
+  private static void loadWardPools() {
+    if (WARD_POOL_3 != null) return;
+    List<Object> p3 = new ArrayList<>(), p4 = new ArrayList<>();
+    try {
+      java.lang.reflect.Field wf = com.perblue.heroes.game.data.expedition.ExpeditionStats.class
+          .getDeclaredField("WARD_STATS"); wf.setAccessible(true);
+      Object ward = wf.get(null);
+      java.lang.reflect.Field wbd = ward.getClass().getDeclaredField("wardsByDifficulty"); wbd.setAccessible(true);
+      List<?> byDiff = (List<?>) wbd.get(ward);
+      if (byDiff.size() > 3 && byDiff.get(3) != null) p3.addAll((java.util.Collection<Object>) byDiff.get(3));
+      if (byDiff.size() > 4 && byDiff.get(4) != null) p4.addAll((java.util.Collection<Object>) byDiff.get(4));
+    } catch (Throwable t) { System.out.println("[expedition] lecture pool de wards: " + t); }
+    WARD_POOL_3 = p3; WARD_POOL_4 = p4;
+  }
+
+  /** Sélection DÉTERMINISTE de 2 wards pour une semaine donnée (index de semaine du jeu) : un ward HARD (pool diff 3)
+   *  + un ward EPIC additionnel DIFFÉRENT (pool diff 4). Renvoie une liste vide si le pool est vide. */
+  private static List<Object> wardsForWeek(int week) {
+    loadWardPools();
+    List<Object> out = new ArrayList<>();
+    if (WARD_POOL_3 != null && !WARD_POOL_3.isEmpty())
+      out.add(WARD_POOL_3.get(Math.floorMod(week, WARD_POOL_3.size())));
+    if (WARD_POOL_4 != null && !WARD_POOL_4.isEmpty())
+      out.add(WARD_POOL_4.get(Math.floorMod(week + 3, WARD_POOL_4.size())));   // offset → EPIC ≠ HARD
+    return out;
+  }
+
+  /** Construit l'{@code ExpeditionWeeklyInfo} : wards de la semaine courante + suivante (pool du jeu, rotation par
+   *  index de semaine du jeu) + bornes de la semaine ({@code currentWardExpiration}/{@code nextWardStartTime} =
+   *  prochain reset hebdomadaire, aligné sur {@code MILLIS_PER_WEEK}). */
+  @SuppressWarnings("unchecked")
+  public static ExpeditionWeeklyInfo weeklyWardInfo(long now) {
+    ExpeditionWeeklyInfo w = new ExpeditionWeeklyInfo();
+    int week = com.perblue.heroes.util.TimeUtil.getServerWeek(now);
+    w.currentWards = wardsForWeek(week);
+    w.nextWards = wardsForWeek(week + 1);
+    long weekMs = com.perblue.heroes.util.TimeUtil.MILLIS_PER_WEEK;
+    long boundary = weekMs > 0 ? ((now / weekMs) + 1) * weekMs : now;   // prochaine frontière hebdo
+    w.currentWardExpiration = boundary;
+    w.nextWardStartTime = boundary;
+    return w;
   }
 
   /**
