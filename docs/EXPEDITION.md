@@ -148,7 +148,21 @@ pour un run actif ; à confirmer en jeu une fois qu'un run existe.)
      `run généré 15 nœuds [persisté]` → réponse `ResetExpeditionResponse` → **carte fraîche rendue** (nœud 1 actif, 2-5
      verrouillés) → **compteur de reset (coin sup. droit) 1 → 0** (reset gratuit consommé, visible en jeu) ; DB
      `CITY_WATCH_RESETS 1→0`, persisté. Pilote DEV `expreset [diff]`.
-7. ⬜ **Récompenses / coffres** : `createRewards`/`openChest` (coffres d'expédition, epic chips → héros).
+7. ✅ **Coffres d'expédition — LIVRÉ + VÉRIFIÉ EN JEU (g95)** : `OpenExpeditionChest`. Un coffre est disponible **tous
+   les 3 nœuds** vaincus (5 coffres pour 15 nœuds = les 5 RÉGIONS de la carte CITY WATCH), ouverts **DANS L'ORDRE**.
+   Client-autoritatif : le client ouvre via `ExpeditionHelper.openChest` puis envoie `OpenExpeditionChest{rewardDrops,
+   specialEvents}` ; le serveur RÉ-EXÉCUTE l'autorité via la MÊME méthode du jeu (§3) `openChest(user, snap, difficulty,
+   nodesDefeated, chestsOpened, droppedEpicChips, null)`.
+   - **Gate DU JEU (bytecode)** : `nodesDefeated % 3 == 0` ET `chestsOpened == nodesDefeated/3 - 1` (sinon
+     `NO_AVAILABLE_EXPEDITION_CHEST`) → anti-triche (palier + ordre). Roule le butin (`rollExpeditionDrops`, graine
+     `EXPEDITION_CHEST`) + crédite (`giveRewards`) ; **7ᵉ arg = null** (comme le client → saute `compareDrops`, crédite
+     le butin serveur, pas de faux `INVALID_LOOT` ; cf. #25/§4bis). Incrémente `chestsOpened` (mirroir client).
+   - **epic chips** (`droppedEpicChips`, client-reportés PARTIEL §4bis) passés en contexte du tirage ; le crédit
+     hero-chip exact est ce que fait `rollExpeditionDrops`/`openChest`.
+   - `ExpeditionChestTest` : 5 coffres (1/3 nœuds) dans l'ordre, refus hors palier + double-ouverture, persistance DB.
+   - **✅ VÉRIFIÉ EN JEU (g95, TL100)** : compte à `nodesDefeated=3, chestsOpened=0` (outil DEV `ExpAdminClearNodes`) →
+     `nav EXPEDITION` → `expchest` (`ClientActionHelper.openExpeditionChest` réel) → `OpenExpeditionChest` → serveur
+     **`COFFRE ouvert → chestsOpened=1 [persisté]`** → DB confirmée (`chestsOpened=1`). Pilote DEV `expchest`.
 8. ⬜ **Vérif EN JEU complète** (solo, compte TL100) : difficulté → combat → récompenses → raid → reset.
 
 ## Notes §3/§4

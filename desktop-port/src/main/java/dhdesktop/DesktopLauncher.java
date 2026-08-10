@@ -424,6 +424,10 @@ public final class DesktopLauncher {
                     TutorialDriver.expRaid(game);
                     continue;
                 }
+                if (low.equals("expchest")) {                    // expchest — ouvre le coffre d'expédition → OpenExpeditionChest
+                    TutorialDriver.expChest(game);
+                    continue;
+                }
                 if (low.startsWith("expreset")) {                // expreset [diff] — RESET de l'expédition → ResetExpedition
                     String[] pr = ln.trim().split("[,;\\s]+");
                     int diff = pr.length >= 2 ? Integer.parseInt(pr[1].trim()) : 1;

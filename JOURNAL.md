@@ -3985,3 +3985,46 @@ y compris wards HARD+ sur un compte avancé).
 Fichiers : `server/java/dhserver/ServerExpedition.java`, `server/smoke/ExpeditionResetTest.java`,
 `server/smoke/regression.sh`, `desktop-port/src/main/java/dhdesktop/{TutorialDriver,DesktopLauncher}.java`,
 `docs/EXPEDITION.md`, `MEMORY.md`.
+
+---
+
+## 2026-08-10 (g95) — EXPEDITION (#72) incrément 7 : coffres ✅ VÉRIFIÉ EN JEU (+ CLAUDE.md)
+
+Les coffres d'expédition (`OpenExpeditionChest`). Un coffre est disponible tous les 3 nœuds vaincus (5 coffres pour
+15 nœuds = les 5 RÉGIONS de la carte CITY WATCH), ouverts DANS L'ORDRE.
+
+**Recon (bytecode).** `OpenExpeditionChest{rewardDrops, specialEvents}`. Client (`ClientActionHelper.
+openExpeditionChest`) : appelle `ExpeditionHelper.openChest(user, snap, difficulty, nodesDefeated, chestsOpened,
+droppedEpicChips, null)`, incrémente `chestsOpened`, envoie `OpenExpeditionChest{rewardDrops=<résultat>}`. `openChest`
+(AUTORITATIF, §3) : gate `if (nodesDefeated % 3 != 0) throw NO_AVAILABLE` ; `chestIndex = nodesDefeated/3 - 1` ;
+`if (chestsOpened != chestIndex) throw NO_AVAILABLE` (ordre) ; `rollExpeditionDrops(user, getRandom(EXPEDITION_CHEST),
+difficulty, chestIndex, droppedEpicChips, snap)` ; `if (rewardsClient != null && !compareDrops) throw INVALID_LOOT` ;
+`giveRewards`.
+
+**Serveur (`ServerExpedition.recordOpenChest`).** Ré-exécute `openChest(user, NONE, difficulty, nodesDefeated,
+chestsOpened, droppedEpicChips, null)` — **7ᵉ arg null** (comme le client : `aload 6 ifnull → saute compareDrops`) →
+crédite le butin SERVEUR sans faux rejet INVALID_LOOT (cf. #25/§4bis). Catch `Throwable` (distingue l'anti-triche
+`ClientErrorCodeException` par `instanceof`). Incrémente `run.chestsOpened` (mirroir client). Persiste.
+
+**Test `ExpeditionChestTest`.** 5 coffres (1 tous les 3 nœuds) ouverts dans l'ordre ; refus avant le 1ᵉʳ palier +
+double-ouverture au même palier (NO_AVAILABLE) ; persistance DB ; refus sans run. Régression → **104 tests**.
+
+**✅ VÉRIFIÉ EN JEU (compte id=1 TL100).** Compte préparé à `nodesDefeated=3, chestsOpened=0` (outil DEV
+`ExpAdminClearNodes` : reset + 3 nœuds vaincus → un coffre disponible). `nav EXPEDITION` → `GetExpeditionResponse
+(expeditionID=8)` → `expchest` (chemin client réel `ClientActionHelper.openExpeditionChest(NONE, null)`) →
+`OpenExpeditionChest` → serveur **`COFFRE ouvert → chestsOpened=1 [persisté]`**. DB confirmée : `chestsOpened=1`,
+`nodesDefeated=3`.
+
+Pilote DEV `expchest` ; outil DEV `ExpAdminClearNodes`.
+
+**CLAUDE.md** créé (demande `/init`) : point d'entrée concis pour toute session (procédure de reprise, règles §1-§8,
+commandes build/test/run + lancement en jeu + contrainte sleep bloqué, pilotage B-bis, architecture big-picture,
+combat client-autoritatif) — pointe vers les docs détaillés sans les dupliquer.
+
+**RESTE EXPEDITION** : incr. 8 (vérif en jeu COMPLÈTE de bout en bout : difficulté → combat → coffres → raid → reset,
++ wards HARD+ sur un compte avancé). Les incréments 1-7 sont livrés ; 3/4/6/7 ✅ en jeu, 5 délivrance ✅ (effet HARD+
+différé), 1/2 ✅ en jeu (g79/g90).
+
+Fichiers : `server/java/dhserver/{ServerExpedition,LoginServer}.java`, `server/smoke/{ExpeditionChestTest,
+ExpAdminClearNodes}.java`, `server/smoke/regression.sh`, `desktop-port/src/main/java/dhdesktop/{TutorialDriver,
+DesktopLauncher}.java`, `docs/EXPEDITION.md`, `MEMORY.md`, `CLAUDE.md`.

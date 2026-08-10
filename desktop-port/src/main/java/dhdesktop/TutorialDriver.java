@@ -1046,6 +1046,22 @@ public final class TutorialDriver {
         } catch (Throwable t) { System.out.println("[expquick] échec: " + t); t.printStackTrace(); }
     }
 
+    /** DEV : OUVRE le coffre d'expédition disponible — chemin client réel
+     *  {@code ClientActionHelper.openExpeditionChest(NONE, null)} (exécute openChest localement + envoie
+     *  {@code OpenExpeditionChest} ; le serveur ré-exécute l'autorité). Nécessite un coffre disponible (tous les 3
+     *  nœuds). Invoqué via "expchest". */
+    public static void expChest(GameMain game) {
+        try {
+            com.perblue.heroes.game.objects.ExpeditionClientData exp = game.getExpeditionData();
+            if (exp != null && exp.getData() != null)
+                System.out.println("[expchest] nodesDefeated=" + exp.getData().nodesDefeated
+                    + " chestsOpened=" + exp.getData().chestsOpened);
+            com.perblue.heroes.game.ClientActionHelper.openExpeditionChest(
+                com.perblue.heroes.game.specialevent.SpecialEventSnapshot.NONE, null);
+            System.out.println("[expchest] openExpeditionChest → OpenExpeditionChest envoyé [chemin réel]");
+        } catch (Throwable t) { System.out.println("[expchest] échec: " + t); t.printStackTrace(); }
+    }
+
     /** DEV : RELANCE l'expédition (reset) à la difficulté donnée — chemin client réel
      *  {@code ClientExpeditionHelper.resetExpedition(difficulty, NONE)} (construit + envoie {@code ResetExpedition} ;
      *  le serveur consomme un reset gratuit via chargeForReset et régénère le run). Invoqué via "expreset [diff]". */
