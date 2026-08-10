@@ -387,16 +387,27 @@ public final class ServerExpedition {
    * en plus de poser {@code getExpeditionData()} depuis {@code currentExpedition}). Répondre un {@code GetExpeditionResponse}
    * peuplerait bien la carte mais SAUTERAIT ce nettoyage (incorrect sur un 2ᵉ run) → on renvoie le bon type (§3).
    *
-   * <p>{@code resetsDone} (compteur de resets) et {@code eventExtraResets} = incrément 6 (économie de reset) : baseline
-   * sûre (0 / liste vide) pour le 1ᵉʳ run — {@code firstEverReset} n'en consomme aucun.
+   * <p><b>Incr. 6 (économie de reset)</b> : {@code resetsDone} = nombre de resets d'expédition faits AUJOURD'HUI, lu
+   * via la logique du jeu {@code DailyActivityHelper.getDailyUses(user, "EXPEDITION RESET", …)} (activité incrémentée
+   * par {@code chargeForReset.incDailyUses}). Le 1ᵉʳ run ({@code firstEverReset}) n'en consomme aucun. {@code
+   * eventExtraResets} = resets bonus d'évènement (aucun headless → liste vide).
    */
   public static com.perblue.heroes.network.messages.ResetExpeditionResponse resetResponse(ServerUser su, ExpeditionRunData run) {
     com.perblue.heroes.network.messages.ResetExpeditionResponse r =
         new com.perblue.heroes.network.messages.ResetExpeditionResponse();
     r.expeditionID = su.expeditionIDPersisted();
     r.currentExpedition = run != null ? run : new ExpeditionRunData();
-    r.resetsDone = 0;
+    r.resetsDone = resetsDoneToday(su.gameUser());
     r.eventExtraResets = new ArrayList<>();
     return r;
+  }
+
+  /** Nombre de resets d'expédition faits aujourd'hui (activité quotidienne du jeu « EXPEDITION RESET »). */
+  public static int resetsDoneToday(User user) {
+    try {
+      String activity = com.perblue.heroes.network.messages.GameMode.EXPEDITION.name() + " RESET";
+      return com.perblue.heroes.game.logic.DailyActivityHelper.getDailyUses(
+          user, activity, com.perblue.heroes.game.specialevent.SpecialEventSnapshot.NONE);
+    } catch (Throwable t) { return 0; }
   }
 }
