@@ -1795,6 +1795,15 @@ public final class LoginServer {
               c.send(reply);
               System.out.println("[login] <== GetUserChallengeDataExtra(" + gq.targetUserID
                   + ") → ==> UserChallengeDataExtra (" + (reply.slots == null ? 0 : reply.slots.size()) + " slots)");
+            } else if (m instanceof com.perblue.heroes.network.messages.GetExpedition) {
+              // EXPEDITION #72 incr. 1 — OUVERTURE de l'écran : le client (GameMain) envoie GetExpedition, le serveur
+              // répond GetExpeditionResponse (patron GetSurge). État FRAIS (aucun run actif) → sélection de difficulté.
+              // Gate Unlockable.EXPEDITION (TL25) = verrou CLIENT ; le serveur répond, ne désactive rien.
+              com.perblue.heroes.network.messages.GetExpeditionResponse er = ServerExpedition.response(user);
+              er.setAsReplyTo(m);
+              c.send(er);
+              System.out.println("[login] <== GetExpedition → ==> GetExpeditionResponse (expeditionID=" + er.expeditionID
+                  + ", run=" + (er.currentExpedition == null ? "aucun" : "actif") + ")");
             } else if (m instanceof com.perblue.heroes.network.messages.GetSurge) {
               // SURGE #72 — OUVERTURE de l'écran : le client (GameMain) envoie GetSurge, le serveur renvoie l'état
               // PARTAGÉ de la guilde (ServerSurgeState, reconstruit si nouveau surge). GetSurge → SurgeData

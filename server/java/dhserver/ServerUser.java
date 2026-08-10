@@ -299,6 +299,11 @@ public final class ServerUser {
   }
   public synchronized int expLootPoolPersisted() { return individualUserExtra.expLootPool; }
 
+  /** EXPEDITION #72 — ID d'expédition PERSISTÉ ({@code individualUserExtra.expeditionID}, seul champ d'expédition dans
+   *  l'extra ; le run est un état serveur). Package-private : {@link ServerExpedition}. */
+  synchronized long expeditionIDPersisted() { return individualUserExtra.expeditionID; }
+  synchronized void setExpeditionIDPersisted(long id) { individualUserExtra.expeditionID = id; }
+
   /** ARÈNE #41 — lineups persistées ({@code userExtra.heroLineups}), pour vérification (défense/attaque relues). */
   public synchronized java.util.List<com.perblue.heroes.network.messages.UserHeroLineupData> heroLineupsPersisted() {
     return userExtra.heroLineups == null
