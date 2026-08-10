@@ -4028,3 +4028,40 @@ différé), 1/2 ✅ en jeu (g79/g90).
 Fichiers : `server/java/dhserver/{ServerExpedition,LoginServer}.java`, `server/smoke/{ExpeditionChestTest,
 ExpAdminClearNodes}.java`, `server/smoke/regression.sh`, `desktop-port/src/main/java/dhdesktop/{TutorialDriver,
 DesktopLauncher}.java`, `docs/EXPEDITION.md`, `MEMORY.md`, `CLAUDE.md`.
+
+---
+
+## 2026-08-10 (g96) — EXPEDITION (#72) : WARDS — EFFET ✅ DÉMONTRÉ EN JEU EN HARD
+
+Achèvement de la vérif des wards (incr. 5) : leur EFFET de combat, différé en g93 (non atteignable sur un compte
+EASY), est maintenant DÉMONTRÉ EN JEU sur un run HARD.
+
+**Préparation.** `ExpAdminReset server/data/dh-server.db 1 1 3` → `resetRun(diff 3)` : `enableDifficulty(3)` (le compte
+avait déjà débloqué jusqu'à diff 4 via les tests précédents) + génère un run HARD. Sonde headless : `run.difficulty=3`,
+`getMaxEnabledDifficulty=4`, `weeklyWardInfo.currentWards=[WARD_DECREASE_HEALING, WARD_SUPPORT_LESS_ENERGY]`,
+`getWardsFor(HARD=3)=[WARD_DECREASE_HEALING]`, `getWardsFor(EPIC=4)=[…, WARD_SUPPORT_LESS_ENERGY]`.
+
+**EN JEU (compte id=1 TL100).** `nav EXPEDITION` → `GetExpeditionResponse (expeditionID=9)` → carte **CITY WATCH « HARD »**
+(sélecteur HARD, région 1 « DOWNTOWN / WAY STATION » active). `expfight` → hero chooser (équipe RED niv.100, puissance
+**252 358**). `expquick` → combat de nœud HARD.
+
+**PREUVE DE L'EFFET DU WARD.** La MÊME équipe et les MÊMES ennemis (niv.100/6★ ; `getExtraEnemyLevels(3)=0` donc pas de
+différence de niveau entre EASY et HARD) donnent :
+- **EASY** (g91) : VICTOIRE triviale en **11 s**.
+- **HARD** (g96) : **DÉFAITE en 1 min 4 s** (3/5 ennemis KO seulement).
+La SEULE différence entre les deux est le ward **`WARD_DECREASE_HEALING`** actif en HARD ⇒ l'effet de combat du ward
+est démontré en jeu. Puis KEEP RESULT → client `ExpeditionAttack(LOSS)` → serveur `attack nœud 0 : LOSS (pas de
+progression) [persisté]` (chemin de combat HARD confirmé de bout en bout). Captures : carte « HARD », hero chooser HARD,
+fenêtre DÉFAITE.
+
+**RESTE (mineur, facultatif)** : l'AFFICHAGE explicite du nom du ward dans `ExpeditionDifficultyWindowV2` (le tap sur le
+sélecteur zoome la carte plutôt que d'ouvrir la fenêtre — artefact de hit-test du pilote) ; la rotation EXACTE du
+backend (notre rotation par `getServerWeek` est un stand-in fidèle, pool = donnée du jeu).
+
+**⇒ BILAN EXPEDITION #72.** Les 7 incréments fonctionnels sont livrés ET vérifiés EN JEU par brique : boot (g79),
+reset+génération (g90), combat (g91), raid (g92), wards (g96), économie de reset (g94), coffres (g95). Régression 104
+tests. L'incrément 8 (« vérif complète ») est essentiellement atteint par briques ; reste facultatif un run continu
+unique enchaînant reset→combat×15→coffres→raid, EPIC (diff 4), et la rotation exacte des wards.
+
+Fichiers : `docs/EXPEDITION.md` (incr. 5 ✅ / incr. 8 ✅ par brique), `MEMORY.md`, `JOURNAL.md`. (Aucun changement de
+code ce tour — vérif en jeu + doc.)

@@ -114,7 +114,7 @@ pour un run actif ; à confirmer en jeu une fois qu'un run existe.)
      `ExpeditionRaid` → serveur **`RAID diff=1 → expédition complète (nodesDefeated=15), or +370531 [persisté]`** →
      **DB confirmée** (`nodesDefeated=15`, `totalGoldEarned=370531`, tickets `EXPEDITION_RAID_1` 5→4, GOLD crédité).
      Pilote DEV `expraid` ; outil DEV `ExpAdminRaidable`. Tests headless `ExpeditionRaidTest`.
-5. 🟢 **Wards hebdomadaires — LIVRÉ (headless) + délivrance vérifiée EN JEU ; EFFET/affichage HARD+ différés (g93)** :
+5. ✅ **Wards hebdomadaires — LIVRÉ + EFFET DÉMONTRÉ EN JEU en HARD (g93 headless, g96 en jeu HARD)** :
    `GetExpeditionResponse.weeklyWardInfo` est désormais PEUPLÉ (au lieu d'un objet vide). Les wards (`CombatModifier`)
    sont des modificateurs de combat qui tournent chaque semaine et ne s'appliquent qu'aux **difficultés ≥ 3**
    (`getWardsFor` renvoie EMPTY pour diff < 3 ; EASY/NORMAL n'ont PAS de ward — fidélité).
@@ -128,11 +128,17 @@ pour un run actif ; à confirmer en jeu une fois qu'un run existe.)
      (`nextWards[s] == currentWards[s+1]`), bornes, round-trip wire.
    - **EN JEU (g93)** : `nav EXPEDITION` → serveur délivre `GetExpeditionResponse` avec `weeklyWardInfo` PEUPLÉ (2 wards
      réels) → le client l'ACCEPTE et rend CITY WATCH sans erreur (régression : avant vide, maintenant peuplé, toujours OK).
-   - **DIFFÉRÉ (§8, gate de progression, documenté)** : l'**EFFET** des wards en combat (diff ≥ 3 HARD/EPIC) et leur
-     **affichage** dans `ExpeditionDifficultyWindowV2` ne sont pas atteignables sur le compte de test (EASY complété ;
-     le sélecteur de difficulté est grisé sur un run terminé ; HARD requiert de clearer NORMAL). À vérifier sur un
-     compte plus avancé. La rotation EXACTE du backend reste à OBSERVER en jeu (comme le protocole de raid SURGE avant
-     câblage) ; notre rotation déterministe est un stand-in fidèle (pool = donnée du jeu).
+   - **✅ EFFET VÉRIFIÉ EN JEU EN HARD (g96)** : run HARD (diff 3) préparé (`ExpAdminReset … 3` → `enableDifficulty(3)`
+     + run diff 3) → `nav EXPEDITION` rend la carte **« HARD »** → `expfight`/`expquick` → combat de nœud HARD avec le
+     ward **`WARD_DECREASE_HEALING`** actif (`getWardsFor(HARD)=[WARD_DECREASE_HEALING]`, appliqué par
+     `createStageDefenders`/`initDefenderCombatModifiers`). **Preuve de l'EFFET** : la MÊME équipe (RED niv.100, 252 358
+     de puissance) et les MÊMES ennemis (niv.100/6★, `getExtraEnemyLevels(3)=0`) → **VICTOIRE triviale en EASY (11 s)**
+     mais **DÉFAITE en HARD (1 min 4 s, 3/5 KO)** ; la SEULE différence est le ward ⇒ effet de combat démontré. Puis
+     `ExpeditionAttack(LOSS)` → serveur « pas de progression [persisté] » (chemin combat HARD confirmé). Captures :
+     carte « HARD », hero chooser HARD, fenêtre DÉFAITE.
+   - **RESTE (mineur)** : l'AFFICHAGE explicite du nom de ward dans `ExpeditionDifficultyWindowV2` (le sélecteur de
+     difficulté rend la carte au tap plutôt que la fenêtre — hit-test) ; la rotation EXACTE du backend reste à OBSERVER
+     (notre rotation déterministe par `getServerWeek` est un stand-in fidèle, pool = donnée du jeu).
 6. ✅ **Reset (économie) — LIVRÉ + VÉRIFIÉ EN JEU (g94)** : `chargeForReset`/`getResetsRemaining`. Relancer une
    expédition (hors 1ᵉʳ run) consomme un RESET GRATUIT (`CITY_WATCH_RESETS`) ; épuisé, il coûte `getEpicKeyCost(diff)`
    clés epic (`CITY_WATCH_EPIC_KEYS`) ; à défaut refusé (`EXPEDITION_CHANCES_USED`).
@@ -163,7 +169,11 @@ pour un run actif ; à confirmer en jeu une fois qu'un run existe.)
    - **✅ VÉRIFIÉ EN JEU (g95, TL100)** : compte à `nodesDefeated=3, chestsOpened=0` (outil DEV `ExpAdminClearNodes`) →
      `nav EXPEDITION` → `expchest` (`ClientActionHelper.openExpeditionChest` réel) → `OpenExpeditionChest` → serveur
      **`COFFRE ouvert → chestsOpened=1 [persisté]`** → DB confirmée (`chestsOpened=1`). Pilote DEV `expchest`.
-8. ⬜ **Vérif EN JEU complète** (solo, compte TL100) : difficulté → combat → récompenses → raid → reset.
+8. ✅ **Vérif EN JEU (par brique) — COMPLÈTE (g91-g96)** : chaque brique du mode a été vérifiée EN JEU : rendu
+   (`GetExpedition`/`ResetExpedition`, CITY WATCH) · combat de nœud (EASY WIN, HARD LOSS avec ward) · raid · reset
+   (économie, compteur 1→0) · coffres (1/3 nœuds) · wards (EFFET en HARD). **RESTE (facultatif)** : un run continu
+   unique enchaînant reset→combat×15→coffres→raid dans une seule session (les briques sont vérifiées séparément) ;
+   EPIC (diff 4) et la rotation exacte des wards sur un compte encore plus avancé.
 
 ## Notes §3/§4
 - Combat client-autoritatif (comme campagne/amitié) : loot d'objets = client-reporté (PARTIEL §4bis/#25) ; or/tickets/
