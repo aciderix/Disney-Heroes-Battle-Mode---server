@@ -1850,6 +1850,18 @@ public final class LoginServer {
                 System.out.println("[login]     ! persist expedition: " + e); } }
               System.out.println("[login] <== ExpeditionRaid : diff=" + er.difficulty
                   + (ok ? " → appliqué [persisté]" : " refusé"));
+            } else if (m instanceof com.perblue.heroes.network.messages.EnchantItem) {
+              // ENCHANTING #72 — enchantement d'équipement (message dédié). Le serveur ré-exécute l'autorité
+              // (EnchantingHelper.enchantItem : débit or/diamants + matériaux, montée d'enchant), persiste.
+              com.perblue.heroes.network.messages.EnchantItem ei =
+                  (com.perblue.heroes.network.messages.EnchantItem) m;
+              boolean ok;
+              try { ok = user.applyEnchantItem(ei); }
+              catch (Throwable t) { ok = false; System.out.println("[login]     ! EnchantItem: " + t); }
+              if (ok) { try { store.save(user); } catch (Exception e) {
+                System.out.println("[login]     ! persist enchant: " + e); } }
+              System.out.println("[login] <== EnchantItem : " + ei.hero + "/" + ei.slot
+                  + (ok ? " → appliqué [persisté]" : " refusé"));
             } else if (m instanceof com.perblue.heroes.network.messages.OpenExpeditionChest) {
               // EXPEDITION #72 incr. 7 — coffre d'expédition. Client-autoritatif : le client ouvre localement puis
               // envoie OpenExpeditionChest{rewardDrops} ; le serveur RÉ-EXÉCUTE l'autorité (openChest : roule + crédite).

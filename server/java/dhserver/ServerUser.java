@@ -1532,6 +1532,19 @@ public final class ServerUser {
     resyncHeroes(user);
   }
 
+  /** DEV — équipe l'ÉQUIPEMENT COMPLET du rang d'un héros ({@code HeroHelper.giveFullGear}) + persiste. Sert à
+   *  préparer un héros avec du gear ENCHANTABLE (les héros grantés n'ont pas de gear par défaut). */
+  public synchronized void debugGiveFullGear(com.perblue.heroes.network.messages.UnitType type) {
+    ServerContext.init();
+    User user = ClientNetworkStateConverter.getUser(userInfo, userExtra, "gear");
+    IndividualUser iu = ClientNetworkStateConverter.getIndividualUser(
+        individualUserExtra, userID, userInfo.diamonds, "gear");
+    ServerContext.bind(user, iu);
+    com.perblue.heroes.game.objects.IHero hero = user.getHero(type);
+    if (hero != null) com.perblue.heroes.game.logic.HeroHelper.giveFullGear(user, hero, true);
+    resyncHeroes(user);
+  }
+
   /**
    * Ouvre un coffre en <b>exécutant la logique du jeu</b> (docs/PRINCIPLES.md §3) : construit un
    * {@link User}/{@link IndividualUser} de jeu SUR nos objets wire (références partagées → la plupart
@@ -2333,6 +2346,44 @@ public final class ServerUser {
     }
     if (applied) { resyncHeroes(user); resyncDiamonds(user); resyncCounts(user); }
     return applied;
+  }
+
+  /**
+   * ENCHANTING #72 — enchante l'équipement d'un héros ({@code EnchantItem{hero, slot, itemsUsed, useDiamonds}},
+   * message DÉDIÉ). Le serveur RÉ-EXÉCUTE la logique d'origine (§3) {@code EnchantingHelper.enchantItem} : consomme
+   * les matériaux d'{@code itemsUsed}, débite l'OR ({@code getEnchantGoldCost}, lève {@code NOT_ENOUGH_GOLD}) + les
+   * DIAMANTS optionnels ({@code useDiamonds}), monte les étoiles/points d'enchant de l'objet (borné par
+   * {@code EnchantingStats.getMaxStars}). Anti-triche = les levées du jeu ({@code NOT_ENOUGH_GOLD}/{@code DONT_HAVE_ITEM}/
+   * plafond) → refus autoritatif. Persiste via {@code resyncHeroes} (l'objet vit sur le héros) + {@code resyncDiamonds}.
+   * Zéro invention (§4). Renvoie {@code true} si appliqué.
+   */
+  public synchronized boolean applyEnchantItem(com.perblue.heroes.network.messages.EnchantItem m) {
+    ServerContext.init();
+    if (m == null || m.hero == null || m.slot == null) return false;
+    User user = ClientNetworkStateConverter.getUser(userInfo, userExtra, "enchant");
+    IndividualUser iu = ClientNetworkStateConverter.getIndividualUser(
+        individualUserExtra, userID, userInfo.diamonds, "enchant");
+    ServerContext.bind(user, iu);
+    ServerContext.bindBattlePass(refreshBattlePass());
+    java.util.Map<?, ?> itemsUsed = m.itemsUsed != null ? m.itemsUsed : new java.util.HashMap<>();
+    long goldBefore = user.getResource(com.perblue.heroes.network.messages.ResourceType.GOLD);
+    long diaBefore = user.getResource(com.perblue.heroes.network.messages.ResourceType.DIAMONDS);
+    try {
+      com.perblue.heroes.game.logic.EnchantingHelper.enchantItem(
+          user, m.hero, m.slot, (java.util.Map) itemsUsed, m.useDiamonds,
+          com.perblue.heroes.game.specialevent.SpecialEventSnapshot.NONE);
+    } catch (Throwable t) {
+      boolean antiCheat = t instanceof com.perblue.heroes.ClientErrorCodeException;
+      System.out.println("[enchant] " + m.hero + "/" + m.slot
+          + (antiCheat ? " REFUSÉ (anti-triche)" : " échec") + " : " + t);
+      return false;
+    }
+    resyncHeroes(user); resyncDiamonds(user); resyncCounts(user);
+    long goldSpent = goldBefore - user.getResource(com.perblue.heroes.network.messages.ResourceType.GOLD);
+    long diaSpent = diaBefore - user.getResource(com.perblue.heroes.network.messages.ResourceType.DIAMONDS);
+    System.out.println("[enchant] " + m.hero + "/" + m.slot + " enchanté (or -" + goldSpent
+        + (diaSpent > 0 ? ", diamants -" + diaSpent : "") + ") [persisté]");
+    return true;
   }
 
   /**
