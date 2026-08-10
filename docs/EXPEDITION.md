@@ -133,7 +133,21 @@ pour un run actif ; à confirmer en jeu une fois qu'un run existe.)
      le sélecteur de difficulté est grisé sur un run terminé ; HARD requiert de clearer NORMAL). À vérifier sur un
      compte plus avancé. La rotation EXACTE du backend reste à OBSERVER en jeu (comme le protocole de raid SURGE avant
      câblage) ; notre rotation déterministe est un stand-in fidèle (pool = donnée du jeu).
-6. ⬜ **Reset** : `ResetExpedition` (`chargeForReset`, `getResetsRemaining`, resets hebdo).
+6. ✅ **Reset (économie) — LIVRÉ + VÉRIFIÉ EN JEU (g94)** : `chargeForReset`/`getResetsRemaining`. Relancer une
+   expédition (hors 1ᵉʳ run) consomme un RESET GRATUIT (`CITY_WATCH_RESETS`) ; épuisé, il coûte `getEpicKeyCost(diff)`
+   clés epic (`CITY_WATCH_EPIC_KEYS`) ; à défaut refusé (`EXPEDITION_CHANCES_USED`).
+   - **Barème DU JEU (§4, bytecode)** : `getResetsRemaining = max(CITY_WATCH_RESETS, quota quotidien)` ;
+     `getEpicKeyCost(diff)` = **0 pour diff 1-3**, **35 pour diff 4 (EPIC)**. ⇒ EASY (coût 0) : resets **limités** au
+     quota gratuit puis **refusés** (pas d'option payante) ; EPIC : payable en clés epic.
+   - `resetResponse.resetsDone` = `DailyActivityHelper.getDailyUses(user, "EXPEDITION RESET", …)` (compteur d'activité
+     quotidienne DU JEU ; ne compte pas les resets-ressource → peut être 0). `ServerExpedition.resetsDoneToday`.
+   - `ExpeditionResetTest` : barème epic (0 EASY / 35 EPIC) ; firstEver ne consomme rien ; reset EASY consomme le
+     gratuit puis refusé ; reset EPIC refusé sans clé puis payant (35→0) ; persistance DB.
+   - **✅ VÉRIFIÉ EN JEU (g94, TL100)** : run frais (`ExpAdminReset`, `CITY_WATCH_RESETS=1`) → `nav EXPEDITION` →
+     `expreset 1` (`ClientExpeditionHelper.resetExpedition` réel) → client `ResetExpedition(firstEver=false)` → serveur
+     `run généré 15 nœuds [persisté]` → réponse `ResetExpeditionResponse` → **carte fraîche rendue** (nœud 1 actif, 2-5
+     verrouillés) → **compteur de reset (coin sup. droit) 1 → 0** (reset gratuit consommé, visible en jeu) ; DB
+     `CITY_WATCH_RESETS 1→0`, persisté. Pilote DEV `expreset [diff]`.
 7. ⬜ **Récompenses / coffres** : `createRewards`/`openChest` (coffres d'expédition, epic chips → héros).
 8. ⬜ **Vérif EN JEU complète** (solo, compte TL100) : difficulté → combat → récompenses → raid → reset.
 

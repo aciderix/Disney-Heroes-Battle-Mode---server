@@ -1046,6 +1046,18 @@ public final class TutorialDriver {
         } catch (Throwable t) { System.out.println("[expquick] échec: " + t); t.printStackTrace(); }
     }
 
+    /** DEV : RELANCE l'expédition (reset) à la difficulté donnée — chemin client réel
+     *  {@code ClientExpeditionHelper.resetExpedition(difficulty, NONE)} (construit + envoie {@code ResetExpedition} ;
+     *  le serveur consomme un reset gratuit via chargeForReset et régénère le run). Invoqué via "expreset [diff]". */
+    public static void expReset(GameMain game, int difficulty) {
+        try {
+            System.out.println("[expreset] resetExpedition(diff=" + difficulty + ") …");
+            com.perblue.heroes.ui.expedition.ClientExpeditionHelper.resetExpedition(
+                difficulty, com.perblue.heroes.game.specialevent.SpecialEventSnapshot.NONE);
+            System.out.println("[expreset] ResetExpedition envoyé [chemin réel]");
+        } catch (Throwable t) { System.out.println("[expreset] échec: " + t); t.printStackTrace(); }
+    }
+
     /** DEV : déclenche un RAID d'expédition à la difficulté courante — chemin client réel
      *  {@code ExpeditionHelper.doRaidFromClient(user, difficulty, NONE)} (exécute doRaid localement + envoie
      *  {@code ExpeditionRaid} au serveur qui ré-exécute l'autorité). Nécessite une difficulté RAIDABLE + tickets.

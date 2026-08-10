@@ -3948,3 +3948,40 @@ OBSERVER en jeu (comme le protocole de raid SURGE avant câblage) — notre rota
 
 Fichiers : `server/java/dhserver/ServerExpedition.java`, `server/smoke/ExpeditionWardTest.java`,
 `server/smoke/regression.sh`, `docs/EXPEDITION.md`, `MEMORY.md`.
+
+---
+
+## 2026-08-10 (g94) — EXPEDITION (#72) incrément 6 : économie de reset ✅ VÉRIFIÉ EN JEU
+
+Relancer une expédition (hors 1ᵉʳ run) passe par `ExpeditionHelper.chargeForReset` (déjà appelé par
+`ServerExpedition.resetRun`) ; l'incrément documente/teste l'économie + expose `resetsDone`.
+
+**Barème DU JEU (§4, bytecode).** `getResetsRemaining(user, snap) = max(getResource(CITY_WATCH_RESETS),
+DailyActivityHelper.getRemainingDailyUses(user, "EXPEDITION RESET", snap))`. `chargeForReset` : si resets restants > 0
+→ consomme `CITY_WATCH_RESETS` (+`incDailyUses`) ; sinon paie `getEpicKeyCost(user, snap, diff)` clés
+`CITY_WATCH_EPIC_KEYS` ; à défaut lève `EXPEDITION_CHANCES_USED`. **`getEpicKeyCost(diff)` = 0 pour diff 1-3, 35 pour
+diff 4 (EPIC)** (relevé) ⇒ EASY (coût 0) : resets LIMITÉS au quota gratuit puis REFUSÉS (pas d'option payante) ; EPIC :
+payable en clés epic. `resetResponse.resetsDone = DailyActivityHelper.getDailyUses(user, "EXPEDITION RESET", snap)`
+(compteur d'activité quotidienne DU JEU ; ne compte pas les resets-ressource → peut rester 0). `ServerExpedition.
+resetsDoneToday(user)` exposé.
+
+**Test `ExpeditionResetTest`.** Barème epic (0 EASY / 35 EPIC) ; `firstEver` ne consomme rien ; reset EASY consomme le
+gratuit (`CITY_WATCH_RESETS` 1→0) puis REFUSÉ quand épuisé ; reset EPIC (diff 4) refusé sans clé puis PAYANT (35 clés
+→ 0) ; persistance DB. Régression → **103 tests**.
+
+**✅ VÉRIFIÉ EN JEU (compte id=1 TL100).** Run frais (`ExpAdminReset` → `CITY_WATCH_RESETS=1`, `getResetsRemaining=1`).
+`nav EXPEDITION` → `expreset 1` (chemin client réel `ClientExpeditionHelper.resetExpedition(1, NONE)`) → client
+`ResetExpedition(diff=1, firstEver=false)` → serveur `run généré 15 nœuds [persisté]` → réponse
+`ResetExpeditionResponse` (type dédié, handler client $55) → **carte fraîche rendue** (nœud 1 actif, 2-5 verrouillés) →
+**le compteur de reset en haut à droite passe de 1 à 0** (reset gratuit consommé, VISIBLE en jeu). DB confirmée :
+`CITY_WATCH_RESETS 1→0`, `getResetsRemaining=0`, persisté. Le chemin de REFUS (resets épuisés) est prouvé headless
+(EASY coût 0 → `EXPEDITION_CHANCES_USED`).
+
+Pilote DEV `expreset [diff]` (`TutorialDriver`+`DesktopLauncher`, chemin `ClientExpeditionHelper.resetExpedition` réel).
+
+**RESTE EXPEDITION** : incr. 7 (coffres / epic chips : `createRewards`/`openChest` → héros), 8 (vérif en jeu complète,
+y compris wards HARD+ sur un compte avancé).
+
+Fichiers : `server/java/dhserver/ServerExpedition.java`, `server/smoke/ExpeditionResetTest.java`,
+`server/smoke/regression.sh`, `desktop-port/src/main/java/dhdesktop/{TutorialDriver,DesktopLauncher}.java`,
+`docs/EXPEDITION.md`, `MEMORY.md`.

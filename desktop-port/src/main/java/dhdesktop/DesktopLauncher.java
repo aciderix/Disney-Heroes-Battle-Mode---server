@@ -424,6 +424,12 @@ public final class DesktopLauncher {
                     TutorialDriver.expRaid(game);
                     continue;
                 }
+                if (low.startsWith("expreset")) {                // expreset [diff] — RESET de l'expédition → ResetExpedition
+                    String[] pr = ln.trim().split("[,;\\s]+");
+                    int diff = pr.length >= 2 ? Integer.parseInt(pr[1].trim()) : 1;
+                    TutorialDriver.expReset(game, diff);
+                    continue;
+                }
                 if (low.equals("breakerdump")) {                 // breakerdump — dumper la BreakerQuest côté client
                     TutorialDriver.breakerDump(game);
                     continue;
