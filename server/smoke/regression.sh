@@ -40,7 +40,7 @@ TESTS=(
   SurgeScheduleTest SurgeStateTest SurgeCombatTest SurgeMapTest SurgeAttackFlowTest SurgeClaimTest SurgeRaidTest
   ChallengeBootTest ChallengeLoopTest ChallengeShopTest ChallengeViewTest
   FriendshipBootTest FriendshipShopTest FriendshipEmpowerTest FriendshipCampaignTest MissionLoopTest MissionSpeedupTest
-  ExpeditionBootTest ExpeditionCombatTest
+  ExpeditionBootTest ExpeditionCombatTest ExpeditionRaidTest
 )
 
 echo "[reg] compilation (serveur + ${#TESTS[@]} tests) ..."

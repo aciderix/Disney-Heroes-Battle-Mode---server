@@ -241,13 +241,72 @@ public final class ServerExpedition {
       if (run.droppedEpicChips == null) run.droppedEpicChips = new ArrayList<>();
       ((java.util.List<Object>) run.droppedEpicChips).add(m.epicChips);
     }
+    // PROGRESSION DE DIFFICULTÉ : au dernier nœud (run complet), le jeu ACTIVE la difficulté suivante (mirroir
+    // EXACT du client ExpeditionAttackScreen : `if (nodesDefeated >= 15) enableDifficulty(user, difficulty+1)`).
+    // Débloque la difficulté supérieure ET rend la difficulté courante RAIDABLE (isDifficultyRaidable, incr. 4).
+    if (run.nodesDefeated >= nodeCount()) {
+      try { com.perblue.heroes.game.logic.ExpeditionHelper.enableDifficulty(user, difficulty + 1); }
+      catch (Throwable t) { System.out.println("[expedition] enableDifficulty(" + (difficulty + 1) + "): " + t); }
+    }
 
     su.setExpeditionRun(run);
     su.resyncDiamonds(user);
     su.resyncHeroes(user);
     su.resyncCounts(user);
     System.out.println("[expedition] nœud " + node + " VAINCU → nodesDefeated=" + run.nodesDefeated
-        + ", or +" + goldGiven + " (total " + run.totalGoldEarned + ")");
+        + ", or +" + goldGiven + " (total " + run.totalGoldEarned + ")"
+        + (run.nodesDefeated >= nodeCount() ? " [EXPÉDITION COMPLÈTE → diff " + (difficulty + 1) + " activée]" : ""));
+    return true;
+  }
+
+  /**
+   * {@code ExpeditionRaid} — RAID (saute le combat, complète TOUTE l'expédition d'un coup). Client-autoritatif : le
+   * client exécute {@code doRaid} localement (se crédite le butin), avance son run et envoie {@code ExpeditionRaid{
+   * rewards, difficulty}}. Le serveur RÉ-EXÉCUTE l'autorité via la MÊME méthode du jeu (§3)
+   * {@code ExpeditionHelper.doRaid(user, difficulty, 1, snap, finisher, [])} : gate {@code isDifficultyRaidable}
+   * (anti-triche : refuse si la difficulté n'a pas été débloquée), DÉBITE le coût en tickets de raid
+   * ({@code getRaidCost}×{@code getRaidTicketType}, lève {@code DONT_HAVE_ITEM} si insuffisant → anti-triche),
+   * {@code chargeForReset}, crédite les récompenses de TOUS les nœuds ({@code createRewards} + drops/epic chips roulés),
+   * {@code incDailyUses}. Le {@code finisher} marque notre run persisté COMPLET. Renvoie {@code true} si appliqué.
+   */
+  public static boolean recordRaid(ServerUser su, com.perblue.heroes.network.messages.ExpeditionRaid m) {
+    ServerContext.init();
+    if (m == null) return false;
+    ExpeditionRunData run = su.expeditionRunOrNull();
+    if (run == null) { System.out.println("[expedition] raid refusé : aucun run actif"); return false; }
+    User user = su.gameUser();
+    final int difficulty = m.difficulty > 0 ? m.difficulty : run.difficulty;
+    final int nodes = nodeCount();
+    com.perblue.heroes.game.specialevent.SpecialEventSnapshot snap =
+        com.perblue.heroes.game.specialevent.SpecialEventSnapshot.NONE;
+    long goldBefore = user.getResource(com.perblue.heroes.network.messages.ResourceType.GOLD);
+    try {
+      // Finisher : marque le run COMPLET côté serveur (le client fait de même sur son ExpeditionClientData).
+      com.perblue.heroes.game.logic.ExpeditionHelper.ExpeditionFinisher finisher =
+          (numNodes, cost) -> { run.nodesDefeated = nodes; };
+      // doRaid(user, difficulté, nodesDefeated, snap, finisher, rewardsClient) — args EXACTS du client
+      // (doRaidFromClient) : 3e arg = progression courante (0 = run frais → pas de check reset/chargeForReset).
+      // 6e arg = liste des récompenses du client à COMPARER (anti-tamper → INVALID_LOOT si écart). Le client passe
+      // NULL (aload 5 ifnull → saute compareDrops) → le serveur ROULE et CRÉDITE son PROPRE butin autoritatif, sans
+      // rejet faux sur divergence RNG (même choix que le loot de campagne #25/§4bis). On passe donc null aussi.
+      // Lève ClientErrorCodeException (anti-triche) si non raidable / tickets insuffisants → on refuse proprement.
+      com.perblue.heroes.game.logic.ExpeditionHelper.doRaid(
+          user, difficulty, run.nodesDefeated, snap, finisher, null);
+    } catch (Throwable t) {
+      // doRaid lève ClientErrorCodeException (anti-triche : non raidable / tickets insuffisants / resets épuisés).
+      boolean antiCheat = t instanceof com.perblue.heroes.ClientErrorCodeException;
+      System.out.println("[expedition] raid " + (antiCheat ? "REFUSÉ (anti-triche)" : "échec") + " : " + t);
+      return false;
+    }
+    long goldGiven = user.getResource(com.perblue.heroes.network.messages.ResourceType.GOLD) - goldBefore;
+    run.nodesDefeated = nodes;
+    run.totalGoldEarned += goldGiven;
+    su.setExpeditionRun(run);
+    su.resyncDiamonds(user);
+    su.resyncHeroes(user);
+    su.resyncCounts(user);
+    System.out.println("[expedition] RAID diff=" + difficulty + " → expédition complète (nodesDefeated=" + nodes
+        + "), or +" + goldGiven);
     return true;
   }
 

@@ -1837,6 +1837,19 @@ public final class LoginServer {
                 System.out.println("[login]     ! persist expedition: " + e); } }
               System.out.println("[login] <== ExpeditionAttack : nœud=" + ea.nodeIndex + " outcome="
                   + (ea.base == null ? "?" : ea.base.outcome) + (ok ? " → appliqué [persisté]" : " refusé"));
+            } else if (m instanceof com.perblue.heroes.network.messages.ExpeditionRaid) {
+              // EXPEDITION #72 incr. 4 — RAID (saute le combat, complète toute l'expédition). Client-autoritatif :
+              // le client exécute doRaid localement puis envoie ExpeditionRaid{rewards, difficulty} ; le serveur
+              // RÉ-EXÉCUTE l'autorité (même doRaid : gate raidable, débit tickets, crédit tous nœuds, complétion).
+              com.perblue.heroes.network.messages.ExpeditionRaid er =
+                  (com.perblue.heroes.network.messages.ExpeditionRaid) m;
+              boolean ok;
+              try { ok = ServerExpedition.recordRaid(user, er); }
+              catch (Throwable t) { ok = false; System.out.println("[login]     ! ExpeditionRaid: " + t); }
+              if (ok) { try { store.save(user); } catch (Exception e) {
+                System.out.println("[login]     ! persist expedition: " + e); } }
+              System.out.println("[login] <== ExpeditionRaid : diff=" + er.difficulty
+                  + (ok ? " → appliqué [persisté]" : " refusé"));
             } else if (m instanceof com.perblue.heroes.network.messages.GetSurge) {
               // SURGE #72 — OUVERTURE de l'écran : le client (GameMain) envoie GetSurge, le serveur renvoie l'état
               // PARTAGÉ de la guilde (ServerSurgeState, reconstruit si nouveau surge). GetSurge → SurgeData
