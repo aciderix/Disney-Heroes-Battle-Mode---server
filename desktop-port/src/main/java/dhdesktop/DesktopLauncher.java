@@ -412,6 +412,14 @@ public final class DesktopLauncher {
                     TutorialDriver.surgeRaid(game);
                     continue;
                 }
+                if (low.equals("expfight")) {                    // expfight — ouvrir le hero chooser du nœud courant (EXPEDITION)
+                    TutorialDriver.expFight(game);
+                    continue;
+                }
+                if (low.equals("expquick")) {                    // expquick — quick fight du nœud → ExpeditionAttackScreen + ExpeditionAttack
+                    TutorialDriver.expQuick(game);
+                    continue;
+                }
                 if (low.equals("breakerdump")) {                 // breakerdump — dumper la BreakerQuest côté client
                     TutorialDriver.breakerDump(game);
                     continue;

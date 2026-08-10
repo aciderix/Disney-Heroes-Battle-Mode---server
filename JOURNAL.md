@@ -3800,3 +3800,62 @@ exacts, sélection de slot, `UpdateChallengeProgress`) est recommandée AVANT c�
 1 (livraison BootData) reste livré et testé (90/90). L'architecture est prête pour un câblage propre.
 
 Fichiers : `docs/CHALLENGES.md` (incr. 2 détaillé).
+
+---
+
+## 2026-08-10 (g91) — EXPEDITION (#72) incrément 3 : COMBAT de nœud ✅ VÉRIFIÉ EN JEU
+
+Reprise après compression (procédure complète : relecture MEMORY/PRINCIPLES/SHIMS/PROTOCOL/SERVER_PLAN/
+ARCHITECTURE/EXPEDITION + règles §1-§8 + commandes). Puis achèvement de la vérif EN JEU du combat de nœud
+d'expédition, qui plantait au client (`ExpeditionAttackScreen.createStageDefenders` : `IndexOutOfBounds`).
+
+**Diagnostic par SONDES HEADLESS PROFONDES.** `WireCheck.assertRoundTrips` ne vérifie que le TYPE relu, PAS la
+profondeur des `List` (angle mort) → écrit des sondes qui déballent `defenders[].lineup` et `nodeRewards` après
+round-trip codec ET après save/reload DB. Elles ont montré que le serveur envoyait bien 15 défenseurs qui
+survivaient au wire — mais avec **3 défauts** :
+
+1. **Étoiles ennemies invalides (cause du crash).** `buildDefenders` : `createAndAddHero(t, ORANGE, level, 1)`.
+   L'ordre des 2 entiers du jeu est **(ÉTOILES, NIVEAU)** (bytecode : `createUnitData` fait `setStars(a)`/
+   `setLevel(b)`, cf. `ServerUser.grantHero`) → ennemis à **140 étoiles / niveau 1**. Des étoiles > `getMaxStars`
+   (=6 à R102) plantent le client au rendu du combat (même famille que g55 `HasEnoughCollectionHeroes`).
+   Corrigé : `stars = UnitStats.getMaxStars(user)`, `level = base`.
+2. **`nodeRewards` VIDE → `IndexOutOfBounds` au 1ᵉʳ nœud.** `createStageDefenders` lit
+   `getExpeditionData().getData().nodeRewards.get(nodeIndex)` ET `defenders.get(nodeIndex)`. Le run n'avait pas de
+   `nodeRewards` tant qu'aucun nœud n'était gagné. Corrigé : **pré-génération au reset** via la méthode du jeu
+   `ExpeditionHelper.createRewards` (§3, 15 `NodeReward{OR}` — `getGold(node, TL)` × bonus VIP).
+3. **Niveau ennemi DOUBLÉ.** Le serveur envoyait `base + getExtraEnemyLevels`, or le **client** ajoute
+   `getExtraEnemyLevels(difficulty)` au combat (offset `setLevel(getLevel()+extra)`). Corrigé : le serveur envoie la
+   **BASE** (= niveau d'équipe du joueur ; EASY diff=1 ajoute 0, diff≥4 ajoute des niveaux).
+
+Autres correctifs (§3) : `ResetExpedition` répond désormais **`ResetExpeditionResponse`** (type DÉDIÉ ; le client a
+un handler propre `GameMain.lambda$setupPostClientInfoHandlers$55` qui fait le nettoyage de reset —
+`clearModePersistentData`/`clearMercenaryHero`/`clearKoHiredMercenaries`/`enableDifficulty`/`onExpeditionReset`),
+au lieu de `GetExpeditionResponse` qui sautait ce nettoyage ; crédit de nœud via `ExpeditionHelper.giveLoot(user,
+nodeReward, node, difficulty, snap)` (applique `modifyGoldForDifficulty` + objets/tickets) au lieu d'un crédit à la main.
+
+**Tests durcis** : `ExpeditionBootTest` (garde-fous : étoiles ennemies valides ≤ `getMaxStars`, niveau ≥ 1,
+`nodeRewards` pré-peuplé = un par nœud) ; `ExpeditionCombatTest` (`giveLoot` : nœud 0 +5157 or, nœud 1 +5573,
+`nodeRewards` reste pré-peuplé, persistance DB). Réponse au reset = `ResetExpeditionResponse` round-trip.
+
+**✅ VÉRIFIÉ EN JEU (compte id=1 TL100).** `nav EXPEDITION` → `GetExpedition → GetExpeditionResponse (15 nœuds)` →
+carte **CITY WATCH** rendue → `expfight` → écran **CHOOSE YOUR HEROES** (defenders=15, nodeRewards=15 côté client,
+**plus aucun crash `createStageDefenders`**) → `expquick` → **combat RENDU joué de bout en bout** → **DEFEAT** d'abord
+(roster de test niv.40-60 vs ennemis niv.100 désormais corrects) → `ExpeditionAttack(LOSS)` → serveur « pas de
+progression [persisté] ». Roster porté à niv.100 RED 6★ (outil DEV `ExpAdminBoost` — état de compte légitime, même
+esprit que `SetTeamLevel` ; le compte était TL100 mais héros sous-niveau) → **VICTORY 11s** → écran **REWARDS : LOOT
+5 157 or** → CONTINUE → `ExpeditionAttack(WIN)` → serveur **`nœud 0 VAINCU → nodesDefeated=1, or +5157 [persisté]`** →
+carte avancée au nœud suivant. **DB confirmée** (sonde) : `nodesDefeated=1`, `totalGoldEarned=5157`, GOLD crédité.
+
+Pilotes DEV ajoutés (`TutorialDriver`+`DesktopLauncher`) : `expfight` (pousse le vrai
+`ExpeditionHeroChooserScreen(node, NONE)`), `expquick` (`quickFightPressed` réel → `ExpeditionAttackScreen` + combat
++ `ExpeditionAttack`). Outils DEV : `ExpAdminReset` (régénère un run cassé par un ancien build), `ExpAdminBoost`
+(aligne le roster de test sur le TL). **NB** : `JOURNAL.md` était en retard (dernière entrée g73b) alors que le
+travail g74→g90 (CHALLENGES en jeu, FRIENDSHIPS, EXPEDITION incr.1-2) est dans `MEMORY.md`/`docs/*`.
+
+**RESTE EXPEDITION** : incr. 4 (raid `ExpeditionRaid`/`doRaidFromClient`), 5 (wards hebdo `ExpeditionWeeklyInfo`),
+6 (économie de reset `chargeForReset`/`getResetsRemaining`), 7 (coffres/epic chips `createRewards`/`openChest`),
+8 (vérif en jeu complète).
+
+Fichiers : `server/java/dhserver/{ServerExpedition,LoginServer}.java`, `server/smoke/{ExpeditionBootTest,
+ExpeditionCombatTest,ExpAdminReset,ExpAdminBoost}.java`, `desktop-port/src/main/java/dhdesktop/{TutorialDriver,
+DesktopLauncher}.java`, `docs/EXPEDITION.md`, `MEMORY.md`.

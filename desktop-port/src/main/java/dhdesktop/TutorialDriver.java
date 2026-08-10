@@ -1002,6 +1002,50 @@ public final class TutorialDriver {
         } catch (Throwable t) { System.out.println("[surgeraid] échec: " + t); }
     }
 
+    /** DEV : ouvre le HERO CHOOSER d'un nœud d'expédition (comme taper le nœud actif sur la carte CITY WATCH) —
+     *  pousse {@code ExpeditionHeroChooserScreen(nodeIndex, NONE)} (le VRAI écran du jeu). Le nœud = nombre de nœuds
+     *  déjà vaincus (nœud courant). Invoqué via "expfight". */
+    public static void expFight(GameMain game) {
+        try {
+            com.perblue.heroes.game.objects.ExpeditionClientData exp = game.getExpeditionData();
+            if (exp == null || exp.getData() == null) { System.out.println("[expfight] pas de getExpeditionData() (fais 'nav EXPEDITION' d'abord)"); return; }
+            int node = exp.getNodesDefeated();
+            java.util.List defs = exp.getData().defenders;
+            java.util.List nrs = exp.getData().nodeRewards;
+            System.out.println("[expfight] nœud courant=" + node + " defenders=" + (defs == null ? "null" : defs.size())
+                + " nodeRewards=" + (nrs == null ? "null" : nrs.size()));
+            com.perblue.heroes.ui.herochooser.ExpeditionHeroChooserScreen s =
+                new com.perblue.heroes.ui.herochooser.ExpeditionHeroChooserScreen(
+                    node, com.perblue.heroes.game.specialevent.SpecialEventSnapshot.NONE);
+            game.getScreenManager().pushScreen(s);
+            System.out.println("[expfight] ExpeditionHeroChooserScreen(node=" + node + ") poussé [chemin réel]");
+        } catch (Throwable t) { System.out.println("[expfight] échec: " + t); t.printStackTrace(); }
+    }
+
+    /** DEV : sur ExpeditionHeroChooserScreen, lance le QUICK FIGHT → {@code quickFightPressed()} construit
+     *  {@code ExpeditionAttackScreen} (→ createStageDefenders, l'ancien point de crash) puis résout le combat côté
+     *  client et envoie {@code ExpeditionAttack} au serveur (issue autoritative). Invoqué via "expquick". */
+    public static void expQuick(GameMain game) {
+        try {
+            Object screen = game.getScreenManager().getScreen();
+            if (screen == null || !screen.getClass().getSimpleName().contains("ExpeditionHeroChooser")) {
+                System.out.println("[expquick] écran courant = "
+                    + (screen == null ? "null" : screen.getClass().getSimpleName()) + " (pas ExpeditionHeroChooserScreen)"); return;
+            }
+            java.lang.reflect.Method gs = findMethod(screen, "getSelectedHeroes");
+            int sel = -1;
+            if (gs != null) { Object arr = gs.invoke(screen); try { sel = (Integer) arr.getClass().getField("size").get(arr); } catch (Throwable ig) {} }
+            java.lang.reflect.Method can = findMethod(screen, "canStartQuickFight");
+            boolean ready = can != null && Boolean.TRUE.equals(can.invoke(screen));
+            System.out.println("[expquick] heroesSélectionnés=" + sel + " canStartQuickFight=" + ready);
+            if (!ready) { System.out.println("[expquick] pas prêt (sélection incomplète / réponse pas encore là) — je réessaierai"); return; }
+            java.lang.reflect.Method qf = findMethod(screen, "quickFightPressed");
+            if (qf == null) { System.out.println("[expquick] quickFightPressed introuvable"); return; }
+            qf.invoke(screen);
+            System.out.println("[expquick] quickFightPressed() → ExpeditionAttackScreen + combat + ExpeditionAttack [chemin réel]");
+        } catch (Throwable t) { System.out.println("[expquick] échec: " + t); t.printStackTrace(); }
+    }
+
     /** DEV : envoie un message dans le CHAT de guilde (salon GUILD) — même chemin d'envoi que
      *  {@code ChatWindow.sendChatMessage} (construit un SendChat et l'envoie au serveur), en contournant le
      *  clavier virtuel. Le serveur renvoie le Chat autoritatif que la ChatWindow affiche. Invoqué via

@@ -67,8 +67,34 @@ pour un run actif ; à confirmer en jeu une fois qu'un run existe.)
      ville en 5 régions, nœuds 1-5 — nœud 1 actif/flèche, 2-5 verrouillés, tracker de manche). ⇒ génération + persistance
      (blob `expedition`, colonne ajoutée) OK bout-en-bout. **Calibration ennemis** (niveau/composition) à valider au 1ᵉʳ
      combat (incr. 3). NB : la rangée hub « CITY WATCH » = l'écran EXPEDITION (pas un vestige tuto).
-3. ⬜ **Combat de nœud** : `ExpeditionAttack` → re-exécution autoritative (patron `recordOutcome`) → progression
-   (`nodesDefeated`), récompenses de nœud (`giveLoot`/`NodeReward`), epic chips ; persistance.
+3. ✅ **Combat de nœud — LIVRÉ + VÉRIFIÉ EN JEU (g91)** : `ExpeditionAttack` → re-exécution autoritative → progression
+   (`nodesDefeated`), récompense de nœud créditée par la méthode du jeu `ExpeditionHelper.giveLoot` (OR mis à l'échelle
+   de la difficulté + objets), epic chips (client-reportés PARTIEL §4bis) ; persistance (blob).
+   - **⚠️ 3 défauts trouvés & corrigés (g91, via sondes headless PROFONDES — `WireCheck` ne vérifie que le TYPE, pas la
+     profondeur des `List` : angle mort)** :
+     1. **Étoiles ennemies invalides (CRASH client).** `buildDefenders` passait `createAndAddHero(type, rarity, level, 1)`
+        → l'ordre des 2 entiers est **(ÉTOILES, NIVEAU)** (bytecode `createUnitData` : `setStars(a)`/`setLevel(b)`) → ennemis
+        à **140 étoiles**/niv.1. Étoiles > `getMaxStars` (=6 R102) font planter le client au rendu du combat. Corrigé :
+        `stars = UnitStats.getMaxStars(user)`, `level = base`.
+     2. **`nodeRewards` VIDE → `IndexOutOfBounds` au 1ᵉʳ nœud EN JEU.** `ExpeditionAttackScreen.createStageDefenders` lit
+        `getExpeditionData().getData().nodeRewards.get(nodeIndex)` ET `defenders.get(nodeIndex)`. Le run n'avait pas de
+        `nodeRewards` avant la 1ʳᵉ victoire. Corrigé : **pré-génération au reset** via `ExpeditionHelper.createRewards`
+        (§3, 15 `NodeReward{OR}`).
+     3. **Niveau ennemi DOUBLÉ.** Le serveur envoyait `base+getExtraEnemyLevels`, or le **client ajoute**
+        `getExtraEnemyLevels(difficulty)` au combat. Corrigé : le serveur envoie la **BASE** (= TL du joueur ; EASY diff=1
+        ajoute 0), le client ajoute l'extra.
+   - **Réponse à `ResetExpedition`** = **`ResetExpeditionResponse`** (type DÉDIÉ → handler client `$55` :
+     `clearModePersistentData`/`clearMercenaryHero`/`enableDifficulty`/`onExpeditionReset`), au lieu de
+     `GetExpeditionResponse` qui sautait ce nettoyage (§3).
+   - **✅ VÉRIFIÉ EN JEU (g91, compte TL100)** : `nav EXPEDITION` → `GetExpeditionResponse (15 nœuds)` → carte **CITY WATCH**
+     → `expfight` → **CHOOSE YOUR HEROES** rend l'équipe (defenders=15, nodeRewards=15 côté client, **plus de crash**) →
+     `expquick` → **combat RENDU joué** (`createStageDefenders` OK) → **DEFEAT** d'abord (roster de test niv.40-60 vs
+     ennemis niv.100 corrects) → `ExpeditionAttack(LOSS)` → serveur « pas de progression [persisté] ». Puis roster porté
+     à niv.100 (outil DEV `ExpAdminBoost`, état de compte légitime comme `SetTeamLevel`) → **VICTORY** → écran **REWARDS
+     LOOT 5 157 or** → CONTINUE → `ExpeditionAttack(WIN)` → serveur **`nœud 0 VAINCU → nodesDefeated=1, or +5157 [persisté]`**
+     → **DB confirmée** (`nodesDefeated=1`, `totalGoldEarned=5157`, GOLD crédité) → la carte avance au nœud suivant.
+     Pilotes DEV : `expfight` (pousse `ExpeditionHeroChooserScreen(node, NONE)`), `expquick` (`quickFightPressed`) ;
+     outils DEV `ExpAdminReset`/`ExpAdminBoost`.
 4. ⬜ **Raid** : `ExpeditionRaid`/`doRaidFromClient` (saute le combat, débit coût, `getRaidTicketReward`).
 5. ⬜ **Wards hebdomadaires** : `ExpeditionWeeklyInfo` (currentWards/nextWards + calendrier de rotation) via les stats.
 6. ⬜ **Reset** : `ResetExpedition` (`chargeForReset`, `getResetsRemaining`, resets hebdo).
