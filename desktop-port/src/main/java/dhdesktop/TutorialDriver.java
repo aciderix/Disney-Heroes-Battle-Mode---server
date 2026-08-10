@@ -1046,6 +1046,24 @@ public final class TutorialDriver {
         } catch (Throwable t) { System.out.println("[expquick] échec: " + t); t.printStackTrace(); }
     }
 
+    /** DEV : déclenche un RAID d'expédition à la difficulté courante — chemin client réel
+     *  {@code ExpeditionHelper.doRaidFromClient(user, difficulty, NONE)} (exécute doRaid localement + envoie
+     *  {@code ExpeditionRaid} au serveur qui ré-exécute l'autorité). Nécessite une difficulté RAIDABLE + tickets.
+     *  Invoqué via "expraid". */
+    public static void expRaid(GameMain game) {
+        try {
+            com.perblue.heroes.game.objects.ExpeditionClientData exp = game.getExpeditionData();
+            if (exp == null || exp.getData() == null) { System.out.println("[expraid] pas de getExpeditionData() (fais 'nav EXPEDITION' d'abord)"); return; }
+            int diff = exp.getDifficulty();
+            boolean raidable = com.perblue.heroes.game.logic.ExpeditionHelper.isDifficultyRaidable(game.getYourUser(), diff);
+            System.out.println("[expraid] difficulté=" + diff + " raidable=" + raidable);
+            if (!raidable) { System.out.println("[expraid] difficulté non raidable (clear complet requis) — abandon"); return; }
+            com.perblue.heroes.game.logic.ExpeditionHelper.doRaidFromClient(
+                game.getYourUser(), diff, com.perblue.heroes.game.specialevent.SpecialEventSnapshot.NONE);
+            System.out.println("[expraid] doRaidFromClient(diff=" + diff + ") → ExpeditionRaid envoyé [chemin réel]");
+        } catch (Throwable t) { System.out.println("[expraid] échec: " + t); t.printStackTrace(); }
+    }
+
     /** DEV : envoie un message dans le CHAT de guilde (salon GUILD) — même chemin d'envoi que
      *  {@code ChatWindow.sendChatMessage} (construit un SendChat et l'envoie au serveur), en contournant le
      *  clavier virtuel. Le serveur renvoie le Chat autoritatif que la ChatWindow affiche. Invoqué via

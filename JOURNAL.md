@@ -3859,3 +3859,49 @@ travail g74→g90 (CHALLENGES en jeu, FRIENDSHIPS, EXPEDITION incr.1-2) est dans
 Fichiers : `server/java/dhserver/{ServerExpedition,LoginServer}.java`, `server/smoke/{ExpeditionBootTest,
 ExpeditionCombatTest,ExpAdminReset,ExpAdminBoost}.java`, `desktop-port/src/main/java/dhdesktop/{TutorialDriver,
 DesktopLauncher}.java`, `docs/EXPEDITION.md`, `MEMORY.md`.
+
+---
+
+## 2026-08-10 (g92) — EXPEDITION (#72) incrément 4 : RAID ✅ VÉRIFIÉ EN JEU
+
+Le RAID complète toute l'expédition d'un coup (saute le combat). Client-autoritatif : le client exécute
+`ExpeditionHelper.doRaidFromClient` (→ `doRaid` local, se crédite le butin) puis envoie `ExpeditionRaid{rewards,
+difficulty}` ; le serveur RÉ-EXÉCUTE l'autorité.
+
+**Recon (bytecode).** `ExpeditionRaid{difficulty, rewards, specialEvents}` ; pas de `ExpeditionRaidResponse` dédié.
+`doRaidFromClient(user, difficulty, snap)` appelle `doRaid(user, difficulty, nodesDefeated, snap, finisher, null)` et
+envoie l'`ExpeditionRaid`. `doRaid` (méthode AUTORITATIVE, §3) : gate `isDifficultyRaidable` (sinon
+`COMPLETE_PREVIOUS_EXPEDITION_FIRST`) ; si `nodesDefeated>0` vérifie `getResetsRemaining` + `chargeForReset` ; débite
+`getRaidCost`×`getRaidTicketType` tickets (lève `DONT_HAVE_ITEM`) ; `createRewards` (15 nœuds) + `rollExpeditionDrops`
+/`rollEpicChipsForRound` → merge ; `if (rewardsClient != null && !compareDrops) throw INVALID_LOOT` (anti-tamper) ;
+`giveRewards` ; `finisher.finishExpedition(nbNœuds, coût)` ; `incDailyUses`.
+
+**Serveur (`ServerExpedition.recordRaid`).** Appelle `doRaid(user, difficulty, run.nodesDefeated, snap, finisher,
+null)` — `finisher` pose `run.nodesDefeated = 15`. **6ᵉ arg = null** (EXACTEMENT comme le client : `aload 5 ifnull →
+saute compareDrops`) → le serveur roule et crédite son PROPRE butin sans faux rejet `INVALID_LOOT` sur divergence RNG
+(même décision que le loot campagne #25/§4bis). Catch `Throwable` (ClientErrorCodeException est CHECKED côté javac et
+non déclarée par `doRaid` — on distingue l'anti-triche par `instanceof`). Persiste (`setExpeditionRun`+resyncs).
+
+**Progression de difficulté (mirroir client).** `recordAttack` : au dernier nœud (`nodesDefeated == nodeCount`),
+`enableDifficulty(user, difficulty+1)` — le client fait EXACTEMENT `if (nodesDefeated >= 15) enableDifficulty(diff+1)`
+(bytecode `ExpeditionAttackScreen`). Débloque la difficulté supérieure ET rend la courante RAIDABLE.
+
+**Test `ExpeditionRaidTest` (progression RÉELLE).** Raid refusé avant clear (anti-triche) → clear des 15 nœuds
+(FIGHT) → diff 1 devient raidable → raid diff 1 : run complet, or crédité, 1 ticket débité → raid sans ticket refusé
+(`DONT_HAVE_ITEM`) → persistance DB. Régression → **101 tests**.
+
+**✅ VÉRIFIÉ EN JEU (compte id=1 TL100).** Compte rendu raidable par l'outil DEV `ExpAdminRaidable` (clear RÉEL des 15
+nœuds via `recordAttack` → `enableDifficulty(2)` → diff 1 raidable, persisté ; + 5 tickets `EXPEDITION_RAID_1`, run
+frais). `nav EXPEDITION` → `GetExpeditionResponse (expeditionID=5, 15 nœuds)` → carte CITY WATCH → `expraid`
+(`doRaidFromClient(diff=1)` réel) → `ExpeditionRaid` → serveur **`RAID diff=1 → expédition complète (nodesDefeated=15),
+or +370531 [persisté]`**. **DB confirmée** (sonde) : `nodesDefeated=15`, `totalGoldEarned=370531`, tickets
+`EXPEDITION_RAID_1` 5→4, GOLD crédité.
+
+Pilote DEV `expraid` (`TutorialDriver`+`DesktopLauncher`, chemin `doRaidFromClient` réel). Outil DEV `ExpAdminRaidable`.
+
+**RESTE EXPEDITION** : incr. 5 (wards hebdo `ExpeditionWeeklyInfo` : currentWards/nextWards + calendrier de rotation),
+6 (économie de reset `chargeForReset`/`getResetsRemaining`), 7 (coffres/epic chips `openChest`), 8 (vérif en jeu complète).
+
+Fichiers : `server/java/dhserver/{ServerExpedition,LoginServer}.java`, `server/smoke/{ExpeditionRaidTest,
+ExpAdminRaidable}.java`, `server/smoke/regression.sh`, `desktop-port/src/main/java/dhdesktop/{TutorialDriver,
+DesktopLauncher}.java`, `docs/EXPEDITION.md`, `MEMORY.md`.

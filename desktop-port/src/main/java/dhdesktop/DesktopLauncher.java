@@ -420,6 +420,10 @@ public final class DesktopLauncher {
                     TutorialDriver.expQuick(game);
                     continue;
                 }
+                if (low.equals("expraid")) {                     // expraid — RAID de l'expédition → ExpeditionRaid
+                    TutorialDriver.expRaid(game);
+                    continue;
+                }
                 if (low.equals("breakerdump")) {                 // breakerdump — dumper la BreakerQuest côté client
                     TutorialDriver.breakerDump(game);
                     continue;

@@ -95,7 +95,25 @@ pour un run actif ; à confirmer en jeu une fois qu'un run existe.)
      → **DB confirmée** (`nodesDefeated=1`, `totalGoldEarned=5157`, GOLD crédité) → la carte avance au nœud suivant.
      Pilotes DEV : `expfight` (pousse `ExpeditionHeroChooserScreen(node, NONE)`), `expquick` (`quickFightPressed`) ;
      outils DEV `ExpAdminReset`/`ExpAdminBoost`.
-4. ⬜ **Raid** : `ExpeditionRaid`/`doRaidFromClient` (saute le combat, débit coût, `getRaidTicketReward`).
+4. ✅ **Raid — LIVRÉ + VÉRIFIÉ EN JEU (g92)** : `ExpeditionRaid` (saute le combat, complète TOUTE l'expédition d'un
+   coup). Client-autoritatif : le client exécute `doRaidFromClient` (→ `doRaid` local) puis envoie `ExpeditionRaid{
+   rewards, difficulty}` ; le serveur RÉ-EXÉCUTE l'autorité via la MÊME méthode du jeu (§3) `ExpeditionHelper.doRaid(
+   user, difficulty, nodesDefeated, snap, finisher, null)`.
+   - **Gate `isDifficultyRaidable`** (anti-triche) : refuse tant que la difficulté n'a pas été CLEARÉE une fois
+     (`getRawMaxEnabledDifficulty > diff` ; sinon `COMPLETE_PREVIOUS_EXPEDITION_FIRST`). ⇒ **`recordAttack` active
+     désormais la difficulté suivante au clear complet** (`nodesDefeated == 15 → enableDifficulty(diff+1)`, mirroir
+     EXACT du client `ExpeditionAttackScreen`).
+   - **Débit du coût en tickets de raid** : `getRaidCost(user, diff)` × `getRaidTicketType(diff)` (diff 1 → 1 ×
+     `EXPEDITION_RAID_1` ; lève `DONT_HAVE_ITEM` si insuffisant → anti-triche).
+   - **Crédit de TOUS les nœuds** (`createRewards` + drops/epic chips roulés → `giveRewards`), `chargeForReset`,
+     `incDailyUses` ; le `finisher` marque le run persisté COMPLET.
+   - **6ᵉ arg = `null`** (comme le client : `aload 5 ifnull → saute compareDrops`) → le serveur ROULE et CRÉDITE son
+     PROPRE butin, sans faux rejet `INVALID_LOOT` sur divergence RNG (même choix que le loot campagne #25/§4bis).
+   - **✅ VÉRIFIÉ EN JEU (g92, TL100)** : compte rendu raidable (outil DEV `ExpAdminRaidable` : clear réel des 15 nœuds
+     → `enableDifficulty(2)` → diff 1 raidable ; + 5 tickets) → `nav EXPEDITION` → `expraid` (`doRaidFromClient` réel) →
+     `ExpeditionRaid` → serveur **`RAID diff=1 → expédition complète (nodesDefeated=15), or +370531 [persisté]`** →
+     **DB confirmée** (`nodesDefeated=15`, `totalGoldEarned=370531`, tickets `EXPEDITION_RAID_1` 5→4, GOLD crédité).
+     Pilote DEV `expraid` ; outil DEV `ExpAdminRaidable`. Tests headless `ExpeditionRaidTest`.
 5. ⬜ **Wards hebdomadaires** : `ExpeditionWeeklyInfo` (currentWards/nextWards + calendrier de rotation) via les stats.
 6. ⬜ **Reset** : `ResetExpedition` (`chargeForReset`, `getResetsRemaining`, resets hebdo).
 7. ⬜ **Récompenses / coffres** : `createRewards`/`openChest` (coffres d'expédition, epic chips → héros).
