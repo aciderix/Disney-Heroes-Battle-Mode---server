@@ -1046,6 +1046,29 @@ public final class TutorialDriver {
         } catch (Throwable t) { System.out.println("[expquick] échec: " + t); t.printStackTrace(); }
     }
 
+    /** DEV : ENCHANTE l'équipement d'un héros — chemin client réel
+     *  {@code ClientActionHelper.enchantItem(hero, slot, {mat:count}, false, NONE, null)} (exécute enchantItem
+     *  localement + envoie {@code EnchantItem} ; le serveur ré-exécute l'autorité). Invoqué via
+     *  "enchant &lt;HERO&gt; &lt;SLOT&gt; &lt;MATERIAL&gt; &lt;count&gt;". */
+    public static void enchant(GameMain game, String heroS, String slotS, String matS, int count) {
+        try {
+            com.perblue.heroes.network.messages.UnitType hero = com.perblue.heroes.network.messages.UnitType.valueOf(heroS);
+            com.perblue.heroes.network.messages.HeroEquipSlot slot = com.perblue.heroes.network.messages.HeroEquipSlot.valueOf(slotS);
+            com.perblue.heroes.network.messages.ItemType mat = com.perblue.heroes.network.messages.ItemType.valueOf(matS);
+            java.util.Map<com.perblue.heroes.network.messages.ItemType, Integer> used = new java.util.HashMap<>();
+            used.put(mat, count);
+            var it = game.getYourUser().getHero(hero).getItem(slot);
+            System.out.println("[enchant] " + hero + "/" + slot + " avant : item=" + (it == null ? "null" : it.getType())
+                + " étoiles=" + (it == null ? "?" : it.getStars()));
+            com.perblue.heroes.game.ActionListener noop = new com.perblue.heroes.game.ActionListener() {
+                public void onResult(boolean ok, Object o) { System.out.println("[enchant] onResult=" + ok); }
+            };
+            com.perblue.heroes.game.ClientActionHelper.enchantItem(
+                hero, slot, used, false, com.perblue.heroes.game.specialevent.SpecialEventSnapshot.NONE, noop);
+            System.out.println("[enchant] enchantItem(" + hero + "/" + slot + ", " + count + " " + mat + ") → EnchantItem envoyé [chemin réel]");
+        } catch (Throwable t) { System.out.println("[enchant] échec: " + t); t.printStackTrace(); }
+    }
+
     /** DEV : OUVRE le coffre d'expédition disponible — chemin client réel
      *  {@code ClientActionHelper.openExpeditionChest(NONE, null)} (exécute openChest localement + envoie
      *  {@code OpenExpeditionChest} ; le serveur ré-exécute l'autorité). Nécessite un coffre disponible (tous les 3

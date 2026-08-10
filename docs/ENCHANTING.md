@@ -34,11 +34,18 @@ points d'enchant** de l'objet → **bonus de stats**. Gaté **`Unlockable.ENCHAN
   write-through `resources`. Aucun blob dédié ni état backend à générer (contrairement aux wards/shop).
 
 ## Plan d'incréments
-1. ⬜ **Handler `EnchantItem` + `ServerEnchanting.applyEnchant`** : ré-exécute `EnchantingHelper.enchantItem`
-   (débite OR/diamants + matériaux, monte l'enchant), anti-triche = les levées du jeu (`NOT_ENOUGH_GOLD`,
-   `DONT_HAVE_ITEM`, plafond d'étoiles) → refus autoritatif propre ; persiste (`resyncHeroes`/`resyncDiamonds`/items).
-   Test `EnchantBootTest`/`EnchantApplyTest` (enchant d'un slot → étoiles/points montent, OR + matériaux débités,
-   round-trip **profond** + DB). **Vérif EN JEU** : HÉROS → détail → slot → ENCHANT → stats montées + coûts débités + persiste.
+1. ✅ **Handler `EnchantItem` + `ServerUser.applyEnchantItem` — LIVRÉ + VÉRIFIÉ EN JEU (g98)** : ré-exécute
+   `EnchantingHelper.enchantItem` (débite OR/diamants + matériaux, monte l'enchant), anti-triche = les levées du jeu
+   (`NOT_ENOUGH_GOLD`, `DONT_HAVE_ITEM`, plafond d'étoiles) → refus autoritatif propre ; persiste
+   (`resyncHeroes`/`resyncDiamonds`). DEV : `ServerUser.debugGiveFullGear` (`HeroHelper.giveFullGear`) pour équiper
+   du gear enchantable (les héros grantés n'ont pas de gear).
+   - `EnchantApplyTest` : slot ONE (PC_FLYERS ORANGE) enchanté avec 30 VOID_DUST → **étoiles 0→2**, **or −63000**
+     (coût exact `getEnchantGoldCost`), matériaux débités ; persistance **PROFONDE** (round-trip wire + DB — les étoiles
+     d'enchant sur l'objet du héros survivent) ; anti-triche sans or (`NOT_ENOUGH_GOLD`, pas de débit). Régression 105 tests.
+   - **✅ VÉRIFIÉ EN JEU (g98, compte TL100)** : compte préparé (`ExpAdminEnchant` : RALPH + gear complet + 50 VOID_DUST
+     + or) → `enchant RALPH ONE VOID_DUST 30` (chemin client réel `ClientActionHelper.enchantItem`) → client `EnchantItem`
+     → serveur **`RALPH/ONE enchanté (or -63000) [persisté]`** → **DB confirmée** : slot ONE PC_FLYERS **étoiles 0→2**,
+     VOID_DUST 50→20, or −63000. Pilote DEV `enchant <HERO> <SLOT> <MATERIAL> <count>`.
 2. ⬜ **Coûts & garde-fous** : vérifier `getEnchantGoldCost`/`getEnchantMaxDiamondCost` exacts + plafond d'étoiles par
    rareté (barème du jeu) ; cas diamants (`useDiamonds`) ; anti-triche (matériaux insuffisants / plafond atteint).
 3. ⬜ **Vérif EN JEU complète** (compte TL100) : enchanter plusieurs slots/raretés, y compris paiement diamants.

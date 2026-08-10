@@ -428,6 +428,13 @@ public final class DesktopLauncher {
                     TutorialDriver.expChest(game);
                     continue;
                 }
+                if (low.startsWith("enchant ")) {               // enchant <HERO> <SLOT> <MATERIAL> <count> → EnchantItem
+                    String[] en = ln.trim().split("[,;\\s]+");
+                    if (en.length >= 5) TutorialDriver.enchant(game, en[1].toUpperCase(), en[2].toUpperCase(),
+                        en[3].toUpperCase(), Integer.parseInt(en[4].trim()));
+                    else System.out.println("[enchant] usage: enchant <HERO> <SLOT> <MATERIAL> <count>");
+                    continue;
+                }
                 if (low.startsWith("expreset")) {                // expreset [diff] — RESET de l'expédition → ResetExpedition
                     String[] pr = ln.trim().split("[,;\\s]+");
                     int diff = pr.length >= 2 ? Integer.parseInt(pr[1].trim()) : 1;

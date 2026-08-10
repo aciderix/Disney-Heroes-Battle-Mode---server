@@ -4065,3 +4065,41 @@ unique enchaînant reset→combat×15→coffres→raid, EPIC (diff 4), et la rot
 
 Fichiers : `docs/EXPEDITION.md` (incr. 5 ✅ / incr. 8 ✅ par brique), `MEMORY.md`, `JOURNAL.md`. (Aucun changement de
 code ce tour — vérif en jeu + doc.)
+
+---
+
+## 2026-08-10 (g98) — ENCHANTING (#72) incrément 1 : enchantement d'équipement ✅ VÉRIFIÉ EN JEU
+
+Premier incrément du nouveau mode ENCHANTING (choisi g97). Message DÉDIÉ `EnchantItem{hero:UnitType,
+slot:HeroEquipSlot, itemsUsed:Map<ItemType,Integer>, useDiamonds:boolean, specialEvents}` → handler `LoginServer` →
+**`ServerUser.applyEnchantItem`** : ré-exécute la logique du jeu (§3) `EnchantingHelper.enchantItem(user, hero, slot,
+itemsUsed, useDiamonds, snap)` — consomme les matériaux, débite l'OR (`getEnchantGoldCost`, lève `NOT_ENOUGH_GOLD`) +
+DIAMANTS optionnels, monte les étoiles/points d'enchant de l'objet équipé (borné par `EnchantingStats.getMaxStars`).
+Anti-triche = les levées du jeu → refus autoritatif propre. Persistance `resyncHeroes` (l'enchant vit sur l'objet du
+héros) + `resyncDiamonds`. Zéro invention (§4).
+
+**Recon (bytecode).** Barème du jeu : `getMaxStars` par rareté (WHITE=0 non-enchantable, GREEN=1, BLUE=3,
+PURPLE/ORANGE/RED/YELLOW=5) ; matériaux `ENCHANTING_MATERIALS` (VOID_DUST/SHIMMER_DUST/PRIMAL_ESSENCE…) ;
+`getEnchantPoints(VOID_DUST)=10`. Les héros grantés n'ont PAS de gear → DEV `ServerUser.debugGiveFullGear`
+(`HeroHelper.giveFullGear`) équipe le gear ENCHANTABLE du rang (slot ONE = PC_FLYERS ORANGE 0/5, etc.).
+
+**Test `EnchantApplyTest`.** RALPH ORANGE + full gear + 40 VOID_DUST + or → enchant slot ONE avec 30 VOID_DUST →
+**étoiles 0→2**, **or −63000** (= `getEnchantGoldCost` exact), VOID_DUST 40→10 ; persistance **PROFONDE** (round-trip
+wire + DB : les étoiles d'enchant sur l'objet du héros survivent — leçon EXPEDITION : on vérifie le CONTENU, pas juste
+le type) ; anti-triche sans or (`NOT_ENOUGH_GOLD`, aucun débit de matériaux). Régression → **105 tests**.
+
+**✅ VÉRIFIÉ EN JEU (compte id=1 TL100).** `ExpAdminEnchant` prépare RALPH + gear complet + 50 VOID_DUST + 20 M or.
+`enchant RALPH ONE VOID_DUST 30` (chemin client réel `ClientActionHelper.enchantItem(hero, slot, {VOID_DUST:30}, false,
+NONE, listener)`) → client `EnchantItem` → serveur **`RALPH/ONE enchanté (or -63000) [persisté]`**. **DB confirmée** :
+slot ONE PC_FLYERS **étoiles 0→2**, VOID_DUST 50→20, or 20 000 000→19 937 000. (NB pilote : passer un `ActionListener`
+non-null — la 1ʳᵉ passe avec `null` a NPE côté client APRÈS l'envoi, sans empêcher l'application serveur ; corrigé.)
+
+Pilote DEV `enchant <HERO> <SLOT> <MATERIAL> <count>` (`ClientActionHelper.enchantItem` réel). Outil DEV
+`ExpAdminEnchant` (prépare un compte : héros + gear + matériaux + or).
+
+**RESTE ENCHANTING** : incr. 2 (garde-fous coûts/diamants/plafond d'étoiles par rareté), incr. 3 (vérif en jeu sur
+plusieurs slots/raretés + paiement diamants).
+
+Fichiers : `server/java/dhserver/{ServerUser,LoginServer}.java`, `server/smoke/{EnchantApplyTest,ExpAdminEnchant}.java`,
+`server/smoke/regression.sh`, `desktop-port/src/main/java/dhdesktop/{TutorialDriver,DesktopLauncher}.java`,
+`docs/ENCHANTING.md`, `MEMORY.md`.
