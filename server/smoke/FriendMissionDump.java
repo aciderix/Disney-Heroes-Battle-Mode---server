@@ -20,7 +20,10 @@ public final class FriendMissionDump {
     com.perblue.heroes.network.messages.FriendshipBattleInfo lb = gu.getIndividual().getFriendship(pair).getLastBattle();
     boolean fav = gu.getIndividual().isFavoriteFriendship(pair);
     long diamonds = gu.getResource(ResourceType.DIAMONDS);
+    int speedups = gu.getIndividual().getItemAmount(ItemType.MISSION_SPEEDUP);
+    int costLimit = gu.getIndividual().getMissionItemCostLimit(ItemType.STONE_VANELLOPE);
     store.close();
+    System.out.println("RESULT2 — MISSION_SPEEDUP=" + speedups + ", costLimit(STONE_VANELLOPE)=" + costLimit);
     System.out.println("RESULT OK — RALPH-VANELLOPE empowerment=" + emp + ", missions=" + miss
         + ", claimsEnAttente=" + claims + ", FRIEND_STAMINA=" + stamina + ", campaignProgress=" + camp
         + ", lastBattle=" + (lb == null ? "null" : ("{node=" + lb.node + " won=" + lb.won + "}"))

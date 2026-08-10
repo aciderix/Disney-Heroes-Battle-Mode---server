@@ -161,7 +161,15 @@ pas sur l'écran MISSIONS de 12.1.0 — à confirmer : legacy ou accessible aill
      **missions=0** (retirée par CANCEL), **claimsEnAttente=0**. Pilotes DEV ajoutés (chemin `ClientActionHelper` réel,
      méthode B-bis) : `missionadd`/`missionclaim`/`missioncancel`/`missiondump` ; outils DEV `MissionHurry` (avance les
      timers persistés) + `FriendMissionDump` (lecture état persisté).
-   - `SPEEDUP_MISSION`/`SET_MISSION_ITEM_COST_LIMIT` = à câbler si le flux en jeu les exerce (non bloquant, mêmes patrons).
+   - **SPEEDUP_MISSION + SET_MISSION_ITEM_COST_LIMIT — LIVRÉS (headless 99/99) + ✅ VÉRIFIÉS EN JEU (g88)** :
+     `SPEEDUP_MISSION{heroType=primary, itemType=MISSION_SPEEDUP, COUNT, TIME}` → serveur re-dérive `MissionSpeedupData`
+     (`MissionHelper.getSpeedupData`) puis `useSpeedups` (§3 ; lève si stock insuffisant = anti-triche) ;
+     `SET_MISSION_ITEM_COST_LIMIT{itemType, COUNT}` → `IndividualUser.setMissionItemCostLimit` (write-through, N=0 retire).
+     `MissionSpeedupTest` (cost-limit 3→persiste→0 ; speedup réduit le temps + consomme les objets + persiste).
+     **EN JEU** : pilotes `speedup RALPH VANELLOPE 5` → `SPEEDUP_MISSION(RALPH MISSION_SPEEDUP x5) appliqué [persisté]`
+     (baseTimeRemaining **216M→158M**) ; `costlimit STONE_VANELLOPE 3` → `SET_MISSION_ITEM_COST_LIMIT(STONE_VANELLOPE=3)
+     appliqué [persisté]` → **relu DB** : `MISSION_SPEEDUP 20→15 (−5)`, `costLimit(STONE_VANELLOPE)=3`. Pilotes DEV :
+     `speedup`/`costlimit`. **⇒ sous-système MISSIONS idle 100 % câblé et vérifié en jeu, aucun reste.**
 4. **Vérif EN JEU** : ✅ **missions idle (3c) faite (g85)** — ADD→(hurry)→CLAIM + CANCEL, tout persisté ; ✅ **empower
    (3a) faite (g86)** — vue disk + `EMPOWER_FRIENDSHIP` (empowerment 1→6, pierres −5, persisté). **Entrées UI localisées** :
    - **empower/disk** = HÉROS → détail héros → onglet **Friends** → amitié → vue GEAR (disque).
@@ -172,8 +180,9 @@ pas sur l'écran MISSIONS de 12.1.0 — à confirmer : legacy ou accessible aill
      initial) était FAUX — je n'avais testé que `navigateToFriendUI(CAMPAIGN)` (toast). La vraie entrée est l'onglet FRIENDS.
    - **favori/stamina (incr. 2)** : ✅ **VÉRIFIÉ EN JEU (g87)** — favori set+persisté ; achat stamina −50 diamants/+30
      énergie (après avoir mis l'énergie sous plafond).
-   ⇒ **FRIENDSHIPS #72 : 100 % VÉRIFIÉ EN JEU** (incr. 1, 2, 3a, 3b, 3c). Reste optionnel : `SPEEDUP_MISSION`/
-   `SET_MISSION_ITEM_COST_LIMIT`/`giveChapterRewards` si un flux en jeu les exerce (non bloquant, mêmes patrons).
+   ⇒ **FRIENDSHIPS #72 : 100 % VÉRIFIÉ EN JEU** (incr. 1, 2, 3a, 3b, 3c — y compris SPEEDUP_MISSION +
+   SET_MISSION_ITEM_COST_LIMIT, g88). **AUCUN reste** (seul `giveChapterRewards` = réclamation d'un chapitre COMPLET
+   d'amitié, à câbler si un jour on complète un chapitre entier en jeu — non bloquant, patron `recordOutcome`).
 
 ## Notes §3/§4
 - Persistance quasi-gratuite (état dans `individualUserExtra` write-through). Zéro invention : niveaux/récompenses/

@@ -1,5 +1,38 @@
 # JOURNAL — journal détaillé des modifications
 
+## 2026-08-10 (g88) — FRIENDSHIPS (#72) SPEEDUP_MISSION + SET_MISSION_ITEM_COST_LIMIT ✅ (headless + en jeu) + MàJ EXPLORATION
+
+Dernières actions QoL du sous-système MISSIONS idle, code du jeu (§3), zéro invention (§4).
+
+**SPEEDUP_MISSION** — accélère une mission idle en consommant des `MISSION_SPEEDUP`. Protocole (disasm
+`ClientActionHelper.speedupMission`) : `heroType=friendship.getPrimary()`, `itemType=MISSION_SPEEDUP`,
+`extra{COUNT=nb, TIME}`. Le client calcule un `MissionSpeedupData` mais le serveur ne lui fait PAS confiance : il
+**re-dérive** via `MissionHelper.getSpeedupData(user, mission, item, count, serverTimeNow())` puis exécute
+`useSpeedups` (lève `getNotEnoughResourceException` si stock insuffisant = anti-triche). `ServerMissions.applySpeedupMission`
+(find mission by hero → getSpeedupData → useSpeedups → resyncMissions + resyncs). 1 `MISSION_SPEEDUP` = 
+`MissionStats.getSpeedupDuration()` (=7 200 000 ms/2 h).
+
+**SET_MISSION_ITEM_COST_LIMIT** — plafond de dépense auto d'un objet en missions (préférence joueur). Protocole :
+`itemType=<objet>`, `extra{COUNT=plafond}` → `IndividualUser.setMissionItemCostLimit(item, N)` = écriture DIRECTE dans
+`individualUserExtra.missionItemCostLimits` (**write-through**, `N=0` retire l'entrée). `ServerMissions.applySetItemCostLimit`.
+
+Handlers `LoginServer` (SPEEDUP_MISSION / SET_MISSION_ITEM_COST_LIMIT). `MissionSpeedupTest` : cost-limit 3→persiste→0
+retire ; speedup réduit `baseTimeRemaining` (2.16E8→1.81E8) + consomme les objets (5→2) + persiste. **Régression 99/99**.
+
+**✅ VÉRIFIÉ EN JEU (userID=1, 20 MISSION_SPEEDUP semés)** : `nav MISSIONS` → `missionadd POWER_UP_MISSION RALPH VANELLOPE`
+→ `speedup RALPH VANELLOPE 5` (chemin réel) → serveur `<== SPEEDUP_MISSION(RALPH MISSION_SPEEDUP x5) appliqué [persisté]`
+(baseTimeRemaining **2.16E8→1.58E8**) ; `costlimit STONE_VANELLOPE 3` → `<== SET_MISSION_ITEM_COST_LIMIT(STONE_VANELLOPE=3)
+appliqué [persisté]`. **Relu en DB** : `MISSION_SPEEDUP 20→15 (−5)`, `costLimit(STONE_VANELLOPE)=3`. Pilotes DEV
+`speedup`/`costlimit` (chemin `ClientActionHelper` réel).
+
+**⇒ FRIENDSHIPS #72 : 100 % LIVRÉ ET VÉRIFIÉ EN JEU, AUCUN RESTE** (seul `giveChapterRewards` = réclamation d'un chapitre
+d'amitié COMPLET, à câbler si on complète un chapitre entier ; non bloquant).
+
+**MÀJ `docs/EXPLORATION.md`** (demande utilisateur) : rangées restées ⬜ alors que les modes étaient livrés+vérifiés en
+jeu → passées à ✅ : **CHALLENGES**, **SURGE**, **INVASION**, **FRIENDSHIPS**. Rangée **WAR** : trailing « vérification en
+jeu nulle » corrigé (affichage+cycle de vie ✅ en jeu depuis 2026-08-02 ; actions de jeu 🟢). Vrais ⬜ restants (candidats
+mode suivant) : SAVED_LINEUPS, EXPEDITION, COLLECTIONS, BLACK_MARKET, ENCHANTING, FRANCHISE/TEAM_TRIALS, PORT, WISHING_WELL.
+
 ## 2026-08-10 (g87) — FRIENDSHIPS (#72) incrément 2 (favori + stamina) ✅ vérifié EN JEU → FRIENDSHIPS 100 % en jeu
 
 Dernier maillon de la vérif en jeu de FRIENDSHIPS (client réel, userID=1 TL100).
