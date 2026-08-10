@@ -42,6 +42,10 @@ public final class UserStore implements AutoCloseable {
       // Challenges #72). NULL = état frais recréé au boot (aucun défi en cours). Un objet du jeu = une colonne.
       if (!columnExists(s, "users", "challengeData"))
         s.execute("ALTER TABLE users ADD COLUMN challengeData BLOB");
+      // Migration : colonne expedition (BLOB nullable = ExpeditionRunData sérialisé, mode Expédition #72).
+      // NULL = aucun run d'expédition (l'écran envoie ResetExpedition pour en générer un).
+      if (!columnExists(s, "users", "expedition"))
+        s.execute("ALTER TABLE users ADD COLUMN expedition BLOB");
       // ARÈNE #41 : classement (ladder) PERSISTANT par (shard, type). État opérateur partagé (pas de la donnée
       // de jeu), une ligne par ligue → survit aux redémarrages + cohérent multi-serveur (PRINCIPLES §5).
       s.execute("CREATE TABLE IF NOT EXISTS arena_ladder ("
@@ -417,7 +421,7 @@ public final class UserStore implements AutoCloseable {
   /** Charge le joueur (userID,shardID) s'il EXISTE, sinon {@code null} (ne crée RIEN — pour lire un adversaire). */
   public synchronized ServerUser loadIfExists(long userID, int shardID) throws SQLException {
     try (PreparedStatement ps = conn.prepareStatement(
-        "SELECT userInfo, userExtra, individualUserExtra, battlePassV2Data, mail, challengeData FROM users WHERE userID=? AND shardID=?")) {
+        "SELECT userInfo, userExtra, individualUserExtra, battlePassV2Data, mail, challengeData, expedition FROM users WHERE userID=? AND shardID=?")) {
       ps.setLong(1, userID);
       ps.setInt(2, shardID);
       try (ResultSet rs = ps.executeQuery()) {
@@ -426,6 +430,7 @@ public final class UserStore implements AutoCloseable {
           su.setBattlePassWire(rs.getBytes(4));
           su.setMailWire(rs.getBytes(5));
           su.setChallengeWire(rs.getBytes(6));
+          su.setExpeditionWire(rs.getBytes(7));
           return su;
         }
       }
@@ -436,7 +441,7 @@ public final class UserStore implements AutoCloseable {
   /** Charge le joueur (userID,shardID) s'il existe, sinon en crée un NOUVEAU et le persiste. */
   public synchronized ServerUser loadOrCreate(long userID, int shardID) throws SQLException {
     try (PreparedStatement ps = conn.prepareStatement(
-        "SELECT userInfo, userExtra, individualUserExtra, battlePassV2Data, mail, challengeData FROM users WHERE userID=? AND shardID=?")) {
+        "SELECT userInfo, userExtra, individualUserExtra, battlePassV2Data, mail, challengeData, expedition FROM users WHERE userID=? AND shardID=?")) {
       ps.setLong(1, userID);
       ps.setInt(2, shardID);
       try (ResultSet rs = ps.executeQuery()) {
@@ -446,6 +451,7 @@ public final class UserStore implements AutoCloseable {
           su.setBattlePassWire(rs.getBytes(4));   // état battle pass persisté (NULL si pré-migration)
           su.setMailWire(rs.getBytes(5));         // mailbox persistée (NULL si vide / pré-migration)
           su.setChallengeWire(rs.getBytes(6));    // défis sticker persistés (NULL si aucun / pré-migration)
+          su.setExpeditionWire(rs.getBytes(7));   // run d'expédition persisté (NULL si aucun / pré-migration)
           return su;
         }
       }
@@ -467,17 +473,17 @@ public final class UserStore implements AutoCloseable {
     // 1) sérialisation (verrouille l'user), HORS du verrou du store
     long id = u.userID; int shard = u.shardID;
     byte[] uiW = u.userInfoWire(), ueW = u.userExtraWire(), iuW = u.individualWire();
-    byte[] bpW = u.battlePassWire(), mlW = u.mailWire(), chW = u.challengeWire();
+    byte[] bpW = u.battlePassWire(), mlW = u.mailWire(), chW = u.challengeWire(); byte[] exW = u.expeditionWire();
     long now = System.currentTimeMillis();
     // 2) écriture DB, sous le verrou du store uniquement
     synchronized (this) {
       try (PreparedStatement ps = conn.prepareStatement(
-          "INSERT INTO users (userID, shardID, userInfo, userExtra, individualUserExtra, battlePassV2Data, mail, challengeData, updatedAt) "
-          + "VALUES (?,?,?,?,?,?,?,?,?) "
+          "INSERT INTO users (userID, shardID, userInfo, userExtra, individualUserExtra, battlePassV2Data, mail, challengeData, expedition, updatedAt) "
+          + "VALUES (?,?,?,?,?,?,?,?,?,?) "
           + "ON CONFLICT(userID, shardID) DO UPDATE SET "
           + "userInfo=excluded.userInfo, userExtra=excluded.userExtra, "
           + "individualUserExtra=excluded.individualUserExtra, battlePassV2Data=excluded.battlePassV2Data, "
-          + "mail=excluded.mail, challengeData=excluded.challengeData, updatedAt=excluded.updatedAt")) {
+          + "mail=excluded.mail, challengeData=excluded.challengeData, expedition=excluded.expedition, updatedAt=excluded.updatedAt")) {
         ps.setLong(1, id);
         ps.setInt(2, shard);
         ps.setBytes(3, uiW);
@@ -486,7 +492,8 @@ public final class UserStore implements AutoCloseable {
         ps.setBytes(6, bpW);          // NULL si battle pass non initialisé (recréé au boot)
         ps.setBytes(7, mlW);          // NULL si mailbox vide
         ps.setBytes(8, chW);          // NULL si aucun défi sticker en cours
-        ps.setLong(9, now);
+        ps.setBytes(9, exW);          // NULL si aucun run d'expédition
+        ps.setLong(10, now);
         ps.executeUpdate();
       }
     }

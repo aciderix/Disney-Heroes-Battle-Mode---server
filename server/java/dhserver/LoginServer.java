@@ -1796,14 +1796,35 @@ public final class LoginServer {
               System.out.println("[login] <== GetUserChallengeDataExtra(" + gq.targetUserID
                   + ") → ==> UserChallengeDataExtra (" + (reply.slots == null ? 0 : reply.slots.size()) + " slots)");
             } else if (m instanceof com.perblue.heroes.network.messages.GetExpedition) {
-              // EXPEDITION #72 incr. 1 — OUVERTURE de l'écran : le client (GameMain) envoie GetExpedition, le serveur
-              // répond GetExpeditionResponse (patron GetSurge). État FRAIS (aucun run actif) → sélection de difficulté.
+              // EXPEDITION #72 incr. 1 — rafraîchissement d'un run ACTIF : le client envoie GetExpedition, le serveur
+              // répond GetExpeditionResponse (patron GetSurge) avec le run PERSISTÉ (ou vide → sélection de difficulté).
               // Gate Unlockable.EXPEDITION (TL25) = verrou CLIENT ; le serveur répond, ne désactive rien.
               com.perblue.heroes.network.messages.GetExpeditionResponse er = ServerExpedition.response(user);
               er.setAsReplyTo(m);
               c.send(er);
               System.out.println("[login] <== GetExpedition → ==> GetExpeditionResponse (expeditionID=" + er.expeditionID
-                  + ", run=" + (er.currentExpedition == null ? "aucun" : "actif") + ")");
+                  + ", nœuds=" + (er.currentExpedition == null || er.currentExpedition.defenders == null
+                      ? 0 : er.currentExpedition.defenders.size()) + ")");
+            } else if (m instanceof com.perblue.heroes.network.messages.ResetExpedition) {
+              // EXPEDITION #72 incr. 2 — VRAI point d'entrée en jeu : sur l'ouverture d'un compte sans run, le client
+              // envoie ResetExpedition{difficulty, desiredWard, firstEverReset} et attend le run généré (l'écran reste
+              // « SCANNING CITY MAP » sinon). Le serveur GÉNÈRE le run (ServerExpedition.resetRun), persiste, répond.
+              com.perblue.heroes.network.messages.ResetExpedition re =
+                  (com.perblue.heroes.network.messages.ResetExpedition) m;
+              com.perblue.heroes.network.messages.ExpeditionRunData run =
+                  ServerExpedition.resetRun(user, re.difficulty, re.desiredWard, re.firstEverReset);
+              if (run != null) {
+                try { store.save(user); } catch (Exception e) {
+                  System.out.println("[login]     ! persist expedition: " + e); }
+                com.perblue.heroes.network.messages.GetExpeditionResponse rr =
+                    ServerExpedition.resetResponse(user, run);
+                rr.setAsReplyTo(m);
+                c.send(rr);
+                System.out.println("[login] <== ResetExpedition(diff=" + re.difficulty + ", firstEver="
+                    + re.firstEverReset + ") → run généré " + run.defenders.size() + " nœuds [persisté]");
+              } else {
+                System.out.println("[login] <== ResetExpedition(diff=" + re.difficulty + ") refusé (économie)");
+              }
             } else if (m instanceof com.perblue.heroes.network.messages.GetSurge) {
               // SURGE #72 — OUVERTURE de l'écran : le client (GameMain) envoie GetSurge, le serveur renvoie l'état
               // PARTAGÉ de la guilde (ServerSurgeState, reconstruit si nouveau surge). GetSurge → SurgeData

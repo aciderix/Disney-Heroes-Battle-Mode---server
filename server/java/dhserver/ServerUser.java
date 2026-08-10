@@ -301,7 +301,7 @@ public final class ServerUser {
 
   /** EXPEDITION #72 — ID d'expédition PERSISTÉ ({@code individualUserExtra.expeditionID}, seul champ d'expédition dans
    *  l'extra ; le run est un état serveur). Package-private : {@link ServerExpedition}. */
-  synchronized long expeditionIDPersisted() { return individualUserExtra.expeditionID; }
+  public synchronized long expeditionIDPersisted() { return individualUserExtra.expeditionID; }
   synchronized void setExpeditionIDPersisted(long id) { individualUserExtra.expeditionID = id; }
 
   /** ARÈNE #41 — lineups persistées ({@code userExtra.heroLineups}), pour vérification (défense/attaque relues). */
@@ -3104,6 +3104,21 @@ public final class ServerUser {
   public synchronized com.perblue.heroes.network.messages.UserChallengeDataExtra challengeDataOrNull() { return challengeData; }
   /** Remplace l'état de défis (après START/CLAIM/CANCEL) — l'appelant persiste ensuite via {@code store.save}. */
   public synchronized void setChallengeData(com.perblue.heroes.network.messages.UserChallengeDataExtra d) { challengeData = d; }
+
+  // EXPEDITION #72 — le RUN (ExpeditionRunData) est un état serveur (hors userExtra/individualUserExtra ; seul
+  // expeditionID vit dans l'extra) → persisté à part (colonne BLOB `expedition`). NULL = aucun run (l'écran envoie
+  // ResetExpedition pour en générer un via ServerExpedition).
+  private com.perblue.heroes.network.messages.ExpeditionRunData expeditionRun;
+  /** Octets wire du run d'expédition persisté (NULL si aucun run). */
+  public synchronized byte[] expeditionWire() { return expeditionRun == null ? null : wire(expeditionRun); }
+  /** Restaure le run d'expédition persisté (au chargement DB ; NULL = aucun run). */
+  public synchronized void setExpeditionWire(byte[] bytes) {
+    if (bytes != null && bytes.length > 0) expeditionRun = read(bytes);
+  }
+  /** Run d'expédition courant (persisté), ou {@code null}. Accès pour {@link ServerExpedition}. */
+  public synchronized com.perblue.heroes.network.messages.ExpeditionRunData expeditionRunOrNull() { return expeditionRun; }
+  /** Remplace le run d'expédition (après ResetExpedition / combat) — l'appelant persiste via {@code store.save}. */
+  public synchronized void setExpeditionRun(com.perblue.heroes.network.messages.ExpeditionRunData r) { expeditionRun = r; }
   /** Sticker FAVORI (SET_FAVORITE_STICKER) : posé dans {@code userExtra} (source lue par {@code getUser}) + miroir
    *  {@code BasicUserInfo} — {@code User.setFavoriteSticker} n'écrit PAS dans extra (champ User seul). Auto-persisté. */
   public synchronized void setFavoriteSticker(com.perblue.heroes.network.messages.StickerType type) {
