@@ -56,11 +56,17 @@ pour un run actif ; à confirmer en jeu une fois qu'un run existe.)
 1. ✅ **Boot handler (headless)** : handler `GetExpedition`→`GetExpeditionResponse` (état frais = `ExpeditionRunData` vide
    non-null + `expeditionID` persisté + `weeklyWardInfo` non-null). `ExpeditionBootTest` (round-trip wire). **NB in-game :
    insuffisant seul — le client fraîchement ouvert envoie `ResetExpedition`, cf. découverte ci-dessus → incr. 2.**
-2. ⬜ **`ResetExpedition` + génération du run (DÉBLOQUE LE RENDU EN JEU)** : handler `ResetExpedition{difficulty,
+2. ✅ **`ResetExpedition` + génération du run — LIVRÉ + VÉRIFIÉ EN JEU (g90)** : handler `ResetExpedition{difficulty,
    desiredWard, firstEverReset}` → **génération serveur de `ExpeditionRunData`** (nœuds/`defenders` depuis
    `ExpeditionStats`/`expedition_*.tab` à la difficulté choisie) + `enableDifficulty` + économie (`chargeForReset`,
    `getResetsRemaining` sauf `firstEverReset`) → réponse (run) → l'écran « SCANNING CITY MAP » se résout. Persistance du
    run (état serveur ; incr. 2 tranche : blob par joueur type CHALLENGES, ou champ dédié). **Vérif en jeu : la carte rend.**
+   - **✅ VÉRIFIÉ EN JEU (g90, TL100)** : `nav EXPEDITION` → client `ResetExpedition1` → serveur `ResetExpedition(diff=1,
+     firstEver=true) → run généré 15 nœuds [persisté]` → « SCANNING CITY MAP » se résout en la **carte d'expédition**
+     rendue (titre **« CITY WATCH »** = nom en jeu de l'Expédition ; sélecteur **EASY**, SHOP, bouton reset, carte de la
+     ville en 5 régions, nœuds 1-5 — nœud 1 actif/flèche, 2-5 verrouillés, tracker de manche). ⇒ génération + persistance
+     (blob `expedition`, colonne ajoutée) OK bout-en-bout. **Calibration ennemis** (niveau/composition) à valider au 1ᵉʳ
+     combat (incr. 3). NB : la rangée hub « CITY WATCH » = l'écran EXPEDITION (pas un vestige tuto).
 3. ⬜ **Combat de nœud** : `ExpeditionAttack` → re-exécution autoritative (patron `recordOutcome`) → progression
    (`nodesDefeated`), récompenses de nœud (`giveLoot`/`NodeReward`), epic chips ; persistance.
 4. ⬜ **Raid** : `ExpeditionRaid`/`doRaidFromClient` (saute le combat, débit coût, `getRaidTicketReward`).
