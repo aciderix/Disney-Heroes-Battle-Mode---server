@@ -42,12 +42,25 @@ des **wards hebdomadaires** (modificateurs de combat qui tournent chaque semaine
 `getNextWardsFor(weeklyInfo, diff)`. **Génération des nœuds/defenders** : à établir (ExpeditionStats +
 `expedition_*.tab` ; probablement backend → à générer serveur comme Surge/Arena).
 
-## Plan d'incréments (prévisionnel, à affiner)
-1. ⬜ **Boot / rendu** : gate `EXPEDITION` + handler `GetExpedition`→`GetExpeditionResponse` pour un état **FRAIS**
-   (aucun run actif : `currentExpedition=null`, `expeditionID` persisté, `weeklyWardInfo` non-null sûr) → l'écran s'ouvre
-   sans NPE + sélection de difficulté. `ExpeditionBootTest` (WireCheck). **Vérif en jeu : `nav EXPEDITION` rend.**
-2. ⬜ **Génération du run + difficulté** : `enableDifficulty` + génération serveur de `ExpeditionRunData` (nœuds/
-   defenders depuis `ExpeditionStats`/`.tab`) pour la difficulté choisie ; persistance du run.
+## ⚠️ DÉCOUVERTE EN JEU (g89) — le rendu passe par `ResetExpedition`, pas `GetExpedition`
+La vérif en jeu de l'incr. 1 (`nav EXPEDITION`, compte TL100) a montré que le client **n'envoie PAS `GetExpedition`**
+à l'ouverture d'un compte SANS run : il envoie directement **`ResetExpedition{difficulty, desiredWard:List<CombatModifier>,
+firstEverReset:boolean, specialEvents}`** (= « démarre/relance une expédition à cette difficulté avec ce ward ») et
+attend la réponse — l'écran reste sur **« SCANNING CITY MAP … »** tant que le serveur ne renvoie pas le run généré.
+`GetExpedition` est le rafraîchissement d'un run DÉJÀ actif ; **`ResetExpedition` est le point d'entrée réel** (création
+du run). ⇒ **le rendu en jeu est débloqué par l'incr. 2** (générer `ExpeditionRunData` sur `ResetExpedition`), pas par
+l'incr. 1 seul. (`GetExpedition`→`GetExpeditionResponse` handler = livré incr. 1, headless `ExpeditionBootTest`, utile
+pour un run actif ; à confirmer en jeu une fois qu'un run existe.)
+
+## Plan d'incréments (révisé après découverte en jeu)
+1. ✅ **Boot handler (headless)** : handler `GetExpedition`→`GetExpeditionResponse` (état frais = `ExpeditionRunData` vide
+   non-null + `expeditionID` persisté + `weeklyWardInfo` non-null). `ExpeditionBootTest` (round-trip wire). **NB in-game :
+   insuffisant seul — le client fraîchement ouvert envoie `ResetExpedition`, cf. découverte ci-dessus → incr. 2.**
+2. ⬜ **`ResetExpedition` + génération du run (DÉBLOQUE LE RENDU EN JEU)** : handler `ResetExpedition{difficulty,
+   desiredWard, firstEverReset}` → **génération serveur de `ExpeditionRunData`** (nœuds/`defenders` depuis
+   `ExpeditionStats`/`expedition_*.tab` à la difficulté choisie) + `enableDifficulty` + économie (`chargeForReset`,
+   `getResetsRemaining` sauf `firstEverReset`) → réponse (run) → l'écran « SCANNING CITY MAP » se résout. Persistance du
+   run (état serveur ; incr. 2 tranche : blob par joueur type CHALLENGES, ou champ dédié). **Vérif en jeu : la carte rend.**
 3. ⬜ **Combat de nœud** : `ExpeditionAttack` → re-exécution autoritative (patron `recordOutcome`) → progression
    (`nodesDefeated`), récompenses de nœud (`giveLoot`/`NodeReward`), epic chips ; persistance.
 4. ⬜ **Raid** : `ExpeditionRaid`/`doRaidFromClient` (saute le combat, débit coût, `getRaidTicketReward`).
