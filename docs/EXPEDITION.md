@@ -114,7 +114,25 @@ pour un run actif ; à confirmer en jeu une fois qu'un run existe.)
      `ExpeditionRaid` → serveur **`RAID diff=1 → expédition complète (nodesDefeated=15), or +370531 [persisté]`** →
      **DB confirmée** (`nodesDefeated=15`, `totalGoldEarned=370531`, tickets `EXPEDITION_RAID_1` 5→4, GOLD crédité).
      Pilote DEV `expraid` ; outil DEV `ExpAdminRaidable`. Tests headless `ExpeditionRaidTest`.
-5. ⬜ **Wards hebdomadaires** : `ExpeditionWeeklyInfo` (currentWards/nextWards + calendrier de rotation) via les stats.
+5. 🟢 **Wards hebdomadaires — LIVRÉ (headless) + délivrance vérifiée EN JEU ; EFFET/affichage HARD+ différés (g93)** :
+   `GetExpeditionResponse.weeklyWardInfo` est désormais PEUPLÉ (au lieu d'un objet vide). Les wards (`CombatModifier`)
+   sont des modificateurs de combat qui tournent chaque semaine et ne s'appliquent qu'aux **difficultés ≥ 3**
+   (`getWardsFor` renvoie EMPTY pour diff < 3 ; EASY/NORMAL n'ont PAS de ward — fidélité).
+   - **POOL = donnée du jeu** (`ExpeditionStats$WardStats.wardsByDifficulty` : diff 3 & 4 → 13 wards chacun ; §4, lu
+     par réflexion). **ROTATION = serveur, déterministe par l'indice de semaine DU JEU** (`TimeUtil.getServerWeek`) — le
+     backend de sélection est absent du jar (comme `ArenaInfo`/Surge) → calibration serveur documentée (patron incr. 2).
+     2 wards exposés : HARD (pool diff 3) + EPIC additionnel différent (pool diff 4) ; `getWardsFor(info, diff)` tranche
+     `subList(0, diff-2)`. **BORNES** : `currentWardExpiration`/`nextWardStartTime` = prochaine frontière hebdo
+     (`MILLIS_PER_WEEK`).
+   - `ExpeditionWardTest` : structure via les accesseurs DU JEU `getWardsFor`/`getNextWardsFor`, rotation déterministe
+     (`nextWards[s] == currentWards[s+1]`), bornes, round-trip wire.
+   - **EN JEU (g93)** : `nav EXPEDITION` → serveur délivre `GetExpeditionResponse` avec `weeklyWardInfo` PEUPLÉ (2 wards
+     réels) → le client l'ACCEPTE et rend CITY WATCH sans erreur (régression : avant vide, maintenant peuplé, toujours OK).
+   - **DIFFÉRÉ (§8, gate de progression, documenté)** : l'**EFFET** des wards en combat (diff ≥ 3 HARD/EPIC) et leur
+     **affichage** dans `ExpeditionDifficultyWindowV2` ne sont pas atteignables sur le compte de test (EASY complété ;
+     le sélecteur de difficulté est grisé sur un run terminé ; HARD requiert de clearer NORMAL). À vérifier sur un
+     compte plus avancé. La rotation EXACTE du backend reste à OBSERVER en jeu (comme le protocole de raid SURGE avant
+     câblage) ; notre rotation déterministe est un stand-in fidèle (pool = donnée du jeu).
 6. ⬜ **Reset** : `ResetExpedition` (`chargeForReset`, `getResetsRemaining`, resets hebdo).
 7. ⬜ **Récompenses / coffres** : `createRewards`/`openChest` (coffres d'expédition, epic chips → héros).
 8. ⬜ **Vérif EN JEU complète** (solo, compte TL100) : difficulté → combat → récompenses → raid → reset.

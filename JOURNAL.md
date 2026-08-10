@@ -3905,3 +3905,46 @@ Pilote DEV `expraid` (`TutorialDriver`+`DesktopLauncher`, chemin `doRaidFromClie
 Fichiers : `server/java/dhserver/{ServerExpedition,LoginServer}.java`, `server/smoke/{ExpeditionRaidTest,
 ExpAdminRaidable}.java`, `server/smoke/regression.sh`, `desktop-port/src/main/java/dhdesktop/{TutorialDriver,
 DesktopLauncher}.java`, `docs/EXPEDITION.md`, `MEMORY.md`.
+
+---
+
+## 2026-08-10 (g93) — EXPEDITION (#72) incrément 5 : wards hebdomadaires (headless + délivrance en jeu)
+
+`GetExpeditionResponse.weeklyWardInfo` est désormais PEUPLÉ (avant : objet vide). Les wards (`CombatModifier`) sont
+des modificateurs de combat qui tournent chaque semaine et ne s'appliquent qu'aux **difficultés ≥ 3** (`getWardsFor`
+renvoie `EMPTY_MODIFIERS` pour diff < 3 — EASY/NORMAL n'ont PAS de ward, fidélité vérifiée).
+
+**Recon (bytecode).** `ExpeditionWeeklyInfo{currentWards, currentWardExpiration, nextWards, nextWardStartTime}`.
+`getWardsFor(info, diff)` / `getNextWardsFor(info, diff)` = accesseurs purs : `diff < 3 → EMPTY` ; sinon
+`currentWards.subList(0, diff-2)` (cumulatif : diff 3 → [0], diff 4 → [0,1]). Le POOL est dans la DONNÉE du jeu
+`ExpeditionStats$WardStats.wardsByDifficulty` (List de 5 EnumSet : diff 0-2 vides ; diff 3 & 4 → 13 `WARD_*` chacun).
+La ROTATION exacte (quel ward chaque semaine) est calculée par le BACKEND, ABSENT du jar client (comme `ArenaInfo`/
+Surge).
+
+**Serveur.** `ServerExpedition.weeklyWardInfo(now)` : lit le pool par réflexion (cache `WARD_POOL_3/4`), sélectionne
+DÉTERMINISTE par l'INDICE DE SEMAINE DU JEU (`TimeUtil.getServerWeek`) — 1 ward HARD (pool diff 3, `week % n`) + 1 ward
+EPIC additionnel différent (pool diff 4, `(week+3) % n`) ; `nextWards` = semaine+1 ; bornes = prochaine frontière hebdo
+(`((now/MILLIS_PER_WEEK)+1)*MILLIS_PER_WEEK`). Calibration serveur documentée (patron incr. 2 : pool = donnée du jeu,
+arrangement = serveur ; §4 : aucune VALEUR inventée, seule la rotation est un stand-in fidèle). Câblé dans `response()`.
+
+**Test `ExpeditionWardTest`.** Vérifie via les accesseurs DU JEU : diff 1/2 → 0 ward, diff 3 → 1, diff 4 → 2 ; wards
+= `CombatModifier WARD_*` du pool ; rotation déterministe (`nextWards == currentWards` de la semaine suivante) ; bornes
+(expiration dans le futur ≤ 1 semaine, `nextWardStartTime == currentWardExpiration`) ; round-trip wire. Régression →
+**102 tests**. (Ex. observé : currentWards=[WARD_DECREASE_HEALING, WARD_SUPPORT_LESS_ENERGY],
+nextWards=[WARD_TANKS_EXTRA_DAMAGE, WARD_IMMUNE_TO_DISABLES].)
+
+**EN JEU (compte id=1 TL100).** `nav EXPEDITION` → serveur `GetExpedition → GetExpeditionResponse (weeklyWardInfo
+PEUPLÉ, 2 wards réels)` → le client ACCEPTE et rend CITY WATCH sans erreur (régression : avant vide, maintenant peuplé,
+toujours OK) ⇒ **délivrance de weeklyWardInfo vérifiée en jeu**.
+
+**DIFFÉRÉ (§8, gate de progression documenté).** L'**EFFET** des wards en combat (diff ≥ 3 HARD/EPIC) et leur
+**affichage** dans `ExpeditionDifficultyWindowV2` ne sont pas atteignables sur le compte de test : le run EASY est
+complété (sélecteur de difficulté grisé sur un run terminé ; le reset n'a pas firé sans économie — incr. 6) et HARD
+requiert de clearer NORMAL d'abord. À vérifier sur un compte plus avancé. La rotation EXACTE du backend reste à
+OBSERVER en jeu (comme le protocole de raid SURGE avant câblage) — notre rotation déterministe est un stand-in fidèle.
+
+**RESTE EXPEDITION** : incr. 6 (économie de reset `chargeForReset`/`getResetsRemaining`), 7 (coffres/epic chips
+`openChest`), 8 (vérif en jeu complète, y compris wards HARD+ sur un compte avancé).
+
+Fichiers : `server/java/dhserver/ServerExpedition.java`, `server/smoke/ExpeditionWardTest.java`,
+`server/smoke/regression.sh`, `docs/EXPEDITION.md`, `MEMORY.md`.
