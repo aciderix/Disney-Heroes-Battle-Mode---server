@@ -38,11 +38,27 @@ public final class ExpeditionBootTest {
     DefenderData n0 = (DefenderData) run.defenders.get(0);
     check(n0.lineup != null && n0.lineup.size() == 5, "nœud 0 = lineup de 5 ennemis (="
         + (n0.lineup == null ? 0 : n0.lineup.size()) + ")");
-    GetExpeditionResponse rr = ServerExpedition.resetResponse(su, run);
-    check(rr.wasReset, "resetResponse.wasReset = true");
+    // GARDE-FOU (bug trouvé g91) : héros ennemis VALIDES — étoiles ≤ max de l'ère (sinon le client PLANTE au rendu du
+    // combat via HasEnoughCollectionHeroes/getMaxStars) et niveau > 0. Le client ajoute getExtraEnemyLevels(diff).
+    int maxStars = com.perblue.heroes.game.data.unit.UnitStats.getMaxStars(su.gameUser());
+    for (Object o : n0.lineup) {
+      HeroData h = (HeroData) o;
+      check(h.stars >= 1 && h.stars <= maxStars, "ennemi étoiles valides (1.." + maxStars + ", vu " + h.stars + ")");
+      check(h.level >= 1, "ennemi niveau ≥ 1 (vu " + h.level + ")");
+    }
+    // GARDE-FOU (bug trouvé g91) : nodeRewards PRÉ-PEUPLÉ (un par nœud) — le client lit nodeRewards.get(nodeIndex) au
+    // combat (createStageDefenders) → sans ça IndexOutOfBounds à l'ouverture du 1er nœud EN JEU.
+    check(run.nodeRewards != null && run.nodeRewards.size() == run.defenders.size(),
+        "nodeRewards pré-peuplé (un par nœud ; défenseurs=" + run.defenders.size() + ", récompenses="
+        + (run.nodeRewards == null ? 0 : run.nodeRewards.size()) + ")");
+    // Réponse au reset = ResetExpeditionResponse (type DÉDIÉ → handler client $55 qui fait le nettoyage de reset).
+    ResetExpeditionResponse rr = ServerExpedition.resetResponse(su, run);
     check(rr.expeditionID == 1L, "nouvel expeditionID = 1");
+    check(rr.currentExpedition != null && rr.currentExpedition.defenders != null
+        && rr.currentExpedition.defenders.size() == run.defenders.size(), "reset porte le run généré");
+    check(rr.eventExtraResets != null, "eventExtraResets non-null (le codec l'écrit sans garde)");
     WireCheck.assertRoundTrips(rr);
-    System.out.println("[expedition-boot] ResetExpedition → run " + run.defenders.size()
+    System.out.println("[expedition-boot] ResetExpedition → ResetExpeditionResponse : run " + run.defenders.size()
         + " nœuds × 5 ennemis, expeditionID=" + rr.expeditionID + " — round-trip wire vert");
 
     // --- Persistance DB : le run survit au save/reload (blob `expedition`) ---

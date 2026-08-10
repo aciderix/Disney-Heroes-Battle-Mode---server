@@ -30,9 +30,12 @@ public final class ExpeditionCombatTest {
     su.bootData().userInfo.basicInfo.teamLevel = 100;
     su.grantHero(UnitType.RALPH, Rarity.ORANGE, 60, 5);
 
-    // Génère le run (incr. 2).
+    // Génère le run (incr. 2). nodeRewards est PRÉ-PEUPLÉ (un par nœud, createRewards) — le client le lit au combat.
     ExpeditionRunData run = ServerExpedition.resetRun(su, 1, new ArrayList<>(), true);
     check(run != null && run.nodesDefeated == 0, "run frais, nodesDefeated=0");
+    int nodeCount = run.defenders.size();
+    check(run.nodeRewards != null && run.nodeRewards.size() == nodeCount,
+        "nodeRewards pré-peuplé (un par nœud = " + nodeCount + ")");
     long goldBefore = su.gameUser().getResource(ResourceType.GOLD);
 
     // --- ANTI-TRICHE : jouer un nœud ≠ courant est refusé ---
@@ -46,8 +49,9 @@ public final class ExpeditionCombatTest {
     long goldAfter = su.gameUser().getResource(ResourceType.GOLD);
     System.out.println("[expedition-combat] nœud 0 WIN → nodesDefeated=" + r1.nodesDefeated
         + ", or " + goldBefore + "→" + goldAfter + " (totalGoldEarned=" + r1.totalGoldEarned + ")");
-    check(goldAfter >= goldBefore, "or crédité (>= avant)");
-    check(r1.nodeRewards != null && r1.nodeRewards.size() == 1, "1 récompense de nœud enregistrée");
+    check(goldAfter > goldBefore, "or crédité (giveLoot, > avant)");
+    check(r1.nodeRewards != null && r1.nodeRewards.size() == nodeCount,
+        "nodeRewards reste pré-peuplé (un par nœud = " + nodeCount + ")");
 
     // --- DÉFAITE : pas de progression ---
     check(ServerExpedition.recordAttack(su, attack(1, CombatOutcome.LOSS)), "nœud 1 LOSS accepté (no-op)");

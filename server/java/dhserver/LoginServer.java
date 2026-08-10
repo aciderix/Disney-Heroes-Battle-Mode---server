@@ -1816,7 +1816,7 @@ public final class LoginServer {
               if (run != null) {
                 try { store.save(user); } catch (Exception e) {
                   System.out.println("[login]     ! persist expedition: " + e); }
-                com.perblue.heroes.network.messages.GetExpeditionResponse rr =
+                com.perblue.heroes.network.messages.ResetExpeditionResponse rr =
                     ServerExpedition.resetResponse(user, run);
                 rr.setAsReplyTo(m);
                 c.send(rr);

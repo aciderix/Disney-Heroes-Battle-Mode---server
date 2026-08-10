@@ -39,7 +39,6 @@ public final class ServerExpedition {
   private ServerExpedition() {}
 
   private static final int HEROES_PER_NODE = 5;
-  private static final int BASE_ENEMY_LEVEL = 140;   // calibration documentée (base ; +extra levels par difficulté)
 
   private static volatile List<UnitType> EASY_POOL;   // pool d'ennemis (expedition_easy_heroes.tab)
   private static volatile int NODE_COUNT = -1;        // nombre de nœuds (expedition_nodes.tab)
@@ -104,7 +103,21 @@ public final class ServerExpedition {
     run.chestsOpened = 0;
     run.ticketsEarned = 0;
     run.totalGoldEarned = 0;
-    run.defenders = buildDefenders(user.getShardID(), expeditionID, difficulty);
+    // Étoiles des ennemis = MAX de l'ère de contenu (donnée du jeu §4, jamais inventé ; TL100/R102 → 6).
+    int enemyStars = 1;
+    try { enemyStars = Math.max(1, com.perblue.heroes.game.data.unit.UnitStats.getMaxStars(user)); }
+    catch (Throwable t) { /* défaut 1 */ }
+    // Niveau de BASE des ennemis = niveau d'équipe du joueur (calibration serveur documentée ; le CLIENT ajoute
+    // ExpeditionStats.getExtraEnemyLevels(difficulty) au combat — cf. ExpeditionAttackScreen.createStageDefenders —
+    // donc le serveur envoie la BASE, jamais base+extra). Fidèle à la progression, valide pour createAndAddHero.
+    int baseLevel = Math.max(1, user.getTeamLevel());
+    run.defenders = buildDefenders(user.getShardID(), expeditionID, enemyStars, baseLevel);
+    // Récompenses PROSPECTIVES par nœud = méthode du jeu ExpeditionHelper.createRewards (§3) : 15 NodeReward{OR}. Le
+    // client LIT nodeRewards.get(nodeIndex) au combat (createStageDefenders) → doit être peuplé dès le reset (sinon
+    // IndexOutOfBounds à l'ouverture du 1er nœud). Enrichi des objets (rollExpeditionDrops) au crédit du nœud (recordAttack).
+    try {
+      run.nodeRewards = com.perblue.heroes.game.logic.ExpeditionHelper.createRewards(user);
+    } catch (Throwable t) { System.out.println("[expedition] createRewards: " + t); run.nodeRewards = new ArrayList<>(); }
     if (desiredWard != null) run.weeklyWards = new ArrayList<Object>(desiredWard);
 
     su.setExpeditionRun(run);
@@ -116,23 +129,23 @@ public final class ServerExpedition {
   }
 
   /** Génère les {@code nodeCount()} nœuds ({@code DefenderData{user, lineup}}) — ennemis tirés du pool EASY_HEROES,
-   *  DÉTERMINISTES par {@code (expeditionID, node)}, au niveau {@code BASE + getExtraEnemyLevels(difficulty)}. */
+   *  DÉTERMINISTES par {@code (expeditionID, node)}, au niveau de BASE {@code level} et à {@code stars} étoiles (bornés
+   *  aux valeurs valides de l'ère, §4). Le CLIENT ajoute {@code getExtraEnemyLevels(difficulty)} au combat.
+   *  ⚠️ {@code createAndAddHero(type, rarity, ÉTOILES, NIVEAU)} : l'ordre des deux entiers est (étoiles, niveau) — cf.
+   *  {@code ServerUser.grantHero} (relevé au bytecode : {@code createUnitData} fait {@code setStars(a)}/{@code setLevel(b)}).
+   *  Le bot est à un {@code teamLevel} ≥ {@code level} pour que {@code createAndAddHero} n'écrête pas le niveau. */
   @SuppressWarnings("unchecked")
-  private static List<Object> buildDefenders(int shardID, long expeditionID, int difficulty) {
+  private static List<Object> buildDefenders(int shardID, long expeditionID, int stars, int level) {
     List<Object> defenders = new ArrayList<>();
     List<UnitType> pool = easyPool();
     int nodes = nodeCount();
-    int extra = 0;
-    try { extra = com.perblue.heroes.game.data.expedition.ExpeditionStats.getExtraEnemyLevels(difficulty); }
-    catch (Throwable t) { /* défaut 0 */ }
-    int level = Math.max(1, BASE_ENEMY_LEVEL + extra);
     for (int node = 0; node < nodes; node++) {
       DefenderData d = new DefenderData();
       d.user = new BasicUserInfo();
       d.user.name = "Expedition";
       d.lineup = new ArrayList<Object>();
       try {
-        User bot = botUser(shardID, expeditionID * 1000L + node);
+        User bot = botUser(shardID, expeditionID * 1000L + node, level);
         java.util.Random rng = new java.util.Random(expeditionID * 131L + node);
         List<UnitType> shuffled = new ArrayList<>(pool);
         java.util.Collections.shuffle(shuffled, rng);
@@ -140,7 +153,7 @@ public final class ServerExpedition {
         for (UnitType t : shuffled) {
           if (added >= HEROES_PER_NODE) break;
           try {
-            if (bot.getHero(t) == null) bot.createAndAddHero(t, Rarity.ORANGE, level, 1, new String[]{"exp"});
+            if (bot.getHero(t) == null) bot.createAndAddHero(t, Rarity.ORANGE, stars, level, new String[]{"exp"});
             ((List<Object>) d.lineup).add(ClientNetworkStateConverter.getHeroData((UnitData) bot.getHero(t)));
             added++;
           } catch (Throwable perHero) { /* héros refusé → suivant */ }
@@ -151,12 +164,13 @@ public final class ServerExpedition {
     return defenders;
   }
 
-  /** Utilisateur synthétique (bot) pour fabriquer des {@code HeroData} ennemis (patron {@code ServerArena.botUser}). */
-  private static User botUser(int shardID, long id) {
+  /** Utilisateur synthétique (bot) pour fabriquer des {@code HeroData} ennemis (patron {@code ServerArena.botUser}).
+   *  {@code teamLevel} ≥ niveau ennemi visé pour que {@code createAndAddHero} n'écrête pas ({@code getMaxHeroLevel}). */
+  private static User botUser(int shardID, long id, int teamLevel) {
     UserInfo ui = new UserInfo();
     ui.shardID = shardID;
     ui.basicInfo = new BasicUserInfo();
-    ui.basicInfo.teamLevel = 100;
+    ui.basicInfo.teamLevel = Math.max(1, teamLevel);
     User bot = ClientNetworkStateConverter.getUser(ui, new UserExtra(), "expbot");
     ServerContext.bind(bot, ClientNetworkStateConverter.getIndividualUser(new IndividualUserExtra(), id, 0, "expbot"));
     return bot;
@@ -195,33 +209,29 @@ public final class ServerExpedition {
         com.perblue.heroes.game.specialevent.SpecialEventSnapshot.NONE;
     long goldGiven = 0;
     try {
-      com.perblue.heroes.network.messages.NodeReward nr = new com.perblue.heroes.network.messages.NodeReward();
-      nr.rewardDrops = new ArrayList<>();
-      // (1) OR de base du nœud = getGold(node, L=teamLevel) × getGoldMultiplier(difficulty) (données du jeu §4) —
-      //     crédité DIRECTEMENT (setResource, patron campagne/alchimie). giveLoot ne crédite PAS un RewardDrop GOLD.
-      int baseGold = com.perblue.heroes.game.data.expedition.ExpeditionStats.getGold(node, user.getTeamLevel());
-      float goldMult = com.perblue.heroes.game.data.expedition.ExpeditionStats.getGoldMultiplier(difficulty);
-      goldGiven = (long) (baseGold * goldMult);
-      if (goldGiven > 0) {
-        user.setResource(com.perblue.heroes.network.messages.ResourceType.GOLD,
-            user.getResource(com.perblue.heroes.network.messages.ResourceType.GOLD) + goldGiven, "expedition");
-        com.perblue.heroes.network.messages.RewardDrop g = new com.perblue.heroes.network.messages.RewardDrop();
-        g.resourceType = com.perblue.heroes.network.messages.ResourceType.GOLD;
-        g.quantity = goldGiven;
-        ((java.util.List<Object>) nr.rewardDrops).add(g);   // pour l'affichage de la récompense de nœud
+      // Récompense PROSPECTIVE du nœud, pré-générée au reset par ExpeditionHelper.createRewards (OR ; §3). On l'ENRICHIT
+      // des objets tirés par la table du jeu (rollExpeditionDrops) puis on CRÉDITE le tout via la méthode du jeu
+      // ExpeditionHelper.giveLoot(user, nodeReward, node, difficulty, snap) — qui applique modifyGoldForDifficulty à
+      // l'OR et donne objets/tickets. Zéro crédit à la main (§3). nodeRewards[node] reste le record de ce nœud.
+      com.perblue.heroes.network.messages.NodeReward nr;
+      if (run.nodeRewards != null && node < run.nodeRewards.size()) {
+        nr = (com.perblue.heroes.network.messages.NodeReward) run.nodeRewards.get(node);
+      } else {   // run legacy sans nodeRewards pré-générés → repli : reward gonflé à la volée
+        nr = new com.perblue.heroes.network.messages.NodeReward();
+        nr.rewardDrops = new ArrayList<>();
+        if (run.nodeRewards == null) run.nodeRewards = new ArrayList<>();
+        while (run.nodeRewards.size() <= node) ((java.util.List<Object>) run.nodeRewards).add(nr);
       }
-      // (2) Drops d'OBJETS du nœud = rollExpeditionDrops (table de butin du jeu §4) → crédités via RewardHelper.
+      if (nr.rewardDrops == null) nr.rewardDrops = new ArrayList<>();
+      // Objets du nœud (table de butin du jeu §4), déterministes par (expeditionID, node).
       java.util.Random rng = new java.util.Random(su.expeditionIDPersisted() * 977L + node);
       java.util.List wards = run.weeklyWards != null ? run.weeklyWards : new ArrayList<>();
       java.util.List drops = com.perblue.heroes.game.data.expedition.ExpeditionStats.rollExpeditionDrops(
           user, rng, difficulty, node, wards, snap);
-      if (drops != null && !drops.isEmpty()) {
-        com.perblue.heroes.game.logic.RewardHelper.giveRewards(
-            user, drops, com.perblue.heroes.game.logic.RewardSourceType.NORMAL, "expedition");
-        ((java.util.List<Object>) nr.rewardDrops).addAll(drops);
-      }
-      if (run.nodeRewards == null) run.nodeRewards = new ArrayList<>();
-      ((java.util.List<Object>) run.nodeRewards).add(nr);
+      if (drops != null && !drops.isEmpty()) ((java.util.List<Object>) nr.rewardDrops).addAll(drops);
+      long goldBefore = user.getResource(com.perblue.heroes.network.messages.ResourceType.GOLD);
+      com.perblue.heroes.game.logic.ExpeditionHelper.giveLoot(user, nr, node, difficulty, snap);   // crédit AUTORITAIRE (§3)
+      goldGiven = user.getResource(com.perblue.heroes.network.messages.ResourceType.GOLD) - goldBefore;
     } catch (Throwable t) { System.out.println("[expedition] récompense de nœud: " + t); }
 
     run.nodesDefeated = m.nodeIndex + 1;
@@ -257,13 +267,23 @@ public final class ServerExpedition {
     return r;
   }
 
-  /** Réponse après un {@code ResetExpedition} (run fraîchement généré) : {@code wasReset=true}. */
-  public static GetExpeditionResponse resetResponse(ServerUser su, ExpeditionRunData run) {
-    GetExpeditionResponse r = new GetExpeditionResponse();
+  /**
+   * Réponse à {@code ResetExpedition} : un {@code ResetExpeditionResponse} (type DÉDIÉ — le client a un handler propre,
+   * {@code GameMain.lambda$setupPostClientInfoHandlers$55}, qui fait le NETTOYAGE de reset : {@code clearModePersistentData}
+   * /{@code clearMercenaryHero}/{@code clearKoHiredMercenaries} sur les héros, {@code enableDifficulty}, {@code onExpeditionReset},
+   * en plus de poser {@code getExpeditionData()} depuis {@code currentExpedition}). Répondre un {@code GetExpeditionResponse}
+   * peuplerait bien la carte mais SAUTERAIT ce nettoyage (incorrect sur un 2ᵉ run) → on renvoie le bon type (§3).
+   *
+   * <p>{@code resetsDone} (compteur de resets) et {@code eventExtraResets} = incrément 6 (économie de reset) : baseline
+   * sûre (0 / liste vide) pour le 1ᵉʳ run — {@code firstEverReset} n'en consomme aucun.
+   */
+  public static com.perblue.heroes.network.messages.ResetExpeditionResponse resetResponse(ServerUser su, ExpeditionRunData run) {
+    com.perblue.heroes.network.messages.ResetExpeditionResponse r =
+        new com.perblue.heroes.network.messages.ResetExpeditionResponse();
     r.expeditionID = su.expeditionIDPersisted();
     r.currentExpedition = run != null ? run : new ExpeditionRunData();
-    r.wasReset = true;
-    r.weeklyWardInfo = new ExpeditionWeeklyInfo();
+    r.resetsDone = 0;
+    r.eventExtraResets = new ArrayList<>();
     return r;
   }
 }
