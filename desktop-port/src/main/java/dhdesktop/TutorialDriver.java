@@ -1111,6 +1111,68 @@ public final class TutorialDriver {
         } catch (Throwable t) { System.out.println("[missiondump] échec: " + t); }
     }
 
+    /** DEV (#72 FRIENDSHIPS) : OUVRE la vue de détail d'une AMITIÉ (disk/campagne/mur) via le CHEMIN RÉEL du jeu
+     *  ({@code HeroDetailFriendsContent.navigateToFriendUI(pair, mode)}) — le point d'entrée que le hub emprunte
+     *  (HÉROS → hero detail → onglet Friends → une amitié). Rend {@code FriendshipCampaignWindow}/disk. Invoqué via
+     *  clickfile "friendui &lt;PRIMARY&gt; &lt;SECONDARY&gt; [CAMPAIGN|GEAR|MISSIONS|WALL]". */
+    public static void friendUI(GameMain game, String args) {
+        try {
+            String[] p = args.trim().split("[,;\\s]+");
+            if (p.length < 2) { System.out.println("[friendui] usage: friendui <PRIMARY> <SECONDARY> [MODE]"); return; }
+            com.perblue.heroes.network.messages.UnitType a =
+                com.perblue.heroes.network.messages.UnitType.valueOf(p[0].trim().toUpperCase());
+            com.perblue.heroes.network.messages.UnitType b =
+                com.perblue.heroes.network.messages.UnitType.valueOf(p[1].trim().toUpperCase());
+            com.perblue.heroes.ui.herodetails.FriendModeType mode = p.length >= 3
+                ? com.perblue.heroes.ui.herodetails.FriendModeType.valueOf(p[2].trim().toUpperCase())
+                : com.perblue.heroes.ui.herodetails.FriendModeType.CAMPAIGN;
+            com.perblue.heroes.game.objects.FriendPairID pair =
+                com.perblue.heroes.game.objects.FriendPairID.of(a, b);
+            com.perblue.heroes.ui.herodetails.HeroDetailFriendsContent.navigateToFriendUI(pair, mode);
+            System.out.println("[friendui] navigateToFriendUI(" + pair + ", " + mode + ") [chemin réel]");
+        } catch (Throwable t) { System.out.println("[friendui] échec: " + t); }
+    }
+
+    /** DEV (#72 incr. 3a) : EMPOWER une amitié (consomme des FRIENDSHIP_EMPOWER_STONE) via le CHEMIN RÉEL du jeu
+     *  ({@code ClientActionHelper.empowerFriendship(pair, count)} → Action EMPOWER_FRIENDSHIP), comme le bouton de la
+     *  vue disk. Invoqué via clickfile "empower &lt;PRIMARY&gt; &lt;SECONDARY&gt; &lt;count&gt;". */
+    public static void empowerFriendship(GameMain game, String args) {
+        try {
+            String[] p = args.trim().split("[,;\\s]+");
+            if (p.length < 3) { System.out.println("[empower] usage: empower <PRIMARY> <SECONDARY> <count>"); return; }
+            com.perblue.heroes.network.messages.UnitType a =
+                com.perblue.heroes.network.messages.UnitType.valueOf(p[0].trim().toUpperCase());
+            com.perblue.heroes.network.messages.UnitType b =
+                com.perblue.heroes.network.messages.UnitType.valueOf(p[1].trim().toUpperCase());
+            int count = Integer.parseInt(p[2].trim());
+            com.perblue.heroes.game.objects.FriendPairID pair =
+                com.perblue.heroes.game.objects.FriendPairID.of(a, b);
+            com.perblue.heroes.game.ClientActionHelper.empowerFriendship(pair, count);
+            System.out.println("[empower] Action EMPOWER_FRIENDSHIP(" + pair + " x" + count + ") envoyée [chemin réel]");
+        } catch (Throwable t) { System.out.println("[empower] échec: " + t); }
+    }
+
+    /** DEV (#72) : DUMP l'état d'une amitié côté CLIENT (empowerment + statut de déblocage). Invoqué via clickfile
+     *  "frienddump &lt;PRIMARY&gt; &lt;SECONDARY&gt;". */
+    public static void friendDump(GameMain game, String args) {
+        try {
+            String[] p = args.trim().split("[,;\\s]+");
+            if (p.length < 2) { System.out.println("[frienddump] usage: frienddump <PRIMARY> <SECONDARY>"); return; }
+            com.perblue.heroes.game.objects.User u = game.getYourUser();
+            com.perblue.heroes.network.messages.UnitType a =
+                com.perblue.heroes.network.messages.UnitType.valueOf(p[0].trim().toUpperCase());
+            com.perblue.heroes.network.messages.UnitType b =
+                com.perblue.heroes.network.messages.UnitType.valueOf(p[1].trim().toUpperCase());
+            com.perblue.heroes.game.objects.FriendPairID pair =
+                com.perblue.heroes.game.objects.FriendPairID.of(a, b);
+            int emp = u.getIndividual().getFriendship(pair).getEmpowerment();
+            int stones = u.getIndividual().getItemAmount(com.perblue.heroes.network.messages.ItemType.FRIENDSHIP_EMPOWER_STONE);
+            System.out.println("[frienddump] " + pair + " empowerment=" + emp
+                + " unlock=" + com.perblue.heroes.game.logic.FriendshipHelper.getUnlockStatus(u, pair)
+                + " stones=" + stones);
+        } catch (Throwable t) { System.out.println("[frienddump] échec: " + t); }
+    }
+
     /** DEV : INSCRIT (ou retire) la guilde de la file de GUERRE via le CHEMIN RÉEL du jeu
      *  ({@code ClientActionHelper.changeGuildWarQueueState} → Action CHANGE_WAR_QUEUE), sans avoir à trouver
      *  le bouton d'un écran de guerre encore vide. Invoqué via clickfile

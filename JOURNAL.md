@@ -1,5 +1,33 @@
 # JOURNAL — journal détaillé des modifications
 
+## 2026-08-10 (g86) — FRIENDSHIPS (#72) EMPOWER (3a) ✅ vérifié EN JEU + entrée campagne d'amitié (3b) localisée
+
+Suite de la vérif en jeu (client réel, userID=1 TL100, RALPH+VANELLOPE ORANGE 60/5).
+
+**Empower (3a) — entrée UI localisée + vérifié** : la vue disk/empower est HÉROS → détail d'un héros → onglet **Friends**
+→ une amitié → mode **GEAR** (`HeroDetailFriendsContent.navigateToFriendUI(pair, FriendModeType.GEAR)`). Elle rend le
+disque **« PIECE OF CAKE »** (Vanellope, « BOOSTS STUNS », LEVEL 1 +14067 Max HP/+90 Tenacity, STARS 0/25, **LOCKED**).
+Le « LOCKED » est FIDÈLE : le disque se débloque via la campagne d'amitié/bits, pas via l'empowerment brut. **EMPOWER**
+via le chemin client réel `ClientActionHelper.empowerFriendship(pair, 5)` (pilote `empower RALPH VANELLOPE 5`) → serveur
+`<== EMPOWER_FRIENDSHIP(RALPH-VANELLOPE x5) appliqué [persisté]` → **empowerment 1→6** (getEmpowermentPerConsumable=1/
+pierre × 5), **FRIENDSHIP_EMPOWER_STONE 40→35** → relu en DB (`FriendMissionDump`) : empowerment=6. Nouveaux pilotes DEV
+(chemin `ClientActionHelper` réel, B-bis) : `friendui <p> <s> [MODE]` (navigateToFriendUI), `empower <p> <s> <n>`,
+`frienddump <p> <s>`.
+
+**Campagne d'amitié (3b) — entrée UI localisée** (grâce à l'indice de l'utilisateur : « y'a pas un bouton friend dans la
+campagne ? ») : l'écran **CAMPAIGN** a bien **trois onglets NORMAL / ELITE / FRIENDS** (bas de l'écran ; `CampaignType`
+= {NORMAL, ELITE, **FRIENDSHIP**}). L'onglet FRIENDS ouvre la liste des campagnes d'amitié (colonnes FRIENDSHIP |
+CAMPAIGN | MEMORY DISK) : chaque paire a une campagne nommée (difficulté EASY/HARD), « Episode 1: 0/5 », un bouton
+**UNLOCK**, et son disque mémoire (VIEW). **RALPH-VANELLOPE = « BULLY FOR YOU » (EASY)** (portraits Ralph+Vanellope +
+badge vert **6** = l'empowerment crédité juste avant ; disque « PIECE OF CAKE »). ⚠️ **Correction d'une conclusion
+erronée** : j'avais écrit que la campagne d'amitié était « legacy/verrouillée » en 12.1.0 — c'était FAUX, je n'avais
+testé que `navigateToFriendUI(CAMPAIGN)` (qui ne fait qu'un toast `showInfoNotif` puis retourne). La vraie entrée est
+l'onglet FRIENDS de l'écran CAMPAIGN (respect §8 : vérifier, ne pas supposer).
+
+**RESTE** : jouer un combat de campagne d'amitié EN JEU (UNLOCK « BULLY FOR YOU » → entrer un nœud → combat →
+`FriendshipCampaignAttack` → `recordFriendCampaignAttack`, déjà 🟢 headless `FriendshipCampaignTest`) ; favori + stamina
+(incr. 2) en jeu (mêmes patrons). Empowerment persisté=6, missions=0 (session g85).
+
 ## 2026-08-10 (g85) — FRIENDSHIPS (#72) incrément 3c : MISSIONS IDLE ✅ VÉRIFIÉ EN JEU
 
 Vérif EN JEU de l'incrément 3c contre NOTRE serveur (client réel, userID=1 TL100, RALPH+VANELLOPE ORANGE 60/5

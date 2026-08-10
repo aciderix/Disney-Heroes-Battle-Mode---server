@@ -320,6 +320,18 @@ public final class DesktopLauncher {
                     TutorialDriver.missionDump(game);
                     continue;
                 }
+                if (low.startsWith("friendui ")) {               // friendui <PRIMARY> <SECONDARY> [MODE] — ouvrir la vue détail d'amitié (disk/campagne)
+                    TutorialDriver.friendUI(game, ln.substring(9).trim());
+                    continue;
+                }
+                if (low.startsWith("empower ")) {                // empower <PRIMARY> <SECONDARY> <count> — empower amitié (EMPOWER_FRIENDSHIP réel)
+                    TutorialDriver.empowerFriendship(game, ln.substring(8).trim());
+                    continue;
+                }
+                if (low.startsWith("frienddump ")) {             // frienddump <PRIMARY> <SECONDARY> — dump état amitié côté client
+                    TutorialDriver.friendDump(game, ln.substring(11).trim());
+                    continue;
+                }
                 if (low.startsWith("warqueue ")) {               // warqueue <STATE> — inscrire la guilde en file de GUERRE (CHANGE_WAR_QUEUE réel)
                     TutorialDriver.changeWarQueue(game, ln.substring(9).trim());
                     continue;

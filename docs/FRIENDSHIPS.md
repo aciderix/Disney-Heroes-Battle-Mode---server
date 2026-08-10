@@ -89,7 +89,15 @@ pas sur l'écran MISSIONS de 12.1.0 — à confirmer : legacy ou accessible aill
    ⚠️ ne pas écraser `lastBattle` avec null — `new FriendPairData()` l'initialise non-null et `getClientFriendship`
    lit `lastBattle.serverTime` sans garde) ; items consommés dans `individualUserExtra.items` (write-through).
    `FriendshipEmpowerTest` : déblocage (2 héros grantés) + empower (consomme 2 pierres) + anti-triche (refus sans
-   pierre) + persistance DB. **Vérif EN JEU restante.**
+   pierre) + persistance DB.
+   - **✅ VÉRIFIÉ EN JEU (g86, userID=1 TL100, RALPH+VANELLOPE)** — **entrée UI localisée** : HÉROS → détail d'un héros
+     → onglet **Friends** → une amitié → vue **DISK/GEAR** (`HeroDetailFriendsContent.navigateToFriendUI(pair, GEAR)`),
+     qui rend le disque **« PIECE OF CAKE »** (Vanellope, « BOOSTS STUNS », LEVEL 1, STARS 0/25, **LOCKED** = fidélité :
+     le disque se débloque via la campagne d'amitié/bits, pas via l'empowerment brut). **EMPOWER** (chemin client réel
+     `ClientActionHelper.empowerFriendship` via pilote `empower RALPH VANELLOPE 5`) → serveur `EMPOWER_FRIENDSHIP(
+     RALPH-VANELLOPE x5) appliqué [persisté]` → **empowerment 1→6** (getEmpowermentPerConsumable=1/pierre × 5), **pierres
+     40→35** (`FRIENDSHIP_EMPOWER_STONE` consommées) → **relu en DB** (`FriendMissionDump`) : empowerment=6. Pilotes DEV
+     ajoutés : `friendui`/`empower`/`frienddump` (chemin `ClientActionHelper` réel, B-bis).
 3b. 🟢 **Campagne d'amitié (combat) — LIVRÉ HEADLESS (g82)** : message `FriendshipCampaignAttack{base, friendPairID,
    nodeNumber, lootEarned, memoryChanges, stagesCleared}` (PAS de handshake Start) → handler `LoginServer` →
    `ServerUser.recordFriendCampaignAttack` → `FriendshipCampaignHelper.recordOutcome(user, pair, node, outcome,
@@ -141,10 +149,16 @@ pas sur l'écran MISSIONS de 12.1.0 — à confirmer : legacy ou accessible aill
      méthode B-bis) : `missionadd`/`missionclaim`/`missioncancel`/`missiondump` ; outils DEV `MissionHurry` (avance les
      timers persistés) + `FriendMissionDump` (lecture état persisté).
    - `SPEEDUP_MISSION`/`SET_MISSION_ITEM_COST_LIMIT` = à câbler si le flux en jeu les exerce (non bloquant, mêmes patrons).
-4. **Vérif EN JEU** : ✅ **missions idle (3c) faite (g85)** — ADD→(hurry)→CLAIM + CANCEL, tout persisté. **RESTE** :
-   empower → disk et campagne (3b) : **localiser les points d'entrée UI** (l'écran MISSIONS = missions idle, PAS empower
-   ni combat ; empower = vue FRIENDSHIPS/détail d'une amitié ; campagne = peut-être legacy en 12.1.0). 2/3a/3b restent
-   prouvés HEADLESS (97/97) — leur vérif en jeu attend la localisation de ces écrans.
+4. **Vérif EN JEU** : ✅ **missions idle (3c) faite (g85)** — ADD→(hurry)→CLAIM + CANCEL, tout persisté ; ✅ **empower
+   (3a) faite (g86)** — vue disk + `EMPOWER_FRIENDSHIP` (empowerment 1→6, pierres −5, persisté). **Entrées UI localisées** :
+   - **empower/disk** = HÉROS → détail héros → onglet **Friends** → amitié → vue GEAR (disque).
+   - **campagne d'amitié (3b)** = écran **CAMPAIGN → onglet FRIENDS** (à côté de NORMAL/ELITE ; `CampaignType.FRIENDSHIP`)
+     → liste des campagnes par paire (FRIENDSHIP | CAMPAIGN | MEMORY DISK). **RALPH-VANELLOPE = « BULLY FOR YOU » (EASY)**,
+     Episode 1: 0/5, bouton **UNLOCK** ; disque « PIECE OF CAKE ». ⚠️ Correction : mon « legacy/verrouillé » (g86 initial)
+     était FAUX — je n'avais testé que `navigateToFriendUI(CAMPAIGN)` (toast). La vraie entrée est l'onglet FRIENDS de la
+     campagne. **RESTE 3b en jeu** : UNLOCK → entrer un nœud → jouer le combat (`FriendshipCampaignAttack` →
+     `recordFriendCampaignAttack`, déjà 🟢 headless `FriendshipCampaignTest`).
+   - **favori/stamina (incr. 2)** : vérif en jeu restante (mêmes patrons ; `setFavoriteFriendship`/`buyFriendStamina`).
 
 ## Notes §3/§4
 - Persistance quasi-gratuite (état dans `individualUserExtra` write-through). Zéro invention : niveaux/récompenses/
