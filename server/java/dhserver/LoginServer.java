@@ -1850,6 +1850,18 @@ public final class LoginServer {
                 System.out.println("[login]     ! persist expedition: " + e); } }
               System.out.println("[login] <== ExpeditionRaid : diff=" + er.difficulty
                   + (ok ? " → appliqué [persisté]" : " refusé"));
+            } else if (m instanceof com.perblue.heroes.network.messages.OpenExpeditionChest) {
+              // EXPEDITION #72 incr. 7 — coffre d'expédition. Client-autoritatif : le client ouvre localement puis
+              // envoie OpenExpeditionChest{rewardDrops} ; le serveur RÉ-EXÉCUTE l'autorité (openChest : roule + crédite).
+              com.perblue.heroes.network.messages.OpenExpeditionChest oc =
+                  (com.perblue.heroes.network.messages.OpenExpeditionChest) m;
+              boolean ok;
+              try { ok = ServerExpedition.recordOpenChest(user, oc); }
+              catch (Throwable t) { ok = false; System.out.println("[login]     ! OpenExpeditionChest: " + t); }
+              if (ok) { try { store.save(user); } catch (Exception e) {
+                System.out.println("[login]     ! persist expedition: " + e); } }
+              System.out.println("[login] <== OpenExpeditionChest"
+                  + (ok ? " → appliqué [persisté]" : " refusé"));
             } else if (m instanceof com.perblue.heroes.network.messages.GetSurge) {
               // SURGE #72 — OUVERTURE de l'écran : le client (GameMain) envoie GetSurge, le serveur renvoie l'état
               // PARTAGÉ de la guilde (ServerSurgeState, reconstruit si nouveau surge). GetSurge → SurgeData

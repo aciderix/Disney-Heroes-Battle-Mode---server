@@ -311,6 +311,44 @@ public final class ServerExpedition {
   }
 
   /**
+   * {@code OpenExpeditionChest} — ouverture du coffre d'expédition (récompense de complétion). Client-autoritatif :
+   * le client exécute {@code ExpeditionHelper.openChest} localement (se crédite), incrémente {@code chestsOpened} et
+   * envoie {@code OpenExpeditionChest{rewardDrops, specialEvents}}. Le serveur RÉ-EXÉCUTE l'autorité via la MÊME
+   * méthode du jeu (§3) {@code openChest(user, snap, difficulty, nodesDefeated, chestsOpened, droppedEpicChips, null)}
+   * — roule le butin ({@code rollExpeditionDrops}, graine {@code EXPEDITION_CHEST}) et le crédite ({@code giveRewards}),
+   * puis incrémente {@code chestsOpened} (mirroir client). <b>7ᵉ arg = null</b> (comme le client : saute
+   * {@code compareDrops}) → crédite le butin SERVEUR, sans faux rejet {@code INVALID_LOOT} (cf. #25/§4bis). Les epic
+   * chips ({@code droppedEpicChips}, client-reportés PARTIEL §4bis) sont passés en contexte du tirage. Renvoie {@code true}.
+   */
+  public static boolean recordOpenChest(ServerUser su, com.perblue.heroes.network.messages.OpenExpeditionChest m) {
+    ServerContext.init();
+    if (m == null) return false;
+    ExpeditionRunData run = su.expeditionRunOrNull();
+    if (run == null) { System.out.println("[expedition] openChest refusé : aucun run actif"); return false; }
+    User user = su.gameUser();
+    com.perblue.heroes.game.specialevent.SpecialEventSnapshot snap =
+        com.perblue.heroes.game.specialevent.SpecialEventSnapshot.NONE;
+    java.util.List epicChips = run.droppedEpicChips != null ? run.droppedEpicChips : new ArrayList<>();
+    long goldBefore = user.getResource(com.perblue.heroes.network.messages.ResourceType.GOLD);
+    try {
+      com.perblue.heroes.game.logic.ExpeditionHelper.openChest(
+          user, snap, run.difficulty, run.nodesDefeated, run.chestsOpened, epicChips, null);
+    } catch (Throwable t) {
+      boolean antiCheat = t instanceof com.perblue.heroes.ClientErrorCodeException;
+      System.out.println("[expedition] openChest " + (antiCheat ? "REFUSÉ (anti-triche)" : "échec") + " : " + t);
+      return false;
+    }
+    run.chestsOpened += 1;   // mirroir client (openExpeditionChest incrémente chestsOpened après le tirage)
+    long goldGiven = user.getResource(com.perblue.heroes.network.messages.ResourceType.GOLD) - goldBefore;
+    su.setExpeditionRun(run);
+    su.resyncDiamonds(user);
+    su.resyncHeroes(user);
+    su.resyncCounts(user);
+    System.out.println("[expedition] COFFRE ouvert → chestsOpened=" + run.chestsOpened + ", or +" + goldGiven);
+    return true;
+  }
+
+  /**
    * Réponse à {@code GetExpedition} : renvoie le run PERSISTÉ du joueur (rafraîchissement) ou, à défaut, un run vide
    * (le client enverra {@code ResetExpedition} pour en générer un). Ne persiste pas (lecture seule).
    */
