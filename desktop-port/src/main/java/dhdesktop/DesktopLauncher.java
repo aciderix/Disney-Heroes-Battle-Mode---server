@@ -316,6 +316,14 @@ public final class DesktopLauncher {
                     TutorialDriver.cancelMission(game, ln.length() > 13 ? ln.substring(13).trim() : "");
                     continue;
                 }
+                if (low.startsWith("speedup ")) {                // speedup <PRIMARY> <SECONDARY> <count> — accélérer une mission (SPEEDUP_MISSION réel)
+                    TutorialDriver.speedupMission(game, ln.substring(8).trim());
+                    continue;
+                }
+                if (low.startsWith("costlimit ")) {              // costlimit <ITEMTYPE> <N> — plafond dépense objet en missions (SET_MISSION_ITEM_COST_LIMIT réel)
+                    TutorialDriver.setMissionCostLimit(game, ln.substring(10).trim());
+                    continue;
+                }
                 if (low.equals("missiondump")) {                 // missiondump — dump de l'état missions côté client
                     TutorialDriver.missionDump(game);
                     continue;

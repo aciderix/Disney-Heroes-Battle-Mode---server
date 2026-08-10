@@ -1089,6 +1089,27 @@ public final class LoginServer {
                 System.out.println("[login] <== " + act.command + "(" + dbg + ")"
                     + (ok ? " appliqué [persisté]" : " refusé"));
 
+              } else if (act.command == com.perblue.heroes.network.messages.CommandType.SPEEDUP_MISSION) {
+                // FRIENDSHIPS #72 incr. 3c — accélérer une mission idle. Protocole client (disasm) :
+                //   SPEEDUP_MISSION  heroType=friendship.getPrimary(), itemType=<objet accél>, extra{COUNT=nb, TIME}
+                // Serveur re-dérive MissionSpeedupData (getSpeedupData) puis useSpeedups (§3, lève si stock insuffisant).
+                int count = (int) extraLong(act, com.perblue.heroes.network.messages.ActionExtraType.COUNT, 0);
+                boolean ok = ServerMissions.applySpeedupMission(user, act.heroType, act.itemType, count);
+                if (ok) { try { store.save(user); } catch (Exception e) {
+                  System.out.println("[login]     ! persist mission: " + e); } }
+                System.out.println("[login] <== SPEEDUP_MISSION(" + act.heroType + " " + act.itemType + " x" + count
+                    + ")" + (ok ? " appliqué [persisté]" : " refusé"));
+
+              } else if (act.command == com.perblue.heroes.network.messages.CommandType.SET_MISSION_ITEM_COST_LIMIT) {
+                // FRIENDSHIPS #72 incr. 3c — plafond de dépense auto d'un objet en missions. Protocole client :
+                //   SET_MISSION_ITEM_COST_LIMIT  itemType=<objet>, extra{COUNT=plafond}  (write-through, N=0 retire)
+                int limit = (int) extraLong(act, com.perblue.heroes.network.messages.ActionExtraType.COUNT, 0);
+                boolean ok = ServerMissions.applySetItemCostLimit(user, act.itemType, limit);
+                if (ok) { try { store.save(user); } catch (Exception e) {
+                  System.out.println("[login]     ! persist mission: " + e); } }
+                System.out.println("[login] <== SET_MISSION_ITEM_COST_LIMIT(" + act.itemType + "=" + limit + ")"
+                    + (ok ? " appliqué [persisté]" : " refusé"));
+
               } else if (act.command == com.perblue.heroes.network.messages.CommandType.ADD_MISSION
                   || act.command == com.perblue.heroes.network.messages.CommandType.CLAIM_MISSION_REWARDS
                   || act.command == com.perblue.heroes.network.messages.CommandType.CANCEL_MISSION) {

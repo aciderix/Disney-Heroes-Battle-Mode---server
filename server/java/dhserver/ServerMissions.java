@@ -4,6 +4,7 @@ import com.perblue.heroes.game.missions.MissionHelper;
 import com.perblue.heroes.game.objects.FriendPairID;
 import com.perblue.heroes.game.objects.IndividualUser;
 import com.perblue.heroes.game.objects.User;
+import com.perblue.heroes.network.messages.ItemType;
 import com.perblue.heroes.network.messages.MissionType;
 import com.perblue.heroes.network.messages.UnitType;
 
@@ -88,6 +89,59 @@ public final class ServerMissions {
     su.resyncDiamonds(user);
     su.resyncCounts(user);        // LAST_MISSION_COLLECTION_ID + compteurs quotidiens
     return claimed;
+  }
+
+  /**
+   * SPEEDUP_MISSION — accélère une mission idle en consommant des objets d'accélération.
+   * Protocole client ({@code ClientActionHelper.speedupMission}) : {@code heroType=friendship.getPrimary()} (identifie
+   * la mission), {@code itemType=objet d'accélération}, {@code extra{COUNT=nb d'objets, TIME}}.
+   *
+   * <p>Le client calcule un {@code MissionSpeedupData} (via {@code getSpeedupData}) et l'envoie, mais le serveur ne lui
+   * fait PAS confiance : il **re-dérive** le {@code MissionSpeedupData} avec le CODE DU JEU
+   * ({@code MissionHelper.getSpeedupData(user, mission, item, count, serverTimeNow())}) puis exécute
+   * {@code useSpeedups} (§3). {@code useSpeedups} LÈVE ({@code getNotEnoughResourceException}) si le stock d'objets/
+   * ressources est insuffisant → refus autoritatif. Ne persiste pas (appelant).
+   */
+  public static boolean applySpeedupMission(ServerUser su, UnitType primaryHero, ItemType speedupItem, int count) {
+    ServerContext.init();
+    User user = su.gameUser();
+    IndividualUser iu = user.getIndividual();
+    com.perblue.heroes.game.missions.IMission mission =
+        MissionHelper.getMissionWithHero(user, primaryHero);
+    if (mission == null) {
+      System.out.println("[mission] speedup refusé : aucune mission pour " + primaryHero);
+      return false;
+    }
+    try {
+      long now = com.perblue.heroes.util.TimeUtil.serverTimeNow();
+      MissionHelper.MissionSpeedupData data =
+          MissionHelper.getSpeedupData(user, mission, speedupItem, count, now);
+      MissionHelper.useSpeedups(user, mission, data);
+    } catch (Throwable t) {
+      System.out.println("[mission] speedup refusé (" + primaryHero + " " + speedupItem + " x" + count + ") : " + t);
+      return false;
+    }
+    su.resyncMissions(iu);
+    su.resyncFriendships(iu);   // un speedup peut compléter des cycles → empowerment/claim
+    su.resyncHeroes(user);
+    su.resyncDiamonds(user);
+    su.resyncCounts(user);
+    return true;
+  }
+
+  /**
+   * SET_MISSION_ITEM_COST_LIMIT — plafond de dépense AUTO d'un objet en missions (préférence/garde-fou joueur).
+   * Protocole client ({@code ClientActionHelper.setMissionItemCostLimit}) : {@code itemType=act.itemType},
+   * {@code extra{COUNT=plafond}}. → {@code IndividualUser.setMissionItemCostLimit(item, N)} = écriture DIRECTE dans
+   * {@code individualUserExtra.missionItemCostLimits} (write-through ; {@code N=0} retire l'entrée). Aucun resync.
+   * Ne persiste pas (appelant).
+   */
+  public static boolean applySetItemCostLimit(ServerUser su, ItemType item, int limit) {
+    ServerContext.init();
+    User user = su.gameUser();
+    if (item == null || item == ItemType.DEFAULT) return false;
+    user.getIndividual().setMissionItemCostLimit(item, Math.max(0, limit));
+    return true;
   }
 
   /**

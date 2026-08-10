@@ -1092,6 +1092,52 @@ public final class TutorialDriver {
         } catch (Throwable t) { System.out.println("[missioncancel] échec: " + t); }
     }
 
+    /** DEV (#72 incr. 3c) : ACCÉLÈRE la mission d'une paire via le CHEMIN RÉEL du jeu — calcule le
+     *  {@code MissionSpeedupData} (via {@code MissionHelper.getSpeedupData}) puis
+     *  {@code ClientActionHelper.speedupMission(mission, data, null)} (→ Action SPEEDUP_MISSION), comme le bouton
+     *  {@code >>} de la carte. Invoqué via clickfile "speedup &lt;PRIMARY&gt; &lt;SECONDARY&gt; &lt;count&gt;". */
+    public static void speedupMission(GameMain game, String args) {
+        try {
+            String[] p = args.trim().split("[,;\\s]+");
+            if (p.length < 3) { System.out.println("[speedup] usage: speedup <PRIMARY> <SECONDARY> <count>"); return; }
+            com.perblue.heroes.game.objects.User u = game.getYourUser();
+            com.perblue.heroes.network.messages.UnitType a =
+                com.perblue.heroes.network.messages.UnitType.valueOf(p[0].trim().toUpperCase());
+            com.perblue.heroes.network.messages.UnitType b =
+                com.perblue.heroes.network.messages.UnitType.valueOf(p[1].trim().toUpperCase());
+            int count = Integer.parseInt(p[2].trim());
+            com.perblue.heroes.game.objects.FriendPairID pair =
+                com.perblue.heroes.game.objects.FriendPairID.of(a, b);
+            com.perblue.heroes.game.missions.IMission mission = null;
+            for (Object o : u.getIndividual().getMissions()) {
+                com.perblue.heroes.game.missions.IMission mm = (com.perblue.heroes.game.missions.IMission) o;
+                if (mm.getFriendship().equals(pair)) { mission = mm; break; }
+            }
+            if (mission == null) { System.out.println("[speedup] aucune mission pour " + pair); return; }
+            long now = com.perblue.heroes.util.TimeUtil.serverTimeNow();
+            com.perblue.heroes.game.missions.MissionHelper.MissionSpeedupData data =
+                com.perblue.heroes.game.missions.MissionHelper.getSpeedupData(
+                    u, mission, com.perblue.heroes.network.messages.ItemType.MISSION_SPEEDUP, count, now);
+            com.perblue.heroes.game.ClientActionHelper.speedupMission(mission, data, null);
+            System.out.println("[speedup] Action SPEEDUP_MISSION(" + pair + " x" + count + ") envoyée [chemin réel]");
+        } catch (Throwable t) { System.out.println("[speedup] échec: " + t); }
+    }
+
+    /** DEV (#72 incr. 3c) : plafond de dépense d'un objet en missions via le CHEMIN RÉEL
+     *  ({@code ClientActionHelper.setMissionItemCostLimit(item, N)} → Action SET_MISSION_ITEM_COST_LIMIT). Invoqué
+     *  via clickfile "costlimit &lt;ITEMTYPE&gt; &lt;N&gt;". */
+    public static void setMissionCostLimit(GameMain game, String args) {
+        try {
+            String[] p = args.trim().split("[,;\\s]+");
+            if (p.length < 2) { System.out.println("[costlimit] usage: costlimit <ITEMTYPE> <N>"); return; }
+            com.perblue.heroes.network.messages.ItemType item =
+                com.perblue.heroes.network.messages.ItemType.valueOf(p[0].trim().toUpperCase());
+            int n = Integer.parseInt(p[1].trim());
+            com.perblue.heroes.game.ClientActionHelper.setMissionItemCostLimit(item, n);
+            System.out.println("[costlimit] Action SET_MISSION_ITEM_COST_LIMIT(" + item + "=" + n + ") envoyée [chemin réel]");
+        } catch (Throwable t) { System.out.println("[costlimit] échec: " + t); }
+    }
+
     /** DEV (#72 incr. 3c) : DUMP l'état des missions côté CLIENT (ce que l'écran MISSIONS voit) — missions en cours
      *  + MissionClaimData en attente. Invoqué via clickfile "missiondump". */
     public static void missionDump(GameMain game) {
