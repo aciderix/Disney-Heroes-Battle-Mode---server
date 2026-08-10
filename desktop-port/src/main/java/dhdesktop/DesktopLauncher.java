@@ -304,6 +304,22 @@ public final class DesktopLauncher {
                     TutorialDriver.requestStaminaAid(game);
                     continue;
                 }
+                if (low.startsWith("missionadd ")) {             // missionadd <TYPE> <PRIMARY> <SECONDARY> — démarrer une mission idle (ADD_MISSION réel)
+                    TutorialDriver.addMission(game, ln.substring(11).trim());
+                    continue;
+                }
+                if (low.equals("missionclaim")) {                // missionclaim — réclamer les missions terminées (CLAIM_MISSION_REWARDS réel)
+                    TutorialDriver.claimMissions(game);
+                    continue;
+                }
+                if (low.startsWith("missioncancel")) {           // missioncancel [PRIMARY] — annuler une mission (CANCEL_MISSION réel)
+                    TutorialDriver.cancelMission(game, ln.length() > 13 ? ln.substring(13).trim() : "");
+                    continue;
+                }
+                if (low.equals("missiondump")) {                 // missiondump — dump de l'état missions côté client
+                    TutorialDriver.missionDump(game);
+                    continue;
+                }
                 if (low.startsWith("warqueue ")) {               // warqueue <STATE> — inscrire la guilde en file de GUERRE (CHANGE_WAR_QUEUE réel)
                     TutorialDriver.changeWarQueue(game, ln.substring(9).trim());
                     continue;

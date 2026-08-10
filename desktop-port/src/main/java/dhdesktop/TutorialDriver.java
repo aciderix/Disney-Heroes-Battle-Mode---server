@@ -1037,6 +1037,80 @@ public final class TutorialDriver {
         } catch (Throwable t) { System.out.println("[requeststamina] échec: " + t); }
     }
 
+    /** DEV (#72 incr. 3c) : DÉMARRE une MISSION IDLE d'amitié via le CHEMIN RÉEL du jeu
+     *  ({@code ClientActionHelper.addMission(type, pair)} → Action ADD_MISSION), exactement ce que le bouton START
+     *  de {@code MissionsChooseWindow} appelle. Contourne le hit-test capricieux des fenêtres de sélection
+     *  (MissionsSelectFriendsWindow/ChooseWindow, g83). Invoqué via clickfile
+     *  "missionadd &lt;POWER_UP_MISSION|MEMORY_MISSION|DISK_POWER_MISSION&gt; &lt;PRIMARY&gt; &lt;SECONDARY&gt;". */
+    public static void addMission(GameMain game, String args) {
+        try {
+            String[] p = args.trim().split("[,;\\s]+");
+            if (p.length < 3) { System.out.println("[missionadd] usage: missionadd <TYPE> <PRIMARY> <SECONDARY>"); return; }
+            com.perblue.heroes.network.messages.MissionType type =
+                com.perblue.heroes.network.messages.MissionType.valueOf(p[0].trim().toUpperCase());
+            com.perblue.heroes.network.messages.UnitType a =
+                com.perblue.heroes.network.messages.UnitType.valueOf(p[1].trim().toUpperCase());
+            com.perblue.heroes.network.messages.UnitType b =
+                com.perblue.heroes.network.messages.UnitType.valueOf(p[2].trim().toUpperCase());
+            com.perblue.heroes.game.objects.FriendPairID pair =
+                com.perblue.heroes.game.objects.FriendPairID.of(a, b);
+            com.perblue.heroes.game.ClientActionHelper.addMission(type, pair);
+            System.out.println("[missionadd] Action ADD_MISSION(" + type + ", " + pair + ") envoyée [chemin réel]");
+        } catch (Throwable t) { System.out.println("[missionadd] échec: " + t); }
+    }
+
+    /** DEV (#72 incr. 3c) : RÉCLAME les récompenses de missions terminées via le CHEMIN RÉEL du jeu
+     *  ({@code ClientActionHelper.claimMissionRewards} → Action CLAIM_MISSION_REWARDS), comme le bouton
+     *  « CLAIM ALL ». Invoqué via clickfile "missionclaim". */
+    public static void claimMissions(GameMain game) {
+        try {
+            com.perblue.heroes.game.ClientActionHelper.claimMissionRewards(null);
+            System.out.println("[missionclaim] Action CLAIM_MISSION_REWARDS envoyée [chemin réel]");
+        } catch (Throwable t) { System.out.println("[missionclaim] échec: " + t); }
+    }
+
+    /** DEV (#72 incr. 3c) : ANNULE la 1ʳᵉ mission en cours (ou celle portant le héros donné) via le CHEMIN RÉEL
+     *  ({@code ClientActionHelper.cancelMission(mission)} → Action CANCEL_MISSION). Invoqué via clickfile
+     *  "missioncancel [PRIMARY]". */
+    public static void cancelMission(GameMain game, String arg) {
+        try {
+            com.perblue.heroes.game.objects.User u = game.getYourUser();
+            if (u == null) { System.out.println("[missioncancel] pas d'utilisateur"); return; }
+            com.perblue.heroes.network.messages.UnitType want = null;
+            if (arg != null && !arg.trim().isEmpty())
+                want = com.perblue.heroes.network.messages.UnitType.valueOf(arg.trim().toUpperCase());
+            com.perblue.heroes.game.missions.IMission target = null;
+            for (Object o : u.getIndividual().getMissions()) {
+                com.perblue.heroes.game.missions.IMission mm = (com.perblue.heroes.game.missions.IMission) o;
+                if (want == null || mm.getFriendship().getPrimary() == want || mm.getFriendship().getSecondary() == want) {
+                    target = mm; break;
+                }
+            }
+            if (target == null) { System.out.println("[missioncancel] aucune mission à annuler"); return; }
+            com.perblue.heroes.game.ClientActionHelper.cancelMission(target);
+            System.out.println("[missioncancel] Action CANCEL_MISSION(" + target.getFriendship() + ") envoyée [chemin réel]");
+        } catch (Throwable t) { System.out.println("[missioncancel] échec: " + t); }
+    }
+
+    /** DEV (#72 incr. 3c) : DUMP l'état des missions côté CLIENT (ce que l'écran MISSIONS voit) — missions en cours
+     *  + MissionClaimData en attente. Invoqué via clickfile "missiondump". */
+    public static void missionDump(GameMain game) {
+        try {
+            com.perblue.heroes.game.objects.User u = game.getYourUser();
+            if (u == null) { System.out.println("[missiondump] pas d'utilisateur"); return; }
+            int n = 0;
+            for (Object o : u.getIndividual().getMissions()) {
+                com.perblue.heroes.game.missions.IMission mm = (com.perblue.heroes.game.missions.IMission) o;
+                System.out.println("[missiondump]   mission #" + (++n) + " type=" + mm.getType()
+                    + " pair=" + mm.getFriendship() + " baseTimeRemaining=" + mm.getBaseTimeRemaining()
+                    + " speed=" + mm.getSpeed() + " startTime=" + mm.getStartTime());
+            }
+            int c = 0;
+            for (Object o : u.getIndividual().getMissionClaimData()) c++;
+            System.out.println("[missiondump] missions=" + n + " claimEnAttente=" + c);
+        } catch (Throwable t) { System.out.println("[missiondump] échec: " + t); }
+    }
+
     /** DEV : INSCRIT (ou retire) la guilde de la file de GUERRE via le CHEMIN RÉEL du jeu
      *  ({@code ClientActionHelper.changeGuildWarQueueState} → Action CHANGE_WAR_QUEUE), sans avoir à trouver
      *  le bouton d'un écran de guerre encore vide. Invoqué via clickfile

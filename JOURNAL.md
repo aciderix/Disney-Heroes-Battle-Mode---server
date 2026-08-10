@@ -1,5 +1,46 @@
 # JOURNAL — journal détaillé des modifications
 
+## 2026-08-10 (g85) — FRIENDSHIPS (#72) incrément 3c : MISSIONS IDLE ✅ VÉRIFIÉ EN JEU
+
+Vérif EN JEU de l'incrément 3c contre NOTRE serveur (client réel, userID=1 TL100, RALPH+VANELLOPE ORANGE 60/5
+préparé par `FriendAcctSetup`). Chaîne complète ADD → (avance temps) → CLAIM + CANCEL, tout par le chemin CLIENT
+réel (`ClientActionHelper`) et persisté.
+
+**Nouveaux pilotes DEV** (chemin `ClientActionHelper` RÉEL = ce que les boutons UI appellent, méthode B-bis — contourne
+le hit-test capricieux des fenêtres MissionsSelectFriends/ChooseWindow, g83) : `missionadd <TYPE> <PRIMARY> <SECONDARY>`
+(`addMission`→Action ADD_MISSION), `missionclaim` (`claimMissionRewards`→CLAIM_MISSION_REWARDS), `missioncancel [hero]`
+(`cancelMission`→CANCEL_MISSION), `missiondump` (état missions côté client). Outils DEV : `MissionHurry` (avance les
+timers PERSISTÉS via `ServerUser.debugHurryMissions`=`MissionHelper.debugHurryAllMissions`, serveur arrêté) +
+`FriendMissionDump` (lecture de l'état persisté).
+
+**Déroulé vérifié** :
+1. `nav MISSIONS` → écran **MISSIONS** rend « **0/1 missions** » + ADD MISSION + « No rewards to claim yet! » / CLAIM ALL
+   (état frais, aucun NPE). `missiondump` client = 0 missions.
+2. **ADD** : `missionadd POWER_UP_MISSION RALPH VANELLOPE` → client `Action ADD_MISSION(POWER_UP_MISSION, RALPH-VANELLOPE)
+   envoyée [chemin réel]` → serveur `<== ADD_MISSION(POWER_UP_MISSION RALPH-VANELLOPE) appliqué [persisté]`.
+3. **Persistance ADD prouvée par REDÉMARRAGE** : stack arrêtée, `MissionHurry` charge userID=1 depuis la DB (→ la
+   mission ÉTAIT persistée) et avance 1 cycle (→ `MissionClaimData en attente=1`). Relance de la pile → le client relit
+   l'état PERSISTÉ : « **1/1 missions** » + carte **« SUGAR RUSHED »** (« Ralph has to help Vanellope hurry back… »,
+   Ralph+Vanellope) + « **On Completion +1** » (empowerment = empReward POWER_UP sondé) + « Rewards In: 1d 20m » (timer
+   du cycle suivant, mission répétable) + **CLAIM ALL** vert avec badge + « 5m 22s of rewards ». `missiondump` client =
+   1 mission (POWER_UP_MISSION RALPH-VANELLOPE), claimEnAttente=1.
+4. **CLAIM** : `missionclaim` → client `Action CLAIM_MISSION_REWARDS envoyée [chemin réel]` → serveur `<==
+   CLAIM_MISSION_REWARDS(claim) appliqué [persisté]` ; `missiondump` client claimEnAttente 1→0, mission continue.
+5. **CANCEL** : `missioncancel` → client `Action CANCEL_MISSION(RALPH-VANELLOPE) envoyée [chemin réel]` (heroType=RALPH,
+   le primaire) → serveur `<== CANCEL_MISSION(cancel RALPH) appliqué [persisté]`.
+6. **État PERSISTÉ relu en DB** (`FriendMissionDump`, serveur arrêté) : **RALPH-VANELLOPE empowerment=1** (crédité par le
+   CLAIM), **missions=0** (retirée par le CANCEL), **claimsEnAttente=0**. ⇒ les trois handlers appliquent + persistent
+   AUTORITATIVEMENT en jeu, valeurs = code/données du jeu.
+
+**Note d'outillage** (pas un défaut serveur) : `missionadd`/`missionclaim` passent par le chemin d'ENVOI (`doAction` →
+message), fire-and-forget, SANS l'apply LOCAL optimiste que le bouton UI déclenche → la vue cliente ne se rafraîchit
+qu'au redémarrage (l'autorité est serveur, relue au boot via BootData/individualUserExtra). Le rendu de la carte et de
+« CLAIM ALL » après redémarrage confirme que le client lit fidèlement notre état persisté.
+
+**Bilan FRIENDSHIPS #72** : incr. 1 ✅ en jeu · **3c MISSIONS IDLE ✅ en jeu (g85)** · 2/3a/3b 🟢 headless (98/98).
+**RESTE** : localiser les entrées UI **empower** (vue détail d'amitié) et **campagne 3b** (peut-être legacy 12.1.0) pour
+finir leur vérif en jeu ; `SPEEDUP_MISSION`/`SET_MISSION_ITEM_COST_LIMIT` si le flux les exerce.
+
 ## 2026-08-09 (g84) — FRIENDSHIPS (#72) incrément 3c : MISSIONS IDLE d'amitié (🟢 headless, 98/98)
 
 Le système de MISSIONS IDLE révélé en jeu (g83) — cœur de l'écran MISSIONS de 12.1.0 — implémenté côté serveur.

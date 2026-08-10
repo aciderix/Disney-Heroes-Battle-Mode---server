@@ -101,7 +101,7 @@ pas sur l'écran MISSIONS de 12.1.0 — à confirmer : legacy ou accessible aill
    Persistance via `resyncFriendships` (+héros/diamants/compteurs). `FriendshipCampaignTest` : paire débloquée +
    FRIEND_STAMINA → combat WIN nœud 1 → **-6 stamina, lastBattle{node=1, won=true}**, persistance DB. **Vérif EN
    JEU restante.** (`giveChapterRewards` = réclamation de chapitre, Action séparée — à câbler si besoin.)
-3c. 🟢 **MISSIONS IDLE (cœur de l'écran MISSIONS — REQUIS, révélé en jeu g83) — LIVRÉ HEADLESS (g84)** :
+3c. ✅ **MISSIONS IDLE (cœur de l'écran MISSIONS — REQUIS, révélé en jeu g83) — LIVRÉ + VÉRIFIÉ EN JEU (g84/g85)** :
    nouveau `ServerMissions` + handlers `LoginServer`, code du jeu (§3, `com.perblue.heroes.game.missions.MissionHelper`),
    zéro invention (§4). Protocoles PROUVÉS au bytecode (`ClientActionHelper`) :
    - `ADD_MISSION{TYPE=MissionType, ID=FriendPairID.getAsLong(), TIME}` → `MissionHelper.addMission(user, type, pair,
@@ -127,11 +127,24 @@ pas sur l'écran MISSIONS de 12.1.0 — à confirmer : legacy ou accessible aill
    - `MissionLoopTest` : ADD POWER_UP → 1 mission (persiste DB) ; 2ᵉ ADD refusé (limite/coût, anti-triche) ; CANCEL
      par héros primaire → 0 (persiste) ; avance du temps (`debugHurryAllMissions`, méthode DEBUG du jeu, via l'outil
      `ServerUser.debugHurryMissions`) → CLAIM → **empowerment +1** + `missionClaimData` vidé, persistance DB.
-     Régression **98/98**. **Vérif EN JEU restante** (incr. 4). `SPEEDUP_MISSION`/`SET_MISSION_ITEM_COST_LIMIT` =
-     à câbler si le flux en jeu les exerce (non bloquant, mêmes patrons).
-4. ⬜ **Vérif EN JEU complète** : missions idle (3c) START→collect ; empower → disk (localiser la vue FRIENDSHIPS) ;
-   campagne (3b) si accessible dans 12.1.0. **Localiser les points d'entrée UI** d'empower et du combat de campagne
-   (l'écran MISSIONS = missions idle, pas le combat).
+     Régression **98/98**.
+   - **✅ VÉRIFIÉ EN JEU (g85, userID=1 TL100, RALPH+VANELLOPE ORANGE 60/5)** — client réel → NOTRE serveur :
+     `nav MISSIONS` rend « **0/1 missions** » + ADD MISSION + « No rewards to claim yet! ». **ADD** (chemin client réel
+     `ClientActionHelper.addMission`, pilote `missionadd POWER_UP_MISSION RALPH VANELLOPE`) → serveur
+     `ADD_MISSION(POWER_UP_MISSION RALPH-VANELLOPE) appliqué [persisté]` → **après redémarrage** le client relit l'état
+     PERSISTÉ : « **1/1 missions** » + carte **« SUGAR RUSHED »** (Ralph+Vanellope, « On Completion **+1** » empowerment
+     = empReward sondé) + timer répétable. **CLAIM** (mission avancée par l'outil DEV `MissionHurry` → « CLAIM ALL » +
+     reward en attente rendus) → pilote `missionclaim` (`CLAIM_MISSION_REWARDS` réel) → serveur `appliqué [persisté]`,
+     `claimEnAttente` 1→0. **CANCEL** → pilote `missioncancel` (`CANCEL_MISSION` réel, heroType=primaire) → serveur
+     `appliqué [persisté]`. **État PERSISTÉ relu en DB** (`FriendMissionDump`) : **empowerment=1** (crédité par CLAIM),
+     **missions=0** (retirée par CANCEL), **claimsEnAttente=0**. Pilotes DEV ajoutés (chemin `ClientActionHelper` réel,
+     méthode B-bis) : `missionadd`/`missionclaim`/`missioncancel`/`missiondump` ; outils DEV `MissionHurry` (avance les
+     timers persistés) + `FriendMissionDump` (lecture état persisté).
+   - `SPEEDUP_MISSION`/`SET_MISSION_ITEM_COST_LIMIT` = à câbler si le flux en jeu les exerce (non bloquant, mêmes patrons).
+4. **Vérif EN JEU** : ✅ **missions idle (3c) faite (g85)** — ADD→(hurry)→CLAIM + CANCEL, tout persisté. **RESTE** :
+   empower → disk et campagne (3b) : **localiser les points d'entrée UI** (l'écran MISSIONS = missions idle, PAS empower
+   ni combat ; empower = vue FRIENDSHIPS/détail d'une amitié ; campagne = peut-être legacy en 12.1.0). 2/3a/3b restent
+   prouvés HEADLESS (97/97) — leur vérif en jeu attend la localisation de ces écrans.
 
 ## Notes §3/§4
 - Persistance quasi-gratuite (état dans `individualUserExtra` write-through). Zéro invention : niveaux/récompenses/
