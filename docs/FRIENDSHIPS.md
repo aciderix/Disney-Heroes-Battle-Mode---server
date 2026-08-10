@@ -98,7 +98,7 @@ pas sur l'écran MISSIONS de 12.1.0 — à confirmer : legacy ou accessible aill
      RALPH-VANELLOPE x5) appliqué [persisté]` → **empowerment 1→6** (getEmpowermentPerConsumable=1/pierre × 5), **pierres
      40→35** (`FRIENDSHIP_EMPOWER_STONE` consommées) → **relu en DB** (`FriendMissionDump`) : empowerment=6. Pilotes DEV
      ajoutés : `friendui`/`empower`/`frienddump` (chemin `ClientActionHelper` réel, B-bis).
-3b. 🟢 **Campagne d'amitié (combat) — LIVRÉ HEADLESS (g82)** : message `FriendshipCampaignAttack{base, friendPairID,
+3b. ✅ **Campagne d'amitié (combat) — LIVRÉ HEADLESS (g82) + VÉRIFIÉ EN JEU (g86)** : message `FriendshipCampaignAttack{base, friendPairID,
    nodeNumber, lootEarned, memoryChanges, stagesCleared}` (PAS de handshake Start) → handler `LoginServer` →
    `ServerUser.recordFriendCampaignAttack` → `FriendshipCampaignHelper.recordOutcome(user, pair, node, outcome,
    loot, attackers, defenders, snap, chapter, level, false)` (code du jeu §3, autoritatif). **Gates du jeu**
@@ -107,8 +107,15 @@ pas sur l'écran MISSIONS de 12.1.0 — à confirmer : legacy ou accessible aill
    **Chapitre/niveau normaux** (échelle XP) DÉRIVÉS par le code du jeu : `getNormalCampaignChapter(user)` +
    `getNormalCampaignLevel(pair, node, chapter)` (mapping du call-site client). Loot = client (PARTIEL §4bis/#25).
    Persistance via `resyncFriendships` (+héros/diamants/compteurs). `FriendshipCampaignTest` : paire débloquée +
-   FRIEND_STAMINA → combat WIN nœud 1 → **-6 stamina, lastBattle{node=1, won=true}**, persistance DB. **Vérif EN
-   JEU restante.** (`giveChapterRewards` = réclamation de chapitre, Action séparée — à câbler si besoin.)
+   FRIEND_STAMINA → combat WIN nœud 1 → **-6 stamina, lastBattle{node=1, won=true}**, persistance DB.
+   - **✅ VÉRIFIÉ EN JEU (g86, userID=1)** — **entrée UI = CAMPAIGN → onglet FRIENDS** → « BULLY FOR YOU » (RALPH-VANELLOPE,
+     débloquée par l'empowerment=6, animation « FRIENDSHIP UNLOCKED! ») → **GO!** → aperçu du nœud EPISODE 1 « CREEP
+     CLEARANCE » (4 ennemis, **NEXT = 6 énergie d'amitié**, = getStaminaCost) → CHOOSE YOUR HEROES (Ralph+Vanellope+
+     Elastigirl, Team 22643 vs 880) → **QUICK FIGHT** → écran **REWARDS** (LOOT 783 or + 4 objets + Hero XP +5). Le client
+     envoie `FriendshipCampaignAttack1` → serveur `<== FriendshipCampaignAttack : pair=RALPH-VANELLOPE node=1 outcome=WIN
+     → recordOutcome appliqué [persisté]`. **Relu en DB** (`FriendMissionDump`) : **FRIEND_STAMINA 525→519 (−6)**,
+     **campaignProgress 0→1** (nœud 1 franchi), **lastBattle{node=1, won=true}**. (`giveChapterRewards` = réclamation de
+     chapitre, Action séparée — à câbler si un chapitre complet l'exerce.)
 3c. ✅ **MISSIONS IDLE (cœur de l'écran MISSIONS — REQUIS, révélé en jeu g83) — LIVRÉ + VÉRIFIÉ EN JEU (g84/g85)** :
    nouveau `ServerMissions` + handlers `LoginServer`, code du jeu (§3, `com.perblue.heroes.game.missions.MissionHelper`),
    zéro invention (§4). Protocoles PROUVÉS au bytecode (`ClientActionHelper`) :
@@ -154,11 +161,11 @@ pas sur l'écran MISSIONS de 12.1.0 — à confirmer : legacy ou accessible aill
    - **empower/disk** = HÉROS → détail héros → onglet **Friends** → amitié → vue GEAR (disque).
    - **campagne d'amitié (3b)** = écran **CAMPAIGN → onglet FRIENDS** (à côté de NORMAL/ELITE ; `CampaignType.FRIENDSHIP`)
      → liste des campagnes par paire (FRIENDSHIP | CAMPAIGN | MEMORY DISK). **RALPH-VANELLOPE = « BULLY FOR YOU » (EASY)**,
-     Episode 1: 0/5, bouton **UNLOCK** ; disque « PIECE OF CAKE ». ⚠️ Correction : mon « legacy/verrouillé » (g86 initial)
-     était FAUX — je n'avais testé que `navigateToFriendUI(CAMPAIGN)` (toast). La vraie entrée est l'onglet FRIENDS de la
-     campagne. **RESTE 3b en jeu** : UNLOCK → entrer un nœud → jouer le combat (`FriendshipCampaignAttack` →
-     `recordFriendCampaignAttack`, déjà 🟢 headless `FriendshipCampaignTest`).
-   - **favori/stamina (incr. 2)** : vérif en jeu restante (mêmes patrons ; `setFavoriteFriendship`/`buyFriendStamina`).
+     disque « PIECE OF CAKE ». ✅ **3b JOUÉ EN JEU (g86)** : GO! → nœud 1 « CREEP CLEARANCE » → QUICK FIGHT WIN → serveur
+     recordOutcome persisté (−6 stamina, progress 0→1, lastBattle won). ⚠️ Correction : mon « legacy/verrouillé » (g86
+     initial) était FAUX — je n'avais testé que `navigateToFriendUI(CAMPAIGN)` (toast). La vraie entrée est l'onglet FRIENDS.
+   - **favori/stamina (incr. 2)** : vérif en jeu restante (mêmes patrons ; `setFavoriteFriendship`/`buyFriendStamina`) —
+     SEUL point FRIENDSHIPS non encore vérifié en jeu.
 
 ## Notes §3/§4
 - Persistance quasi-gratuite (état dans `individualUserExtra` write-through). Zéro invention : niveaux/récompenses/

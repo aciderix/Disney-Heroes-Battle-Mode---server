@@ -24,9 +24,20 @@ erronée** : j'avais écrit que la campagne d'amitié était « legacy/verrouill
 testé que `navigateToFriendUI(CAMPAIGN)` (qui ne fait qu'un toast `showInfoNotif` puis retourne). La vraie entrée est
 l'onglet FRIENDS de l'écran CAMPAIGN (respect §8 : vérifier, ne pas supposer).
 
-**RESTE** : jouer un combat de campagne d'amitié EN JEU (UNLOCK « BULLY FOR YOU » → entrer un nœud → combat →
-`FriendshipCampaignAttack` → `recordFriendCampaignAttack`, déjà 🟢 headless `FriendshipCampaignTest`) ; favori + stamina
-(incr. 2) en jeu (mêmes patrons). Empowerment persisté=6, missions=0 (session g85).
+**Combat de campagne d'amitié (3b) JOUÉ & VÉRIFIÉ EN JEU (même session g86)** : après l'empower (empowerment=6), l'écran
+« FRIENDSHIP UNLOCKED! » (Ralph+Vanellope) est apparu → CONTINUE → la campagne « BULLY FOR YOU » (RALPH-VANELLOPE) est
+passée de UNLOCK à **GO!**. GO! → aperçu du nœud **EPISODE 1 « CREEP CLEARANCE »** (4 ennemis, bouton **NEXT = 6 énergie
+d'amitié** = `FriendshipCampaignStats.getStaminaCost(node)`) → **CHOOSE YOUR HEROES** (Ralph+Vanellope+Elastigirl, TEAM
+POWER 22643 vs ENEMY 880) → **QUICK FIGHT** → écran **REWARDS** (LOOT 783 or + 4 objets + Hero XP +5 Vanellope/Ralph/
+Elastigirl). Le client envoie `FriendshipCampaignAttack1` → serveur : `<== FriendshipCampaignAttack : pair=RALPH-VANELLOPE
+node=1 outcome=WIN → recordOutcome appliqué [persisté]`. **Relu en DB** (`FriendMissionDump` étendu) : **FRIEND_STAMINA
+525→519 (−6)**, **campaignProgress 0→1** (nœud 1 franchi), **lastBattle{node=1 won=true}** — EXACTEMENT le comportement
+headless (`FriendshipCampaignTest`), confirmé en jeu. (Le loot 783/objets = client-autoritatif, PARTIEL §4bis/#25.)
+Note : après le combat la connexion s'est fermée (`onClose`, le client est resté figé sur REWARDS, fin de `DH_TIMEOUT`)
+— sans incidence, l'issue avait déjà été reçue+persistée.
+
+**BILAN vérif EN JEU FRIENDSHIPS #72** : incr. 1 (rendu) ✅, **3a empower ✅**, **3b campagne ✅**, **3c missions idle ✅**.
+**SEUL RESTE** : incr. 2 (favori + stamina) en jeu (mêmes patrons `setFavoriteFriendship`/`buyFriendStamina`).
 
 ## 2026-08-10 (g85) — FRIENDSHIPS (#72) incrément 3c : MISSIONS IDLE ✅ VÉRIFIÉ EN JEU
 

@@ -11,10 +11,16 @@ public final class FriendMissionDump {
     ServerUser u = store.loadIfExists(1L, 1);
     if (u == null) { System.out.println("RESULT ERR — userID=1 introuvable"); store.close(); return; }
     FriendPairID pair = FriendPairID.of(UnitType.RALPH, UnitType.VANELLOPE);
-    int emp = u.gameUser().getIndividual().getFriendship(pair).getEmpowerment();
-    int miss = 0; for (Object o : u.gameUser().getIndividual().getMissions()) miss++;
-    int claims = 0; for (Object o : u.gameUser().getIndividual().getMissionClaimData()) claims++;
+    com.perblue.heroes.game.objects.User gu = u.gameUser();
+    int emp = gu.getIndividual().getFriendship(pair).getEmpowerment();
+    int miss = 0; for (Object o : gu.getIndividual().getMissions()) miss++;
+    int claims = 0; for (Object o : gu.getIndividual().getMissionClaimData()) claims++;
+    long stamina = gu.getResource(ResourceType.FRIEND_STAMINA);
+    int camp = gu.getIndividual().getFriendshipCampaignProgress(pair);
+    com.perblue.heroes.network.messages.FriendshipBattleInfo lb = gu.getIndividual().getFriendship(pair).getLastBattle();
     store.close();
-    System.out.println("RESULT OK — RALPH-VANELLOPE empowerment=" + emp + ", missions=" + miss + ", claimsEnAttente=" + claims);
+    System.out.println("RESULT OK — RALPH-VANELLOPE empowerment=" + emp + ", missions=" + miss
+        + ", claimsEnAttente=" + claims + ", FRIEND_STAMINA=" + stamina + ", campaignProgress=" + camp
+        + ", lastBattle=" + (lb == null ? "null" : ("{node=" + lb.node + " won=" + lb.won + "}")));
   }
 }
