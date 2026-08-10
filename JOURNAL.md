@@ -4103,3 +4103,37 @@ plusieurs slots/raretés + paiement diamants).
 Fichiers : `server/java/dhserver/{ServerUser,LoginServer}.java`, `server/smoke/{EnchantApplyTest,ExpAdminEnchant}.java`,
 `server/smoke/regression.sh`, `desktop-port/src/main/java/dhdesktop/{TutorialDriver,DesktopLauncher}.java`,
 `docs/ENCHANTING.md`, `MEMORY.md`.
+
+---
+
+## 2026-08-10 (g99) — ENCHANTING (#72) incrément 2 : garde-fous + chemin diamants ✅ VÉRIFIÉ EN JEU → mode COMPLET
+
+Garde-fous d'enchant (barème + anti-triche), tout par la logique du jeu (§3), zéro invention (§4).
+
+**Barème (bytecode/probes).** `getMaxStars` par rareté : WHITE=0 (non-enchantable), GREEN=1, BLUE=3,
+PURPLE/ORANGE/RED/YELLOW=5. `getEnchantMaxDiamondCost` dépend de l'item (PC_FLYERS ORANGE=5040, ROCKET_PACK_PATCH_KIT
+PURPLE=3360). `getEnchantPoints(VOID_DUST)=10`.
+
+**Comportements vérifiés.** (1) **Plafond d'étoiles** : au max (5/5), tout nouvel enchant est REFUSÉ (levée du jeu).
+(2) **Matériaux insuffisants** : demander plus que possédé (sans diamants) → REFUS, aucun débit (or/matériaux/étoiles
+inchangés). (3) **Chemin DIAMANTS** (`useDiamonds=true`) : paie `getEnchantMaxDiamondCost` → item au MAX d'un coup,
+**matériaux NON consommés** ; anti-triche = diamants insuffisants → REFUS. (4) Coût OR exact (`getEnchantGoldCost`,
+incr. 1).
+
+**Test `EnchantGuardTest`.** Chemin diamants (→5/5 étoiles + −5040 diamants + matériaux intacts + persistance wire) ;
+plafond (refus au max) ; matériaux insuffisants (refus, aucun débit) ; anti-triche diamants (100 diamants < coût →
+refus). Régression → **106 tests**.
+
+**✅ VÉRIFIÉ EN JEU (compte id=1 TL100).** `ExpAdminEnchant` (RALPH + gear complet + matériaux + or + 50 000 diamants).
+`enchant RALPH TWO VOID_DUST 0 diamonds` (chemin client réel `ClientActionHelper.enchantItem(..., useDiamonds=true,
+listener)`) → client `EnchantItem` → serveur **`RALPH/TWO enchanté (or -0, diamants -3360) [persisté]`**. **DB
+confirmée** : slot TWO (ROCKET_PACK_PATCH_KIT, PURPLE) **étoiles 0→5 (MAX)**, diamants 50 000→46 640 (−3360 = coût max
+exact de cet item), ni or ni matériaux consommés. Pilote DEV étendu `enchant <HERO> <SLOT> <MAT> <count> [diamonds]`.
+
+**⇒ ENCHANTING #72 COMPLET & VÉRIFIÉ EN JEU** : incr. 1 (matériaux + or, slot ONE PC_FLYERS ORANGE, étoiles 0→2, or
+−63000, g98) + incr. 2 (diamants + garde-fous, slot TWO ROCKET_PACK_PATCH_KIT PURPLE, étoiles 0→5, diamants −3360,
+g99). Deux raretés, deux modes de paiement, plafond + anti-triche, persistance profonde. Reste facultatif : gear
+RED/YELLOW, prime badges (`maxUpgradePrimeBadges`).
+
+Fichiers : `server/smoke/EnchantGuardTest.java`, `server/smoke/{ExpAdminEnchant}.java`, `server/smoke/regression.sh`,
+`desktop-port/src/main/java/dhdesktop/{TutorialDriver,DesktopLauncher}.java`, `docs/ENCHANTING.md`, `MEMORY.md`.

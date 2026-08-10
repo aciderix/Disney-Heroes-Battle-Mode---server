@@ -46,9 +46,17 @@ points d'enchant** de l'objet → **bonus de stats**. Gaté **`Unlockable.ENCHAN
      + or) → `enchant RALPH ONE VOID_DUST 30` (chemin client réel `ClientActionHelper.enchantItem`) → client `EnchantItem`
      → serveur **`RALPH/ONE enchanté (or -63000) [persisté]`** → **DB confirmée** : slot ONE PC_FLYERS **étoiles 0→2**,
      VOID_DUST 50→20, or −63000. Pilote DEV `enchant <HERO> <SLOT> <MATERIAL> <count>`.
-2. ⬜ **Coûts & garde-fous** : vérifier `getEnchantGoldCost`/`getEnchantMaxDiamondCost` exacts + plafond d'étoiles par
-   rareté (barème du jeu) ; cas diamants (`useDiamonds`) ; anti-triche (matériaux insuffisants / plafond atteint).
-3. ⬜ **Vérif EN JEU complète** (compte TL100) : enchanter plusieurs slots/raretés, y compris paiement diamants.
+2. ✅ **Coûts & garde-fous — LIVRÉ + VÉRIFIÉ EN JEU (g99)** : barème DU JEU (§4) : `getMaxStars` par rareté
+   (WHITE=0/GREEN=1/BLUE=3/PURPLE/ORANGE/RED/YELLOW=5) ; **plafond d'étoiles** enforced (au max → refus) ;
+   **matériaux insuffisants** (demande > possédé, sans diamants) → refus, aucun débit ; **coût OR exact**
+   (`getEnchantGoldCost`) ; **chemin DIAMANTS** (`useDiamonds=true` → paie `getEnchantMaxDiamondCost` → item au MAX
+   d'un coup, matériaux NON consommés) ; anti-triche diamants insuffisants → refus. `EnchantGuardTest`. Régression 106.
+   - **✅ VÉRIFIÉ EN JEU (g99)** : `enchant RALPH TWO VOID_DUST 0 diamonds` (`useDiamonds=true`) → serveur
+     `RALPH/TWO enchanté (or -0, diamants -3360) [persisté]` → DB : slot TWO (ROCKET_PACK_PATCH_KIT, PURPLE)
+     **étoiles 0→5 (MAX)**, diamants 50000→46640 (−3360 = coût max exact de CET item), ni or ni matériaux.
+3. ✅ **Vérif EN JEU multi-slots/raretés — COUVERTE (g98-g99)** : slot ONE (PC_FLYERS, ORANGE) via MATÉRIAUX+OR (g98) ;
+   slot TWO (ROCKET_PACK_PATCH_KIT, PURPLE) via DIAMANTS (g99). ⇒ **ENCHANTING #72 COMPLET** (matériaux/or + diamants +
+   garde-fous, vérifiés en jeu). Reste facultatif : RED/YELLOW gear, prime badges (`maxUpgradePrimeBadges`).
 
 ## Notes §3/§4
 - Client-autoritatif partiel (le client choisit les matériaux `itemsUsed`) mais le serveur RÉ-EXÉCUTE `enchantItem`

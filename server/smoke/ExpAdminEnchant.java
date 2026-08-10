@@ -10,6 +10,7 @@ public final class ExpAdminEnchant {
     if(su==null){ System.out.println("[ench-adm] aucun compte"); return; }
     su.grantHero(UnitType.RALPH, Rarity.ORANGE, 100, 5);
     su.debugGiveFullGear(UnitType.RALPH);
+    if (su.bootData().userInfo.diamonds < 50000) su.bootData().userInfo.diamonds = 50000;   // pour le chemin diamants
     su.gameUser().addItem(ItemType.VOID_DUST, 50, false, com.perblue.heroes.game.logic.RewardSourceType.NORMAL, "adm");
     su.gameUser().addItem(ItemType.SHIMMER_DUST, 50, false, com.perblue.heroes.game.logic.RewardSourceType.NORMAL, "adm");
     su.gameUser().setResource(ResourceType.GOLD, 20_000_000L, "adm");

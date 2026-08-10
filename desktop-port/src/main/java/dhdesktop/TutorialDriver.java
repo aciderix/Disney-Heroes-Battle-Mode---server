@@ -1050,22 +1050,23 @@ public final class TutorialDriver {
      *  {@code ClientActionHelper.enchantItem(hero, slot, {mat:count}, false, NONE, null)} (exécute enchantItem
      *  localement + envoie {@code EnchantItem} ; le serveur ré-exécute l'autorité). Invoqué via
      *  "enchant &lt;HERO&gt; &lt;SLOT&gt; &lt;MATERIAL&gt; &lt;count&gt;". */
-    public static void enchant(GameMain game, String heroS, String slotS, String matS, int count) {
+    public static void enchant(GameMain game, String heroS, String slotS, String matS, int count, boolean useDiamonds) {
         try {
             com.perblue.heroes.network.messages.UnitType hero = com.perblue.heroes.network.messages.UnitType.valueOf(heroS);
             com.perblue.heroes.network.messages.HeroEquipSlot slot = com.perblue.heroes.network.messages.HeroEquipSlot.valueOf(slotS);
             com.perblue.heroes.network.messages.ItemType mat = com.perblue.heroes.network.messages.ItemType.valueOf(matS);
             java.util.Map<com.perblue.heroes.network.messages.ItemType, Integer> used = new java.util.HashMap<>();
-            used.put(mat, count);
+            if (count > 0) used.put(mat, count);
             var it = game.getYourUser().getHero(hero).getItem(slot);
             System.out.println("[enchant] " + hero + "/" + slot + " avant : item=" + (it == null ? "null" : it.getType())
-                + " étoiles=" + (it == null ? "?" : it.getStars()));
+                + " étoiles=" + (it == null ? "?" : it.getStars()) + " useDiamonds=" + useDiamonds);
             com.perblue.heroes.game.ActionListener noop = new com.perblue.heroes.game.ActionListener() {
                 public void onResult(boolean ok, Object o) { System.out.println("[enchant] onResult=" + ok); }
             };
             com.perblue.heroes.game.ClientActionHelper.enchantItem(
-                hero, slot, used, false, com.perblue.heroes.game.specialevent.SpecialEventSnapshot.NONE, noop);
-            System.out.println("[enchant] enchantItem(" + hero + "/" + slot + ", " + count + " " + mat + ") → EnchantItem envoyé [chemin réel]");
+                hero, slot, used, useDiamonds, com.perblue.heroes.game.specialevent.SpecialEventSnapshot.NONE, noop);
+            System.out.println("[enchant] enchantItem(" + hero + "/" + slot + ", " + count + " " + mat
+                + ", diamants=" + useDiamonds + ") → EnchantItem envoyé [chemin réel]");
         } catch (Throwable t) { System.out.println("[enchant] échec: " + t); t.printStackTrace(); }
     }
 
