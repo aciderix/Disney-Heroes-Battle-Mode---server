@@ -18,9 +18,12 @@ public final class FriendMissionDump {
     long stamina = gu.getResource(ResourceType.FRIEND_STAMINA);
     int camp = gu.getIndividual().getFriendshipCampaignProgress(pair);
     com.perblue.heroes.network.messages.FriendshipBattleInfo lb = gu.getIndividual().getFriendship(pair).getLastBattle();
+    boolean fav = gu.getIndividual().isFavoriteFriendship(pair);
+    long diamonds = gu.getResource(ResourceType.DIAMONDS);
     store.close();
     System.out.println("RESULT OK — RALPH-VANELLOPE empowerment=" + emp + ", missions=" + miss
         + ", claimsEnAttente=" + claims + ", FRIEND_STAMINA=" + stamina + ", campaignProgress=" + camp
-        + ", lastBattle=" + (lb == null ? "null" : ("{node=" + lb.node + " won=" + lb.won + "}")));
+        + ", lastBattle=" + (lb == null ? "null" : ("{node=" + lb.node + " won=" + lb.won + "}"))
+        + ", favorite=" + fav + ", DIAMONDS=" + diamonds);
   }
 }

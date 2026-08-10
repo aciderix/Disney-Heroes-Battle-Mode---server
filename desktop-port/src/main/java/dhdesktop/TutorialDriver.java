@@ -1152,6 +1152,35 @@ public final class TutorialDriver {
         } catch (Throwable t) { System.out.println("[empower] échec: " + t); }
     }
 
+    /** DEV (#72 incr. 2) : (dé)FAVORISE une amitié via le CHEMIN RÉEL du jeu
+     *  ({@code ClientActionHelper.setFavoriteFriendship(pair, bool)} → Action SET_FAVORITE_FRIENDSHIP). Invoqué via
+     *  clickfile "setfavorite &lt;PRIMARY&gt; &lt;SECONDARY&gt; &lt;0|1&gt;". */
+    public static void setFavoriteFriendship(GameMain game, String args) {
+        try {
+            String[] p = args.trim().split("[,;\\s]+");
+            if (p.length < 3) { System.out.println("[setfavorite] usage: setfavorite <PRIMARY> <SECONDARY> <0|1>"); return; }
+            com.perblue.heroes.network.messages.UnitType a =
+                com.perblue.heroes.network.messages.UnitType.valueOf(p[0].trim().toUpperCase());
+            com.perblue.heroes.network.messages.UnitType b =
+                com.perblue.heroes.network.messages.UnitType.valueOf(p[1].trim().toUpperCase());
+            boolean fav = !p[2].trim().equals("0");
+            com.perblue.heroes.game.objects.FriendPairID pair =
+                com.perblue.heroes.game.objects.FriendPairID.of(a, b);
+            com.perblue.heroes.game.ClientActionHelper.setFavoriteFriendship(pair, fav);
+            System.out.println("[setfavorite] Action SET_FAVORITE_FRIENDSHIP(" + pair + "=" + fav + ") envoyée [chemin réel]");
+        } catch (Throwable t) { System.out.println("[setfavorite] échec: " + t); }
+    }
+
+    /** DEV (#72 incr. 2) : ACHÈTE de l'énergie d'amitié via le CHEMIN RÉEL du jeu
+     *  ({@code ClientActionHelper.buyFriendStamina} → Action BUY_FRIEND_STAMINA : débite DIAMONDS, crédite
+     *  FRIEND_STAMINA). Invoqué via clickfile "buystamina". */
+    public static void buyFriendStamina(GameMain game) {
+        try {
+            com.perblue.heroes.game.ClientActionHelper.buyFriendStamina(null);
+            System.out.println("[buystamina] Action BUY_FRIEND_STAMINA envoyée [chemin réel]");
+        } catch (Throwable t) { System.out.println("[buystamina] échec: " + t); }
+    }
+
     /** DEV (#72) : DUMP l'état d'une amitié côté CLIENT (empowerment + statut de déblocage). Invoqué via clickfile
      *  "frienddump &lt;PRIMARY&gt; &lt;SECONDARY&gt;". */
     public static void friendDump(GameMain game, String args) {
@@ -1169,7 +1198,10 @@ public final class TutorialDriver {
             int stones = u.getIndividual().getItemAmount(com.perblue.heroes.network.messages.ItemType.FRIENDSHIP_EMPOWER_STONE);
             System.out.println("[frienddump] " + pair + " empowerment=" + emp
                 + " unlock=" + com.perblue.heroes.game.logic.FriendshipHelper.getUnlockStatus(u, pair)
-                + " stones=" + stones);
+                + " stones=" + stones
+                + " favorite=" + u.getIndividual().isFavoriteFriendship(pair)
+                + " diamonds=" + u.getResource(com.perblue.heroes.network.messages.ResourceType.DIAMONDS)
+                + " friendStamina=" + u.getResource(com.perblue.heroes.network.messages.ResourceType.FRIEND_STAMINA));
         } catch (Throwable t) { System.out.println("[frienddump] échec: " + t); }
     }
 

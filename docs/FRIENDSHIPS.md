@@ -68,7 +68,7 @@ pas sur l'écran MISSIONS de 12.1.0 — à confirmer : legacy ou accessible aill
    rejoué headless sans NPE + round-trip wire). **✅ EN JEU (compte TL100)** : `nav MISSIONS` → écran **MISSIONS**
    rend « **0/1 missions** », **ADD MISSION**, « No rewards to claim yet! » / CLAIM ALL — état frais correct, aucun
    NPE `FriendshipOffsets.setOffsets`. Le catalogue de paires est de la donnée CLIENTE (`friendship_pairs.tab`).
-2. 🟢 **Favori + stamina — LIVRÉ HEADLESS (g80)** : handlers `LoginServer` + `ServerFriendships`, code du jeu (§3),
+2. ✅ **Favori + stamina — LIVRÉ HEADLESS (g80) + VÉRIFIÉ EN JEU (g87)** : handlers `LoginServer` + `ServerFriendships`, code du jeu (§3),
    zéro invention (§4). Protocoles PROUVÉS au bytecode (`ClientActionHelper`) :
    - `SET_FAVORITE_FRIENDSHIP{TYPE=FriendPairID.getAsLong(), COUNT=0/1}` → `FriendshipHelper.setFavoritedFriendship`
      (= `IndividualUser.setFavoriteFriendship`, aucun verrou). Persistance : l'ensemble `favoriteFriendships` est un
@@ -77,8 +77,14 @@ pas sur l'écran MISSIONS de 12.1.0 — à confirmer : legacy ou accessible aill
    - `BUY_FRIEND_STAMINA{}` → `FriendshipHelper.buyFriendStamina` (débit **DIAMONDS**=getFriendStaminaBuyCost + crédit
      **FRIEND_STAMINA**=getFriendStaminaBuyAmount, dans les limites/plafond du jeu ; `FRIEND_STAMINA` dans
      `individualUserExtra.resources` = write-through). `resyncDiamonds` pour les diamants.
-   - `FriendshipShopTest` : favori set/persist/reload/unfavorite ✅ ; buyStamina — chemin de refus (compte frais au
-     plafond) géré ; **succès (débit/crédit) à exercer EN JEU** (stamina consommée par la campagne). **Vérif EN JEU restante.**
+   - `FriendshipShopTest` : favori set/persist/reload/unfavorite ✅ ; buyStamina — chemin de refus (compte frais au plafond) géré.
+   - **✅ VÉRIFIÉ EN JEU (g87, userID=1)** — **FAVORI** : pilote `setfavorite RALPH VANELLOPE 1` (chemin réel
+     `ClientActionHelper.setFavoriteFriendship`) → serveur `SET_FAVORITE_FRIENDSHIP(RALPH-VANELLOPE=true) appliqué
+     [persisté]` → relu DB (et **après redémarrage**) : `favorite=true`. **ACHAT STAMINA** : `buyFriendStamina` refuse
+     `FRIEND_STAMINA_FULL` au-dessus du plafond (garde cliente `doAction` locale → pas d'envoi ; fidèle) → après
+     `SetFriendStamina 10` (outil DEV, énergie sous plafond), pilote `buystamina` (`BUY_FRIEND_STAMINA` réel) → serveur
+     `appliqué [persisté]` → **DIAMONDS 19000→18950 (−50 = getFriendStaminaBuyCost)**, **FRIEND_STAMINA +30 (=
+     getFriendStaminaBuyAmount)** → relu DB. Pilotes DEV : `setfavorite`/`buystamina` ; outil `SetFriendStamina`.
 3a. 🟢 **Empower — LIVRÉ HEADLESS (g81)** : `EMPOWER_FRIENDSHIP{TYPE=FriendPairID.getAsLong(), COUNT=<nb pierres>}` →
    `FriendshipHelper.empowerFriendship` (code du jeu §3) : exige la paire **DÉBLOQUÉE** (`getUnlockStatus`==UNLOCKED,
    sinon `FRIENDSHIP_NOT_UNLOCKED`), `count>=1`, **CONSOMME `count` × `FRIENDSHIP_EMPOWER_STONE`** (`useItem`) puis
@@ -164,8 +170,10 @@ pas sur l'écran MISSIONS de 12.1.0 — à confirmer : legacy ou accessible aill
      disque « PIECE OF CAKE ». ✅ **3b JOUÉ EN JEU (g86)** : GO! → nœud 1 « CREEP CLEARANCE » → QUICK FIGHT WIN → serveur
      recordOutcome persisté (−6 stamina, progress 0→1, lastBattle won). ⚠️ Correction : mon « legacy/verrouillé » (g86
      initial) était FAUX — je n'avais testé que `navigateToFriendUI(CAMPAIGN)` (toast). La vraie entrée est l'onglet FRIENDS.
-   - **favori/stamina (incr. 2)** : vérif en jeu restante (mêmes patrons ; `setFavoriteFriendship`/`buyFriendStamina`) —
-     SEUL point FRIENDSHIPS non encore vérifié en jeu.
+   - **favori/stamina (incr. 2)** : ✅ **VÉRIFIÉ EN JEU (g87)** — favori set+persisté ; achat stamina −50 diamants/+30
+     énergie (après avoir mis l'énergie sous plafond).
+   ⇒ **FRIENDSHIPS #72 : 100 % VÉRIFIÉ EN JEU** (incr. 1, 2, 3a, 3b, 3c). Reste optionnel : `SPEEDUP_MISSION`/
+   `SET_MISSION_ITEM_COST_LIMIT`/`giveChapterRewards` si un flux en jeu les exerce (non bloquant, mêmes patrons).
 
 ## Notes §3/§4
 - Persistance quasi-gratuite (état dans `individualUserExtra` write-through). Zéro invention : niveaux/récompenses/

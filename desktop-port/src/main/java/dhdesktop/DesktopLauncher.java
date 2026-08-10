@@ -332,6 +332,14 @@ public final class DesktopLauncher {
                     TutorialDriver.friendDump(game, ln.substring(11).trim());
                     continue;
                 }
+                if (low.startsWith("setfavorite ")) {            // setfavorite <PRIMARY> <SECONDARY> <0|1> — (dé)favorise (SET_FAVORITE_FRIENDSHIP réel)
+                    TutorialDriver.setFavoriteFriendship(game, ln.substring(12).trim());
+                    continue;
+                }
+                if (low.equals("buystamina")) {                  // buystamina — achète de l'énergie d'amitié (BUY_FRIEND_STAMINA réel)
+                    TutorialDriver.buyFriendStamina(game);
+                    continue;
+                }
                 if (low.startsWith("warqueue ")) {               // warqueue <STATE> — inscrire la guilde en file de GUERRE (CHANGE_WAR_QUEUE réel)
                     TutorialDriver.changeWarQueue(game, ln.substring(9).trim());
                     continue;

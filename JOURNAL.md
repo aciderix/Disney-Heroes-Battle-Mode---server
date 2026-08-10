@@ -1,5 +1,30 @@
 # JOURNAL — journal détaillé des modifications
 
+## 2026-08-10 (g87) — FRIENDSHIPS (#72) incrément 2 (favori + stamina) ✅ vérifié EN JEU → FRIENDSHIPS 100 % en jeu
+
+Dernier maillon de la vérif en jeu de FRIENDSHIPS (client réel, userID=1 TL100).
+
+**FAVORI** : pilote `setfavorite RALPH VANELLOPE 1` (chemin réel `ClientActionHelper.setFavoriteFriendship(pair, true)`)
+→ serveur `<== SET_FAVORITE_FRIENDSHIP(RALPH-VANELLOPE=true) appliqué [persisté]` (extra `{TYPE=<pairID>, COUNT=1}`).
+Relu côté client (`frienddump`) et **après redémarrage** : `favorite=true` (persisté via `resyncFriendFavorites`).
+
+**ACHAT D'ÉNERGIE D'AMITIÉ** : d'abord un **refus FIDÈLE** — avec FRIEND_STAMINA=519 (au-dessus du plafond 175), le
+pilote `buystamina` (`ClientActionHelper.buyFriendStamina`) n'atteint PAS le serveur : la garde CLIENTE `doAction`
+(local) lève `FRIEND_STAMINA_FULL` et n'émet pas (comportement d'origine ; les 2 gates du jeu = `FRIEND_STAMINA_FULL`
+au plafond + `FRIEND_STAMINA_BUYS_USED` limite quotidienne). Après `SetFriendStamina 10` (outil DEV : met l'énergie sous
+le plafond), relance → `buystamina` → serveur `<== Action command=BUY_FRIEND_STAMINA extra={}` → `<== BUY_FRIEND_STAMINA
+(stamina) appliqué [persisté]` → **DIAMONDS 19000→18950 (−50 = getFriendStaminaBuyCost)**, **FRIEND_STAMINA +30 (=
+getFriendStaminaBuyAmount)**. **Relu en DB** (`FriendMissionDump`) : `favorite=true, DIAMONDS=18950, FRIEND_STAMINA=196`.
+
+Pilotes DEV ajoutés (chemin `ClientActionHelper` réel) : `setfavorite <p> <s> <0|1>`, `buystamina` ; `frienddump` étendu
+(favorite/diamonds/friendStamina). Outils DEV : `SetFriendStamina [db] [val]` (met l'énergie d'amitié sous plafond pour
+tester l'achat), `FriendMissionDump` étendu (favorite + DIAMONDS).
+
+**⇒ FRIENDSHIPS #72 : TOUS les incréments VÉRIFIÉS EN JEU** — 1 (rendu) ✅, 2 (favori+stamina) ✅, 3a (empower) ✅,
+3b (campagne d'amitié) ✅, 3c (missions idle) ✅. Régression serveur inchangée 98/98 (aucune modif de logique serveur ;
+ajouts = pilotes/outils DEV + docs). Reste OPTIONNEL (non bloquant) : `SPEEDUP_MISSION`/`SET_MISSION_ITEM_COST_LIMIT`/
+`giveChapterRewards` si un flux en jeu les exerce. **Prochain : choix du mode suivant.**
+
 ## 2026-08-10 (g86) — FRIENDSHIPS (#72) EMPOWER (3a) ✅ vérifié EN JEU + entrée campagne d'amitié (3b) localisée
 
 Suite de la vérif en jeu (client réel, userID=1 TL100, RALPH+VANELLOPE ORANGE 60/5).
