@@ -163,6 +163,85 @@ public final class ServerExpedition {
   }
 
   /**
+   * {@code ExpeditionAttack} — issue d'un combat de nœud (client-autoritatif, patron {@code CampaignAttack}). Le
+   * serveur RÉ-EXÉCUTE l'autorité : anti-triche sur le nœud, puis sur VICTOIRE avance la progression, ROULE la
+   * récompense de nœud ({@code ExpeditionStats.rollExpeditionDrops}) et la CRÉDITE ({@code ExpeditionHelper.giveLoot} :
+   * or mis à l'échelle de la difficulté + objets), met à jour le run persisté. Renvoie {@code true} si appliqué.
+   *
+   * <p><b>PARTIEL §4bis</b> : les {@code epicChips} (chip « red hero ») sont CLIENT-reportés (comme le loot #25, graine
+   * non rejouée) → enregistrés dans {@code droppedEpicChips} ; les tickets de raid sont suivis ({@code ticketsEarned})
+   * mais crédités à la complétion (incr. 4/7). Ne persiste pas (appelant).
+   */
+  @SuppressWarnings("unchecked")
+  public static boolean recordAttack(ServerUser su, com.perblue.heroes.network.messages.ExpeditionAttack m) {
+    ServerContext.init();
+    if (m == null || m.base == null) return false;
+    ExpeditionRunData run = su.expeditionRunOrNull();
+    if (run == null) { System.out.println("[expedition] attack refusé : aucun run actif"); return false; }
+    // ANTI-TRICHE : on ne peut jouer QUE le nœud courant (= nombre de nœuds déjà vaincus).
+    if (m.nodeIndex != run.nodesDefeated) {
+      System.out.println("[expedition] attack refusé : nœud " + m.nodeIndex + " ≠ courant " + run.nodesDefeated);
+      return false;
+    }
+    if (m.base.outcome != com.perblue.heroes.network.messages.CombatOutcome.WIN) {
+      System.out.println("[expedition] attack nœud " + m.nodeIndex + " : "
+          + m.base.outcome + " (pas de progression, run inchangé)");
+      return true;   // défaite = pas de progression (le client montre ExpeditionDefeatWindow) ; rien à créditer
+    }
+    User user = su.gameUser();
+    int difficulty = run.difficulty;
+    int node = m.nodeIndex;
+    com.perblue.heroes.game.specialevent.SpecialEventSnapshot snap =
+        com.perblue.heroes.game.specialevent.SpecialEventSnapshot.NONE;
+    long goldGiven = 0;
+    try {
+      com.perblue.heroes.network.messages.NodeReward nr = new com.perblue.heroes.network.messages.NodeReward();
+      nr.rewardDrops = new ArrayList<>();
+      // (1) OR de base du nœud = getGold(node, L=teamLevel) × getGoldMultiplier(difficulty) (données du jeu §4) —
+      //     crédité DIRECTEMENT (setResource, patron campagne/alchimie). giveLoot ne crédite PAS un RewardDrop GOLD.
+      int baseGold = com.perblue.heroes.game.data.expedition.ExpeditionStats.getGold(node, user.getTeamLevel());
+      float goldMult = com.perblue.heroes.game.data.expedition.ExpeditionStats.getGoldMultiplier(difficulty);
+      goldGiven = (long) (baseGold * goldMult);
+      if (goldGiven > 0) {
+        user.setResource(com.perblue.heroes.network.messages.ResourceType.GOLD,
+            user.getResource(com.perblue.heroes.network.messages.ResourceType.GOLD) + goldGiven, "expedition");
+        com.perblue.heroes.network.messages.RewardDrop g = new com.perblue.heroes.network.messages.RewardDrop();
+        g.resourceType = com.perblue.heroes.network.messages.ResourceType.GOLD;
+        g.quantity = goldGiven;
+        ((java.util.List<Object>) nr.rewardDrops).add(g);   // pour l'affichage de la récompense de nœud
+      }
+      // (2) Drops d'OBJETS du nœud = rollExpeditionDrops (table de butin du jeu §4) → crédités via RewardHelper.
+      java.util.Random rng = new java.util.Random(su.expeditionIDPersisted() * 977L + node);
+      java.util.List wards = run.weeklyWards != null ? run.weeklyWards : new ArrayList<>();
+      java.util.List drops = com.perblue.heroes.game.data.expedition.ExpeditionStats.rollExpeditionDrops(
+          user, rng, difficulty, node, wards, snap);
+      if (drops != null && !drops.isEmpty()) {
+        com.perblue.heroes.game.logic.RewardHelper.giveRewards(
+            user, drops, com.perblue.heroes.game.logic.RewardSourceType.NORMAL, "expedition");
+        ((java.util.List<Object>) nr.rewardDrops).addAll(drops);
+      }
+      if (run.nodeRewards == null) run.nodeRewards = new ArrayList<>();
+      ((java.util.List<Object>) run.nodeRewards).add(nr);
+    } catch (Throwable t) { System.out.println("[expedition] récompense de nœud: " + t); }
+
+    run.nodesDefeated = m.nodeIndex + 1;
+    run.totalGoldEarned += goldGiven;
+    // epic chips CLIENT-reportés (PARTIEL §4bis) : enregistrés pour l'affichage (crédit hero-chip = incr. reward).
+    if (m.epicChips != null && m.epicChips.quantity > 0) {
+      if (run.droppedEpicChips == null) run.droppedEpicChips = new ArrayList<>();
+      ((java.util.List<Object>) run.droppedEpicChips).add(m.epicChips);
+    }
+
+    su.setExpeditionRun(run);
+    su.resyncDiamonds(user);
+    su.resyncHeroes(user);
+    su.resyncCounts(user);
+    System.out.println("[expedition] nœud " + node + " VAINCU → nodesDefeated=" + run.nodesDefeated
+        + ", or +" + goldGiven + " (total " + run.totalGoldEarned + ")");
+    return true;
+  }
+
+  /**
    * Réponse à {@code GetExpedition} : renvoie le run PERSISTÉ du joueur (rafraîchissement) ou, à défaut, un run vide
    * (le client enverra {@code ResetExpedition} pour en générer un). Ne persiste pas (lecture seule).
    */

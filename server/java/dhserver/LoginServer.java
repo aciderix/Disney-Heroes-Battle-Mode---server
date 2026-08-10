@@ -1825,6 +1825,18 @@ public final class LoginServer {
               } else {
                 System.out.println("[login] <== ResetExpedition(diff=" + re.difficulty + ") refusé (économie)");
               }
+            } else if (m instanceof com.perblue.heroes.network.messages.ExpeditionAttack) {
+              // EXPEDITION #72 incr. 3 — combat de nœud (client-autoritatif, patron CampaignAttack). Le client joue
+              // le combat et envoie l'issue ; le serveur ré-exécute l'autorité (anti-triche nœud, progression, loot).
+              com.perblue.heroes.network.messages.ExpeditionAttack ea =
+                  (com.perblue.heroes.network.messages.ExpeditionAttack) m;
+              boolean ok;
+              try { ok = ServerExpedition.recordAttack(user, ea); }
+              catch (Throwable t) { ok = false; System.out.println("[login]     ! ExpeditionAttack: " + t); }
+              if (ok) { try { store.save(user); } catch (Exception e) {
+                System.out.println("[login]     ! persist expedition: " + e); } }
+              System.out.println("[login] <== ExpeditionAttack : nœud=" + ea.nodeIndex + " outcome="
+                  + (ea.base == null ? "?" : ea.base.outcome) + (ok ? " → appliqué [persisté]" : " refusé"));
             } else if (m instanceof com.perblue.heroes.network.messages.GetSurge) {
               // SURGE #72 — OUVERTURE de l'écran : le client (GameMain) envoie GetSurge, le serveur renvoie l'état
               // PARTAGÉ de la guilde (ServerSurgeState, reconstruit si nouveau surge). GetSurge → SurgeData
