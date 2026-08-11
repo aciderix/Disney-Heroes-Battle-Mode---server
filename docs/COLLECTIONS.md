@@ -58,7 +58,16 @@ Collections **cosmétiques** séparées (emojis, `CosmeticCollectionType` — 86
      (highest 0→1) [persisté]` → **écran ré-ouvert : Bronze II (0/10, DETAILS) + Silver I DÉVERROUILLÉ**
      (`coll_after_ingame.png`) → **DB : highestClaimed(DAMAGE,BRONZE)=1, MASTERY_TOKENS=8**. Pilotes DEV
      `claimcollection`/`collectionscreen`, outil `ExpAdminCollection`.
-2. ⬜ **Maîtrise de combat (`CollectionMasteryUsesUpdate` → `recordHeroMastery`)** : accumulation persistée.
+2. ✅ **Maîtrise de combat (`recordHeroMastery`) — LIVRÉ (headless).** Fait établi : `CollectionMasteryUsesUpdate`
+   est **OUTBOUND** (serveur→client : `GameMain` enregistre un handler, aucun envoi client) → le SERVEUR accumule la
+   maîtrise en re-exécutant un combat, puis notifie. SurgeHelper/InvasionHelper `recordOutcome` l'accumulent déjà en
+   interne ; **CampaignHelper.recordOutcome NON** (gap). Corrigé : `ServerUser.recordCampaignAttack`, sur
+   `CombatOutcome.WIN` (miroir du client `ExpeditionAttackScreen`), passe `m.base.attackers`
+   (Collection<AttackLineupSummary>) à `CollectionHelper.recordHeroMastery(user, attackers, mode)` (mode CAMPAIGN /
+   ELITE_CAMPAIGN) → `incCollectionHeroMasteryUses` (write-through `individualUserExtra.collectionMasteryUses`,
+   auto-persisté ; filtre `MIN_HERO_STARS_REQUIRED` interne). `CollectionMasteryTest` : WIN → maîtrise
+   ELASTIGIRL/DAMAGE/BRONZE 0→1 (cumul sur 2 WIN) ; DÉFAITE → aucune accumulation ; persistance wire + DB.
+   Régression 113 tests. ⬜ **RESTE : vérif EN JEU** (jouer un combat de campagne → maîtrise accumulée en DB).
 3. ⬜ **Cosmétique (`CLAIM_COSMETIC_COLLECTION`/`BUY_COLLECTION_AVATAR`)** — évalué, pas présumé optionnel.
 
 ## Notes §3/§4

@@ -1833,6 +1833,21 @@ public final class ServerUser {
     CampaignHelper.recordOutcome(user, user, level, m.base.outcome, m.base.stars, m.stagesCleared,
         lootEarned, shownDelta, m.base.attackers, m.base.defenders, SpecialEventSnapshot.NONE);
 
+    // COLLECTIONS #72 incr. 2 — MAÎTRISE de combat. Contrairement à SurgeHelper/InvasionHelper, CampaignHelper
+    // .recordOutcome n'accumule PAS la maîtrise → on la déclenche ici, en miroir du client (ExpeditionAttackScreen :
+    // recordHeroMastery sur CombatOutcome.WIN uniquement). On passe les lineups d'attaque DIRECTEMENT
+    // (base.attackers = Collection<AttackLineupSummary> ; recordHeroMastery → AttackHelper.forEachUnit extrait les
+    // héros) et on exécute la logique du jeu (§3) CollectionHelper.recordHeroMastery(user, attackers, mode) : elle
+    // incrémente collectionMasteryUses (write-through individualUserExtra, auto-persisté), en filtrant elle-même par
+    // MIN_HERO_STARS_REQUIRED / collections dispo.
+    if (m.base != null && m.base.outcome == com.perblue.heroes.network.messages.CombatOutcome.WIN
+        && m.base.attackers != null && !m.base.attackers.isEmpty()) {
+      try {
+        com.perblue.heroes.game.logic.CollectionHelper.recordHeroMastery(user, m.base.attackers, mode);
+        System.out.println("[collection] maîtrise de combat accumulée (mode " + mode + ") [persisté]");
+      } catch (Throwable t) { System.out.println("[collection] recordHeroMastery: " + t); }
+    }
+
     resyncHeroes(user);   // héros (XP/état) → wire ; stamina/or sont dans this.extra (auto).
     resyncDiamonds(user); // diamants (champ dédié hors this.extra)
     resyncCounts(user);   // compteurs/drapeaux UserFlag (hors this.extra)
