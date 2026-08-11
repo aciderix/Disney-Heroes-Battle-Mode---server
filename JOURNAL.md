@@ -4296,3 +4296,35 @@ client réel + serveur + DB. **NON vérifié visuellement** : grisage du bouton 
 
 Fichiers : `server/java/dhserver/ServerUser.java`, `server/smoke/{LineupCooldownTest}.java`,
 `server/smoke/regression.sh`, `docs/SAVED_LINEUPS.md`, `MEMORY.md`.
+
+---
+
+## 2026-08-11 (g104) — SAVED_LINEUPS (#72) : champs profonds non vides + audit de périmètre
+
+**Angle mort fermé (leçon EXPEDITION + note ARÈNE #41).** L'ordre des deux `Map` passées à `setHeroLineup`
+(`realGearOptions`, `emeraldStatSlotChoices` — une inversion → ClassCast à la sérialisation `UserHeroLineupData
+.writeListed`) n'était vérifiable QU'AVEC DU CONTENU : les tests headless précédents ET la vérif en jeu (héros
+grantés PURPLE, sans stats émeraude ni real-gear) passaient tous des Maps VIDES → l'ordre n'était PAS réellement
+prouvé. `LineupFieldsTest` peuple les deux :
+- `realGearOptions = {RALPH: RealGearType.CALHOUN_ENERGY}` (Map<UnitType, RealGearType>).
+- `emeraldStatSlotChoices = {RALPH: HeroStatSlotChoices{statSlotChoices: {EmeraldStatSlot.FIRST:
+  CombatStatType.ARMOR_NEGATION}}}` (Map<UnitType, HeroStatSlotChoices{Map<EmeraldStatSlot, CombatStatType>}>ache —
+  valeur enum SIMPLE, pas une List : découvert via un 1ᵉʳ ClassCast ArrayList→Enum, corrigé).
+Round-trip wire + DB : PAS de ClassCast (ordre des Maps correct sous contenu réel) + contenu survit + PAS SWAPPÉ
+(realGearOptions garde son RealGearType, emeraldStatSlotChoices son HeroStatSlotChoices). Régression → **111 tests**.
+
+**Audit de périmètre (suite à la remise en cause « optionnel » de l'utilisateur — on ne laisse RIEN d'optionnel sans
+preuve).** Tous les messages « Lineup » du protocole passés en revue :
+- `HeroLineupUpdate` ✅, `CheckLineupName`→`CheckLineupNameResult` ✅ = les DEUX messages du mode (traités + vérifiés
+  en jeu).
+- `Action TOGGLE_HERO_FILTER` (`ClientActionHelper.toggleHeroFilter`) = filtre du sélecteur de héros, PARTAGÉ par tous
+  les choosers. **NO-OP DOCUMENTÉ (§2/§4)** : `grep` jar = AUCUN consommateur (seulement l'émetteur + l'enum
+  `CommandType`) et AUCUN champ joueur de filtres (`UserExtra` sans `heroFilters`) → logique/stockage serveur ABSENTS
+  du jar 12.1.0 ; inventer un schéma violerait §4 (même catégorie que `SetExternalContentStatus` / le filtre de
+  profanité). Acquitté = réponse autoritative correcte, pas « optionnel ».
+- `WarDefenseLineupUpdate` = mode GUERRE DE GUILDE ; `MailLineup` = mode COURRIER. Hors périmètre SAVED_LINEUPS.
+
+⇒ **SAVED_LINEUPS #72 complet** (2 messages traités + vérifiés en jeu + visuel ; cooldowns défense ; champs profonds ;
+audit périmètre) — rien d'« optionnel » laissé sans preuve.
+
+Fichiers : `server/smoke/{LineupFieldsTest}.java`, `server/smoke/regression.sh`, `docs/SAVED_LINEUPS.md`, `MEMORY.md`.

@@ -91,7 +91,31 @@ SAVED_* nommés + ids non-nuls + validation de nom.
      visuellement** : le grisage du bouton « changer la défense » dans l'UI arène (effet CLIENT lisant
      `getCooldownEnd`, valeur désormais fournie/persistée par le serveur).
 
+5. ✅ **Round-trip PROFOND des champs `realGearOptions`/`emeraldStatSlotChoices` NON VIDES — LIVRÉ (headless).**
+   Angle mort fermé : l'ordre des deux `Map` passées à `setHeroLineup` (note ARÈNE #41 : inversion → ClassCast à la
+   sérialisation) n'était vérifiable QU'AVEC DU CONTENU ; tous les tests précédents (et la vérif en jeu sur héros
+   PURPLE sans stats émeraude) utilisaient des Maps VIDES. `LineupFieldsTest` peuple
+   `realGearOptions={RALPH:RealGearType.CALHOUN_ENERGY}` (Map<UnitType,RealGearType>) +
+   `emeraldStatSlotChoices={RALPH:HeroStatSlotChoices{EmeraldStatSlot.FIRST→CombatStatType.ARMOR_NEGATION}}`
+   (Map<UnitType,HeroStatSlotChoices{Map<EmeraldStatSlot,CombatStatType>}>) → round-trip wire + DB : pas de ClassCast
+   (ordre correct) + contenu survit + PAS SWAPPÉ (realGearOptions garde le RealGearType, emeraldStatSlotChoices garde
+   le HeroStatSlotChoices). Régression 111 tests.
+
+## Périmètre — messages « Lineup » du protocole (audit, pas de « optionnel » sans preuve)
+- **`HeroLineupUpdate`** ✅ (incr. 1/3/4) · **`CheckLineupName`→`CheckLineupNameResult`** ✅ (incr. 2). Ce sont les
+  DEUX messages du mode (émetteurs client : `ClientActionHelper.saveHeroLineup` + `SavedLineupHeroChooserScreen`).
+- **`Action TOGGLE_HERO_FILTER`** (via `ClientActionHelper.toggleHeroFilter`) = filtre du SÉLECTEUR de héros (partagé
+  par TOUS les choosers, pas propre aux lineups sauvés). **NO-OP DOCUMENTÉ (§2/§4, pas « optionnel »)** : AUCUNE classe
+  du jar 12.1.0 ne le CONSOMME (grep = seulement l'émetteur `ClientActionHelper` + l'enum `CommandType`) et AUCUN champ
+  joueur ne stocke les filtres (pas de `UserExtra.heroFilters`) → logique+stockage serveur ABSENTS du jar ; lui inventer
+  un schéma violerait §4 (comme `SetExternalContentStatus`/le filtre de profanité). Acquitté/journalisé = réponse
+  autoritative correcte.
+- **`WarDefenseLineupUpdate`** = GUERRE DE GUILDE (mode WAR, hors périmètre ici) ; **`MailLineup`** = pièce jointe de
+  MAIL (mode courrier, hors périmètre). Ni l'un ni l'autre n'est un message du mode SAVED_LINEUPS.
+
 ## Notes §3/§4
 - Zéro invention : `setHeroLineup` = logique du jeu ; expiration 0L (ARÈNE #41 testé ; le client applique
   Long.MAX_VALUE localement mais la lecture ignore l'expiration → équivalent pour la persistance).
-- **WireCheck profond** : vérifier le CONTENU (type/id/nom/héros par lineup) après round-trip, pas juste le type.
+- Cooldown de défense (incr. 4) = miroir fidèle du client (durée du jeu `getNextDefenseCooldown`), write-through.
+- **WireCheck profond** : vérifier le CONTENU (type/id/nom/héros + realGearOptions/emeraldStatSlotChoices NON VIDES par
+  lineup) après round-trip, pas juste le type.
