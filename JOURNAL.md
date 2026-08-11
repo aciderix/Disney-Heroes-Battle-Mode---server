@@ -4257,3 +4257,13 @@ Pilotes DEV : `savelineup <SAVED_N> <name> <HERO1+HERO2+...>`, `checkname <name>
 
 Fichiers : `desktop-port/src/main/java/dhdesktop/{TutorialDriver,DesktopLauncher}.java`,
 `server/smoke/ExpAdminLineup.java`, `docs/SAVED_LINEUPS.md`, `MEMORY.md`.
+
+### g102b — confirmation VISUELLE (capture) de SAVED_LINEUPS
+
+Suite à la question utilisateur (« ouvert le mode in-game et vérifié visuellement, pas que headless ? ») : les vérifs
+g102 passaient par des pilotes appelant l'API cliente réelle (`saveHeroLineup`/`CheckLineupName`) SANS ouvrir l'écran.
+Ajout du pilote `lineupscreen <SAVED_N>` qui pousse le VRAI écran `SavedLineupHeroChooserScreen(type)`. Client réel
+relancé → `lineupscreen SAVED_1` → **capture** montrant l'écran chargé depuis NOTRE serveur : titre **« MYTEAM »**
+(nom sauvé) + les 3 héros **Ralph + Vanellope + Elastigirl** rendus + **TEAM POWER 752 286** + bouton SAVE + roster
+coché. Capture `desktop-port/build/lineup_myteam_ingame.png` (gitignore). ⇒ confirmation VISUELLE en jeu (§4bis), pas
+seulement le chemin serveur/DB. Pilote DEV `lineupscreen`.

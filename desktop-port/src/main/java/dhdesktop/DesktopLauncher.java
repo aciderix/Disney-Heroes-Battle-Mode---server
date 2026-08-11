@@ -454,6 +454,11 @@ public final class DesktopLauncher {
                     else System.out.println("[checkname] usage: checkname <name>");
                     continue;
                 }
+                if (low.startsWith("lineupscreen")) {           // lineupscreen <SAVED_N> → ouvre le vrai écran de lineup
+                    String[] ls = ln.trim().split("[,;\\s]+");
+                    TutorialDriver.lineupScreen(game, ls.length >= 2 ? ls[1].toUpperCase() : "SAVED_1");
+                    continue;
+                }
                 if (low.startsWith("expreset")) {                // expreset [diff] — RESET de l'expédition → ResetExpedition
                     String[] pr = ln.trim().split("[,;\\s]+");
                     int diff = pr.length >= 2 ? Integer.parseInt(pr[1].trim()) : 1;

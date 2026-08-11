@@ -68,6 +68,11 @@ SAVED_* nommés + ids non-nuls + validation de nom.
    **`CheckLineupName("MyDefense") → isValid=true`** (répond `CheckLineupNameResult`). Rechargé depuis la DB = survit
    au reload. Pilotes DEV `savelineup`/`checkname`, outil `ExpAdminLineup`. ⇒ **SAVED_LINEUPS #72 vérifié en jeu**
    (sauvegarde nommée multi-lineups + validation de nom + persistance).
+   - **✅ CONFIRMATION VISUELLE (capture, §4bis)** : pilote `lineupscreen SAVED_1` ouvre le VRAI écran
+     `SavedLineupHeroChooserScreen(SAVED_1)` → il affiche le lineup chargé depuis NOTRE serveur : titre **« MYTEAM »**
+     (nom sauvé) + les 3 héros rendus (**Ralph + Vanellope + Elastigirl**) + TEAM POWER 752 286 + bouton SAVE +
+     roster avec héros cochés. Capture `desktop-port/build/lineup_myteam_ingame.png` (gitignore). Pilote DEV
+     `lineupscreen <SAVED_N>`.
    - ⬜ Reste OPTIONNEL (non bloquant) : cooldowns de défense PvP (`FIGHT_PIT_DEFENSE`/`COLISEUM_DEFENSE_3` →
      `setHeroLineupCooldown`) si un flux arène/coliseum les exerce (déjà couverts par ARÈNE #41 pour la défense).
 

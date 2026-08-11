@@ -1121,6 +1121,20 @@ public final class TutorialDriver {
         } catch (Throwable t) { System.out.println("[savelineup] échec: " + t); t.printStackTrace(); }
     }
 
+    /** DEV : OUVRE le VRAI écran de lineup enregistré {@code SavedLineupHeroChooserScreen(type)} (chemin réel,
+     *  pushScreen) — pour vérification VISUELLE (le lineup sauvé du serveur est chargé/affiché). Invoqué via
+     *  "lineupscreen &lt;SAVED_N&gt;". */
+    public static void lineupScreen(GameMain game, String typeS) {
+        try {
+            com.perblue.heroes.network.messages.HeroLineupType type =
+                com.perblue.heroes.network.messages.HeroLineupType.valueOf(typeS);
+            com.perblue.heroes.ui.herochooser.SavedLineupHeroChooserScreen s =
+                new com.perblue.heroes.ui.herochooser.SavedLineupHeroChooserScreen(type);
+            game.getScreenManager().pushScreen(s);
+            System.out.println("[lineupscreen] SavedLineupHeroChooserScreen(" + type + ") poussé [chemin réel]");
+        } catch (Throwable t) { System.out.println("[lineupscreen] échec: " + t); t.printStackTrace(); }
+    }
+
     /** DEV : demande la VALIDATION d'un nom de lineup — envoie {@code CheckLineupName{name}} (comme la fenêtre de
      *  nommage) ; le serveur répond {@code CheckLineupNameResult{isValid}}. Invoqué via "checkname &lt;name&gt;". */
     public static void checkName(GameMain game, String name) {
