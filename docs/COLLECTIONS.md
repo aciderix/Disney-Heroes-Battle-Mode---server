@@ -42,10 +42,22 @@ Collections **cosmétiques** séparées (emojis, `CosmeticCollectionType` — 86
   `resyncCounts`. Aucun blob dédié.
 
 ## Plan d'incréments
-1. ⬜ **CLAIM d'un palier (`CLAIM_COLLECTION_REWARDS`)** : handler `LoginServer` (dispatch `act.command`) →
-   `ServerUser.claimCollectionRewards` ré-exécute `CollectionHelper.claimCollectionRewards` (anti-triche = levée du
-   jeu si non `CLAIMABLE`), crédite + persiste (write-through `collectionsClaimed` + resync récompenses). DEV setup
-   `debugSetHeroMasteryUses` pour atteindre `CLAIMABLE`. Test `CollectionClaimTest`. Puis vérif EN JEU.
+1. ✅ **CLAIM d'un palier (`CLAIM_COLLECTION_REWARDS`) — LIVRÉ + VÉRIFIÉ EN JEU (g105).** Handler `LoginServer`
+   (dispatch `act.command`, extras `TYPE`/`TIER`/`LEVEL`) → `ServerUser.applyClaimCollection` ré-exécute
+   `CollectionHelper.claimCollectionRewards` (anti-triche = levée du jeu si non `CLAIMABLE` :
+   `COLLECTION_ALREADY_CLAIMED` / `NOT_ENOUGH_MASTERED_HEROES`), crédite + persiste (write-through `collectionsClaimed`
+   + resync récompenses). **Faits (sondes)** : niveau claimable = `getNumMasteredHeroes >=
+   getNumMasteredHeroesRequiredForLevel(type,level)` ; héros maîtrisé = `masteryUses >=
+   getNumUsesRequiredForMastery(tier)=20` + étoiles >= `getHeroStarsRequired(BRONZE)=3` ; DAMAGE/BRONZE/lvl1 = 5 héros.
+   `CollectionClaimTest` : claim → highest 0→1 + `MASTERY_TOKENS +8` ; re-claim refusé (`COLLECTION_ALREADY_CLAIMED`,
+   pas de double crédit) ; non-gagné refusé (`NOT_ENOUGH_MASTERED_HEROES`) ; persistance wire + DB. Régression 112 tests.
+   - **✅ VÉRIFIÉ EN JEU + VISUEL (g105, id=1)** : `ExpAdminCollection` → DAMAGE/BRONZE CLAIMABLE (6 héros maîtrisés).
+     `collectionscreen DAMAGE` → écran RÉEL **« Bronze I : HEROES MASTERED 5/5, NEXT REWARD 14+8, bouton CLAIM »**
+     (chargé depuis NOTRE serveur ; captures `build/coll_before_ingame.png`). `claimcollection DAMAGE BRONZE 1`
+     (chemin client réel `ClientActionHelper.claimCollectionRewards`) → serveur `DAMAGE/BRONZE niv.1 réclamé
+     (highest 0→1) [persisté]` → **écran ré-ouvert : Bronze II (0/10, DETAILS) + Silver I DÉVERROUILLÉ**
+     (`coll_after_ingame.png`) → **DB : highestClaimed(DAMAGE,BRONZE)=1, MASTERY_TOKENS=8**. Pilotes DEV
+     `claimcollection`/`collectionscreen`, outil `ExpAdminCollection`.
 2. ⬜ **Maîtrise de combat (`CollectionMasteryUsesUpdate` → `recordHeroMastery`)** : accumulation persistée.
 3. ⬜ **Cosmétique (`CLAIM_COSMETIC_COLLECTION`/`BUY_COLLECTION_AVATAR`)** — évalué, pas présumé optionnel.
 

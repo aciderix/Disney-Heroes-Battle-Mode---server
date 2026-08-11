@@ -4328,3 +4328,42 @@ preuve).** Tous les messages « Lineup » du protocole passés en revue :
 audit périmètre) — rien d'« optionnel » laissé sans preuve.
 
 Fichiers : `server/smoke/{LineupFieldsTest}.java`, `server/smoke/regression.sh`, `docs/SAVED_LINEUPS.md`, `MEMORY.md`.
+
+---
+
+## 2026-08-11 (g105) — COLLECTIONS (#72 mode suivant) incr. 1 : CLAIM d'un palier ✅ VÉRIFIÉ EN JEU + VISUEL
+
+Nouveau mode (choisi par l'utilisateur). Système de MAÎTRISE de héros par COLLECTION (29 collections : rôles/franchises,
+4 tiers BRONZE→PLATINUM). Jouer un héros accumule des « mastery uses » ; à N héros maîtrisés, un niveau devient
+réclamable → récompenses + modificateurs de combat.
+
+**Handler.** `Action CLAIM_COLLECTION_REWARDS{TYPE:CollectionType, TIER:CollectionTier, LEVEL:int}` (émetteur
+`ClientActionHelper.claimCollectionRewards`) → `LoginServer` (chaîne `act.command`, extras en `.name()`) →
+`ServerUser.applyClaimCollection` : ré-exécute la logique du jeu (§3) `CollectionHelper.claimCollectionRewards(user,
+type, tier, level)`. Anti-triche = les levées du jeu (`getCollectionState != CLAIMABLE` → `COLLECTION_ALREADY_CLAIMED`
+ou `NOT_ENOUGH_MASTERED_HEROES`). Persistance write-through : `IndividualUser` écrit dans
+`individualUserExtra.collectionsClaimed` (+ `resyncHeroes`/`resyncDiamonds`/`resyncCounts` pour les récompenses).
+
+**Faits établis (sondes, §4).** `getCollectionState` CLAIMABLE ⟺ `getNumMasteredHeroes(user,type,tier) >=
+CollectionStats.getNumMasteredHeroesRequiredForLevel(type,level)`. Un héros est « maîtrisé » ⟺ `masteryUses >=
+CollectionStats.getNumUsesRequiredForMastery(tier,level)` (BRONZE lvl1 = 20) ET étoiles >= `getHeroStarsRequired(tier)`
+(BRONZE=3). DAMAGE lvl1 requiert 5 héros maîtrisés. `getCumulativeCollectionLevel = Σ highestClaimed(tier)`.
+
+**Test `CollectionClaimTest`.** Setup CLAIMABLE (6 héros DAMAGE 6★ + maîtrise 21 via `setCollectionHeroMasteryUses`).
+Claim DAMAGE/BRONZE/lvl1 → `highest 0→1`, `MASTERY_TOKENS +8` (récompense exacte) ; re-claim → refusé
+(`COLLECTION_ALREADY_CLAIMED`, aucun double crédit) ; niveau non-gagné (maîtrise 5<20) → refusé
+(`NOT_ENOUGH_MASTERED_HEROES`) ; persistance PROFONDE wire + DB (highest claimed survit). Régression → **112 tests**.
+
+**✅ VÉRIFIÉ EN JEU + VISUEL (id=1 TL100).** `ExpAdminCollection` amène DAMAGE/BRONZE à CLAIMABLE (6 héros maîtrisés).
+Client réel : `collectionscreen DAMAGE` → écran RÉEL montrant **Bronze I : HEROES MASTERED 5/5, NEXT REWARD 14
+(EXP_COLOSSAL) + 8 (MASTERY_TOKENS), bouton CLAIM** (chargé depuis NOTRE serveur ; Silver/Gold/Platinum verrouillés).
+`claimcollection DAMAGE BRONZE 1` (chemin client réel) → serveur **`DAMAGE/BRONZE niv.1 réclamé (highest 0→1)
+[persisté]`** → écran ré-ouvert : **Bronze II (0/10, bouton DETAILS) + Silver I DÉVERROUILLÉ** → **DB confirmée** :
+`highestClaimed(DAMAGE,BRONZE)=1`, `MASTERY_TOKENS=8`. Captures `build/coll_{before,after}_ingame.png` (gitignore).
+
+Pilotes DEV : `claimcollection <TYPE> <TIER> <LEVEL>`, `collectionscreen <TYPE>`. Outil DEV : `ExpAdminCollection`.
+**RESTE** : incr. 2 (maîtrise de combat `CollectionMasteryUsesUpdate`→`recordHeroMastery`), incr. 3 (cosmétique).
+
+Fichiers : `server/java/dhserver/{ServerUser,LoginServer}.java`, `server/smoke/{CollectionClaimTest,ExpAdminCollection}.java`,
+`server/smoke/regression.sh`, `desktop-port/src/main/java/dhdesktop/{TutorialDriver,DesktopLauncher}.java`,
+`docs/COLLECTIONS.md`, `MEMORY.md`.

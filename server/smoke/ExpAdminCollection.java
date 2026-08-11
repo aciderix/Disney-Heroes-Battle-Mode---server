@@ -20,9 +20,10 @@ public final class ExpAdminCollection {
     CollectionType COL = CollectionType.DAMAGE; CollectionTier T = CollectionTier.BRONZE;
     var cs = Class.forName("com.perblue.heroes.game.data.collections.CollectionStats");
     int cap = (int) cs.getMethod("getNumUsesRequiredForMastery", CollectionTier.class, int.class).invoke(null, T, 1);
+    int lvl = Math.max(1, su.bootData().userInfo.basicInfo.teamLevel);   // ne pas dépasser le TL (HERO_ABOVE_TEAM_LEVEL)
     List<UnitType> heroes = (List<UnitType>) CollectionHelper.getHeroesInCollection(u, COL);
     List<UnitType> g = new ArrayList<>();
-    for (UnitType h : heroes) { if (g.size() >= 6) break; if (u.getHero(h) == null) su.grantHero(h, Rarity.RED, 200, 6); g.add(h); }
+    for (UnitType h : heroes) { if (g.size() >= 6) break; if (u.getHero(h) == null) su.grantHero(h, Rarity.RED, lvl, 6); g.add(h); }
     for (UnitType h : g) u.getIndividual().setCollectionHeroMasteryUses(COL, T, h, cap + 1);
     s.save(su);
     System.out.println("[coll-adm] compte " + uid + " : DAMAGE/BRONZE, cap=" + cap + ", héros maîtrisés=" + g
