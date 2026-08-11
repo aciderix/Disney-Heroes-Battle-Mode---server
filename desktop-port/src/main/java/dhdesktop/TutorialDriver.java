@@ -1140,6 +1140,52 @@ public final class TutorialDriver {
         } catch (Throwable t) { System.out.println("[claimcollection] échec: " + t); t.printStackTrace(); }
     }
 
+    /** DEV : joue un COMBAT DE CAMPAGNE en QUICK FIGHT — pousse le VRAI écran
+     *  {@code CampaignHeroChooserScreen(NORMAL, chapter, level, …)} puis {@code quickFightPressed()} (chemin réel :
+     *  le client joue le combat headless + envoie {@code CampaignAttack}). Sert à vérifier l'accumulation de maîtrise
+     *  de collection en jeu. Invoqué via "campfight &lt;chapter&gt; &lt;level&gt;". */
+    public static void campFight(GameMain game, int chapter, int level) {
+        try {
+            com.perblue.heroes.ui.herochooser.CampaignHeroChooserScreen s =
+                new com.perblue.heroes.ui.herochooser.CampaignHeroChooserScreen(
+                    com.perblue.heroes.network.messages.CampaignType.NORMAL, chapter, level, null,
+                    com.perblue.heroes.game.specialevent.SpecialEventSnapshot.NONE);
+            game.getScreenManager().pushScreen(s);
+            System.out.println("[campfight] CampaignHeroChooserScreen(NORMAL," + chapter + "," + level
+                + ") poussé (laisser rendre puis 'campquick') ; canQuickFight=" + s.canStartQuickFight());
+        } catch (Throwable t) { System.out.println("[campfight] échec: " + t); t.printStackTrace(); }
+    }
+
+    /** DEV : sur un CampaignHeroChooserScreen déjà ouvert (rendu → lineup auto-sélectionné), lance le QUICK FIGHT
+     *  → {@code quickFightPressed()} joue le combat + envoie {@code CampaignAttack}. Invoqué via "campquick". */
+    public static void campQuick(GameMain game) {
+        try {
+            Object screen = game.getScreenManager().getScreen();
+            if (screen == null || !screen.getClass().getSimpleName().contains("CampaignHeroChooser")) {
+                System.out.println("[campquick] écran courant = "
+                    + (screen == null ? "null" : screen.getClass().getSimpleName()) + " (pas CampaignHeroChooserScreen)"); return;
+            }
+            com.perblue.heroes.ui.herochooser.CampaignHeroChooserScreen s =
+                (com.perblue.heroes.ui.herochooser.CampaignHeroChooserScreen) screen;
+            // Sélectionne les héros du lineup NORMAL_CAMPAIGN (le chooser ne les auto-sélectionne pas) via le VRAI
+            // chemin unitSelected (comme un tap). Provider de niveau de collection = CollectionHelper.fromUser.
+            var lineup = game.getYourUser().getHeroLineup(
+                com.perblue.heroes.network.messages.HeroLineupType.NORMAL_CAMPAIGN, 0L);
+            var provider = com.perblue.heroes.game.logic.CollectionHelper.fromUser(game.getYourUser());
+            if (lineup != null && lineup.heroes != null) {
+                for (Object ht : lineup.heroes) {
+                    var hero = game.getYourUser().getHero((com.perblue.heroes.network.messages.UnitType) ht);
+                    if (hero instanceof com.perblue.heroes.game.objects.UnitData)
+                        s.unitSelected((com.perblue.heroes.game.objects.UnitData) hero, provider, 0f, 0f);
+                }
+            }
+            System.out.println("[campquick] héros sélectionnés=" + s.getSelectedHeroes().size
+                + " canQuickFight=" + s.canStartQuickFight());
+            s.quickFightPressed();
+            System.out.println("[campquick] quickFightPressed() → combat + CampaignAttack [chemin réel]");
+        } catch (Throwable t) { System.out.println("[campquick] échec: " + t); t.printStackTrace(); }
+    }
+
     /** DEV : OUVRE le VRAI écran de détail de collection {@code CollectionsDetailScreen(type)} (chemin réel,
      *  pushScreen) — pour vérification VISUELLE (paliers + boutons de claim). Invoqué via "collectionscreen &lt;TYPE&gt;". */
     public static void collectionScreen(GameMain game, String typeS) {

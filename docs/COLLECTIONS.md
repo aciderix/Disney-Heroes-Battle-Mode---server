@@ -67,7 +67,16 @@ Collections **cosmétiques** séparées (emojis, `CosmeticCollectionType` — 86
    ELITE_CAMPAIGN) → `incCollectionHeroMasteryUses` (write-through `individualUserExtra.collectionMasteryUses`,
    auto-persisté ; filtre `MIN_HERO_STARS_REQUIRED` interne). `CollectionMasteryTest` : WIN → maîtrise
    ELASTIGIRL/DAMAGE/BRONZE 0→1 (cumul sur 2 WIN) ; DÉFAITE → aucune accumulation ; persistance wire + DB.
-   Régression 113 tests. ⬜ **RESTE : vérif EN JEU** (jouer un combat de campagne → maîtrise accumulée en DB).
+   Régression 113 tests.
+   - **🟡 EN JEU — chemin CONFIRMÉ, delta propre à refaire (honnête).** Combat de campagne RÉEL joué en jeu (pilotes
+     `campfight`/`campquick` : `CampaignHeroChooserScreen` + `unitSelected` du lineup NORMAL_CAMPAIGN +
+     `quickFightPressed` ; niveau 1-1 pré-3★ via `ExpAdminCollectionFight` avec un héros jetable 1★) → serveur
+     **`CampaignAttack NORMAL 1-1 WIN → recordOutcome [persisté]`** + **`[collection] maîtrise de combat accumulée
+     (mode CAMPAIGN) [persisté]`** → le CODE d'accumulation FIRE bien en jeu, et une maîtrise DAMAGE est présente en DB.
+     **MAIS** le delta isolé 0→1 n'a PAS été capturé proprement : l'état du compte de test était pollué (multiples
+     setups admin + un CLAIM antérieur qui VIDE la maîtrise du niveau réclamé — `clearCollectionHeroMasteryUses`), et
+     le pilotage du quick-fight (sélection des héros) reste fragile. Le comportement EXACT (0→1, cumul, défaite exempte)
+     est prouvé HEADLESS. ⬜ **RESTE : refaire une vérif en jeu sur compte PROPRE pour un delta 0→1 net.**
 3. ⬜ **Cosmétique (`CLAIM_COSMETIC_COLLECTION`/`BUY_COLLECTION_AVATAR`)** — évalué, pas présumé optionnel.
 
 ## Notes §3/§4

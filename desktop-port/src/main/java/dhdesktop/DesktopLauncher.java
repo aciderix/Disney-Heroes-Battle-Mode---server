@@ -470,6 +470,17 @@ public final class DesktopLauncher {
                     TutorialDriver.collectionScreen(game, cs.length >= 2 ? cs[1].toUpperCase() : "DAMAGE");
                     continue;
                 }
+                if (low.startsWith("campfight")) {               // campfight <chapter> <level> → pousse le chooser de campagne
+                    String[] cfp = ln.trim().split("[,;\\s]+");
+                    int ch = cfp.length >= 2 ? Integer.parseInt(cfp[1].trim()) : 1;
+                    int lv = cfp.length >= 3 ? Integer.parseInt(cfp[2].trim()) : 1;
+                    TutorialDriver.campFight(game, ch, lv);
+                    continue;
+                }
+                if (low.startsWith("campquick")) {               // campquick → quick fight sur le chooser ouvert → CampaignAttack
+                    TutorialDriver.campQuick(game);
+                    continue;
+                }
                 if (low.startsWith("expreset")) {                // expreset [diff] — RESET de l'expédition → ResetExpedition
                     String[] pr = ln.trim().split("[,;\\s]+");
                     int diff = pr.length >= 2 ? Integer.parseInt(pr[1].trim()) : 1;
