@@ -55,8 +55,27 @@ points d'enchant** de l'objet → **bonus de stats**. Gaté **`Unlockable.ENCHAN
      `RALPH/TWO enchanté (or -0, diamants -3360) [persisté]` → DB : slot TWO (ROCKET_PACK_PATCH_KIT, PURPLE)
      **étoiles 0→5 (MAX)**, diamants 50000→46640 (−3360 = coût max exact de CET item), ni or ni matériaux.
 3. ✅ **Vérif EN JEU multi-slots/raretés — COUVERTE (g98-g99)** : slot ONE (PC_FLYERS, ORANGE) via MATÉRIAUX+OR (g98) ;
-   slot TWO (ROCKET_PACK_PATCH_KIT, PURPLE) via DIAMANTS (g99). ⇒ **ENCHANTING #72 COMPLET** (matériaux/or + diamants +
-   garde-fous, vérifiés en jeu). Reste facultatif : RED/YELLOW gear, prime badges (`maxUpgradePrimeBadges`).
+   slot TWO (ROCKET_PACK_PATCH_KIT, PURPLE) via DIAMANTS (g99).
+4. **MAX-UPGRADE PRIME BADGES + gear RED/YELLOW — REQUIS (non facultatif)** : message dédié `EnhanceMaxPrimeBadge{
+   unitType, perBadgeItems:List, totalItems:Map, executionOrder:List, specialEvents}` (bouton « MAX » de l'écran
+   d'enchant : enchante d'UN COUP TOUS les slots enchantables d'un héros jusqu'à leur plafond). Handler `LoginServer`
+   → **`ServerUser.applyMaxPrimeBadge`** : serveur AUTORITATIF **ré-dérive le plan depuis l'état persisté**
+   (`EnchantingHelper.buildMaxUpgradePlanForHero(user, type, snap)`, qui n'utilise que les items possédés + le barème
+   du jeu) puis l'applique (`applyMaxUpgradePlanForHero` = un `enchantItem` par slot). **Le message client (plan
+   déclaré) est IGNORÉ** → toute l'anti-triche = re-calcul serveur. **Fait §8 (`GoldAwareProbe`) : le plan est
+   AUTO-LIMITANT** — il ne planifie que le FINANÇABLE (or) avec les matériaux POSSÉDÉS (ex. mesuré : 5 M or → 3 slots ;
+   9 M → 5 slots ; 9,14 M → 6 slots ; 0 → plan vide → no-op). ⇒ pas de garde-fou OR ajouté (ce serait du code mort, §2).
+   - **Gear RED/YELLOW** (`getMaxStars(RED)=getMaxStars(YELLOW)=5`) : `enchantItem` est rarity-agnostic ; vérifié via
+     RALPH rang RED (slot ONE = PRESTO **RED**) et RALPH rang YELLOW (**6 slots YELLOW**).
+   - `EnchantMaxUpgradeTest` : YELLOW RALPH → **6 slots enchantés d'un coup**, **or −9 139 200** (= `plan.totalGold`
+     exact) + matériaux `{VOID_DUST=12, SHIMMER_DUST=6, PRIMAL_ESSENCE=132}` EXACTS ; persistance **PROFONDE**
+     (round-trip wire + DB, étoiles par slot) ; plan vide sans ressource (no-op) ; **affordabilité partielle**
+     (5 M or → 3 slots exacts) ; gear RED (PRESTO) enchanté (étoiles 0→1). DEV : `ExpAdminMaxUpgrade` (prépare un
+     compte YELLOW RALPH + gear + matériaux + or), pilote `maxupgrade <HERO>`. Régression 108 tests.
+   - ⬜ **RESTE : vérif EN JEU** (client réel → `maxupgrade RALPH` → `EnhanceMaxPrimeBadge` → serveur → DB) — §8.
+
+⇒ **ENCHANTING #72** : incr. 1 (matériaux/or) + 2 (diamants/garde-fous) + 3 (multi-slots/raretés) ✅ vérifiés en jeu ;
+incr. 4 (max-upgrade prime badges + RED/YELLOW) livré + headless, **vérif en jeu à faire** (REQUIS).
 
 ## Notes §3/§4
 - Client-autoritatif partiel (le client choisit les matériaux `itemsUsed`) mais le serveur RÉ-EXÉCUTE `enchantItem`

@@ -2387,6 +2387,59 @@ public final class ServerUser {
   }
 
   /**
+   * MAX-UPGRADE PRIME BADGES d'un héros (bouton « MAX » de l'écran d'enchant : enchante d'UN COUP TOUS les slots
+   * enchantables du héros jusqu'à leur plafond, en consommant les matériaux auto-activés — dont les prime badges,
+   * cf. {@code isPrimeBadgeEnchantingItem} — et l'OR). Message {@code EnhanceMaxPrimeBadge{unitType, perBadgeItems,
+   * totalItems, executionOrder, specialEvents}} (le client déclare son plan, fire-and-forget).
+   *
+   * <p>Le serveur est AUTORITATIF (§3) : il IGNORE le plan déclaré par le client et **RÉ-DÉRIVE le plan depuis
+   * l'état PERSISTÉ** via {@code EnchantingHelper.buildMaxUpgradePlanForHero(user, type, snap)}, puis l'applique
+   * via {@code applyMaxUpgradePlanForHero} (un {@code enchantItem} par slot). C'est là toute l'anti-triche : le
+   * message client (plan déclaré) n'est jamais lu — un tricheur ne peut rien fausser, le serveur recalcule tout
+   * depuis son état. Zéro invention (§4).
+   *
+   * <p><b>Le plan est AUTO-LIMITANT (fait vérifié, §8 — {@code GoldAwareProbe}).</b> {@code buildMaxUpgradePlanForHero}
+   * ne planifie QUE ce que le joueur peut réellement payer : il plafonne au barème {@code getMaxStars}, n'utilise que
+   * les matériaux POSSÉDÉS ({@code getItemAmount}) ET s'arrête à l'OR DISPONIBLE (ex. mesuré : 5 M or → 3 slots ;
+   * 9 M → 5 slots ; 9,14 M → 6 slots ; 0 → plan vide). Donc {@code applyMaxUpgradePlanForHero} ne peut PAS lever
+   * {@code NOT_ENOUGH_GOLD}/{@code ENCHANT_ALL_ENOUGH_RESOUCES} sur un plan RE-DÉRIVÉ serveur (jamais d'application
+   * partielle) — inutile d'ajouter un garde-fou OR (ce serait du code mort, §2). Un compte sans ressource obtient un
+   * plan vide → no-op (refus propre). Persistance {@code resyncHeroes}/{@code resyncDiamonds}/{@code resyncCounts}
+   * (l'enchant vit sur les objets équipés du héros). Renvoie {@code true} si appliqué (à persister par l'appelant).
+   */
+  public synchronized boolean applyMaxPrimeBadge(com.perblue.heroes.network.messages.EnhanceMaxPrimeBadge m) {
+    ServerContext.init();
+    if (m == null || m.unitType == null) return false;
+    User user = ClientNetworkStateConverter.getUser(userInfo, userExtra, "prime-badge");
+    IndividualUser iu = ClientNetworkStateConverter.getIndividualUser(
+        individualUserExtra, userID, userInfo.diamonds, "prime-badge");
+    ServerContext.bind(user, iu);
+    ServerContext.bindBattlePass(refreshBattlePass());
+    long goldBefore = user.getResource(com.perblue.heroes.network.messages.ResourceType.GOLD);
+    com.perblue.heroes.game.logic.EnchantingHelper.HeroMaxUpgradePlan plan;
+    try {
+      plan = com.perblue.heroes.game.logic.EnchantingHelper.buildMaxUpgradePlanForHero(
+          user, m.unitType, com.perblue.heroes.game.specialevent.SpecialEventSnapshot.NONE);
+      if (plan == null || plan.isEmpty()) {
+        System.out.println("[prime-badge] " + m.unitType + " : rien à enchanter (plan vide — ressources/gear) [aucun effet]");
+        return false;   // rien à faire (compte sans ressource ou gear au max) → l'appelant ne persiste pas
+      }
+      com.perblue.heroes.game.logic.EnchantingHelper.applyMaxUpgradePlanForHero(
+          user, plan, com.perblue.heroes.game.specialevent.SpecialEventSnapshot.NONE);
+    } catch (Throwable t) {
+      boolean antiCheat = t instanceof com.perblue.heroes.ClientErrorCodeException;
+      System.out.println("[prime-badge] " + m.unitType
+          + (antiCheat ? " REFUSÉ (anti-triche)" : " échec") + " : " + t);
+      return false;
+    }
+    resyncHeroes(user); resyncDiamonds(user); resyncCounts(user);
+    long goldSpent = goldBefore - user.getResource(com.perblue.heroes.network.messages.ResourceType.GOLD);
+    System.out.println("[prime-badge] " + m.unitType + " max-upgrade (" + plan.executionOrder.size()
+        + " slot(s), or -" + goldSpent + ") [persisté]");
+    return true;
+  }
+
+  /**
    * Graine RNG annoncée par le client pour {@code type} (via {@code Action SET_SEED}), ou {@code null} si
    * aucune n'a été reçue. Destinée à la re-simulation/re-roll autoritatif (SERVER_PLAN §Partiels D/E).
    */

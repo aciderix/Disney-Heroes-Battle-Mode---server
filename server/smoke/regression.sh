@@ -41,7 +41,7 @@ TESTS=(
   ChallengeBootTest ChallengeLoopTest ChallengeShopTest ChallengeViewTest
   FriendshipBootTest FriendshipShopTest FriendshipEmpowerTest FriendshipCampaignTest MissionLoopTest MissionSpeedupTest
   ExpeditionBootTest ExpeditionCombatTest ExpeditionRaidTest ExpeditionWardTest ExpeditionResetTest ExpeditionChestTest
-  EnchantApplyTest EnchantGuardTest
+  EnchantApplyTest EnchantGuardTest EnchantMaxUpgradeTest
 )
 
 echo "[reg] compilation (serveur + ${#TESTS[@]} tests) ..."

@@ -1070,6 +1070,32 @@ public final class TutorialDriver {
         } catch (Throwable t) { System.out.println("[enchant] échec: " + t); t.printStackTrace(); }
     }
 
+    /** DEV : MAX-UPGRADE PRIME BADGES d'un héros (bouton « MAX » de l'écran d'enchant) — chemin client réel
+     *  {@code ClientActionHelper.maxUpgradePrimeBadges(plan, NONE, listener)} : construit le plan localement
+     *  ({@code EnchantingHelper.buildMaxUpgradePlanForHero}, comme l'écran), applique + envoie
+     *  {@code EnhanceMaxPrimeBadge} ; le serveur ré-dérive le plan et ré-exécute l'autorité. Invoqué via
+     *  "maxupgrade &lt;HERO&gt;". */
+    public static void maxUpgrade(GameMain game, String heroS) {
+        try {
+            com.perblue.heroes.network.messages.UnitType hero = com.perblue.heroes.network.messages.UnitType.valueOf(heroS);
+            var snap = com.perblue.heroes.game.specialevent.SpecialEventSnapshot.NONE;
+            var plan = com.perblue.heroes.game.logic.EnchantingHelper.buildMaxUpgradePlanForHero(
+                game.getYourUser(), hero, snap);
+            System.out.println("[maxupgrade] " + hero + " plan : slots=" + plan.executionOrder.size()
+                + " or=" + plan.totalGold + " items=" + plan.totalItems + " (vide=" + plan.isEmpty() + ")");
+            var h = game.getYourUser().getHero(hero);
+            for (com.perblue.heroes.network.messages.HeroEquipSlot s : com.perblue.heroes.network.messages.HeroEquipSlot.values()) {
+                var it = h.getItem(s);
+                if (it != null) System.out.println("[maxupgrade]   avant " + s + "=" + it.getType() + " étoiles=" + it.getStars());
+            }
+            com.perblue.heroes.game.ActionListener noop = new com.perblue.heroes.game.ActionListener() {
+                public void onResult(boolean ok, Object o) { System.out.println("[maxupgrade] onResult=" + ok); }
+            };
+            com.perblue.heroes.game.ClientActionHelper.maxUpgradePrimeBadges(plan, snap, noop);
+            System.out.println("[maxupgrade] maxUpgradePrimeBadges(" + hero + ") → EnhanceMaxPrimeBadge envoyé [chemin réel]");
+        } catch (Throwable t) { System.out.println("[maxupgrade] échec: " + t); t.printStackTrace(); }
+    }
+
     /** DEV : OUVRE le coffre d'expédition disponible — chemin client réel
      *  {@code ClientActionHelper.openExpeditionChest(NONE, null)} (exécute openChest localement + envoie
      *  {@code OpenExpeditionChest} ; le serveur ré-exécute l'autorité). Nécessite un coffre disponible (tous les 3

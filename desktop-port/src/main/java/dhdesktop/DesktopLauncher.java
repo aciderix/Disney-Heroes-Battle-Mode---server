@@ -436,6 +436,12 @@ public final class DesktopLauncher {
                     else System.out.println("[enchant] usage: enchant <HERO> <SLOT> <MATERIAL> <count> [diamonds]");
                     continue;
                 }
+                if (low.startsWith("maxupgrade ")) {            // maxupgrade <HERO> → EnhanceMaxPrimeBadge (bouton « MAX »)
+                    String[] mu = ln.trim().split("[,;\\s]+");
+                    if (mu.length >= 2) TutorialDriver.maxUpgrade(game, mu[1].toUpperCase());
+                    else System.out.println("[maxupgrade] usage: maxupgrade <HERO>");
+                    continue;
+                }
                 if (low.startsWith("expreset")) {                // expreset [diff] — RESET de l'expédition → ResetExpedition
                     String[] pr = ln.trim().split("[,;\\s]+");
                     int diff = pr.length >= 2 ? Integer.parseInt(pr[1].trim()) : 1;

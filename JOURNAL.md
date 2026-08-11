@@ -4137,3 +4137,46 @@ RED/YELLOW, prime badges (`maxUpgradePrimeBadges`).
 
 Fichiers : `server/smoke/EnchantGuardTest.java`, `server/smoke/{ExpAdminEnchant}.java`, `server/smoke/regression.sh`,
 `desktop-port/src/main/java/dhdesktop/{TutorialDriver,DesktopLauncher}.java`, `docs/ENCHANTING.md`, `MEMORY.md`.
+
+---
+
+## 2026-08-11 (g100) — ENCHANTING (#72) incrément 4 : MAX-UPGRADE PRIME BADGES + gear RED/YELLOW (REQUIS)
+
+**Correction de consigne (utilisateur).** « gear RED/YELLOW, prime badges (`maxUpgradePrimeBadges`) ne sont PAS
+facultatifs — rien n'est facultatif sauf si prouvé ET validé par l'utilisateur ». Les entrées g98/g99 les classaient
+« reste facultatif » → **corrigé** : ce sont des livrables REQUIS. Cet incrément les livre.
+
+**Message + logique du jeu (§3).** Bouton « MAX » de l'écran d'enchant = `ClientActionHelper.maxUpgradePrimeBadges(
+plan, snap, listener)` (`com.perblue.heroes.game.ClientActionHelper`) : construit le plan localement
+(`EnchantingHelper.buildMaxUpgradePlanForHero`), l'applique (`applyMaxUpgradePlanForHero`) PUIS envoie le message DÉDIÉ
+`EnhanceMaxPrimeBadge{unitType, perBadgeItems:List, totalItems:Map, executionOrder:List, specialEvents}`. Côté serveur :
+handler `LoginServer` → **`ServerUser.applyMaxPrimeBadge`** — le serveur est AUTORITATIF : il **IGNORE le plan déclaré
+par le client** et le **RÉ-DÉRIVE** depuis l'état persisté (`buildMaxUpgradePlanForHero(user, type, snap)`), puis
+l'applique (`applyMaxUpgradePlanForHero` = un `enchantItem` par slot). Toute l'anti-triche = ce recalcul serveur (un
+tricheur ne peut rien fausser). Persistance `resyncHeroes`/`resyncDiamonds`/`resyncCounts` (l'enchant vit sur l'objet
+équipé). Zéro invention (§4).
+
+**Fait établi (§8, `GoldAwareProbe`) : le plan est AUTO-LIMITANT.** `buildMaxUpgradePlanForHero` ne planifie QUE ce que
+le joueur peut réellement payer — plafond `getMaxStars`, matériaux POSSÉDÉS (`getItemAmount`) ET arrêt à l'OR
+DISPONIBLE : mesuré 0/1 K/1 M or → plan VIDE ; 5 M → 3 slots (or 4 569 600) ; 9 M → 5 slots (7 616 000) ; 9,14 M → 6
+slots (9 139 200) ; 50 M → 6 slots. Donc `applyMaxUpgradePlanForHero` sur un plan RE-DÉRIVÉ serveur ne peut PAS lever
+`NOT_ENOUGH_GOLD`/`ENCHANT_ALL_ENOUGH_RESOUCES` (jamais d'application partielle) → **aucun garde-fou OR ajouté** (ce
+serait du code mort, §2). Un compte sans ressource obtient un plan vide → no-op (refus propre).
+
+**Gear RED/YELLOW.** `EnchantingStats.getMaxStars(RED)=getMaxStars(YELLOW)=5` et `enchantItem` est rarity-agnostic.
+Sondé (`GearRarityProbe`) : RALPH rang RED → slot ONE=PRESTO (**RED**), rang YELLOW → **6 slots YELLOW**
+(HOME_SWEET_HOME, MADE_FOR_PUDDLES, SO_MUCH_IN_COMMON, HANDCRAFTED_BY_LEPRECHAUNS, DRIVEN_BY_THOUGHT, THE_ZONE).
+
+**Test `EnchantMaxUpgradeTest`.** (A) YELLOW RALPH → max-upgrade des **6 slots YELLOW d'un coup** : **or −9 139 200**
+(= `plan.totalGold` EXACT), matériaux `{VOID_DUST=12, SHIMMER_DUST=6, PRIMAL_ESSENCE=132}` EXACTS, les 6 slots montent
+en étoiles ; persistance **PROFONDE** (round-trip wire + DB, étoiles par slot — leçon EXPEDITION). (B) compte sans
+ressource → plan vide → no-op, aucun débit. (C) affordabilité partielle : 5 M or → **exactement 3 slots** enchantés.
+(D) gear **RED** (PRESTO) enchanté (étoiles 0→1). Régression → **108 tests**.
+
+**RESTE (REQUIS, §8) : vérif EN JEU.** `ExpAdminMaxUpgrade` prépare un compte (RALPH rang YELLOW + gear + matériaux +
+or), pilote `maxupgrade <HERO>` (chemin client réel `maxUpgradePrimeBadges`). À exécuter : client réel → serveur
+`RALPH max-upgrade (N slot(s), or -…) [persisté]` → DB (étoiles par slot). Non terminé tant que non vérifié en jeu.
+
+Fichiers : `server/java/dhserver/{ServerUser,LoginServer}.java`, `server/smoke/{EnchantMaxUpgradeTest,ExpAdminMaxUpgrade}.java`,
+`server/smoke/regression.sh`, `desktop-port/src/main/java/dhdesktop/{TutorialDriver,DesktopLauncher}.java`,
+`docs/ENCHANTING.md`, `MEMORY.md`.

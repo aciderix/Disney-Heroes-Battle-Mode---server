@@ -1862,6 +1862,19 @@ public final class LoginServer {
                 System.out.println("[login]     ! persist enchant: " + e); } }
               System.out.println("[login] <== EnchantItem : " + ei.hero + "/" + ei.slot
                   + (ok ? " → appliqué [persisté]" : " refusé"));
+            } else if (m instanceof com.perblue.heroes.network.messages.EnhanceMaxPrimeBadge) {
+              // ENCHANTING #72 — MAX-UPGRADE PRIME BADGES (bouton « MAX » : enchante TOUS les slots d'un coup).
+              // Serveur autoritatif : ré-dérive le plan depuis l'état persisté (buildMaxUpgradePlanForHero) puis
+              // l'applique (applyMaxUpgradePlanForHero), garde-fou OR agrégé (plan.totalGold), persiste.
+              com.perblue.heroes.network.messages.EnhanceMaxPrimeBadge pb =
+                  (com.perblue.heroes.network.messages.EnhanceMaxPrimeBadge) m;
+              boolean ok;
+              try { ok = user.applyMaxPrimeBadge(pb); }
+              catch (Throwable t) { ok = false; System.out.println("[login]     ! EnhanceMaxPrimeBadge: " + t); }
+              if (ok) { try { store.save(user); } catch (Exception e) {
+                System.out.println("[login]     ! persist prime-badge: " + e); } }
+              System.out.println("[login] <== EnhanceMaxPrimeBadge : " + pb.unitType
+                  + (ok ? " → appliqué [persisté]" : " refusé"));
             } else if (m instanceof com.perblue.heroes.network.messages.OpenExpeditionChest) {
               // EXPEDITION #72 incr. 7 — coffre d'expédition. Client-autoritatif : le client ouvre localement puis
               // envoie OpenExpeditionChest{rewardDrops} ; le serveur RÉ-EXÉCUTE l'autorité (openChest : roule + crédite).
