@@ -4267,3 +4267,32 @@ relancé → `lineupscreen SAVED_1` → **capture** montrant l'écran chargé de
 (nom sauvé) + les 3 héros **Ralph + Vanellope + Elastigirl** rendus + **TEAM POWER 752 286** + bouton SAVE + roster
 coché. Capture `desktop-port/build/lineup_myteam_ingame.png` (gitignore). ⇒ confirmation VISUELLE en jeu (§4bis), pas
 seulement le chemin serveur/DB. Pilote DEV `lineupscreen`.
+
+---
+
+## 2026-08-11 (g103) — SAVED_LINEUPS (#72) incr. 4 : COOLDOWN de défense PvP (correction « optionnel » → REQUIS)
+
+**Correction de cadrage (consigne utilisateur).** J'avais laissé « Reste OPTIONNEL : cooldowns de défense PvP …
+déjà couverts par ARÈNE #41 ». Sur challenge de l'utilisateur, vérification : **FAUX**. `grep` serveur pour
+`setHeroLineupCooldown`/`LINEUP_UPDATE`/`CooldownType` = VIDE ; `applyHeroLineupUpdate` appelait `setHeroLineup`
+mais JAMAIS de cooldown. ⇒ vrai trou : sauver une défense FIGHT_PIT/COLISEUM ne posait AUCUN cooldown côté serveur
+(non autoritatif, non persisté — un client modifié pouvait re-changer sa défense en boucle). Pas optionnel.
+
+**Correctif (miroir fidèle du client, bytecode `ClientActionHelper.saveHeroLineup`).** Après `setHeroLineup` :
+`FIGHT_PIT_DEFENSE` → `ArenaHelper.setHeroLineupCooldown(user, FIGHT_PIT, FIGHT_PIT_LINEUP_UPDATE)` ;
+`COLISEUM_DEFENSE_3` (3ᵉ/dernier, comme le client) → `(COLISEUM, COLISEUM_LINEUP_UPDATE)`. Durée =
+`ArenaHelper.getNextDefenseCooldown` (donnée du jeu = **6 h**, jamais inventée). Persistance **write-through** :
+`IndividualUser.setCooldownEnd` écrit dans `individualUserExtra.cooldowns` (aucun resync).
+
+**Test `LineupCooldownTest`.** FIGHT_PIT_DEFENSE → `FIGHT_PIT_LINEUP_UPDATE` ~6 h ; COLISEUM_DEFENSE_3 →
+`COLISEUM_LINEUP_UPDATE` ~6 h ; SAVED_* normal → AUCUN cooldown ; persistance wire + DB. Régression → **110 tests**.
+
+**✅ VÉRIFIÉ EN JEU (id=1).** `savelineup FIGHT_PIT_DEFENSE Def RALPH+VANELLOPE+ELASTIGIRL` (chemin client réel) →
+serveur `HeroLineupUpdate(FIGHT_PIT_DEFENSE) → lineup enregistrée [persistée]` → **DB** : cooldown
+`FIGHT_PIT_LINEUP_UPDATE` posé (timestamp futur) + lineup [RALPH,VANELLOPE,ELASTIGIRL] persistés. Écart d'heures =
+ancre d'horloge du serveur de test (−13 h) vs contexte du dump ; durée réelle = 6 h (headless). **Portée** : chemin
+client réel + serveur + DB. **NON vérifié visuellement** : grisage du bouton « changer la défense » dans l'UI arène
+(effet CLIENT lisant `getCooldownEnd`, valeur désormais fournie/persistée par le serveur).
+
+Fichiers : `server/java/dhserver/ServerUser.java`, `server/smoke/{LineupCooldownTest}.java`,
+`server/smoke/regression.sh`, `docs/SAVED_LINEUPS.md`, `MEMORY.md`.

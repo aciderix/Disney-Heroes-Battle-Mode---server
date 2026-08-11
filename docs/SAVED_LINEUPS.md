@@ -73,8 +73,23 @@ SAVED_* nommés + ids non-nuls + validation de nom.
      (nom sauvé) + les 3 héros rendus (**Ralph + Vanellope + Elastigirl**) + TEAM POWER 752 286 + bouton SAVE +
      roster avec héros cochés. Capture `desktop-port/build/lineup_myteam_ingame.png` (gitignore). Pilote DEV
      `lineupscreen <SAVED_N>`.
-   - ⬜ Reste OPTIONNEL (non bloquant) : cooldowns de défense PvP (`FIGHT_PIT_DEFENSE`/`COLISEUM_DEFENSE_3` →
-     `setHeroLineupCooldown`) si un flux arène/coliseum les exerce (déjà couverts par ARÈNE #41 pour la défense).
+4. ✅ **COOLDOWN de défense PvP — LIVRÉ (headless). REQUIS (correction : PAS optionnel — ARÈNE #41 ne le couvrait
+   PAS, vérifié).** Fait : `applyHeroLineupUpdate` appelait `setHeroLineup` mais JAMAIS le cooldown ; le serveur ne
+   posait donc AUCUN cooldown de défense (grep serveur = vide) → non autoritatif, non persisté (un client modifié
+   pouvait re-changer sa défense en boucle). Corrigé en miroitant FIDÈLEMENT le client (bytecode `saveHeroLineup`) :
+   après `setHeroLineup`, `ArenaHelper.setHeroLineupCooldown(user, FIGHT_PIT, FIGHT_PIT_LINEUP_UPDATE)` si
+   `FIGHT_PIT_DEFENSE` ; `(COLISEUM, COLISEUM_LINEUP_UPDATE)` si `COLISEUM_DEFENSE_3` (le 3ᵉ/dernier, comme le client).
+   Durée = `getNextDefenseCooldown` (donnée du jeu = **6 h**, jamais inventée). Persistance **write-through**
+   (`IndividualUser.setCooldownEnd` → `individualUserExtra.cooldowns`, aucun resync). `LineupCooldownTest` :
+   FIGHT_PIT_DEFENSE → cooldown FIGHT_PIT_LINEUP_UPDATE ~6 h ; COLISEUM_DEFENSE_3 → COLISEUM_LINEUP_UPDATE ~6 h ;
+   SAVED_* normal → AUCUN cooldown ; persistance wire + DB. Régression 110 tests.
+   - **✅ VÉRIFIÉ EN JEU (g103, id=1)** : `savelineup FIGHT_PIT_DEFENSE Def RALPH+VANELLOPE+ELASTIGIRL` (chemin
+     client réel `saveHeroLineup`) → serveur `HeroLineupUpdate(FIGHT_PIT_DEFENSE) → lineup enregistrée [persistée]`
+     → **DB** : cooldown `FIGHT_PIT_LINEUP_UPDATE` posé (timestamp futur) + lineup [RALPH,VANELLOPE,ELASTIGIRL]
+     persistés. (Écart d'heures affiché = ancre d'horloge du serveur de test −13 h ; durée réelle du jeu = 6 h,
+     prouvée headless.) **Portée vérifiée** : chemin client réel + serveur + persistance DB. **NON vérifié
+     visuellement** : le grisage du bouton « changer la défense » dans l'UI arène (effet CLIENT lisant
+     `getCooldownEnd`, valeur désormais fournie/persistée par le serveur).
 
 ## Notes §3/§4
 - Zéro invention : `setHeroLineup` = logique du jeu ; expiration 0L (ARÈNE #41 testé ; le client applique

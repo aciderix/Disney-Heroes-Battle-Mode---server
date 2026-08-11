@@ -2508,6 +2508,23 @@ public final class ServerUser {
       System.out.println("[lineup] setHeroLineup refusé/échec : " + t);
       return false;
     }
+    // COOLDOWN de mise à jour de DÉFENSE PvP — miroir FIDÈLE du client (bytecode ClientActionHelper.saveHeroLineup) :
+    // après setHeroLineup, poser le cooldown anti-abus qui empêche de re-changer sa défense trop souvent. FIGHT_PIT →
+    // FIGHT_PIT_LINEUP_UPDATE ; COLISEUM → COLISEUM_LINEUP_UPDATE (uniquement au 3ᵉ/dernier slot COLISEUM_DEFENSE_3,
+    // comme le client). setCooldownEnd write-through → individualUserExtra.cooldowns (persisté §6). Autorité serveur
+    // (§3) : sans ça, un client modifié pourrait re-changer sa défense en boucle. Zéro invention (durée =
+    // ArenaHelper.getNextDefenseCooldown, donnée du jeu).
+    try {
+      if (u.type == com.perblue.heroes.network.messages.HeroLineupType.FIGHT_PIT_DEFENSE) {
+        com.perblue.heroes.game.logic.ArenaHelper.setHeroLineupCooldown(user,
+            com.perblue.heroes.network.messages.ArenaType.FIGHT_PIT,
+            com.perblue.heroes.network.messages.CooldownType.FIGHT_PIT_LINEUP_UPDATE);
+      } else if (u.type == com.perblue.heroes.network.messages.HeroLineupType.COLISEUM_DEFENSE_3) {
+        com.perblue.heroes.game.logic.ArenaHelper.setHeroLineupCooldown(user,
+            com.perblue.heroes.network.messages.ArenaType.COLISEUM,
+            com.perblue.heroes.network.messages.CooldownType.COLISEUM_LINEUP_UPDATE);
+      }
+    } catch (Throwable t) { System.out.println("[lineup] cooldown défense PvP: " + t); }
     resyncLineups(user);
     int n = (u.lineup != null && u.lineup.heroes != null) ? u.lineup.heroes.size() : 0;
     System.out.println("[lineup] " + u.type + " (" + n + " héros) enregistrée [persistée]");
