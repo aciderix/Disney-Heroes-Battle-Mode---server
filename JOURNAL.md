@@ -4187,3 +4187,44 @@ facultatif en suspens.
 Fichiers : `server/java/dhserver/{ServerUser,LoginServer}.java`, `server/smoke/{EnchantMaxUpgradeTest,ExpAdminMaxUpgrade}.java`,
 `server/smoke/regression.sh`, `desktop-port/src/main/java/dhdesktop/{TutorialDriver,DesktopLauncher}.java`,
 `docs/ENCHANTING.md`, `MEMORY.md`.
+
+---
+
+## 2026-08-11 (g101) — MODE SUIVANT : SAVED_LINEUPS (lineups enregistrés) — incr. 1+2 headless
+
+**Choix (pipeline #73/#74).** Parmi les ⬜ restants, SAVED_LINEUPS a les messages les plus CLAIRS
+(`HeroLineupUpdate` = sauver ; `CheckLineupName`→`CheckLineupNameResult` = valider un nom), un point d'entrée §3 net
+(`User.setHeroLineup`) et une persistance connue (`UserExtra.heroLineups`). Écartés : COLLECTIONS (mécanique mastery
+touffue), BLACK_MARKET/WISHING_WELL/FRANCHISE_TRIALS (aucun message dédié → shop/event, risque §4).
+
+**Découverte en recon : le CŒUR existait déjà via ARÈNE #41.** `LoginServer` routait `HeroLineupUpdate` →
+`ServerUser.applyHeroLineupUpdate` (→ `User.setHeroLineup(type, iD, lineup, 0L, customName, realGearOptions,
+emeraldStatSlotChoices)` — l'ordre des deux Maps est TESTÉ : realGearOptions puis emeraldStatSlotChoices, sinon
+ClassCast à la sérialisation `UserHeroLineupData.writeListed`) + `resyncLineups` + persistance ; vérifié en jeu pour
+les lineups de DÉFENSE d'arène (id=0).
+
+**Contribution #72 (incr. 1) : `resyncLineups` DURCI (angle mort ids non-nuls).** L'ancien `resyncLineups` itérait
+`HeroLineupType.values()` et lisait via `getHeroLineupData(t)` — or ce getter **hardcode id=0** (bytecode) → il
+RATAIT tout lineup à id non-nul (perte silencieuse de persistance). Réécrit pour **itérer la Map runtime privée
+`User.lineups`** (réflexion) et, pour chaque entrée, **recopier la clé `HeroLineupKey{lineupType,id}` →
+`data.lineupType`/`data.iD`** avant de sérialiser (le loader `setHeroLineups` re-clé PAR ces champs, que
+`setHeroLineup` ne pose PAS sur la data — même angle mort qu'EXPEDITION). Fait §4 : `new HeroLineup().mercenaryType =
+UnitType.DEFAULT` (sentinelle « pas de merc », jamais null sur le wire ; un null NPE la sérialisation d'enum).
+
+**Contribution #72 (incr. 2) : `CheckLineupName` → `CheckLineupNameResult`.** Handler requête/réponse `LoginServer`
+(la fenêtre de nommage client reste bloquée sans réponse). La validation est SERVEUR (absente du jar client) → on
+RÉUTILISE la logique du jeu `NameChangeHelper.isNameLegal` (codepoints valides + `ILLEGAL_NAMES` réservés) + non-vide,
+plutôt qu'inventer une règle (§3/§4). **PARTIEL honnête (§2)** : le filtre de PROFANITÉ n'est pas dans le jar 12.1.0
+(service serveur externe — « fuck » passe `isNameLegal`) ; on valide ce que le jeu expose. Noms de lineup =
+personnels/cosmétiques.
+
+**Test `LineupSaveTest`.** 4 lineups : SAVED_1 « Team Alpha » (3 héros), SAVED_2 « Team Bravo » (2 + merc ELSA),
+EXPEDITION (par-mode), **SAVED_3#42 (id NON-NUL)**. Vérifie : lecture runtime ; round-trip wire PROFOND (type+id+nom+
+héros[ordre]+merc survivent ; SAVED_3#42 ne collapse PAS sur `(SAVED_3,0)` ni `(DEFAULT,0)`) ; persistance DB ;
+update en place (SAVED_1 réécrit → toujours 4 lineups, pas de doublon). Régression → **109 tests**.
+
+**RESTE (REQUIS, §8) : vérif EN JEU** — sauver un lineup SAVED_* nommé (flux `CheckLineupName` → `saveHeroLineup`) →
+serveur → DB → persiste au reload. + cooldowns de défense PvP si exercés.
+
+Fichiers : `server/java/dhserver/{ServerUser,LoginServer}.java`, `server/smoke/{LineupSaveTest}.java`,
+`server/smoke/regression.sh`, `docs/SAVED_LINEUPS.md`, `MEMORY.md`.

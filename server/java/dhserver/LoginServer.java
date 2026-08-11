@@ -1227,6 +1227,26 @@ public final class LoginServer {
               c.send(d);
               System.out.println("[login] <== BattlePassV2GetData → ==> BattlePassV2Data (type=" + d.type
                   + " premium=" + d.premiumUnlocked + " progress=" + d.progress + ")");
+            } else if (m instanceof com.perblue.heroes.network.messages.CheckLineupName) {
+              // SAVED_LINEUPS #72 — VALIDATION du NOM d'un lineup (requête/réponse). Le client (SavedLineupHeroChooser)
+              // demande, le serveur répond CheckLineupNameResult{name, isValid}. La validation est SERVEUR (absente du
+              // jar client) → on RÉUTILISE la logique de nom DU JEU NameChangeHelper.isNameLegal (ILLEGAL_NAMES +
+              // codepoints valides) + non-vide, plutôt qu'inventer une règle (§3/§4). Sans réponse, la fenêtre de
+              // nommage resterait bloquée en jeu.
+              com.perblue.heroes.network.messages.CheckLineupName cln =
+                  (com.perblue.heroes.network.messages.CheckLineupName) m;
+              com.perblue.heroes.network.messages.CheckLineupNameResult res =
+                  new com.perblue.heroes.network.messages.CheckLineupNameResult();
+              res.name = cln.name;
+              boolean valid;
+              try {
+                valid = cln.name != null && !cln.name.trim().isEmpty()
+                    && com.perblue.heroes.game.logic.NameChangeHelper.isNameLegal(cln.name);
+              } catch (Throwable t) { valid = false; System.out.println("[login]     ! CheckLineupName: " + t); }
+              res.isValid = valid;
+              res.setAsReplyTo(m);
+              c.send(res);
+              System.out.println("[login] <== CheckLineupName(\"" + cln.name + "\") → isValid=" + valid);
             } else if (m instanceof com.perblue.heroes.network.messages.HeroLineupUpdate) {
               // SAUVEGARDE d'une LINEUP (arène #41 : défense/attaque COLISEUM_DEFENSE_1/2/3, FIGHT_PIT_DEFENSE,
               // mais aussi équipes de campagne, etc.). Fire-and-forget (le client a déjà mis à jour son état local) :

@@ -2516,33 +2516,42 @@ public final class ServerUser {
 
   /**
    * Re-synchronise les lineups du {@link User} vers {@code userExtra.heroLineups} (persistance complète, §6).
-   * On reconstruit la liste de {@link com.perblue.heroes.network.messages.UserHeroLineupData} depuis toutes les
-   * {@code HeroLineupType} dont la lineup est NON VIDE (le getter renvoie un défaut vide pour les types non posés).
+   * L'état vit dans la Map runtime PRIVÉE {@code User.lineups} ({@code HeroLineupKey{lineupType,id}} →
+   * {@code UserHeroLineupData}), HORS {@code this.extra} → on itère cette Map (réflexion) et on ré-écrit chaque
+   * entrée dans la liste wire.
+   * <p>⚠️ <b>Angle mort (leçon EXPEDITION), corrigé.</b> (1) {@code setHeroLineup} NE pose PAS
+   * {@code data.lineupType}/{@code data.iD} sur le {@code UserHeroLineupData} (il les garde dans la CLÉ) ; or
+   * {@code setHeroLineups} (le loader) re-clé PAR ces champs → on RECOPIE la clé → {@code data.lineupType}/{@code iD}
+   * avant d'ajouter, sinon tous les lineups collapseraient sur {@code (DEFAULT,0)} au reload. (2) L'ancienne version
+   * lisait via {@code getHeroLineupData(type)} qui HARDCODE {@code id=0} → elle RATAIT les lineups à id non-nul ;
+   * itérer la Map les capte tous.
    */
+  @SuppressWarnings("unchecked")
   private void resyncLineups(User user) {
     java.util.List<com.perblue.heroes.network.messages.UserHeroLineupData> out = new java.util.ArrayList<>();
-    for (com.perblue.heroes.network.messages.HeroLineupType t
-        : com.perblue.heroes.network.messages.HeroLineupType.values()) {
-      if (t == com.perblue.heroes.network.messages.HeroLineupType.DEFAULT) continue;
-      try {
-        com.perblue.heroes.network.messages.UserHeroLineupData d = user.getHeroLineupData(t);
-        // Détection d'un type POSÉ = lineup NON VIDE (le getter renvoie {@code lineupType=DEFAULT} même pour un
-        // type posé → on ne filtre PAS sur lineupType ; on FORCE le type demandé dans la copie persistée pour que
-        // {@code getUser} le recharge correctement clé par type).
-        if (d != null && d.lineup != null && d.lineup.heroes != null && !d.lineup.heroes.isEmpty()) {
-          com.perblue.heroes.network.messages.UserHeroLineupData c =
-              new com.perblue.heroes.network.messages.UserHeroLineupData();
-          c.lineupType = t;
-          c.iD = d.iD;
-          c.expiration = d.expiration;
-          c.lineup = d.lineup;
-          c.customName = d.customName;
-          c.realGearOptions = d.realGearOptions;
-          c.emeraldStatSlotChoices = d.emeraldStatSlotChoices;
-          out.add(c);
-        }
-      } catch (Throwable ignore) { /* type non stocké → ignoré */ }
-    }
+    try {
+      java.lang.reflect.Field lf = User.class.getDeclaredField("lineups");
+      lf.setAccessible(true);
+      java.util.Map<Object, Object> map = (java.util.Map<Object, Object>) lf.get(user);
+      for (java.util.Map.Entry<Object, Object> e : map.entrySet()) {
+        com.perblue.heroes.game.objects.HeroLineupKey key =
+            (com.perblue.heroes.game.objects.HeroLineupKey) e.getKey();
+        com.perblue.heroes.network.messages.UserHeroLineupData d =
+            (com.perblue.heroes.network.messages.UserHeroLineupData) e.getValue();
+        if (d == null) continue;
+        // Copie défensive + report de la CLÉ (type+id) sur la data (le wire l'exige ; la Map les garde à part).
+        com.perblue.heroes.network.messages.UserHeroLineupData c =
+            new com.perblue.heroes.network.messages.UserHeroLineupData();
+        c.lineupType = key.lineupType;
+        c.iD = key.id;
+        c.expiration = d.expiration;
+        c.lineup = d.lineup;
+        c.customName = d.customName;
+        c.realGearOptions = d.realGearOptions;
+        c.emeraldStatSlotChoices = d.emeraldStatSlotChoices;
+        out.add(c);
+      }
+    } catch (Throwable t) { System.out.println("[resync] lineups: " + t); }
     userExtra.heroLineups = out;
   }
 
