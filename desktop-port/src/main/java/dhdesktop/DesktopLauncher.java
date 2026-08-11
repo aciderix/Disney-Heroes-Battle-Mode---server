@@ -442,6 +442,18 @@ public final class DesktopLauncher {
                     else System.out.println("[maxupgrade] usage: maxupgrade <HERO>");
                     continue;
                 }
+                if (low.startsWith("savelineup ")) {            // savelineup <SAVED_N> <name> <HERO1+HERO2+...> → HeroLineupUpdate
+                    String[] sl = ln.trim().split("\\s+", 4);
+                    if (sl.length >= 4) TutorialDriver.saveLineup(game, sl[1].toUpperCase(), sl[2], sl[3]);
+                    else System.out.println("[savelineup] usage: savelineup <SAVED_N> <name> <HERO1+HERO2+...>");
+                    continue;
+                }
+                if (low.startsWith("checkname ")) {             // checkname <name> → CheckLineupName → CheckLineupNameResult
+                    String[] cn = ln.trim().split("\\s+", 2);
+                    if (cn.length >= 2) TutorialDriver.checkName(game, cn[1]);
+                    else System.out.println("[checkname] usage: checkname <name>");
+                    continue;
+                }
                 if (low.startsWith("expreset")) {                // expreset [diff] — RESET de l'expédition → ResetExpedition
                     String[] pr = ln.trim().split("[,;\\s]+");
                     int diff = pr.length >= 2 ? Integer.parseInt(pr[1].trim()) : 1;

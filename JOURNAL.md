@@ -4228,3 +4228,32 @@ serveur → DB → persiste au reload. + cooldowns de défense PvP si exercés.
 
 Fichiers : `server/java/dhserver/{ServerUser,LoginServer}.java`, `server/smoke/{LineupSaveTest}.java`,
 `server/smoke/regression.sh`, `docs/SAVED_LINEUPS.md`, `MEMORY.md`.
+
+---
+
+## 2026-08-11 (g102) — SAVED_LINEUPS (#72) ✅ VÉRIFIÉ EN JEU (sauvegarde nommée + CheckLineupName + persistance)
+
+Vérif en jeu (client réel → serveur → DB → reload) des incréments 1+2.
+
+**EN JEU (compte id=1 TL100).** `ExpAdminLineup server/data/dh-server.db 1 1` accorde RALPH/VANELLOPE/ELASTIGIRL
+(possédés → `saveHeroLineup` lit leurs slots émeraude sans NPE). `run-online.sh` (stack + client réel) :
+- `savelineup SAVED_1 MyTeam RALPH+VANELLOPE+ELASTIGIRL` (chemin client RÉEL
+  `ClientActionHelper.saveHeroLineup(SAVED_1, 0, lineup, "MyTeam", NONE)`) → client `HeroLineupUpdate` → serveur
+  **`[login] <== HeroLineupUpdate(SAVED_1) → lineup enregistrée [persistée]`**.
+- `savelineup SAVED_2 Bravo VANELLOPE+ELASTIGIRL` → 2ᵉ lineup enregistré (coexiste).
+- `checkname MyDefense` (`CheckLineupName` via `NetworkProvider.sendMessage`) → serveur
+  **`[login] <== CheckLineupName("MyDefense") → isValid=true`** (répond `CheckLineupNameResult`).
+
+**DB CONFIRMÉE** (relue depuis `server/data/dh-server.db`, WAL-aware = preuve de survie au reload) :
+- `SAVED_1` : nom=« MyTeam », héros=[RALPH, VANELLOPE, ELASTIGIRL].
+- `SAVED_2` : nom=« Bravo », héros=[VANELLOPE, ELASTIGIRL].
+Deux lineups nommés DISTINCTS coexistent et persistent (le durcissement `resyncLineups` fonctionne en jeu).
+
+⇒ **SAVED_LINEUPS #72 vérifié en jeu** : sauvegarde nommée multi-lineups + validation de nom + persistance profonde.
+Reste OPTIONNEL (non bloquant, déjà couvert ARÈNE #41 pour la défense) : cooldowns PvP `FIGHT_PIT_DEFENSE`/
+`COLISEUM_DEFENSE_3`.
+
+Pilotes DEV : `savelineup <SAVED_N> <name> <HERO1+HERO2+...>`, `checkname <name>`. Outil DEV : `ExpAdminLineup`.
+
+Fichiers : `desktop-port/src/main/java/dhdesktop/{TutorialDriver,DesktopLauncher}.java`,
+`server/smoke/ExpAdminLineup.java`, `docs/SAVED_LINEUPS.md`, `MEMORY.md`.

@@ -1096,6 +1096,43 @@ public final class TutorialDriver {
         } catch (Throwable t) { System.out.println("[maxupgrade] échec: " + t); t.printStackTrace(); }
     }
 
+    /** DEV : SAUVEGARDE un lineup enregistré nommé — chemin client réel
+     *  {@code ClientActionHelper.saveHeroLineup(type, id, lineup, customName, NONE)} (applique localement + envoie
+     *  {@code HeroLineupUpdate} ; le serveur ré-applique setHeroLineup + persiste). Invoqué via
+     *  "savelineup &lt;SAVED_N&gt; &lt;name&gt; &lt;HERO1,HERO2,...&gt;". Les héros doivent être POSSÉDÉS (saveHeroLineup
+     *  lit leurs slots émeraude). */
+    public static void saveLineup(GameMain game, String typeS, String name, String heroesCsv) {
+        try {
+            com.perblue.heroes.network.messages.HeroLineupType type =
+                com.perblue.heroes.network.messages.HeroLineupType.valueOf(typeS);
+            com.perblue.heroes.network.messages.HeroLineup l = new com.perblue.heroes.network.messages.HeroLineup();
+            l.heroes = new java.util.ArrayList<>();
+            for (String hs : heroesCsv.split("\\+")) {
+                if (hs.trim().isEmpty()) continue;
+                l.heroes.add(com.perblue.heroes.network.messages.UnitType.valueOf(hs.trim().toUpperCase()));
+            }
+            l.mercenaryType = com.perblue.heroes.network.messages.UnitType.DEFAULT;
+            System.out.println("[savelineup] " + type + " « " + name + " » héros=" + l.heroes + " [chemin réel]");
+            com.perblue.heroes.game.ClientActionHelper.saveHeroLineup(
+                type, 0L, l, name, com.perblue.heroes.game.specialevent.SpecialEventSnapshot.NONE);
+            var back = game.getYourUser().getHeroLineup(type, 0L);
+            System.out.println("[savelineup] " + type + " envoyé → local getHeroLineup="
+                + (back == null ? "null" : back.heroes) + " nom=" + game.getYourUser().getHeroLineupName(type));
+        } catch (Throwable t) { System.out.println("[savelineup] échec: " + t); t.printStackTrace(); }
+    }
+
+    /** DEV : demande la VALIDATION d'un nom de lineup — envoie {@code CheckLineupName{name}} (comme la fenêtre de
+     *  nommage) ; le serveur répond {@code CheckLineupNameResult{isValid}}. Invoqué via "checkname &lt;name&gt;". */
+    public static void checkName(GameMain game, String name) {
+        try {
+            com.perblue.heroes.network.messages.CheckLineupName m =
+                new com.perblue.heroes.network.messages.CheckLineupName();
+            m.name = name;
+            game.getNetworkProvider().sendMessage(m);
+            System.out.println("[checkname] CheckLineupName(\"" + name + "\") envoyé [chemin réel]");
+        } catch (Throwable t) { System.out.println("[checkname] échec: " + t); t.printStackTrace(); }
+    }
+
     /** DEV : OUVRE le coffre d'expédition disponible — chemin client réel
      *  {@code ClientActionHelper.openExpeditionChest(NONE, null)} (exécute openChest localement + envoie
      *  {@code OpenExpeditionChest} ; le serveur ré-exécute l'autorité). Nécessite un coffre disponible (tous les 3

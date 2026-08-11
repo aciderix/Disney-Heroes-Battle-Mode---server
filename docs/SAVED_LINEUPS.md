@@ -60,9 +60,16 @@ SAVED_* nommés + ids non-nuls + validation de nom.
    le **filtre de profanité** n'est PAS dans le jar 12.1.0 (service serveur externe ; ex. « fuck » passe `isNameLegal`)
    — on valide ce que le jeu expose réellement ; les noms de lineup sont personnels/cosmétiques. Sans réponse, la
    fenêtre de nommage resterait bloquée en jeu.
-3. ⬜ **RESTE : vérif EN JEU** (§8) — sauver un lineup SAVED_* nommé (flux `CheckLineupName`→`saveHeroLineup`) →
-   serveur → DB → persiste au reload. + cooldowns de défense PvP (`FIGHT_PIT_DEFENSE`/`COLISEUM_DEFENSE_3` →
-   `setHeroLineupCooldown`) si exercés (variante arène).
+3. ✅ **VÉRIFIÉ EN JEU (g102, compte id=1 TL100)** : `ExpAdminLineup` (héros RALPH/VANELLOPE/ELASTIGIRL possédés) →
+   `savelineup SAVED_1 MyTeam RALPH+VANELLOPE+ELASTIGIRL` (chemin client réel `ClientActionHelper.saveHeroLineup`) →
+   client `HeroLineupUpdate` → serveur **`HeroLineupUpdate(SAVED_1) → lineup enregistrée [persistée]`** → **DB** :
+   SAVED_1 nom=« MyTeam » héros=[RALPH, VANELLOPE, ELASTIGIRL]. 2ᵉ save `SAVED_2 Bravo VANELLOPE+ELASTIGIRL` →
+   coexiste en DB (nom=« Bravo »). **`checkname MyDefense`** (`CheckLineupName`) → serveur
+   **`CheckLineupName("MyDefense") → isValid=true`** (répond `CheckLineupNameResult`). Rechargé depuis la DB = survit
+   au reload. Pilotes DEV `savelineup`/`checkname`, outil `ExpAdminLineup`. ⇒ **SAVED_LINEUPS #72 vérifié en jeu**
+   (sauvegarde nommée multi-lineups + validation de nom + persistance).
+   - ⬜ Reste OPTIONNEL (non bloquant) : cooldowns de défense PvP (`FIGHT_PIT_DEFENSE`/`COLISEUM_DEFENSE_3` →
+     `setHeroLineupCooldown`) si un flux arène/coliseum les exerce (déjà couverts par ARÈNE #41 pour la défense).
 
 ## Notes §3/§4
 - Zéro invention : `setHeroLineup` = logique du jeu ; expiration 0L (ARÈNE #41 testé ; le client applique
