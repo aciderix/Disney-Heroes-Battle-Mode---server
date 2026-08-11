@@ -1121,6 +1121,36 @@ public final class TutorialDriver {
         } catch (Throwable t) { System.out.println("[savelineup] échec: " + t); t.printStackTrace(); }
     }
 
+    /** DEV : RÉCLAME les récompenses d'un palier de collection — chemin client réel
+     *  {@code ClientActionHelper.claimCollectionRewards(type, tier, level)} (envoie {@code Action
+     *  CLAIM_COLLECTION_REWARDS} ; le serveur ré-exécute l'autorité). Invoqué via
+     *  "claimcollection &lt;TYPE&gt; &lt;TIER&gt; &lt;LEVEL&gt;". */
+    public static void claimCollection(GameMain game, String typeS, String tierS, int level) {
+        try {
+            com.perblue.heroes.network.messages.CollectionType type =
+                com.perblue.heroes.network.messages.CollectionType.valueOf(typeS);
+            com.perblue.heroes.network.messages.CollectionTier tier =
+                com.perblue.heroes.network.messages.CollectionTier.valueOf(tierS);
+            var st = com.perblue.heroes.game.logic.CollectionHelper.getCollectionState(game.getYourUser(), type, tier, level);
+            int highest = game.getYourUser().getIndividual().getHighestClaimedCollectionLevel(type, tier);
+            System.out.println("[claimcollection] " + type + "/" + tier + " niv." + level + " state=" + st
+                + " highestClaimed=" + highest + " [chemin réel]");
+            com.perblue.heroes.game.ClientActionHelper.claimCollectionRewards(type, tier, level);
+            System.out.println("[claimcollection] CLAIM_COLLECTION_REWARDS envoyé");
+        } catch (Throwable t) { System.out.println("[claimcollection] échec: " + t); t.printStackTrace(); }
+    }
+
+    /** DEV : OUVRE le VRAI écran de détail de collection {@code CollectionsDetailScreen(type)} (chemin réel,
+     *  pushScreen) — pour vérification VISUELLE (paliers + boutons de claim). Invoqué via "collectionscreen &lt;TYPE&gt;". */
+    public static void collectionScreen(GameMain game, String typeS) {
+        try {
+            com.perblue.heroes.network.messages.CollectionType type =
+                com.perblue.heroes.network.messages.CollectionType.valueOf(typeS);
+            game.getScreenManager().pushScreen(new com.perblue.heroes.ui.collections.CollectionsDetailScreen(type));
+            System.out.println("[collectionscreen] CollectionsDetailScreen(" + type + ") poussé [chemin réel]");
+        } catch (Throwable t) { System.out.println("[collectionscreen] échec: " + t); t.printStackTrace(); }
+    }
+
     /** DEV : OUVRE le VRAI écran de lineup enregistré {@code SavedLineupHeroChooserScreen(type)} (chemin réel,
      *  pushScreen) — pour vérification VISUELLE (le lineup sauvé du serveur est chargé/affiché). Invoqué via
      *  "lineupscreen &lt;SAVED_N&gt;". */

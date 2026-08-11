@@ -991,6 +991,26 @@ public final class LoginServer {
                   System.out.println("[login] <== Action RAID_SURGE ignoré (guilde=" + (rg != null) + ", district=" + rdist + ")");
                 }
 
+              } else if (act.command == com.perblue.heroes.network.messages.CommandType.CLAIM_COLLECTION_REWARDS) {
+                // COLLECTIONS #72 — réclame les récompenses d'un niveau de palier. Protocole client (disasm
+                // ClientActionHelper.claimCollectionRewards) : Action{CLAIM_COLLECTION_REWARDS, extra{TYPE=CollectionType,
+                // TIER=CollectionTier, LEVEL=int}}. Fire-and-forget (client local). Le serveur RÉ-EXÉCUTE
+                // CollectionHelper.claimCollectionRewards (anti-triche = levée si non CLAIMABLE) + persiste.
+                com.perblue.heroes.network.messages.CollectionType ct = null;
+                com.perblue.heroes.network.messages.CollectionTier tr = null;
+                try {
+                  Object tn = act.extra == null ? null : act.extra.get(com.perblue.heroes.network.messages.ActionExtraType.TYPE);
+                  if (tn != null) ct = com.perblue.heroes.network.messages.CollectionType.valueOf(tn.toString());
+                  Object trn = act.extra == null ? null : act.extra.get(com.perblue.heroes.network.messages.ActionExtraType.TIER);
+                  if (trn != null) tr = com.perblue.heroes.network.messages.CollectionTier.valueOf(trn.toString());
+                } catch (Throwable t) { System.out.println("[login]     ! CLAIM_COLLECTION_REWARDS extras illisibles: " + t); }
+                int level = (int) extraLong(act, com.perblue.heroes.network.messages.ActionExtraType.LEVEL, 0);
+                boolean ok = ct != null && tr != null && user.applyClaimCollection(ct, tr, level);
+                if (ok) { try { store.save(user); } catch (Exception e) {
+                  System.out.println("[login]     ! persist collection: " + e); } }
+                System.out.println("[login] <== Action CLAIM_COLLECTION_REWARDS(" + ct + "/" + tr + " niv." + level + ")"
+                    + (ok ? " appliqué [persisté]" : " refusé"));
+
               } else if (act.command == com.perblue.heroes.network.messages.CommandType.START_STICKER_CHALLENGE
                   || act.command == com.perblue.heroes.network.messages.CommandType.CLAIM_STICKER_CHALLENGE
                   || act.command == com.perblue.heroes.network.messages.CommandType.CANCEL_STICKER_CHALLENGE) {

@@ -459,6 +459,17 @@ public final class DesktopLauncher {
                     TutorialDriver.lineupScreen(game, ls.length >= 2 ? ls[1].toUpperCase() : "SAVED_1");
                     continue;
                 }
+                if (low.startsWith("claimcollection ")) {       // claimcollection <TYPE> <TIER> <LEVEL> → CLAIM_COLLECTION_REWARDS
+                    String[] cc = ln.trim().split("[,;\\s]+");
+                    if (cc.length >= 4) TutorialDriver.claimCollection(game, cc[1].toUpperCase(), cc[2].toUpperCase(), Integer.parseInt(cc[3].trim()));
+                    else System.out.println("[claimcollection] usage: claimcollection <TYPE> <TIER> <LEVEL>");
+                    continue;
+                }
+                if (low.startsWith("collectionscreen")) {       // collectionscreen <TYPE> → ouvre le vrai écran de détail
+                    String[] cs = ln.trim().split("[,;\\s]+");
+                    TutorialDriver.collectionScreen(game, cs.length >= 2 ? cs[1].toUpperCase() : "DAMAGE");
+                    continue;
+                }
                 if (low.startsWith("expreset")) {                // expreset [diff] — RESET de l'expédition → ResetExpedition
                     String[] pr = ln.trim().split("[,;\\s]+");
                     int diff = pr.length >= 2 ? Integer.parseInt(pr[1].trim()) : 1;

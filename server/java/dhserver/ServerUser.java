@@ -2440,6 +2440,41 @@ public final class ServerUser {
   }
 
   /**
+   * COLLECTIONS (#72) — RÉCLAME les récompenses d'un niveau de palier de collection
+   * ({@code Action CLAIM_COLLECTION_REWARDS{TYPE,TIER,LEVEL}}). Le serveur ré-exécute la logique du jeu (§3)
+   * {@code CollectionHelper.claimCollectionRewards(user, type, tier, level)} : elle vérifie
+   * {@code getCollectionState==CLAIMABLE} sinon lève {@code ClientErrorCodeException(ERROR)} (anti-triche = on ne
+   * réclame pas un palier non atteint ou déjà pris) ; sinon crédite les récompenses (`getCollectionRewards`) et monte
+   * le niveau réclamé. Persistance : {@code collectionsClaimed} write-through (`individualUserExtra`) + récompenses via
+   * {@code resyncHeroes}/{@code resyncDiamonds}/{@code resyncCounts}. Zéro invention (§4). Renvoie {@code true} si
+   * appliqué (à persister par l'appelant).
+   */
+  public synchronized boolean applyClaimCollection(com.perblue.heroes.network.messages.CollectionType type,
+      com.perblue.heroes.network.messages.CollectionTier tier, int level) {
+    ServerContext.init();
+    if (type == null || tier == null) return false;
+    User user = ClientNetworkStateConverter.getUser(userInfo, userExtra, "collection");
+    IndividualUser iu = ClientNetworkStateConverter.getIndividualUser(
+        individualUserExtra, userID, userInfo.diamonds, "collection");
+    ServerContext.bind(user, iu);
+    ServerContext.bindBattlePass(refreshBattlePass());
+    int before = iu.getHighestClaimedCollectionLevel(type, tier);
+    try {
+      com.perblue.heroes.game.logic.CollectionHelper.claimCollectionRewards(user, type, tier, level);
+    } catch (Throwable t) {
+      boolean antiCheat = t instanceof com.perblue.heroes.ClientErrorCodeException;
+      System.out.println("[collection] " + type + "/" + tier + " niv." + level
+          + (antiCheat ? " REFUSÉ (anti-triche : non CLAIMABLE)" : " échec") + " : " + t);
+      return false;
+    }
+    resyncHeroes(user); resyncDiamonds(user); resyncCounts(user);
+    int after = iu.getHighestClaimedCollectionLevel(type, tier);
+    System.out.println("[collection] " + type + "/" + tier + " niv." + level
+        + " réclamé (highest " + before + "→" + after + ") [persisté]");
+    return true;
+  }
+
+  /**
    * Graine RNG annoncée par le client pour {@code type} (via {@code Action SET_SEED}), ou {@code null} si
    * aucune n'a été reçue. Destinée à la re-simulation/re-roll autoritatif (SERVER_PLAN §Partiels D/E).
    */
