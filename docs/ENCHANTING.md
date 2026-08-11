@@ -72,10 +72,16 @@ points d'enchant** de l'objet → **bonus de stats**. Gaté **`Unlockable.ENCHAN
      (round-trip wire + DB, étoiles par slot) ; plan vide sans ressource (no-op) ; **affordabilité partielle**
      (5 M or → 3 slots exacts) ; gear RED (PRESTO) enchanté (étoiles 0→1). DEV : `ExpAdminMaxUpgrade` (prépare un
      compte YELLOW RALPH + gear + matériaux + or), pilote `maxupgrade <HERO>`. Régression 108 tests.
-   - ⬜ **RESTE : vérif EN JEU** (client réel → `maxupgrade RALPH` → `EnhanceMaxPrimeBadge` → serveur → DB) — §8.
+   - **✅ VÉRIFIÉ EN JEU (g100, compte id=1 TL100)** : `ExpAdminMaxUpgrade` prépare RALPH rang YELLOW (6 slots YELLOW
+     0/5) + matériaux + 50 M or → `maxupgrade RALPH` (chemin client réel `ClientActionHelper.maxUpgradePrimeBadges` :
+     plan bâti localement `slots=6 or=9139200 items={VOID_DUST=12,SHIMMER_DUST=6,PRIMAL_ESSENCE=132}`, `onResult=true`)
+     → client `EnhanceMaxPrimeBadge` → serveur **`RALPH max-upgrade (6 slot(s), or -9139200) [persisté]`** →
+     **DB confirmée** : les **6 slots YELLOW 0★ → 5★ (MAX)**, or 50 000 000 → 40 860 800 (**−9 139 200** exact),
+     VOID_DUST −12 / SHIMMER_DUST −6 / PRIMAL_ESSENCE −132 (exacts). Gear RED couvert headless (PRESTO 0→1★).
 
-⇒ **ENCHANTING #72** : incr. 1 (matériaux/or) + 2 (diamants/garde-fous) + 3 (multi-slots/raretés) ✅ vérifiés en jeu ;
-incr. 4 (max-upgrade prime badges + RED/YELLOW) livré + headless, **vérif en jeu à faire** (REQUIS).
+⇒ **ENCHANTING #72 COMPLET & VÉRIFIÉ EN JEU** : incr. 1 (matériaux/or, g98) + 2 (diamants/garde-fous, g99) +
+3 (multi-slots/raretés, g98-99) + 4 (max-upgrade prime badges 6 slots YELLOW + gear RED/YELLOW, g100), tous vérifiés
+en jeu. Plus rien de facultatif en suspens.
 
 ## Notes §3/§4
 - Client-autoritatif partiel (le client choisit les matériaux `itemsUsed`) mais le serveur RÉ-EXÉCUTE `enchantItem`

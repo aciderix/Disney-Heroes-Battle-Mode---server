@@ -4173,9 +4173,16 @@ en étoiles ; persistance **PROFONDE** (round-trip wire + DB, étoiles par slot 
 ressource → plan vide → no-op, aucun débit. (C) affordabilité partielle : 5 M or → **exactement 3 slots** enchantés.
 (D) gear **RED** (PRESTO) enchanté (étoiles 0→1). Régression → **108 tests**.
 
-**RESTE (REQUIS, §8) : vérif EN JEU.** `ExpAdminMaxUpgrade` prépare un compte (RALPH rang YELLOW + gear + matériaux +
-or), pilote `maxupgrade <HERO>` (chemin client réel `maxUpgradePrimeBadges`). À exécuter : client réel → serveur
-`RALPH max-upgrade (N slot(s), or -…) [persisté]` → DB (étoiles par slot). Non terminé tant que non vérifié en jeu.
+**✅ VÉRIFIÉ EN JEU (g100, compte id=1 TL100).** `ExpAdminMaxUpgrade server/data/dh-server.db 1 1` prépare RALPH rang
+YELLOW (6 slots YELLOW 0/5 : HOME_SWEET_HOME, MADE_FOR_PUDDLES, SO_MUCH_IN_COMMON, HANDCRAFTED_BY_LEPRECHAUNS,
+DRIVEN_BY_THOUGHT, THE_ZONE) + matériaux + 50 M or. `run-online.sh` (stack + client réel) → pilote `maxupgrade RALPH`
+(chemin client RÉEL `ClientActionHelper.maxUpgradePrimeBadges` : plan bâti localement `slots=6 or=9139200
+items={VOID_DUST=12,SHIMMER_DUST=6,PRIMAL_ESSENCE=132}`, `onResult=true`) → client envoie `EnhanceMaxPrimeBadge` →
+serveur **`[prime-badge] RALPH max-upgrade (6 slot(s), or -9139200) [persisté]`** → `[login] <== EnhanceMaxPrimeBadge :
+RALPH → appliqué [persisté]`. **DB CONFIRMÉE** (lecture WAL-aware) : les **6 slots YELLOW 0★ → 5★ (MAX)**, or
+50 000 000 → 40 860 800 (**−9 139 200** = `plan.totalGold` exact), VOID_DUST 540→528 (−12), SHIMMER_DUST 600→594 (−6),
+PRIMAL_ESSENCE 500→368 (−132) — tous exacts. ⇒ **ENCHANTING #72 COMPLET & VÉRIFIÉ EN JEU** (incr. 1-4), plus rien de
+facultatif en suspens.
 
 Fichiers : `server/java/dhserver/{ServerUser,LoginServer}.java`, `server/smoke/{EnchantMaxUpgradeTest,ExpAdminMaxUpgrade}.java`,
 `server/smoke/regression.sh`, `desktop-port/src/main/java/dhdesktop/{TutorialDriver,DesktopLauncher}.java`,
