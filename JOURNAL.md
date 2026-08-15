@@ -4367,3 +4367,31 @@ Pilotes DEV : `claimcollection <TYPE> <TIER> <LEVEL>`, `collectionscreen <TYPE>`
 Fichiers : `server/java/dhserver/{ServerUser,LoginServer}.java`, `server/smoke/{CollectionClaimTest,ExpAdminCollection}.java`,
 `server/smoke/regression.sh`, `desktop-port/src/main/java/dhdesktop/{TutorialDriver,DesktopLauncher}.java`,
 `docs/COLLECTIONS.md`, `MEMORY.md`.
+
+---
+
+## 2026-08-11 (g106) — COLLECTIONS (#72) incr. 2 : maîtrise de combat ✅ VÉRIFIÉ EN JEU (delta 0→1 net)
+
+Vérif en jeu PROPRE de l'accumulation de maîtrise (après la reprise post-reset du conteneur : travail incr. 1+2
+récupéré depuis origin, HEAD f434761).
+
+**Baseline propre.** `ExpAdminCollectionFight` durci : grante l'équipe DAMAGE 6★ (MOANA, MERIDA, JACK_SPARROW, BEAST,
+BELLE), pose le lineup NORMAL_CAMPAIGN dessus, pré-3★ le niveau 1-1 (via un héros JETABLE OLAF 1★ < MIN_HERO_STARS —
+maîtrise non touchée), et **remet à 0 la maîtrise DAMAGE/BRONZE de TOUS les héros DAMAGE** (élimine la pollution des
+setups/claims précédents) → delta net garanti.
+
+**Pilotage (2 obstacles levés).** (1) Le chooser n'auto-sélectionne pas → `campquick` sélectionne les héros via le
+VRAI chemin `unitSelected` (après `canSelectUnit`) — 5/5 sélectionnés. (2) `canStartQuickFight` = `hasAtLeastOneHeroSelected
+&& nodeIsThreeStarred` restait faux (le client ne « voit » pas toujours le 3★ immédiatement) → on appelle **`doQuickCombat()`**,
+l'exécuteur RÉEL (charge + roule le loot + combat headless + envoie `CampaignAttack`), qui NE gate PAS sur le bouton.
+
+**Résultat EN JEU (id=1).** `campfight 1 1` → `campquick` → client `CampaignAttack1` → serveur **`CampaignAttack
+NORMAL 1-1 outcome=WIN → recordOutcome appliqué [persisté]`** → **DB : MOANA/MERIDA/JACK_SPARROW/BEAST/BELLE
+DAMAGE/BRONZE = 1** (partis de 0 ; exactement +1 = un combat, pour les 5 héros ayant combattu). Chemin client réel →
+serveur → DB, sur baseline propre = delta 0→1 NET. ⇒ **COLLECTIONS #72 incr. 1 (claim) + 2 (maîtrise) vérifiés en jeu.**
+
+Pilotes DEV : `campfight <chapter> <level>` (pousse le chooser), `campquick` (sélectionne + `doQuickCombat`). Outil DEV :
+`ExpAdminCollectionFight`. **RESTE** : incr. 3 (cosmétique).
+
+Fichiers : `desktop-port/src/main/java/dhdesktop/{TutorialDriver,DesktopLauncher}.java`,
+`server/smoke/ExpAdminCollectionFight.java`, `docs/COLLECTIONS.md`, `MEMORY.md`.

@@ -1167,21 +1167,39 @@ public final class TutorialDriver {
             }
             com.perblue.heroes.ui.herochooser.CampaignHeroChooserScreen s =
                 (com.perblue.heroes.ui.herochooser.CampaignHeroChooserScreen) screen;
-            // Sélectionne les héros du lineup NORMAL_CAMPAIGN (le chooser ne les auto-sélectionne pas) via le VRAI
-            // chemin unitSelected (comme un tap). Provider de niveau de collection = CollectionHelper.fromUser.
+            // Sélectionne des héros POSSÉDÉS via le VRAI chemin unitSelected (comme un tap). On tente d'abord le lineup
+            // NORMAL_CAMPAIGN, sinon N'IMPORTE QUELS héros possédés sélectionnables (jusqu'à 5). On logge canSelectUnit
+            // pour diagnostiquer.
+            var provider = com.perblue.heroes.game.logic.CollectionHelper.fromUser(game.getYourUser());
+            java.util.List<com.perblue.heroes.network.messages.UnitType> want = new java.util.ArrayList<>();
             var lineup = game.getYourUser().getHeroLineup(
                 com.perblue.heroes.network.messages.HeroLineupType.NORMAL_CAMPAIGN, 0L);
-            var provider = com.perblue.heroes.game.logic.CollectionHelper.fromUser(game.getYourUser());
-            if (lineup != null && lineup.heroes != null) {
-                for (Object ht : lineup.heroes) {
-                    var hero = game.getYourUser().getHero((com.perblue.heroes.network.messages.UnitType) ht);
-                    if (hero instanceof com.perblue.heroes.game.objects.UnitData)
-                        s.unitSelected((com.perblue.heroes.game.objects.UnitData) hero, provider, 0f, 0f);
-                }
+            if (lineup != null && lineup.heroes != null)
+                for (Object ht : lineup.heroes) want.add((com.perblue.heroes.network.messages.UnitType) ht);
+            // fallback : tous les héros possédés
+            for (Object ho : game.getYourUser().getHeroes()) {
+                com.perblue.heroes.game.objects.IHero h = (com.perblue.heroes.game.objects.IHero) ho;
+                if (!want.contains(h.getType())) want.add(h.getType());
+            }
+            System.out.println("[campquick] lineup NORMAL_CAMPAIGN=" + (lineup == null ? "null" : lineup.heroes)
+                + " ; héros possédés candidats=" + want.size());
+            for (com.perblue.heroes.network.messages.UnitType t : want) {
+                if (s.getSelectedHeroes().size >= 5) break;
+                var hero = game.getYourUser().getHero(t);
+                if (!(hero instanceof com.perblue.heroes.game.objects.UnitData)) continue;
+                com.perblue.heroes.game.objects.UnitData ud = (com.perblue.heroes.game.objects.UnitData) hero;
+                boolean can = s.canSelectUnit(ud);
+                if (can) s.unitSelected(ud, provider, 0f, 0f);
+                System.out.println("[campquick]   " + t + " canSelect=" + can + " → sel=" + s.getSelectedHeroes().size);
             }
             System.out.println("[campquick] héros sélectionnés=" + s.getSelectedHeroes().size
-                + " canQuickFight=" + s.canStartQuickFight());
-            s.quickFightPressed();
+                + " canQuickFight=" + s.canStartQuickFight()
+                + " (1-1 stars vu client=" + game.getYourUser().getCampaignLevel(
+                    com.perblue.heroes.network.messages.CampaignType.NORMAL, 1, 1).getStars() + ")");
+            // doQuickCombat() = l'exécuteur RÉEL (charge + roule loot + combat headless + envoie CampaignAttack) ;
+            // il NE gate PAS sur le bouton canStartQuickFight (contrairement à quickFightPressed) → fonctionne même
+            // si le client ne voit pas encore le 3★.
+            s.doQuickCombat();
             System.out.println("[campquick] quickFightPressed() → combat + CampaignAttack [chemin réel]");
         } catch (Throwable t) { System.out.println("[campquick] échec: " + t); t.printStackTrace(); }
     }

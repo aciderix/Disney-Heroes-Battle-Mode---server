@@ -68,15 +68,15 @@ Collections **cosmétiques** séparées (emojis, `CosmeticCollectionType` — 86
    auto-persisté ; filtre `MIN_HERO_STARS_REQUIRED` interne). `CollectionMasteryTest` : WIN → maîtrise
    ELASTIGIRL/DAMAGE/BRONZE 0→1 (cumul sur 2 WIN) ; DÉFAITE → aucune accumulation ; persistance wire + DB.
    Régression 113 tests.
-   - **🟡 EN JEU — chemin CONFIRMÉ, delta propre à refaire (honnête).** Combat de campagne RÉEL joué en jeu (pilotes
-     `campfight`/`campquick` : `CampaignHeroChooserScreen` + `unitSelected` du lineup NORMAL_CAMPAIGN +
-     `quickFightPressed` ; niveau 1-1 pré-3★ via `ExpAdminCollectionFight` avec un héros jetable 1★) → serveur
-     **`CampaignAttack NORMAL 1-1 WIN → recordOutcome [persisté]`** + **`[collection] maîtrise de combat accumulée
-     (mode CAMPAIGN) [persisté]`** → le CODE d'accumulation FIRE bien en jeu, et une maîtrise DAMAGE est présente en DB.
-     **MAIS** le delta isolé 0→1 n'a PAS été capturé proprement : l'état du compte de test était pollué (multiples
-     setups admin + un CLAIM antérieur qui VIDE la maîtrise du niveau réclamé — `clearCollectionHeroMasteryUses`), et
-     le pilotage du quick-fight (sélection des héros) reste fragile. Le comportement EXACT (0→1, cumul, défaite exempte)
-     est prouvé HEADLESS. ⬜ **RESTE : refaire une vérif en jeu sur compte PROPRE pour un delta 0→1 net.**
+   - **✅ VÉRIFIÉ EN JEU — delta 0→1 NET (g106).** `ExpAdminCollectionFight` : team DAMAGE 6★ (MOANA, MERIDA,
+     JACK_SPARROW, BEAST, BELLE) + lineup NORMAL_CAMPAIGN + niveau 1-1 pré-3★ (via héros jetable OLAF 1★, maîtrise
+     non touchée) + **baseline PROPRE = maîtrise DAMAGE/BRONZE de TOUS les héros DAMAGE remise à 0**. En jeu : pilotes
+     `campfight 1 1` (pousse `CampaignHeroChooserScreen`) → `campquick` (sélectionne les 5 héros via `unitSelected` +
+     **`doQuickCombat()`** — l'exécuteur réel, qui NE gate PAS sur le bouton `canStartQuickFight`) → client joue le
+     combat + envoie `CampaignAttack` → serveur **`CampaignAttack NORMAL 1-1 outcome=WIN → recordOutcome appliqué
+     [persisté]`** → **DB : les 5 héros combattants passent maîtrise DAMAGE/BRONZE 0 → 1** (exactement +1 = un combat,
+     baseline garantie 0). Pilotes DEV `campfight`/`campquick`, outil `ExpAdminCollectionFight`.
+     ⇒ **COLLECTIONS #72 incr. 1 + 2 vérifiés EN JEU.**
 3. ⬜ **Cosmétique (`CLAIM_COSMETIC_COLLECTION`/`BUY_COLLECTION_AVATAR`)** — évalué, pas présumé optionnel.
 
 ## Notes §3/§4

@@ -19,6 +19,10 @@ public final class ExpAdminCollectionFight {
     IUser u = su.gameUser();
     int lvl = Math.max(1, su.bootData().userInfo.basicInfo.teamLevel);
     for (UnitType h : TEAM) if (u.getHero(h) == null) su.grantHero(h, Rarity.RED, lvl, 6);
+    // BASELINE PROPRE : zéro la maîtrise DAMAGE/BRONZE de TOUS les héros DAMAGE possédés (l'état du compte peut être
+    // pollué par des setups/claims précédents) → un delta 0→N après combat est NET.
+    for (UnitType h : (List<UnitType>) com.perblue.heroes.game.logic.CollectionHelper.getHeroesInCollection(u, CollectionType.DAMAGE))
+      u.getIndividual().setCollectionHeroMasteryUses(CollectionType.DAMAGE, CollectionTier.BRONZE, h, 0);
     // lineup NORMAL_CAMPAIGN = ces 5 héros (le quick fight de campagne l'utilisera).
     HeroLineup lu = new HeroLineup();
     lu.heroes = new ArrayList<>(Arrays.asList(TEAM));
