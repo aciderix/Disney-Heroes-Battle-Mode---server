@@ -1588,14 +1588,45 @@ public final class ServerUser {
         (m.usedItem == null || m.usedItem == com.perblue.heroes.network.messages.ItemType.DEFAULT) ? null : m.usedItem;
     ChestHelper.validateChestPurchase(user, type, count, m.cost, usedItem, SpecialEventSnapshot.NONE);
 
-    DropTable dt = dropTable(type);
-    ChestContext ctx = new ChestContext(user);
-    ctx.setChestType(type);
-    ctx.setCount(count);
-    List<?> drops = dt.rollNode("ROOT", ctx, new Random());   // vrai roll de la table du jeu
-
     LootResults lr = new LootResults();
-    lr.lootDrops = new DropConverter(user).convert(drops);
+    List<?> drops;
+    if (type == ChestType.WISH) {
+      // PUITS AUX SOUHAITS (#72 incr. 2) — tirage BIAISÉ par le héros CIBLE. Le WISH a son PROPRE contexte
+      // (WishingWellDTContext, lit wishingWellHero + poids de pity + rareté/mod max du joueur) et sa PROPRE table
+      // (ChestStats.WISHING_WELL_DROPS, hors getDropTable) : c'est le CODE DU JEU (§3, miroir exact de
+      // ChestStats.rollWishingWellDisplay). Voir docs/WISHING_WELL.md.
+      com.perblue.heroes.game.data.wishingwell.WishingWellStats.WeightConstants wc =
+          com.perblue.heroes.game.logic.WishingWellHelper.getWeightConstants(user);
+      float oldJ = iu.getWishingWellJackpotWeight();
+      float oldHC = iu.getWishingWellHeroChipsWeight();
+      // Plancher des poids (code du jeu) : JACKPOT_BASE / HERO_CHIPS_BASE si sous le minimum.
+      com.perblue.heroes.game.logic.WishingWellHelper.checkMinWeights(iu, wc);
+      java.util.Random rnd = new Random();
+      com.perblue.heroes.game.data.wishingwell.WishingWellDTContext wctx =
+          new com.perblue.heroes.game.data.wishingwell.WishingWellDTContext(user, rnd);
+      wctx.setChestType(type);
+      wctx.setCount(count);
+      drops = wishingWellTable().rollNode("ROOT", wctx, rnd);          // tirage biaisé cible/poids (code du jeu)
+      lr.lootDrops = new DropConverter(user).convertHeroes(true).convert(drops);
+      lr.oldWishJackpotWeight = oldJ;
+      lr.oldWishHeroChipsWeight = oldHC;
+      // GAP §4 PROUVÉ AU BYTECODE : la RAMPE de pity par tirage (nouveau poids après un souhait) N'EST PAS dans le
+      // jar client — les setters setWishingWell*Weight ne sont invoqués que par updateWishingWellWeights (applique
+      // une valeur FOURNIE) et setTargetHero/checkMinWeights (PLANCHER) ; doPreRollUpdates ne fait que réinitialiser
+      // des compteurs d'évènement. C'était la logique serveur autoritative de PerBlue, absente de l'APK → non
+      // réimplémentable sans l'INVENTER (§4, même catégorie que CLAIM_COSMETIC_COLLECTION). On expose donc les poids
+      // PLANCHERÉS (checkMinWeights) sans rampe (les probas de base getProbabilities restent correctes). Documenté
+      // dans docs/SHIMS.md + docs/WISHING_WELL.md.
+      lr.newWishJackpotWeight = iu.getWishingWellJackpotWeight();
+      lr.newWishHeroChipsWeight = iu.getWishingWellHeroChipsWeight();
+    } else {
+      DropTable dt = dropTable(type);
+      ChestContext ctx = new ChestContext(user);
+      ctx.setChestType(type);
+      ctx.setCount(count);
+      drops = dt.rollNode("ROOT", ctx, new Random());   // vrai roll de la table du jeu
+      lr.lootDrops = new DropConverter(user).convert(drops);
+    }
     lr.wasFree = freeChest(user, type, count);
     // Donne les récompenses au joueur autoritatif + remplit heroesUnlocked (bl=true) — code du jeu.
     ChestHelper.giveChestRewards(user, type, lr, null, m.eventID, true, count);
@@ -3320,6 +3351,18 @@ public final class ServerUser {
       get.setAccessible(true);
       return (DropTable) get.invoke(null, type);
     } catch (Throwable t) { throw new RuntimeException("table de coffre introuvable: " + type, t); }
+  }
+
+  /** Table de drop du PUITS AUX SOUHAITS (champ statique privé {@code ChestStats.WISHING_WELL_DROPS}, hors
+   *  {@code getDropTable}) → sa {@code DropTable}. Code+données du jeu (§3, cf. {@code rollWishingWellDisplay}). */
+  private static DropTable wishingWellTable() {
+    try {
+      java.lang.reflect.Field f = ChestStats.class.getDeclaredField("WISHING_WELL_DROPS");
+      f.setAccessible(true);
+      Object wwd = f.get(null);
+      Method getTable = wwd.getClass().getMethod("getTable");
+      return (DropTable) getTable.invoke(wwd);
+    } catch (Throwable t) { throw new RuntimeException("table du puits aux souhaits introuvable", t); }
   }
 
   // --- Sérialisation wire (octets identiques au réseau) pour la persistance ---

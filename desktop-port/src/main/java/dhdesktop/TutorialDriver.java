@@ -1232,6 +1232,23 @@ public final class TutorialDriver {
         } catch (Throwable t) { System.out.println("[wishtarget] échec: " + t); t.printStackTrace(); }
     }
 
+    /** DEV : FAIT UN SOUHAIT — ouvre un coffre {@code ChestType.WISH} par le chemin client réel
+     *  {@code ChestHelper.openChestInner} (construit le BuyChests + envoie la requête de roll au serveur, sans la
+     *  boîte de confirmation). Le serveur roule la table du puits biaisée par la cible + crédite les shards.
+     *  Invoqué via "wish [count]". */
+    public static void wishOpen(GameMain game, int count) {
+        try {
+            com.perblue.heroes.network.messages.ChestType t = com.perblue.heroes.network.messages.ChestType.WISH;
+            com.perblue.heroes.game.specialevent.SpecialEventSnapshot NONE = com.perblue.heroes.game.specialevent.SpecialEventSnapshot.NONE;
+            int cost = com.perblue.heroes.game.logic.ChestHelper.getPurchaseCost(game.getYourUser(), t, count, NONE);
+            com.perblue.heroes.network.messages.UnitType target = game.getYourUser().getIndividual().getWishingWellHero();
+            System.out.println("[wish] souhait x" + count + " cost=" + cost + " cible=" + target + " [chemin réel]");
+            com.perblue.heroes.game.logic.ChestHelper.openChestInner(
+                t, count, cost, com.perblue.heroes.network.messages.ItemType.DEFAULT, false, NONE);
+            System.out.println("[wish] BuyChests(WISH x" + count + ") envoyé");
+        } catch (Throwable e) { System.out.println("[wish] échec: " + e); e.printStackTrace(); }
+    }
+
     /** DEV : OUVRE le VRAI écran du puits aux souhaits {@code WishingWellChestScreen} (chemin réel, pushScreen) —
      *  pour vérification VISUELLE (cible + coffre WISH). Invoqué via "wishscreen". */
     public static void wishScreen(GameMain game) {

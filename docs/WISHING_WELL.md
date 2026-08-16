@@ -33,8 +33,9 @@ cible/poids du puits biaisent la table. `WishingWellHelper.isUnlocked` gate.
    `WishingWellHelper.setTargetHero` (valide éligibilité, pose la cible + poids + cooldown), persiste (write-through +
    `resyncCounts`). Anti-triche = héros non éligible → rejet. Test `WishingWellTargetTest`. **✅ VÉRIFIÉ EN JEU + VISUEL**
    (voir §Vérif en jeu incr.1).
-2. ⬜ **WISH (`ChestType.WISH`)** : vérifier que le tirage du puits (coffre WISH, handler openChest existant) respecte
-   la cible/poids + met à jour la pity ; persistance des poids. Vérif en jeu (souhait → shards + cible/pity).
+2. ✅ **WISH (`ChestType.WISH`)** : le souhait (coffre WISH via `openChest`) roule la table du puits BIAISÉE par la
+   cible + crédite les shards + débite les DIAMONDS + persiste. **✅ VÉRIFIÉ EN JEU + VISUEL** (voir §Vérif en jeu
+   incr.2). **GAP §4 prouvé** : la RAMPE de pity par tirage est absente du jar (voir §Contrat/§Gap).
 
 ## Vérif en jeu — incrément 1 (✅ EN JEU + VISUEL, id=1)
 - Setup : `SetTeamLevel 65` (débloque `WISH_CHEST` req TL 30). id=1 : TL 65, puits débloqué, cible=DEFAULT, 274 héros
@@ -47,7 +48,28 @@ cible/poids du puits biaisent la table. `WishingWellHelper.isUnlocked` gate.
   100-300 shards RALPH @ 10,00 % (table biaisée vers la cible) — capture `desktop-port/build/ww_screen.png`. Pilotes DEV
   `wishtarget <HERO>` / `wishscreen`, outil `SetTeamLevel`.
 
-## Contrat industriel (ModeGraph `--mode com/perblue/heroes/ui/wishingwell/`) — pour l'incrément 2
+## Vérif en jeu — incrément 2 (✅ EN JEU + VISUEL, id=1)
+- Setup : `WishAdmin` (TL 65, 100 000 DIAMONDS, cible=RALPH). Pilote `wish 1` (chemin client réel
+  `ChestHelper.openChestInner` → `BuyChests{chestType=WISH}` + `ServerRollRequest`, sans boîte de confirmation).
+- 23 souhaits → serveur `<== BuyChests` (roule `WISHING_WELL_DROPS` biaisée cible + débite DIAMONDS) → **DB : DIAMONDS
+  débités (500/souhait), items RALPH crédités** : `STONE_RALPH=480`, `EPIC_CHIP_RALPH=520`, `BIT_RALPH_HEALING=70`,
+  `BIT_RALPH_LONGER_STUNS=35` — **TOUS les drops de héros sont RALPH (la cible)** = biais confirmé. Persistés en DB.
+- **CONFIRMATION VISUELLE** : la fenêtre de résultat **CRATE REWARDS** (servie par notre serveur) montre un lot de
+  **300 puces RALPH** (« 300/200 » + portrait RALPH) — capture `desktop-port/build/wish_result_ingame.png`. Pilote DEV
+  `wish [count]`. Outil `WishAdmin`.
+
+## Gap §4 prouvé — RAMPE de pity par tirage (absente du jar)
+La **rampe de pity** (nouveau `wishingWellJackpotWeight`/`wishingWellHeroChipsWeight` APRÈS un souhait) n'est PAS dans
+le jar client (prouvé au bytecode) : les setters `setWishingWell*Weight` ne sont invoqués que par
+`ChestHelper.updateWishingWellWeights` (applique une valeur FOURNIE, côté client depuis la réponse serveur) et par
+`setTargetHero`/`checkMinWeights` (PLANCHER `JACKPOT_BASE`/`HERO_CHIPS_BASE`) ; `doPreRollUpdates` ne fait que
+réinitialiser des compteurs d'évènement. C'était la logique serveur autoritative de PerBlue, absente de l'APK →
+**non réimplémentable sans l'INVENTER (§4, même catégorie que `CLAIM_COSMETIC_COLLECTION`)**. Le serveur expose donc
+les poids **plancherés** (`checkMinWeights`, code du jeu) sans rampe : `LootResults.old/newWish*Weight` = poids
+plancher (les probas de base `getProbabilities` restent correctes — écran WISH affiche ~1,1 %/10 %). Documenté aussi
+dans `docs/SHIMS.md`.
+
+## Contrat industriel (ModeGraph `--mode com/perblue/heroes/ui/wishingwell/`)
 - **Gate** : `Unlockable.WISH_CHEST` (TL 30). Écran en **lecture seule** côté messages (la cible passe par un `Action`,
   pas un message de mode → normal que ScreenContract ne détecte « aucun message client→serveur »).
 - **A/B (serveur→client, à peupler par le WISH)** : `LootResults{ .lootDrops, .oldWishHeroChipsWeight,

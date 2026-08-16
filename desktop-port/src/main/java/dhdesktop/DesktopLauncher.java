@@ -497,6 +497,12 @@ public final class DesktopLauncher {
                     else System.out.println("[wishtarget] usage: wishtarget <HERO>");
                     continue;
                 }
+                if (low.startsWith("wish ") || low.equals("wish")) { // wish [count] → souhait (BuyChests WISH)
+                    String[] ws = ln.trim().split("[,;\\s]+");
+                    int wc = ws.length >= 2 ? Integer.parseInt(ws[1].trim()) : 1;
+                    TutorialDriver.wishOpen(game, wc);
+                    continue;
+                }
                 if (low.startsWith("wishscreen")) {              // wishscreen → ouvre le puits aux souhaits
                     TutorialDriver.wishScreen(game);
                     continue;

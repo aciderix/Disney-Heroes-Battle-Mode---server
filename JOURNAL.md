@@ -4473,3 +4473,46 @@ itemType }` — les `oldWish*Weight` = poids de pity AVANT le souhait (animation
 Fichiers : `server/java/dhserver/{ServerUser,LoginServer}.java`, `server/smoke/{WishingWellTargetTest}.java`,
 `server/smoke/regression.sh`, `desktop-port/src/main/java/dhdesktop/{TutorialDriver,DesktopLauncher}.java`,
 `docs/WISHING_WELL.md`, `MEMORY.md`.
+
+---
+
+## 2026-08-16 (g109) — WISHING_WELL (#72) incr. 2 : le SOUHAIT (ChestType.WISH) ✅ VÉRIFIÉ EN JEU + VISUEL
+
+Le souhait proprement dit : ouvrir un coffre `ChestType.WISH` → tirage de shards BIAISÉ par le héros cible.
+
+**Handler.** `ServerUser.openChest` (handler `BuyChests` existant) reçoit une branche `ChestType.WISH` : au lieu de la
+table générique (`getDropTable` + `ChestContext`), il roule la table PROPRE du puits `ChestStats.WISHING_WELL_DROPS`
+(champ statique privé, hors `getDropTable` → accès réflexion `wishingWellTable()`) avec un `WishingWellDTContext(user,
+random)` — ce contexte LIT le héros cible (`wishingWellHero`) + les poids de pity + la rareté/mod max du joueur et
+BIAISE le tirage vers la cible. C'est le CODE DU JEU (§3, miroir exact de `ChestStats.rollWishingWellDisplay`). Plancher
+des poids via `WishingWellHelper.checkMinWeights` (code du jeu). Crédit des shards via `giveChestRewards`, débit DIAMONDS
+(branche payante existante), persistance write-through + resync.
+
+**GAP §4 PROUVÉ AU BYTECODE — rampe de pity par tirage.** La RAMPE de pity (nouveau `wishingWellJackpotWeight`/
+`wishingWellHeroChipsWeight` APRÈS un souhait) N'EST PAS dans le jar client : les setters `setWishingWell*Weight` ne sont
+invoqués QUE par `ChestHelper.updateWishingWellWeights` (applique une valeur FOURNIE — côté client depuis la réponse
+serveur) et par `setTargetHero`/`checkMinWeights` (PLANCHER `JACKPOT_BASE`/`HERO_CHIPS_BASE`) ; `doPreRollUpdates` ne
+fait que réinitialiser des compteurs d'évènement ; `WishingWellContextDTCode$1/$2` LISENT les poids pour biaiser mais
+n'en écrivent aucun. C'était la logique serveur autoritative de PerBlue, absente de l'APK → non réimplémentable sans
+l'INVENTER (§4, même catégorie que `CLAIM_COSMETIC_COLLECTION`). On expose donc les poids PLANCHERÉS (checkMinWeights)
+sans rampe : `LootResults.old/newWish*Weight` = plancher (les probas de base `getProbabilities` restent correctes).
+Documenté dans `docs/SHIMS.md` + `docs/WISHING_WELL.md`. *Risque* : pas de « pity » cumulatif (chances de jackpot fixes).
+
+**Test `WishingWellWishTest`** (régression → **116 tests**). Cible RALPH : le `WishingWellDTContext` cible RALPH
+(biais structurel, déterministe) ; 120 souhaits → ≥1 drop RALPH + `STONE_RALPH` crédité (=6940) + débit EXACT 120×500
+DIAMONDS ; poids sans rampe (new==old) au plancher ; persist wire+DB ; bascule VANELLOPE → drops VANELLOPE (le biais
+suit la cible).
+
+**✅ VÉRIFIÉ EN JEU + VISUEL (id=1).** `WishAdmin` (TL 65, 100 000 DIAMONDS, cible RALPH). Pilote `wish 1` ×23 (chemin
+client réel `ChestHelper.openChestInner` → `BuyChests{WISH}` + `ServerRollRequest`) → serveur `<== BuyChests` (roule
+biaisé + débite) → **DB : DIAMONDS débités (500/souhait) + items RALPH crédités** : `STONE_RALPH=480`,
+`EPIC_CHIP_RALPH=520`, `BIT_RALPH_HEALING=70`, `BIT_RALPH_LONGER_STUNS=35` (TOUS les drops de héros = la cible = biais
+confirmé), persistés. **CONFIRMATION VISUELLE** : la fenêtre **CRATE REWARDS** (servie par notre serveur) montre un lot
+de **300 puces RALPH** (« 300/200 » + portrait RALPH) — capture `desktop-port/build/wish_result_ingame.png`.
+
+⇒ **WISHING_WELL #72 : incr. 1 (cible) + 2 (souhait) vérifiés EN JEU** (rampe de pity = gap §4 documenté). Pilote DEV :
+`wish [count]`. Outil DEV : `WishAdmin`.
+
+Fichiers : `server/java/dhserver/ServerUser.java` (branche WISH + `wishingWellTable()`), `server/smoke/WishingWellWishTest.java`,
+`server/smoke/regression.sh`, `desktop-port/src/main/java/dhdesktop/{TutorialDriver,DesktopLauncher}.java`,
+`docs/{WISHING_WELL,SHIMS}.md`, `MEMORY.md`.

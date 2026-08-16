@@ -57,6 +57,22 @@ Le serveur **exécute le code du jeu** (PRINCIPLES §3 « lire & exécuter »). 
    `RewardHelper.giveReward` → `ContestHelper.onItemEarn` → `getActiveContestsWithTask`. Vérifié : 3 coffres
    d'affilée (dont objet) sans NPE + `ChestWireTest` OK.
 
+   - **WISHING_WELL — souhait (`ChestType.WISH`) — ✅ TRAITÉ (2026-08-16, g109), avec 1 GAP §4 documenté.**
+     `ServerUser.openChest` branche `WISH` : roule `ChestStats.WISHING_WELL_DROPS` avec un `WishingWellDTContext`
+     (BIAISÉ par la cible `wishingWellHero` + poids de pity + rareté/mod max) = **code du jeu** (§3, miroir de
+     `ChestStats.rollWishingWellDisplay`), plancher des poids via `WishingWellHelper.checkMinWeights`, crédit des
+     shards (`giveChestRewards`), débit DIAMONDS. Vérifié EN JEU (id=1) : 23 souhaits → DB `STONE_RALPH`/
+     `EPIC_CHIP_RALPH`/`BIT_RALPH_*` (tous = cible) + DIAMONDS débités ; fenêtre CRATE REWARDS montre 300 puces
+     RALPH. **GAP §4 (PARTIEL, prouvé au bytecode)** : la **RAMPE de pity par tirage** (nouveau
+     `wishingWellJackpotWeight`/`wishingWellHeroChipsWeight` APRÈS un souhait) est **absente du jar client** — les
+     setters `setWishingWell*Weight` ne sont invoqués que par `updateWishingWellWeights` (valeur FOURNIE) et
+     `setTargetHero`/`checkMinWeights` (PLANCHER) ; `doPreRollUpdates` ne fait que réinitialiser des compteurs
+     d'évènement. C'était la logique serveur autoritative de PerBlue (hors APK). **Non réimplémentable sans
+     l'inventer (§4)** → on expose les poids **plancherés** sans rampe (`LootResults.old/newWish*Weight` = plancher ;
+     les probas de base `getProbabilities` restent correctes, écran WISH ~1,1 %/10 %). *Risque* : les chances de
+     jackpot ne montent pas au fil des tirages malchanceux (pas de « pity » cumulatif). Même catégorie que
+     `CLAIM_COSMETIC_COLLECTION`. Détail : `docs/WISHING_WELL.md`.
+
 2. **Coffres PAYANTS (débit de la monnaie) — ✅ TRAITÉ & DÉMONTRÉ END-TO-END (2026-07-19, complété g2).**
    *Où* : `ServerUser.openChest`, branche `else` de `lr.wasFree`. **Débit** = `user.setResource(
    ChestHelper.getPurchaseCurrency(type, NONE), getResource − ChestHelper.getPurchaseCost(user, type, count,
