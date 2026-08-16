@@ -497,6 +497,12 @@ public final class DesktopLauncher {
                     else System.out.println("[merchantscreen] usage: merchantscreen <TYPE>");
                     continue;
                 }
+                if (low.startsWith("merchantbuy ")) {            // merchantbuy <TYPE> → achète le moins cher abordable
+                    String[] mb = ln.trim().split("[,;\\s]+");
+                    if (mb.length >= 2) TutorialDriver.merchantBuy(game, mb[1].toUpperCase());
+                    else System.out.println("[merchantbuy] usage: merchantbuy <TYPE>");
+                    continue;
+                }
                 if (low.startsWith("wishtarget ")) {             // wishtarget <HERO> → SET_WISHING_WELL_TARGET_HERO
                     String[] wt = ln.trim().split("[,;\\s]+");
                     if (wt.length >= 2) TutorialDriver.wishTarget(game, wt[1].toUpperCase());

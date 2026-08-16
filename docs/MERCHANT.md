@@ -82,8 +82,15 @@ Les upsells (`MERCHANT_SLOTS_PERK_UPSELL`) ont prix 0 (slots verrouillés — fi
      : serveur `MerchantUpdate x8` → client `GEAR : 10 objets` → écran **BADGE BAZAAR** affiche les objets + prix (CUTE-ING
      STAR 5 290, DINOCO 400 87 515 en rouge=trop cher, etc.) + timer de refresh — capture `build/merchant_gear_ingame.png`.
      Pilote `merchantscreen <TYPE>`.
-2. ⬜ **ACHAT (`PurchaseMerchantItem` → `MerchantHelper.purchaseItem`)** : anti-triche (coût/quantité RECALCULÉS serveur,
-   `expectedCost` ignoré), débit monnaie + don objet + marque `purchased`, persistance. Vérif en jeu.
+2. ✅ **ACHAT (`PurchaseMerchantItem` → `MerchantHelper.purchaseItem`)** : `ServerUser.applyPurchaseMerchantItem` charge
+   le blob dans le runtime (`initMerchantData`) puis ré-exécute `purchaseItem` (anti-triche : objet dans le stock + non
+   acheté → `TRADER_ITEM_NOT_FOUND` ; coût RECALCULÉ serveur + VÉRIFIÉ anti-tamper contre `expectedCost` → mismatch =
+   `CLIENT_OUT_OF_SYNC` ; débit `chargeUser` + don `giveReward` + `setPurchased`), répercute `purchased` dans le blob
+   (miroir `compareDrops`+`typeIndex`), resync + persiste ; `LoginServer` re-pousse `MerchantUpdate`. `MerchantPurchaseTest`
+   (achat = débit exact + don + purchased ; ré-achat refusé ; coût falsifié refusé ; persist wire+DB). **✅ VÉRIFIÉ EN JEU
+   + VISUEL** (id=1) : `merchantbuy GEAR` → CALAMARI 2 843 GEAR_TOKENS → serveur `appliqué [persisté] + MerchantUpdate
+   re-poussé` → DB GEAR_TOKENS 39 000→36 157, CALAMARI possédé=1, purchased=1 ; écran BADGE BAZAAR solde 36 157 + CALAMARI
+   grisé (vendu) — capture `build/merchant_purchase_ingame.png`. Pilote `merchantbuy <TYPE>`.
 3. ⬜ **REFRESH (`Action REFRESH_TRADER` → `MerchantHelper.refresh` + régénération)** : corrige le PARTIEL actuel ;
    gratuit N/jour puis payant ; reroll du stock + persistance. Vérif en jeu.
 4. ⬜ (option, à prouver) **BLACK_MARKET / MEGA_MART** limités : `checkForFoundMerchant` (découverte/planif) + expiration.

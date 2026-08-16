@@ -278,6 +278,27 @@ public final class LoginServer {
                   t.printStackTrace();
                 }
               }
+            } else if (m instanceof com.perblue.heroes.network.messages.PurchaseMerchantItem) {
+              // MARCHAND (#72 incr. 2) — ACHAT d'un objet. Le serveur EXÉCUTE MerchantHelper.purchaseItem sur
+              // l'état autoritatif (anti-triche : objet dans le stock serveur + non acheté ; coût recalculé et
+              // vérifié anti-tamper contre l'expectedCost du client ; débit + don + marque purchased), persiste,
+              // et RE-POUSSE le MerchantUpdate mis à jour (flag purchased) pour re-synchroniser le client.
+              try {
+                com.perblue.heroes.network.messages.PurchaseMerchantItem pm =
+                    (com.perblue.heroes.network.messages.PurchaseMerchantItem) m;
+                com.perblue.heroes.network.messages.MerchantData data = user.applyPurchaseMerchantItem(pm);
+                try { store.save(user); } catch (Exception e) {
+                  System.out.println("[login]     ! persistance achat marchand échouée: " + e); }
+                com.perblue.heroes.network.messages.MerchantUpdate mu = new com.perblue.heroes.network.messages.MerchantUpdate();
+                mu.type = pm.merchantType; mu.data = data; mu.reason = 0;
+                c.send(mu);
+                System.out.println("[login] ==> achat marchand " + pm.merchantType + " " + pm.itemToPurchase.itemType
+                    + " appliqué [persisté] + MerchantUpdate re-poussé");
+              } catch (Throwable t) {
+                if (t instanceof com.perblue.heroes.ClientErrorCodeException) {
+                  System.out.println("[login]     ⛔ PurchaseMerchantItem REFUSÉ (anti-triche) : " + t.getMessage());
+                } else { System.out.println("[login]     ! achat marchand échec: " + t); t.printStackTrace(); }
+              }
             } else if (m instanceof CampaignAttack) {
               // Combat de campagne : le client a joué le combat (client-side) et envoie l'issue
               // (fire-and-forget). Le serveur AUTORITATIF ré-exécute recordOutcome (stamina, loot/gold/

@@ -4671,3 +4671,36 @@ corrige le PARTIEL en boucle), incr. 4 BLACK_MARKET limited-time.
 
 Fichiers : `server/java/dhserver/{ServerUser,LoginServer}.java`, `desktop-port/src/main/java/dhdesktop/{TutorialDriver,
 DesktopLauncher}.java`, `docs/MERCHANT.md`, `MEMORY.md`.
+
+---
+
+## 2026-08-16 (g115) — MERCHANT (#72) incr. 2 : ACHAT (PurchaseMerchantItem) ✅ VÉRIFIÉ EN JEU + VISUEL
+
+Achat d'un objet chez un marchand. `ServerUser.applyPurchaseMerchantItem(PurchaseMerchantItem)` : charge le blob
+persisté dans le runtime (`iu.initMerchantData` — sinon `findUnpurchasedItem` ne voit rien, le convertisseur n'gère pas
+les marchands) puis ré-exécute la logique du jeu (§3) `MerchantHelper.purchaseItem`.
+
+**Anti-triche (bytecode).** `findUnpurchasedItem` : l'objet doit être DANS le stock serveur ET non acheté (sinon
+`TRADER_ITEM_NOT_FOUND`). Coût RECALCULÉ serveur (`getItemCost`) et **VÉRIFIÉ anti-tamper** contre `expectedCost` du
+client (mismatch → `CLIENT_OUT_OF_SYNC`) — un coût déclaré falsifié est REFUSÉ (pas « ignoré » : vérifié). Puis débit
+autoritatif `chargeUser` + don `giveReward` + `setPurchased`. On répercute ensuite le flag `purchased` dans le blob wire
+(miroir du matching du jeu : `RewardHelper.compareDrops` + `typeIndex`), resync (heroes/diamonds/counts) + persiste.
+`LoginServer` (handler message `PurchaseMerchantItem`) re-pousse le `MerchantUpdate` mis à jour pour re-synchroniser le
+client.
+
+**Test `MerchantPurchaseTest`** (régression → **118 tests**). Achat de l'objet le moins cher : débit EXACT du coût
+recalculé + don (+qté) + `purchased=true` ; anti-triche 1 : ré-achat du même objet refusé (aucun débit) ; anti-triche 2 :
+coût déclaré falsifié (=1) sur un autre objet → refusé, aucun débit, non marqué ; persistance round-trip wire + DB.
+
+**✅ VÉRIFIÉ EN JEU + VISUEL (id=1).** Pilote `merchantbuy GEAR` (chemin client réel `ClientActionHelper
+.purchaseMerchantItem`, calcule le typeIndex + le coût réel) → CALAMARI 2 843 GEAR_TOKENS → serveur `<== PurchaseMerchantItem`
+→ `achat marchand GEAR CALAMARI appliqué [persisté] + MerchantUpdate re-poussé` → **DB : GEAR_TOKENS 39 000→36 157 (−2 843
+exact), CALAMARI possédé=1, purchased=1** ; écran **BADGE BAZAAR** : solde 36 157 + **CALAMARI grisé (vendu)** — capture
+`build/merchant_purchase_ingame.png`. Pilote DEV `merchantbuy <TYPE>`.
+
+⇒ **MERCHANT #72 : incr. 1 (génération) + 1b (push) + 2 (achat) vérifiés EN JEU.** RESTE : incr. 3 refresh
+(`REFRESH_TRADER`→`MerchantHelper.refresh` + régénération, corrige le PARTIEL en boucle), incr. 4 BLACK_MARKET limited-time.
+
+Fichiers : `server/java/dhserver/{ServerUser,LoginServer}.java`, `server/smoke/MerchantPurchaseTest.java`,
+`server/smoke/regression.sh`, `desktop-port/src/main/java/dhdesktop/{TutorialDriver,DesktopLauncher}.java`,
+`docs/MERCHANT.md`, `MEMORY.md`.

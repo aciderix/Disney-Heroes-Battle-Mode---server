@@ -1270,6 +1270,43 @@ public final class TutorialDriver {
         } catch (Throwable e) { System.out.println("[merchantscreen] échec: " + e); e.printStackTrace(); }
     }
 
+    /** DEV : ACHÈTE l'objet le moins cher ABORDABLE d'un marchand — chemin client réel
+     *  {@code ClientActionHelper.purchaseMerchantItem} (message PurchaseMerchantItem ; le serveur ré-exécute
+     *  purchaseItem : anti-triche + débit + don + purchased). Invoqué via "merchantbuy &lt;TYPE&gt;". */
+    public static void merchantBuy(GameMain game, String typeS) {
+        try {
+            com.perblue.heroes.network.messages.MerchantType t = com.perblue.heroes.network.messages.MerchantType.valueOf(typeS);
+            com.perblue.heroes.game.specialevent.SpecialEventSnapshot NONE = com.perblue.heroes.game.specialevent.SpecialEventSnapshot.NONE;
+            com.perblue.heroes.game.objects.IMerchantItem best = null; int bestIdx = 0;
+            long bestCost = Long.MAX_VALUE;
+            int seen = 0;
+            java.util.List<com.perblue.heroes.game.objects.IMerchantItem> items = new java.util.ArrayList<>();
+            for (Object o : game.getYourUser().getMerchantItems(t)) items.add((com.perblue.heroes.game.objects.IMerchantItem) o);
+            for (int i = 0; i < items.size(); i++) {
+                com.perblue.heroes.game.objects.IMerchantItem mi = items.get(i);
+                if (mi.isPurchased()) continue;
+                long cost = com.perblue.heroes.game.logic.MerchantHelper.getItemCost(game.getYourUser(), t, mi, NONE);
+                if (cost <= 0) continue;
+                long have = game.getYourUser().getResource(mi.getCurrency());
+                if (cost > have) continue;                 // abordable
+                if (cost >= bestCost) continue;
+                // typeIndex = rang parmi identiques non achetés AVANT i
+                int rank = 0;
+                for (int j = 0; j < i; j++) {
+                    com.perblue.heroes.game.objects.IMerchantItem p = items.get(j);
+                    if (!p.isPurchased() && com.perblue.heroes.game.logic.RewardHelper.compareDrops(p.getItem(), mi.getItem(), false)) rank++;
+                }
+                best = mi; bestIdx = rank; bestCost = cost;
+            }
+            if (best == null) { System.out.println("[merchantbuy] aucun objet abordable dans " + t); return; }
+            System.out.println("[merchantbuy] " + t + " achat " + best.getItem().itemType + " coût " + bestCost + " "
+                + best.getCurrency() + " (idx " + bestIdx + ") [chemin réel]");
+            com.perblue.heroes.game.ClientActionHelper.purchaseMerchantItem(t, best.getItem(), bestIdx, bestCost,
+                (int) best.getItem().quantity, NONE);
+            System.out.println("[merchantbuy] PurchaseMerchantItem envoyé");
+        } catch (Throwable e) { System.out.println("[merchantbuy] échec: " + e); e.printStackTrace(); }
+    }
+
     /** DEV : ouvre l'écran du mastery shop {@code CollectionsShopScreen} (chemin réel, pushScreen). Invoqué via "shopscreen". */
     public static void shopScreen(GameMain game) {
         try {

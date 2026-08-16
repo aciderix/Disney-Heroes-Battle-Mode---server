@@ -3466,6 +3466,50 @@ public final class ServerUser {
     return (com.perblue.heroes.network.messages.MerchantData) individualUserExtra.merchantData.get(type);
   }
 
+  /**
+   * MERCHANT (#72) incr. 2 — ACHAT d'un objet ({@code PurchaseMerchantItem}). Le serveur ré-exécute la logique du jeu
+   * (§3) {@code MerchantHelper.purchaseItem} : anti-triche = l'objet doit être DANS le stock serveur et non acheté
+   * ({@code findUnpurchasedItem} → {@code TRADER_ITEM_NOT_FOUND}) ; coût RECALCULÉ serveur ({@code getItemCost}) et
+   * VÉRIFIÉ anti-tamper contre le {@code expectedCost} client (mismatch → {@code CLIENT_OUT_OF_SYNC}) ; débit du coût
+   * autoritatif ({@code chargeUser}) + don
+   * ({@code giveReward}) + marque {@code purchased}. On charge d'abord le blob dans le runtime ({@code initMerchantData})
+   * pour que {@code findUnpurchasedItem} voie le stock, puis on répercute le flag {@code purchased} dans le blob wire
+   * (write-through) en miroir du matching du jeu ({@code compareDrops} + {@code typeIndex}). Renvoie le {@code MerchantData}
+   * mis à jour (à re-pousser au client), ou lève une {@code ClientErrorCodeException} si l'achat est illégitime.
+   */
+  public synchronized com.perblue.heroes.network.messages.MerchantData applyPurchaseMerchantItem(
+      com.perblue.heroes.network.messages.PurchaseMerchantItem m) throws com.perblue.heroes.ClientErrorCodeException {
+    ServerContext.init();
+    User user = ClientNetworkStateConverter.getUser(userInfo, userExtra, "merchant");
+    IndividualUser iu = ClientNetworkStateConverter.getIndividualUser(
+        individualUserExtra, userID, userInfo.diamonds, "merchant");
+    ServerContext.bind(user, iu);
+    com.perblue.heroes.network.messages.MerchantType type = m.merchantType;
+    com.perblue.heroes.network.messages.MerchantData blob = merchantDataPersisted(type);
+    if (blob == null || blob.inventory == null || blob.inventory.isEmpty())
+      throw new com.perblue.heroes.ClientErrorCodeException(
+          com.perblue.heroes.util.localization.ClientErrorCode.TRADER_ITEM_NOT_FOUND, new String[0]);
+    // Charge le blob dans le runtime → findUnpurchasedItem (getMerchantItems) voit le stock.
+    iu.initMerchantData(type, blob);
+    // ACHAT autoritatif (recalc coût, ignore expectedCost ; débit + don + marque). Lève si illégitime.
+    com.perblue.heroes.game.logic.MerchantHelper.purchaseItem(type, m.itemToPurchase, user, m.typeIndex,
+        m.expectedCost, m.expectedQuantity, SpecialEventSnapshot.NONE);
+    // Répercute le flag purchased dans le blob wire (miroir findUnpurchasedItem : compareDrops + typeIndex).
+    int match = 0;
+    for (Object o : blob.inventory) {
+      com.perblue.heroes.network.messages.MerchantItemData mid = (com.perblue.heroes.network.messages.MerchantItemData) o;
+      if (!mid.purchased && com.perblue.heroes.game.logic.RewardHelper.compareDrops(mid.item, m.itemToPurchase, false)) {
+        if (match == m.typeIndex) { mid.purchased = true; break; }
+        match++;
+      }
+    }
+    // Persistance des gains/débits hors this.extra.
+    resyncHeroes(user);
+    resyncDiamonds(user);
+    resyncCounts(user);
+    return blob;
+  }
+
   /** Marchands poussés à intégrer au BOOT (DISPONIBLES + débloqués), toujours en rotation permanente (pas
    *  limited-time). L'ordre suit l'écran ; les limités (BLACK_MARKET/MEGA_MART) sont gérés à part (découverte). */
   private static final com.perblue.heroes.network.messages.MerchantType[] BOOT_MERCHANTS = {
