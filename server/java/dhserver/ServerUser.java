@@ -1610,15 +1610,35 @@ public final class ServerUser {
       lr.lootDrops = new DropConverter(user).convertHeroes(true).convert(drops);
       lr.oldWishJackpotWeight = oldJ;
       lr.oldWishHeroChipsWeight = oldHC;
-      // GAP §4 PROUVÉ AU BYTECODE : la RAMPE de pity par tirage (nouveau poids après un souhait) N'EST PAS dans le
-      // jar client — les setters setWishingWell*Weight ne sont invoqués que par updateWishingWellWeights (applique
-      // une valeur FOURNIE) et setTargetHero/checkMinWeights (PLANCHER) ; doPreRollUpdates ne fait que réinitialiser
-      // des compteurs d'évènement. C'était la logique serveur autoritative de PerBlue, absente de l'APK → non
-      // réimplémentable sans l'INVENTER (§4, même catégorie que CLAIM_COSMETIC_COLLECTION). On expose donc les poids
-      // PLANCHERÉS (checkMinWeights) sans rampe (les probas de base getProbabilities restent correctes). Documenté
-      // dans docs/SHIMS.md + docs/WISHING_WELL.md.
-      lr.newWishJackpotWeight = iu.getWishingWellJackpotWeight();
-      lr.newWishHeroChipsWeight = iu.getWishingWellHeroChipsWeight();
+      // RAMPE DE PITY par tirage — transcription FIDÈLE de la RÈGLE du jeu
+      // WishingWellChestResultWindow.reachedDestination(LootResults, RewardDrop, int) : c'est la SEULE copie de la
+      // règle dans le jar (classe UI liée à GL → non instanciable headless, donc on ne peut pas l'EXÉCUTER ; on la
+      // TRANSCRIT au bytecode près). Les VALEURS viennent des .tab (WeightConstants, jamais inventées, §4). Par drop,
+      // dans l'ordre, en partant des poids AVANT (comme setLootResults init depuis oldWish*) :
+      //   • bonus 10x (hasBulkBonus, aux frontières de lot) : jackpot *= JACKPOT_10X_BONUS_MULT
+      //   • drop JACKPOT (flags & 16)            → jackpot = JACKPOT_BASE ; heroChips = HERO_CHIPS_BASE (reset)
+      //   • drop STONE (ItemStats.getCategory == STONE, hors jackpot) → jackpot *= JACKPOT_MULT_X ; heroChips = HERO_CHIPS_BASE
+      //   • sinon (générique)                    → jackpot *= JACKPOT_MULT_Y ; heroChips *= HERO_CHIPS_MULT_Z
+      // Persistance via le CODE DU JEU ChestHelper.updateWishingWellWeights (write-through). ⇒ la pity monte
+      // réellement au fil des tirages malchanceux et se réinitialise au jackpot, comme le jeu. Détail docs/WISHING_WELL.md.
+      float jw = oldJ, hcw = oldHC;
+      int multiBuy = com.perblue.heroes.game.logic.ChestHelper.getMultiBuyCount(user, type, SpecialEventSnapshot.NONE);
+      boolean bulkBonus = m.hasBulkBonus;
+      int row = 0;
+      for (Object o : lr.lootDrops) {                                  // les RewardDrop convertis (flags + itemType)
+        com.perblue.heroes.network.messages.RewardDrop d = (com.perblue.heroes.network.messages.RewardDrop) o;
+        if (bulkBonus && multiBuy > 0 && row % multiBuy == 0) jw = jw * wc.JACKPOT_10X_BONUS_MULT;
+        boolean isJackpot = (d.flags & 16) != 0;
+        boolean isStone = com.perblue.heroes.game.data.item.ItemStats.getCategory(d.itemType)
+            == com.perblue.heroes.game.data.item.ItemCategory.STONE;
+        if (isJackpot)      { jw = wc.JACKPOT_BASE;      hcw = wc.HERO_CHIPS_BASE; }
+        else if (isStone)   { jw = jw * wc.JACKPOT_MULT_X; hcw = wc.HERO_CHIPS_BASE; }
+        else                { jw = jw * wc.JACKPOT_MULT_Y; hcw = hcw * wc.HERO_CHIPS_MULT_Z; }
+        row++;
+      }
+      com.perblue.heroes.game.logic.ChestHelper.updateWishingWellWeights(user, jw, hcw);  // persiste (code du jeu)
+      lr.newWishJackpotWeight = jw;
+      lr.newWishHeroChipsWeight = hcw;
     } else {
       DropTable dt = dropTable(type);
       ChestContext ctx = new ChestContext(user);

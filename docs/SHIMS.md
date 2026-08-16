@@ -57,21 +57,26 @@ Le serveur **exécute le code du jeu** (PRINCIPLES §3 « lire & exécuter »). 
    `RewardHelper.giveReward` → `ContestHelper.onItemEarn` → `getActiveContestsWithTask`. Vérifié : 3 coffres
    d'affilée (dont objet) sans NPE + `ChestWireTest` OK.
 
-   - **WISHING_WELL — souhait (`ChestType.WISH`) — ✅ TRAITÉ (2026-08-16, g109), avec 1 GAP §4 documenté.**
+   - **WISHING_WELL — souhait (`ChestType.WISH`) + RAMPE DE PITY — ✅ TRAITÉ EN ENTIER (2026-08-16, g109→g110).**
      `ServerUser.openChest` branche `WISH` : roule `ChestStats.WISHING_WELL_DROPS` avec un `WishingWellDTContext`
      (BIAISÉ par la cible `wishingWellHero` + poids de pity + rareté/mod max) = **code du jeu** (§3, miroir de
      `ChestStats.rollWishingWellDisplay`), plancher des poids via `WishingWellHelper.checkMinWeights`, crédit des
      shards (`giveChestRewards`), débit DIAMONDS. Vérifié EN JEU (id=1) : 23 souhaits → DB `STONE_RALPH`/
-     `EPIC_CHIP_RALPH`/`BIT_RALPH_*` (tous = cible) + DIAMONDS débités ; fenêtre CRATE REWARDS montre 300 puces
-     RALPH. **GAP §4 (PARTIEL, prouvé au bytecode)** : la **RAMPE de pity par tirage** (nouveau
-     `wishingWellJackpotWeight`/`wishingWellHeroChipsWeight` APRÈS un souhait) est **absente du jar client** — les
-     setters `setWishingWell*Weight` ne sont invoqués que par `updateWishingWellWeights` (valeur FOURNIE) et
-     `setTargetHero`/`checkMinWeights` (PLANCHER) ; `doPreRollUpdates` ne fait que réinitialiser des compteurs
-     d'évènement. C'était la logique serveur autoritative de PerBlue (hors APK). **Non réimplémentable sans
-     l'inventer (§4)** → on expose les poids **plancherés** sans rampe (`LootResults.old/newWish*Weight` = plancher ;
-     les probas de base `getProbabilities` restent correctes, écran WISH ~1,1 %/10 %). *Risque* : les chances de
-     jackpot ne montent pas au fil des tirages malchanceux (pas de « pity » cumulatif). Même catégorie que
-     `CLAIM_COSMETIC_COLLECTION`. Détail : `docs/WISHING_WELL.md`.
+     `EPIC_CHIP_RALPH`/`BIT_RALPH_*` (tous = cible) + DIAMONDS débités ; fenêtre CRATE REWARDS montre 300 puces RALPH.
+     - **RAMPE DE PITY = RÉELLE (correction g110 : PAS un gap ; l'affirmation g109 « absente du jar » était FAUSSE**,
+       elle venait de n'avoir cherché que les `*Helper`/`*Stats` sans lire les `.tab` ni la couche UI). La règle EST
+       dans le jar : `WishingWellChestResultWindow.reachedDestination(LootResults, RewardDrop, int)` (classe **UI liée
+       à GL** → non instanciable headless, donc non-EXÉCUTABLE : on la **TRANSCRIT au bytecode près**). Valeurs = `.tab`
+       (`wishing_well_weights.tab` → `WeightConstants` `JACKPOT_MULT_X=1.1`, `JACKPOT_MULT_Y=1.01`,
+       `HERO_CHIPS_MULT_Z=1.1`, `JACKPOT_10X_BONUS_MULT=1.05`), **jamais inventées** (§4). Règle par drop (init depuis
+       `old*` comme `setLootResults`) : jackpot (`flags&16`) → reset `*_BASE` ; stone (`ItemStats.getCategory==STONE`)
+       → `jackpot*=MULT_X`, `heroChips=HERO_CHIPS_BASE` ; sinon → `jackpot*=MULT_Y`, `heroChips*=MULT_Z` ; bonus 10x
+       (`hasBulkBonus`, frontières de lot) `jackpot*=10X_BONUS_MULT`. Persistée via le **code du jeu**
+       `ChestHelper.updateWishingWellWeights` (write-through `individualUserExtra`). Statut = **RÉEL** (transcription
+       fidèle d'une règle GL-only + valeurs `.tab`). Vérifié : `WishingWellWishTest` (direction, continuité entre
+       tirages = persistance, accumulation base 1.0 → peak ~4). **Leçon (§8, exigée par l'utilisateur)** : ne jamais
+       conclure « absent du jar » sans avoir AUSSI cherché la couche UI + lu les `.tab`. Rien n'est un gap tant que ce
+       n'est pas prouvé. Détail : `docs/WISHING_WELL.md`.
 
 2. **Coffres PAYANTS (débit de la monnaie) — ✅ TRAITÉ & DÉMONTRÉ END-TO-END (2026-07-19, complété g2).**
    *Où* : `ServerUser.openChest`, branche `else` de `lr.wasFree`. **Débit** = `user.setResource(

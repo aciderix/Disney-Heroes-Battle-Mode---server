@@ -4516,3 +4516,40 @@ de **300 puces RALPH** (« 300/200 » + portrait RALPH) — capture `desktop-por
 Fichiers : `server/java/dhserver/ServerUser.java` (branche WISH + `wishingWellTable()`), `server/smoke/WishingWellWishTest.java`,
 `server/smoke/regression.sh`, `desktop-port/src/main/java/dhdesktop/{TutorialDriver,DesktopLauncher}.java`,
 `docs/{WISHING_WELL,SHIMS}.md`, `MEMORY.md`.
+
+---
+
+## 2026-08-16 (g110) — WISHING_WELL : RAMPE DE PITY = RÉELLE (correction d'une erreur g109)
+
+**Correction d'une conclusion erronée (consigne utilisateur : « rien n'est optionnel/absent tant que non prouvé »).**
+En g109 j'avais déclaré la rampe de pity « absente du jar » (gap §4) — c'était une **erreur de méthode** : je n'avais
+grep'é que les `setWishingWell*Weight` dans les `*Helper`/`*Stats`, **sans lire les `.tab` ni chercher dans la couche
+UI**. L'utilisateur a poussé (« a tu check les tab ? rien n'est vraiment optionnel tant qu'on ne l'a pas prouvé »).
+
+**Ce que la revérification a montré (FAITS).**
+1. `game-data/stats/wishing_well_weights.tab` contient bien les multiplicateurs de rampe : `JACKPOT_MULT_X=1.1`,
+   `JACKPOT_MULT_Y=1.01`, `HERO_CHIPS_MULT_Z=1.1`, `JACKPOT_10X_BONUS_MULT=1.05` (colonnes NEW/RECENT/OLD).
+2. Grep jar-wide (64k classes) des lecteurs de ces constantes → `WishingWellStats$WeightConstants` (déclaration) **et
+   `WishingWellChestResultWindow`** (UI). Cette dernière contient la RÈGLE, dans `reachedDestination(LootResults,
+   RewardDrop, int)` : init `jackpotWeight/heroChipsWeight` depuis `LootResults.old*` (via `setLootResults`), puis par
+   drop — jackpot (`flags&16`) → reset `*_BASE` ; stone (`ItemStats.getCategory==STONE`) → `jackpot*=MULT_X`,
+   `heroChips=HERO_CHIPS_BASE` ; sinon → `jackpot*=MULT_Y`, `heroChips*=MULT_Z` ; bonus 10x (`hasBulkBonus`, frontières
+   `rowIndex % getMultiBuyCount`) `jackpot*=10X_BONUS_MULT`.
+3. La classe est **UI liée à GL** (met à jour `jackpotPreviewStack`) → **non instanciable headless**, donc non
+   EXÉCUTABLE : on **TRANSCRIT la règle au bytecode près** (valeurs = `.tab`, jamais inventées, §4).
+
+**Implémentation.** `ServerUser.openChest` (branche WISH) calcule la rampe par drop (sur `lr.lootDrops`, les
+`RewardDrop` convertis — pas les `DropItem` bruts) depuis `old*`, puis persiste via le **code du jeu**
+`ChestHelper.updateWishingWellWeights(user, jackpot, heroChips)` (write-through `individualUserExtra`). `LootResults.
+old/newWish*Weight` reflètent avant/après. La branche ne prétend plus à aucun gap.
+
+**Test.** `WishingWellWishTest` étendu : CONTINUITÉ entre tirages (le `old` d'un tirage == le `new` du précédent =
+persistance de la pity), DIRECTION (pity jackpot MONTE hors jackpot, reset au jackpot/stone), ACCUMULATION (base 1.0 →
+peak ~4 sur 120 tirages), + survie round-trip wire. Régression **116/116**.
+
+**Statut SHIMS** : la rampe passe de « GAP §4 » (g109, faux) à **RÉEL** (transcription fidèle d'une règle GL-only +
+valeurs `.tab`). **Leçon (§8)** : ne jamais conclure « absent du jar » sans avoir cherché AUSSI la couche UI et lu les
+`.tab`. RESTE : revérif EN JEU que les probas WISH montent au fil des tirages.
+
+Fichiers : `server/java/dhserver/ServerUser.java`, `server/smoke/WishingWellWishTest.java`, `docs/{WISHING_WELL,SHIMS}.md`,
+`MEMORY.md`.

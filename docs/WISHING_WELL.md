@@ -34,8 +34,8 @@ cible/poids du puits biaisent la table. `WishingWellHelper.isUnlocked` gate.
    `resyncCounts`). Anti-triche = héros non éligible → rejet. Test `WishingWellTargetTest`. **✅ VÉRIFIÉ EN JEU + VISUEL**
    (voir §Vérif en jeu incr.1).
 2. ✅ **WISH (`ChestType.WISH`)** : le souhait (coffre WISH via `openChest`) roule la table du puits BIAISÉE par la
-   cible + crédite les shards + débite les DIAMONDS + persiste. **✅ VÉRIFIÉ EN JEU + VISUEL** (voir §Vérif en jeu
-   incr.2). **GAP §4 prouvé** : la RAMPE de pity par tirage est absente du jar (voir §Contrat/§Gap).
+   cible + crédite les shards + débite les DIAMONDS + **fait monter la RAMPE de pity** + persiste. **✅ VÉRIFIÉ EN JEU
+   + VISUEL** (voir §Vérif en jeu incr.2 + §Rampe de pity).
 
 ## Vérif en jeu — incrément 1 (✅ EN JEU + VISUEL, id=1)
 - Setup : `SetTeamLevel 65` (débloque `WISH_CHEST` req TL 30). id=1 : TL 65, puits débloqué, cible=DEFAULT, 274 héros
@@ -58,16 +58,28 @@ cible/poids du puits biaisent la table. `WishingWellHelper.isUnlocked` gate.
   **300 puces RALPH** (« 300/200 » + portrait RALPH) — capture `desktop-port/build/wish_result_ingame.png`. Pilote DEV
   `wish [count]`. Outil `WishAdmin`.
 
-## Gap §4 prouvé — RAMPE de pity par tirage (absente du jar)
-La **rampe de pity** (nouveau `wishingWellJackpotWeight`/`wishingWellHeroChipsWeight` APRÈS un souhait) n'est PAS dans
-le jar client (prouvé au bytecode) : les setters `setWishingWell*Weight` ne sont invoqués que par
-`ChestHelper.updateWishingWellWeights` (applique une valeur FOURNIE, côté client depuis la réponse serveur) et par
-`setTargetHero`/`checkMinWeights` (PLANCHER `JACKPOT_BASE`/`HERO_CHIPS_BASE`) ; `doPreRollUpdates` ne fait que
-réinitialiser des compteurs d'évènement. C'était la logique serveur autoritative de PerBlue, absente de l'APK →
-**non réimplémentable sans l'INVENTER (§4, même catégorie que `CLAIM_COSMETIC_COLLECTION`)**. Le serveur expose donc
-les poids **plancherés** (`checkMinWeights`, code du jeu) sans rampe : `LootResults.old/newWish*Weight` = poids
-plancher (les probas de base `getProbabilities` restent correctes — écran WISH affiche ~1,1 %/10 %). Documenté aussi
-dans `docs/SHIMS.md`.
+## Rampe de pity — RÉELLE (correction : ce N'ÉTAIT PAS un gap)
+> **Erreur initiale (g109) corrigée (g110).** J'avais conclu que la rampe de pity était « absente du jar » (gap §4)
+> après n'avoir cherché que les `*Helper`/`*Stats` — **sans lire les `.tab` ni la couche UI**. C'était FAUX. Les `.tab`
+> (`wishing_well_weights.tab`) contiennent les multiplicateurs de pity, ET la règle qui les applique existe dans le
+> jar. Leçon (§8) : rien n'est un gap tant que ce n'est pas prouvé — chercher AUSSI l'UI + les `.tab`.
+
+La **rampe de pity** est appliquée par tirage. La RÈGLE vit dans `WishingWellChestResultWindow.reachedDestination(
+LootResults, RewardDrop, int)` — une classe **UI liée à GL**, donc **non instanciable headless** : on ne peut pas
+l'EXÉCUTER, on la **TRANSCRIT fidèlement au bytecode près**. Les **valeurs** viennent des `.tab` (jamais inventées, §4) :
+`wishing_well_weights.tab` → `WeightConstants` `JACKPOT_MULT_X=1.1`, `JACKPOT_MULT_Y=1.01`, `HERO_CHIPS_MULT_Z=1.1`,
+`JACKPOT_10X_BONUS_MULT=1.05`, bases `JACKPOT_BASE=1`, `HERO_CHIPS_BASE` (2.02/6.06/10.11 selon NEW/RECENT/OLD).
+
+Règle (init depuis `LootResults.old*` comme `setLootResults`), pour chaque drop dans l'ordre :
+- **bonus 10x** (`hasBulkBonus`, aux frontières de lot `rowIndex % getMultiBuyCount == 0`) : `jackpot *= JACKPOT_10X_BONUS_MULT` ;
+- **drop JACKPOT** (`RewardDrop.flags & 16`) → `jackpot = JACKPOT_BASE` ; `heroChips = HERO_CHIPS_BASE` (**reset**) ;
+- **drop STONE** (`ItemStats.getCategory(itemType) == STONE`, hors jackpot) → `jackpot *= JACKPOT_MULT_X` ; `heroChips = HERO_CHIPS_BASE` ;
+- **sinon (générique)** → `jackpot *= JACKPOT_MULT_Y` ; `heroChips *= HERO_CHIPS_MULT_Z`.
+
+Persistance via le **code du jeu** `ChestHelper.updateWishingWellWeights(user, jackpot, heroChips)` (write-through
+`individualUserExtra`). ⇒ la pity **monte réellement** au fil des tirages malchanceux et se **réinitialise au jackpot**,
+comme le jeu ; l'écran WISH voit ses probas augmenter. Vérifié `WishingWellWishTest` (direction, continuité entre
+tirages = persistance, accumulation base 1.0 → peak ~4). Statut SHIMS = **RÉEL** (transcription fidèle GL-only + `.tab`).
 
 ## Contrat industriel (ModeGraph `--mode com/perblue/heroes/ui/wishingwell/`)
 - **Gate** : `Unlockable.WISH_CHEST` (TL 30). Écran en **lecture seule** côté messages (la cible passe par un `Action`,
