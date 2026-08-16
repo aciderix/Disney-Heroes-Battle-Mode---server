@@ -4587,3 +4587,27 @@ anti-triche coût recalculé) ; 3) refresh (`REFRESH_TRADER`→`refresh`+régén
 limited-time. Régression inchangée (116). Aucune ligne serveur écrite à ce stade (recon pure).
 
 Fichiers : `docs/MERCHANT.md`, `MEMORY.md`.
+
+---
+
+## 2026-08-16 (g112) — MERCHANT : recon APPROFONDIE (de-risking incr. 1) + point dur coût
+
+Poursuite du recon MERCHANT (sondes `MerchGenProbe`/`MerchCostProbe`). Recette de génération PROUVÉE headless :
+`getDropStats(type).getTable().rollNode("ROOT", new UserDTContext(user), rnd)` → `List<DropItem>` (GEAR=10, MEMORY=8) →
+`DropConverter.convert` → `MerchantItemData`. Stockage = **blob** `individualUserExtra.merchantData`
+(`Map<MerchantType,MerchantData>`) : le convertisseur `ClientNetworkStateConverter` n'gère PAS les marchands
+(`IndividualUser` runtime démarre EnumMap vides) → à câbler côté `ServerUser` (write-through), pas via round-trip.
+Livraison client = push `MerchantUpdate` (`GameMain.lambda$…$28`). `initMerchantData(type, MerchantData)` peuple le runtime.
+
+**Point dur restant (coût des objets, NE PAS inventer §4)** : `getItemCost` lit `mi.getCost()` (coût de base porté par
+l'objet). Marchands ANNOTÉS (BLACK_MARKET) : `.tab` porte `{PriceType}{Cost}` → `DropItem.getParameter("Cost"/"PriceType")`
+(data-driven, reconstructible). Marchands À JETONS (GEAR/MEMORY) : objets roulés SANS param `Cost` (`params={}`) → coût de
+base calculé par RARETÉ (behaviors `MerchantDTCode` `RarityCost*`), source pas encore localisée (`merchant_refresh.tab` =
+coût de REFRESH 1-21, PAS item ; `COST_STATS` = refresh aussi ; `.tab` de drop ne portent que `{PriceType}`). **Leçon pity
+(§8) appliquée : ne PAS déclarer gap — à creuser (mapping rareté→coût / CONSTANT_STATS / formule).** C'est le seul verrou
+de l'incr. 1.
+
+⇒ Recon incr. 1 ~80 % de-risqué (roll ✅, stockage blob ✅, livraison ✅) ; reste le coût des marchands à jetons. Aucune
+ligne serveur écrite (recon). Régression inchangée (116). Détail : `docs/MERCHANT.md` §Recette/§Point dur.
+
+Fichiers : `docs/MERCHANT.md`, `JOURNAL.md`.

@@ -47,11 +47,37 @@ méthode publique unique). `MerchantHelper.refresh` ne fait QUE le gating/charge
 - **Verrouillés (TL/déblocage)** : NORMAL, HEIST. `INVASION` : `canManuallyRefresh=false` (auto seulement).
 - ⇒ pour l'incr. 1, utiliser un marchand **disponible** (ex. **GEAR**, unlock TL42) ; BLACK_MARKET viendra après (planif/découverte).
 
+## Recette de génération (recon approfondie g111 — de-risking)
+Prouvé headless (`MerchGenProbe`/`MerchCostProbe`) :
+1. **Roll** : `getDropStats(type)` (réflexion, `MerchantStats.getDropStats` privé) → `.getTable().rollNode("ROOT",
+   new UserDTContext(user), random)` → `List<DropItem>` (ex. GEAR = 10 items, MEMORY = 8). ✅ marche.
+2. **Items** : `new DropConverter(user).convert(drop)` → `RewardDrop` ; wrap `ClientMerchantItem`/`MerchantItemData`
+   (`item`, `currency`, `purchased=false`).
+3. **Stockage (BLOB)** : le convertisseur `ClientNetworkStateConverter` **n'gère PAS** les marchands (l'`IndividualUser`
+   runtime démarre avec des EnumMap vides) → MERCHANT est un **pur blob** dans `individualUserExtra.merchantData`
+   (`Map<MerchantType, MerchantData>`, write-through). `IndividualUser.initMerchantData(type, MerchantData)` peuple le
+   runtime (via `ClientNetworkStateConverter.getMerchantItems`), mais la **persistance** = écrire dans
+   `individualUserExtra.merchantData` (à câbler côté `ServerUser`, pas via le round-trip du convertisseur).
+4. **Livraison client** : `GameMain.lambda$…$28(conn, MerchantUpdate)` → push `MerchantUpdate{type, data, reason}`
+   (boot/on-demand). Pas dans BootData.
+
+### ⚠️ Point dur restant — COÛT des objets (à finir, NE PAS inventer §4)
+`getItemCost` lit le coût de BASE porté par l'objet (`mi.getCost()`) puis applique remise event/guilde. Ce coût de base
+vient de la génération :
+- **Marchands ANNOTÉS** (ex. BLACK_MARKET) : le `.tab` porte `{PriceType=DIAMONDS}{Cost=…}` → `DropItem.getParameter(
+  "Cost"/"PriceType")` après roll (data-driven, §4-OK, reconstructible). Behaviors `MerchantDTCode` : `Cost`, `PriceType`,
+  `CostScalar`, `RarityCostScalar`, `CostRarityScalar`.
+- **Marchands À JETONS** (GEAR/MEMORY…) : les objets roulés sortent **sans param `Cost`** (`params={}`) → le coût de base
+  est calculé côté serveur par **rareté** (behaviors `RarityCost*`), source pas encore localisée dans le jar/`.tab`
+  visible. **NE PAS conclure « gap »** avant d'avoir cherché (leçon pity §8) : à vérifier — table de coût par rareté,
+  `COST_STATS` (semble = coût de REFRESH indexé, pas item), ou formule item-value. **C'est le seul verrou restant de
+  l'incr. 1.**
+
 ## Plan d'incréments
-1. ⬜ **Génération + affichage du stock (blob serveur-autoritatif)** : rouler `MerchantStats.<TYPE>_DROP_STATS` via
-   `MerchantDTCode` → construire `MerchantData` (items + coût `getItemCost` + monnaie + expiration/auto-refresh) →
-   `setMerchantItems` (write-through `merchantData`) → pousser `MerchantUpdate` au boot/à l'accès. Test headless
-   (stock non vide, round-trip wire + DB). Vérif EN JEU : écran marchand (GEAR) affiche des objets.
+1. ⏳ **Génération + affichage du stock (blob serveur-autoritatif)** : roll ✅ + stockage blob (à câbler
+   `individualUserExtra.merchantData`) + `MerchantUpdate` push. **Bloqué** sur le coût de base des marchands à jetons
+   (voir §Point dur). Option : démarrer par un marchand à coûts ANNOTÉS. Test headless (stock non vide + coûts + round-trip
+   wire + DB). Vérif EN JEU : écran marchand affiche des objets avec prix.
 2. ⬜ **ACHAT (`PurchaseMerchantItem` → `MerchantHelper.purchaseItem`)** : anti-triche (coût/quantité RECALCULÉS serveur,
    `expectedCost` ignoré), débit monnaie + don objet + marque `purchased`, persistance. Vérif en jeu.
 3. ⬜ **REFRESH (`Action REFRESH_TRADER` → `MerchantHelper.refresh` + régénération)** : corrige le PARTIEL actuel ;
