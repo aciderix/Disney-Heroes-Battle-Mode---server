@@ -4553,3 +4553,37 @@ valeurs `.tab`). **Leçon (§8)** : ne jamais conclure « absent du jar » sans 
 
 Fichiers : `server/java/dhserver/ServerUser.java`, `server/smoke/WishingWellWishTest.java`, `docs/{WISHING_WELL,SHIMS}.md`,
 `MEMORY.md`.
+
+---
+
+## 2026-08-16 (g111) — MERCHANT (marchands / marché noir) : phase RECON (pipeline #73) → docs/MERCHANT.md
+
+Choix du mode suivant après WISHING_WELL : MERCHANT (déclencheur : `REFRESH_TRADER non appliquée (PARTIEL)` en boucle
+dans `/tmp/dh_game.log` + les nombreux `*_merchant_drops.tab`). Phase recon du pipeline #73 (ModeGraph `--mode Merchant`
++ décompilation ciblée).
+
+**Structure.** Classes : `MerchantScreen` (UI), `MerchantHelper` (logique), `MerchantStats`/`MerchantDTCode` (données),
+enum `MerchantType`, wire `MerchantData`/`MerchantItemData`/`MerchantUpdate`/`PurchaseMerchantItem`. Stockage =
+`IndividualUserExtra.merchantData` (`Map<MerchantType, MerchantData>`, **write-through**), backing de
+`IUser.getMerchantItems(type)` etc.
+
+**Fait décisif (architecture).** `GameMain.lambda$setupPostClientInfoHandlers$28(conn, MerchantUpdate)` : le **client REÇOIT
+`MerchantUpdate` et l'applique — il ne GÉNÈRE JAMAIS le stock**. ⇒ MERCHANT = **blob serveur-autoritatif**
+(cf. `docs/ARCHITECTURE.md` : Arena ladder / Surge / Expedition). Le serveur doit rouler les tables `*_merchant_drops.tab`
+(`MerchantStats.<TYPE>_DROP_STATS`, privées) via `MerchantDTCode`, construire `MerchantData`, persister (write-through),
+et pousser `MerchantUpdate`. `MerchantHelper.refresh` ne fait QUE le gating/charge/track (`refresh(AUTO)`→true mais
+inventaire vide) ; la génération est derrière `CodeLocationHelper.isOnServer()` (que `ServerContext` ne pose pas exprès).
+
+**Entrées §3.** `MerchantHelper.purchaseItem(...)`, `refresh(type, MerchantRefreshType{AUTO,FREE,ITEM,PAID,VIDEO}, user,
+snapshot)`, `getItemCost`, `isMerchantUnlocked`/`isAvailable`, `getFreeRefreshes`, `checkForFoundMerchant` (BLACK_MARKET/
+MEGA_MART limited-time), `getMerchantPrimary/SecondaryCurrency`, `MerchantStats.getRefreshCost`/`getRefreshCurrency`.
+
+**Disponibilité (sonde `MerchAvail`, TL200).** Always-on : GEAR/MEMORY/CHALLENGE/CRYPT/COLISEUM/FIGHT_PIT/WAR/EXPEDITIONS/
+INVASION. Limited-time (isAvailable=false, à découvrir) : BLACK_MARKET, MEGA_MART. Verrouillés : NORMAL, HEIST.
+INVASION : pas de refresh manuel. ⇒ incr. 1 sur un marchand dispo (GEAR).
+
+**Plan** (docs/MERCHANT.md) : 1) génération+affichage stock (blob) ; 2) achat (`PurchaseMerchantItem`→`purchaseItem`,
+anti-triche coût recalculé) ; 3) refresh (`REFRESH_TRADER`→`refresh`+régén, corrige le PARTIEL) ; 4) BLACK_MARKET/MEGA_MART
+limited-time. Régression inchangée (116). Aucune ligne serveur écrite à ce stade (recon pure).
+
+Fichiers : `docs/MERCHANT.md`, `MEMORY.md`.
