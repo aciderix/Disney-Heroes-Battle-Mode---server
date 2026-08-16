@@ -345,6 +345,24 @@ public final class LoginServer {
                   System.out.println("[login]     ⛔ DifficultyModeAttack REFUSÉ (anti-triche) : " + t.getMessage());
                 } else { System.out.println("[login]     ! recordDifficultyModeAttack échec: " + t); t.printStackTrace(); }
               }
+            } else if (m instanceof com.perblue.heroes.network.messages.RaidDifficultyMode) {
+              // PORT (#72) incr. 2 — RAID d'un mode « difficulty ». Le client a validé+chargé en local (useRaidTickets)
+              // puis crédité (recordRaidOutcome) et envoie l'issue (fire-and-forget). Le serveur AUTORITATIF ré-exécute
+              // useRaidTickets (anti-triche ouvert/cooldown/quota + gate 3★ + débit RAID_TICKET) PUIS recordRaidOutcome
+              // (crédit butin + XP + compteurs + cooldown) et persiste. Anti-triche = ClientErrorCodeException.
+              try {
+                com.perblue.heroes.network.messages.RaidDifficultyMode rd =
+                    (com.perblue.heroes.network.messages.RaidDifficultyMode) m;
+                user.recordRaidDifficultyMode(rd);
+                try { store.save(user); } catch (Exception e) {
+                  System.out.println("[login]     ! persistance échouée: " + e); }
+                System.out.println("[login] <== RaidDifficultyMode : " + rd.gameMode + " diff=" + rd.modeDifficulty
+                    + " ×" + (rd.outcomes == null ? 0 : rd.outcomes.size()) + " → recordRaidOutcome appliqué [persisté]");
+              } catch (Throwable t) {
+                if (t instanceof com.perblue.heroes.ClientErrorCodeException) {
+                  System.out.println("[login]     ⛔ RaidDifficultyMode REFUSÉ (anti-triche) : " + t.getMessage());
+                } else { System.out.println("[login]     ! recordRaidDifficultyMode échec: " + t); t.printStackTrace(); }
+              }
             } else if (m instanceof com.perblue.heroes.network.messages.FriendshipCampaignAttack) {
               // FRIENDSHIPS #72 incr. 3b — combat de CAMPAGNE D'AMITIÉ (MISSIONS). Le client a joué le combat
               // (client-autoritatif) et envoie l'issue (fire-and-forget). Le serveur AUTORITATIF ré-exécute

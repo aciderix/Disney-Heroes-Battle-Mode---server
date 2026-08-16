@@ -16,8 +16,8 @@
 >    incontournables), `docs/PROTOCOL.md`, `docs/SERVER_PLAN.md`, `docs/ARCHITECTURE.md`, **`docs/SCREEN_PIPELINE.md`**
 >    (pipeline d'implémentation #73), **`docs/HEADLESS_VERIFICATION.md`** (pile de vérif #74 + §SUIVI), **et la doc
 >    du MODE/SUJET en cours** — actuellement **`docs/PORT.md`** (#72, mode « Port / Docks & Entrepôt », sous-système
->    générique `DifficultyModeHelper` : incr. 1 COMBAT ✅ VÉRIFIÉ EN JEU ; **RESTE incr. 2 raid, 3 récompense double,
->    4 planning/écran**). **`docs/CHALLENGES.md`** (#72, TERMINÉ & vérifié EN JEU :
+>    générique `DifficultyModeHelper` : incr. 1 COMBAT + incr. 2 RAID ✅ VÉRIFIÉS EN JEU ; **RESTE incr. 3 récompense
+>    double `CLAIM_DOUBLE_PORT_REWARDS`, incr. 4 planning/écran**). **`docs/CHALLENGES.md`** (#72, TERMINÉ & vérifié EN JEU :
 >    rendu + CLAIM + achat de slot + cancel) et **`docs/SURGE.md`** (#72, TERMINÉ & 100 % vérifié EN JEU) restent les
 >    RÉFÉRENCES de méthode de bout
 >    en bout (rendu→combat→raid→récompenses→réclamation). Selon le sujet, aussi `docs/GUILD_WAR.md`, `docs/INVASION.md`, `docs/GUILD_GAPS.md`,
@@ -39,6 +39,9 @@
 > compression DOIT rappeler EXPLICITEMENT au successeur d'appliquer CETTE procédure de reprise EN PREMIER (relire
 > toute la doc ci-dessus, énumérer les règles §1-§8 + astuces/méthodologies/commandes, puis faire le point) AVANT
 > d'écrire du code ou de lancer un outil. Exigence explicite et répétée de l'utilisateur.
+
+Dernière mise à jour : **2026-08-16 (g121)** — **PORT (#72) incr. 2 (RAID `RaidDifficultyMode`) ✅ VÉRIFIÉ EN JEU + DB. Régression 122 tests.** Détail : `docs/PORT.md` §incr.2, `JOURNAL.md` g121.
+`ServerUser.recordRaidDifficultyMode` : le serveur ré-exécute (miroir `RaidTicketOutcomeWindow`) `DifficultyModeHelper.useRaidTickets(user, mode, diff, raidCount, snap)` [anti-triche `doChecks` ouvert/cooldown/quota + gate `isAutoAttackAvailable` 3★ (`NEEDS_THREE_STARS`) + **gate VIP `getRaidFeature(PORT)=RAID_PORT`** (`FEATURE_NOT_UNLOCKED`) + débit `RAID_TICKET` sauf VIP `RAID_WITHOUT_TICKETS`] PUIS `recordRaidOutcome(user, mode, diff, raidCount, loot, raidTime, snap)` [crédit butin `giveLoot` + XP×raidCount + `recordDailyUse`×raidCount + compteur `port_any` + **cooldown** + tracker]. `raidCount = outcomes.size()` ; `loot = merge(outcomes[i].loot)` (client-reporté §4bis/#25). **FAIT §4** : `RAID_PORT`=VIP 4 > `RAID_WITHOUT_TICKETS`=VIP 3 → **tout raid PORT légitime (VIP 4+) est SANS ticket** (`NOT_ENOUGH_RAID_TICKETS` inatteignable pour PORT). Accesseur `ServerUser.gameIndividual()` ajouté (IndividualUser vivant write-through). `PortRaidTest` (mode ouvert du jour ; 3★+VIP4 ; RAID×3 → +15000 GOLD, tickets inchangés, cooldown ; re-raid→`GAME_MODE_COOLDOWN` refusé ; round-trip wire+DB). **EN JEU (id=1)** : outil DEV `PortRaidAdmin` (VIP4+PORT 3★+cooldowns purgés) → pilote `portraid PORT_DOCKS 3` → serveur `recordRaidOutcome appliqué [persisté]` → **DB GOLD 57 893 570→57 908 570 (+15000)** ; re-raid → **`RaidDifficultyMode REFUSÉ (anti-triche) : GAME_MODE_COOLDOWN`**. Pilote `portraid <MODE> [raids]`. **RESTE PORT** : incr. 3 récompense double (`CLAIM_DOUBLE_PORT_REWARDS`), incr. 4 planning/écran.
 
 Dernière mise à jour : **2026-08-16 (g120)** — **HOOK POST-COMPACTION (double sécurité) créé.** `.claude/hooks/post-compact-reprise.sh` + `.claude/settings.json` : un hook `SessionStart` (matcher `compact`) qui se déclenche APRÈS toute compression de contexte (manuelle `/compact` OU automatique) et INJECTE dans le nouveau contexte la consigne EXPLICITE + OBLIGATOIRE d'exécuter le RITUEL DE REPRISE **EN ENTIER AVANT TOUTE CHOSE**, en y intégrant les **derniers commits** (`git log --oneline -25`) et la liste des docs à relire. Sécurité redondante s'ajoutant au handoff de compression écrit. Défensif : n'injecte rien si `source != compact`. Testé (compact → JSON `additionalContext` ; startup → vide). Détail : `JOURNAL.md` g120. **RESTE PORT** : incr. 2 raid, incr. 3 double reward, incr. 4 planning/écran.
 

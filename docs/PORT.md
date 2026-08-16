@@ -45,7 +45,24 @@ serveur ne le gère PAS encore (aucun `DifficultyModeAttack`/`recordOutcome` dif
      `PREDICTIVE_FORTIFICATION` absent de l'enum → parse non ré-entrant poisonné sous accès concurrent). **Warm-up
      mono-thread ajouté dans `ServerContext.init`** (comme GuildStats) : force le `<clinit>` UNE fois (cellule fautive
      absorbée) → chargé proprement → combat PORT OK en jeu. Cf. `docs/SHIMS.md`.
-2. ⬜ **RAID (`RaidDifficultyMode` → `recordRaidOutcome`)** : multi-combat rapide, crédit + cooldown. Test + en jeu.
+2. ✅ **RAID (`RaidDifficultyMode` → `useRaidTickets` + `recordRaidOutcome`)** : handler `LoginServer` →
+   `ServerUser.recordRaidDifficultyMode`. Le client construit `RaidDifficultyMode{outcomes:List<RaidOutcome{expEarned,
+   loot}>, raidTime}` (un `RaidOutcome` par raid, loot roulé par le client via `rollLoot`) ; le serveur ré-exécute, dans
+   l'ordre du client (miroir `RaidTicketOutcomeWindow`) : (1) `DifficultyModeHelper.useRaidTickets(user, mode, diff,
+   raidCount, snap)` = `doChecks` (ouvert/cooldown/quota) + gate `isAutoAttackAvailable` (3★ → sinon `NEEDS_THREE_STARS`)
+   + gate **VIP `getRaidFeature(PORT)=RAID_PORT`** (sinon `FEATURE_NOT_UNLOCKED`) + débit `RAID_TICKET` **sauf** VIP
+   `RAID_WITHOUT_TICKETS` ; (2) `recordRaidOutcome(user, mode, diff, raidCount, loot, raidTime, snap)` = crédit du butin
+   agrégé (`giveLoot`), XP×raidCount, `recordDailyUse`×raidCount + compteur `port_any`, **pose cooldown** + tracker.
+   `raidCount = outcomes.size()` ; `loot = merge(outcomes[i].loot)` (client-reporté §4bis/#25, comme campagne/expédition).
+   - **FAIT §4 (gate VIP)** : `getRaidFeature(PORT_DOCKS/WAREHOUSE) = RAID_PORT` débloqué au **VIP 4** ; or
+     `RAID_WITHOUT_TICKETS` s'active dès le **VIP 3** → **tout raid PORT LÉGITIME (VIP 4+) est SANS ticket** (le cas
+     `NOT_ENOUGH_RAID_TICKETS` est inatteignable pour PORT). Le raid PORT est donc VIP-gaté (VIP 4) et gratuit en tickets.
+   - Accesseur `ServerUser.gameIndividual()` ajouté (IndividualUser vivant, write-through) pour poser `setDifficultyModeStars`.
+   Test `PortRaidTest` (mode ouvert du jour ; 3★ + VIP4 ; RAID ×3 → +15000 GOLD, tickets inchangés, cooldown posé ;
+   re-raid pendant cooldown → `GAME_MODE_COOLDOWN` refusé, état inchangé ; round-trip wire + DB). **✅ VÉRIFIÉ EN JEU**
+   (id=1) : outil DEV `PortRaidAdmin` (VIP4 + PORT 3★ + cooldowns purgés) → pilote `portraid PORT_DOCKS 3` (VRAI
+   `RaidDifficultyMode` via `getNetworkProvider().sendMessage`) → serveur `recordRaidOutcome appliqué [persisté]` →
+   **DB GOLD +15000 + cooldown posé** ; re-raid → **REFUSÉ `GAME_MODE_COOLDOWN`**. Pilote `portraid <MODE> [raids]`.
 3. ⬜ **RÉCOMPENSE DOUBLE (`Action CLAIM_DOUBLE_PORT_REWARDS` → `claimDoubleRewards`)** : anti-triche (dispo/quota),
    crédit. Test + en jeu.
 4. ⬜ **PLANNING/ÉTAT** : `isOpen`/cooldown/difficulté lus par `PortChooserScreen` — vérifier que l'écran s'ouvre le bon

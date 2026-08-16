@@ -515,6 +515,12 @@ public final class DesktopLauncher {
                     else System.out.println("[portattack] usage: portattack <MODE>");
                     continue;
                 }
+                if (low.startsWith("portraid ")) {               // portraid <MODE> [raids] → RAID mode difficulty (PORT)
+                    String[] pr = ln.trim().split("[,;\\s]+");
+                    if (pr.length >= 2) TutorialDriver.portRaid(game, pr[1].toUpperCase(), pr.length >= 3 ? Integer.parseInt(pr[2]) : 3);
+                    else System.out.println("[portraid] usage: portraid <MODE> [raids]");
+                    continue;
+                }
                 if (low.startsWith("wishtarget ")) {             // wishtarget <HERO> → SET_WISHING_WELL_TARGET_HERO
                     String[] wt = ln.trim().split("[,;\\s]+");
                     if (wt.length >= 2) TutorialDriver.wishTarget(game, wt[1].toUpperCase());

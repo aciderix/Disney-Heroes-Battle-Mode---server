@@ -1351,6 +1351,36 @@ public final class TutorialDriver {
         } catch (Throwable e) { System.out.println("[portattack] échec: " + e); e.printStackTrace(); }
     }
 
+    /** DEV : joue un RAID de mode « difficulty » (ex. PORT_DOCKS) en envoyant le VRAI message
+     *  {@code RaidDifficultyMode} (×N raids, butin GOLD par raid) par le chemin réseau réel — le serveur ré-exécute
+     *  {@code useRaidTickets} (anti-triche + gate VIP/3★) puis {@code recordRaidOutcome} (crédit + cooldown).
+     *  Le compte doit être VIP4 + 3★ + hors cooldown (cf. outil DEV {@code PortRaidAdmin}). Invoqué via
+     *  "portraid &lt;MODE&gt; [raids]". */
+    public static void portRaid(GameMain game, String modeS, int raids) {
+        try {
+            com.perblue.heroes.network.messages.GameMode mode = com.perblue.heroes.network.messages.GameMode.valueOf(modeS);
+            long goldBefore = game.getYourUser().getResource(com.perblue.heroes.network.messages.ResourceType.GOLD);
+            com.perblue.heroes.network.messages.RaidDifficultyMode m = new com.perblue.heroes.network.messages.RaidDifficultyMode();
+            m.gameMode = mode; m.modeDifficulty = 1;
+            m.raidTime = com.perblue.heroes.util.TimeUtil.serverTimeNow();
+            m.outcomes = new java.util.ArrayList<>();
+            for (int i = 0; i < Math.max(1, raids); i++) {
+                com.perblue.heroes.network.messages.RaidOutcome ro = new com.perblue.heroes.network.messages.RaidOutcome();
+                ro.expEarned = 10;
+                ro.loot = new java.util.ArrayList<>();
+                com.perblue.heroes.network.messages.RewardDrop d = new com.perblue.heroes.network.messages.RewardDrop();
+                d.resourceType = com.perblue.heroes.network.messages.ResourceType.GOLD;
+                d.itemType = com.perblue.heroes.network.messages.ItemType.DEFAULT;
+                d.quantity = 5000;
+                ro.loot.add(d);
+                m.outcomes.add(ro);
+            }
+            System.out.println("[portraid] " + mode + " ×" + m.outcomes.size() + ", GOLD avant=" + goldBefore + " [chemin réseau réel]");
+            game.getNetworkProvider().sendMessage(m);
+            System.out.println("[portraid] RaidDifficultyMode(" + mode + ") envoyé");
+        } catch (Throwable e) { System.out.println("[portraid] échec: " + e); e.printStackTrace(); }
+    }
+
     /** DEV : ouvre l'écran du mastery shop {@code CollectionsShopScreen} (chemin réel, pushScreen). Invoqué via "shopscreen". */
     public static void shopScreen(GameMain game) {
         try {

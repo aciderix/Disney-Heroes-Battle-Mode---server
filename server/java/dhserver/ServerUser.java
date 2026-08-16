@@ -320,6 +320,17 @@ public final class ServerUser {
     return u;
   }
 
+  /** L'{@code IndividualUser} vivant, bâti sur le MÊME objet wire {@code individualUserExtra} (write-through : les
+   *  mutations d'état stockées sur l'individu — items, {@code difficultyModeStars}, cooldowns… — persistent). Le
+   *  {@code User} rendu par {@code gameUser()} est bindé sur le même individu. Outillage TEST/DEV. */
+  public synchronized IndividualUser gameIndividual() {
+    ServerContext.init();
+    IndividualUser iu = ClientNetworkStateConverter.getIndividualUser(
+        individualUserExtra, userID, userInfo.diamonds, "opp");
+    ServerContext.bind(ClientNetworkStateConverter.getUser(userInfo, userExtra, "opp"), iu);
+    return iu;
+  }
+
   /** Identité de base (id/nom/TL) pour peupler une entrée de classement d'arène. */
   public synchronized com.perblue.heroes.network.messages.BasicUserInfo basicInfo() {
     return userInfo.basicInfo;
@@ -3550,6 +3561,59 @@ public final class ServerUser {
     // recordOutcome : loot, attackers, defenders (ordre du client DifficultyModeAttackScreen) + attackEndTime.
     com.perblue.heroes.game.logic.DifficultyModeHelper.recordOutcome(user, m.gameMode, diff, outcome,
         m.stagesCleared, loot, attackers, defenders, m.attackEndTime, SpecialEventSnapshot.NONE);
+    resyncHeroes(user);
+    resyncDiamonds(user);
+    resyncCounts(user);
+  }
+
+  /**
+   * PORT (#72) incrément 2 — RAID d'un mode « difficulty » ({@code RaidDifficultyMode} → {@code recordRaidOutcome}).
+   * Le raid SAUTE le combat et rejoue {@code raidCount} fois un étage déjà 3★ (auto-attaque). Client-autoritatif : le
+   * client valide+charge en local ({@code useRaidTickets}), roule le butin par raid ({@code rollLoot}), crédite
+   * ({@code recordRaidOutcome}) puis envoie {@code RaidDifficultyMode} (fire-and-forget, comme {@code DifficultyModeAttack}).
+   *
+   * <p>Le serveur AUTORITATIF ré-exécute les DEUX étages du jeu (§3), dans l'ordre du client :
+   * <ol>
+   *   <li>{@code DifficultyModeHelper.useRaidTickets(user, mode, diff, raidCount, snap)} — <b>anti-triche + débit</b> :
+   *       {@code doChecks} (mode débloqué/visible/ouvert le bon jour/quota/cooldown → lève sinon), gate
+   *       {@code isAutoAttackAvailable} (étage 3★ requis → {@code NEEDS_THREE_STARS}), débit {@code RAID_TICKET}×raidCount
+   *       (sauf VIP {@code RAID_WITHOUT_TICKETS} ; sinon {@code NOT_ENOUGH_RAID_TICKETS}/{@code FEATURE_NOT_UNLOCKED}).</li>
+   *   <li>{@code DifficultyModeHelper.recordRaidOutcome(user, mode, diff, raidCount, loot, raidTime, snap)} — crédit du
+   *       butin ({@code giveLoot}), XP×raidCount, {@code recordDailyUse}×raidCount + compteurs ({@code port_any}/…),
+   *       <b>pose du cooldown</b> ({@code setCooldownEnd(raidTime + getCooldownDuration)}), tracker.</li>
+   * </ol>
+   *
+   * <p><b>raidCount</b> = {@code outcomes.size()} (le client construit un {@code RaidOutcome} par raid). <b>Loot = client</b>
+   * (PARTIEL, cohérent §4bis/#25, comme {@code recordRaidCampaign}) : chaque {@code RaidOutcome.loot} a été roulé par le
+   * client (flux RNG {@code DIFFICULTY_MODE_LOOT}, graine non rejouée côté serveur) ; on les AGRÈGE ({@code mergeRewards})
+   * et on les passe comme butin À CRÉDITER à {@code recordRaidOutcome} (qui ne re-roule pas, il {@code giveLoot} le
+   * paramètre). Persistance : {@code resyncHeroes}/{@code resyncDiamonds}/{@code resyncCounts} + write-through des cooldowns
+   * ({@code IIndividualUser.setCooldownEnd} → {@code individualUserExtra.cooldowns}) et des étoiles/quotas.
+   */
+  @SuppressWarnings({"rawtypes", "unchecked"})
+  public synchronized void recordRaidDifficultyMode(com.perblue.heroes.network.messages.RaidDifficultyMode m)
+      throws com.perblue.heroes.ClientErrorCodeException {
+    ServerContext.init();
+    User user = ClientNetworkStateConverter.getUser(userInfo, userExtra, "difficultyraid");
+    IndividualUser iu = ClientNetworkStateConverter.getIndividualUser(
+        individualUserExtra, userID, userInfo.diamonds, "difficultyraid");
+    ServerContext.bind(user, iu);
+    com.perblue.heroes.game.data.ModeDifficulty diff = com.perblue.heroes.game.data.ModeDifficulty.get(m.modeDifficulty);
+    // raidCount = nombre de RaidOutcome (un par raid) ; loot = agrégat des outcomes[i].loot (client-reporté §4bis).
+    int raidCount = m.outcomes == null ? 0 : m.outcomes.size();
+    java.util.List loot = new java.util.ArrayList();
+    if (m.outcomes != null) {
+      for (Object o : m.outcomes) {
+        com.perblue.heroes.network.messages.RaidOutcome ro = (com.perblue.heroes.network.messages.RaidOutcome) o;
+        if (ro.loot != null && !ro.loot.isEmpty())
+          com.perblue.heroes.game.logic.RewardHelper.mergeRewards(loot, ro.loot);
+      }
+    }
+    // (1) anti-triche + débit tickets (lève ClientErrorCodeException si illégitime).
+    com.perblue.heroes.game.logic.DifficultyModeHelper.useRaidTickets(user, m.gameMode, diff, raidCount, SpecialEventSnapshot.NONE);
+    // (2) crédit du butin + XP + compteurs + cooldown.
+    com.perblue.heroes.game.logic.DifficultyModeHelper.recordRaidOutcome(user, m.gameMode, diff, raidCount, loot,
+        m.raidTime, SpecialEventSnapshot.NONE);
     resyncHeroes(user);
     resyncDiamonds(user);
     resyncCounts(user);

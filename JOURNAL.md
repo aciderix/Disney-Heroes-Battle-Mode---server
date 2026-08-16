@@ -4869,3 +4869,49 @@ l'agent écrit explicitement (ceinture + bretelles).
 
 Fichiers : `.claude/hooks/post-compact-reprise.sh` (nouveau), `.claude/settings.json` (nouveau), `MEMORY.md`
 (entrée g120 + correction du pointeur « mode en cours » FRIENDSHIPS→PORT dans la note de reprise), `JOURNAL.md`.
+
+## 2026-08-16 (g121) — PORT (#72) incr. 2 : RAID (RaidDifficultyMode) ✅ VÉRIFIÉ EN JEU + DB
+
+Le RAID d'un mode « difficulty » saute le combat et rejoue `raidCount` fois un étage déjà 3★. Client-autoritatif : le
+client valide+charge en local (`ModePreviewScreen` → `useRaidTickets`), roule le butin par raid (`rollLoot`), crédite
+(`RaidTicketOutcomeWindow` → `recordRaidOutcome`), puis envoie `RaidDifficultyMode` (fire-and-forget). Le serveur
+AUTORITATIF ré-exécute les deux étages du jeu (§3).
+
+**Recon (bytecode).** `RaidDifficultyMode{gameMode, modeDifficulty:int, outcomes:List<RaidOutcome{expEarned,loot}>,
+raidTime:long, specialEvents}`. `RaidTicketOutcomeWindow` construit un `RaidOutcome` par raid (loot = `rollLoot`),
+agrège les loot (`RewardHelper.mergeRewards`) puis appelle `DifficultyModeHelper.recordRaidOutcome(user, mode, diff,
+raidCount, lootAgrégé, raidTime, snap)` avec `raidCount = outcomes.size()`. `recordRaidOutcome` (bytecode) = `giveLoot`
++ EXP×raidCount (`addExpItems`) + `recordDailyUse`×raidCount + compteur `port_any` += raidCount + **cooldown**
+(`setCooldownEnd(raidTime + getCooldownDuration)`) + `onDifficultyModeRaid`. Le débit/anti-triche est SÉPARÉ dans
+`useRaidTickets(user, mode, diff, raidCount, snap)` = `doChecks` (débloqué/visible/ouvert le bon jour/quota/cooldown)
++ gate `isAutoAttackAvailable` (étage 3★ → `NEEDS_THREE_STARS`) + gate VIP `getRaidFeature(mode,diff)` (PORT →
+`RAID_PORT`, sinon `FEATURE_NOT_UNLOCKED`) + débit `RAID_TICKET`×raidCount SAUF VIP `RAID_WITHOUT_TICKETS`.
+
+**FAIT §4 (gate VIP + tickets).** `RAID_PORT` se débloque au **VIP 4**, or `RAID_WITHOUT_TICKETS` dès le **VIP 3**
+→ **tout raid PORT LÉGITIME (VIP 4+) est SANS ticket** ; le cas `NOT_ENOUGH_RAID_TICKETS` est inatteignable pour PORT.
+Le raid PORT est donc VIP-gaté (VIP 4) et gratuit en tickets. (Sondes `VipProbe`/`VipProbe2` : RAID_PORT@4, RWT@3.)
+
+**Serveur.** `ServerUser.recordRaidDifficultyMode(RaidDifficultyMode)` (throws `ClientErrorCodeException`) : `ModeDifficulty
+.get(modeDifficulty)`, `raidCount = outcomes.size()`, `loot = merge(outcomes[i].loot)` (client-reporté §4bis/#25, comme
+`recordRaidCampaign`), puis `useRaidTickets(...)` (anti-triche+débit) et `recordRaidOutcome(...)` (crédit+cooldown), enfin
+`resyncHeroes/Diamonds/Counts`. Handler `LoginServer` (message `RaidDifficultyMode`, anti-triche `ClientErrorCodeException`).
+Nouvel accesseur `ServerUser.gameIndividual()` (IndividualUser vivant bâti sur le même `individualUserExtra` = write-through
+pour `setDifficultyModeStars`/cooldowns).
+
+**Test `PortRaidTest`** (régression 121→122) : choisit le mode PORT OUVERT le jour serveur (union DOCKS/WAREHOUSE = tous
+les jours), pose 3★ (`setDifficultyModeStars`) + VIP 4, RAID ×3 → **+15000 GOLD** (agrégat 3×5000), **tickets inchangés**
+(VIP free-raid), **cooldown posé** ; re-raid pendant cooldown → **`GAME_MODE_COOLDOWN`** refusé (GOLD/tickets inchangés) ;
+round-trip **wire + DB**.
+
+**✅ EN JEU (id=1).** Outil DEV `PortRaidAdmin` (VIP4 + `setDifficultyModeStars(PORT_DOCKS/WAREHOUSE, ONE, 3)` +
+cooldowns purgés) → pile `run-online.sh` → pilote `portraid PORT_DOCKS 3` (VRAI `RaidDifficultyMode` via
+`getNetworkProvider().sendMessage`) → serveur `<== RaidDifficultyMode : PORT_DOCKS diff=1 ×3 → recordRaidOutcome appliqué
+[persisté]` → **DB GOLD 57 893 570 → 57 908 570 (+15 000 exact)** ; 2e `portraid` → **`RaidDifficultyMode REFUSÉ
+(anti-triche) : GAME_MODE_COOLDOWN`**. Pilote `portraid <MODE> [raids]` ; outil `PortRaidAdmin`.
+
+⇒ **PORT #72 : incr. 1 (combat) + 2 (raid) vérifiés EN JEU.** RESTE : incr. 3 récompense double
+(`Action CLAIM_DOUBLE_PORT_REWARDS` → `claimDoubleRewards`), incr. 4 planning/écran (`PortChooserScreen`).
+
+Fichiers : `server/java/dhserver/{ServerUser,LoginServer}.java`, `server/smoke/{PortRaidTest,PortRaidAdmin}.java`,
+`server/smoke/regression.sh`, `desktop-port/src/main/java/dhdesktop/{TutorialDriver,DesktopLauncher}.java`,
+`docs/PORT.md`, `MEMORY.md`.
