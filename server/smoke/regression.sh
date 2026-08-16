@@ -48,6 +48,7 @@ TESTS=(
   MerchantGenTest MerchantPurchaseTest MerchantRefreshTest MerchantLimitedTest
   PortAttackTest
   PortRaidTest
+  PortDoubleRewardTest
 )
 
 echo "[reg] compilation (serveur + ${#TESTS[@]} tests) ..."

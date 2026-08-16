@@ -521,6 +521,10 @@ public final class DesktopLauncher {
                     else System.out.println("[portraid] usage: portraid <MODE> [raids]");
                     continue;
                 }
+                if (low.equals("portdouble") || low.startsWith("portdouble ")) {  // portdouble → CLAIM_DOUBLE_PORT_REWARDS
+                    TutorialDriver.portDouble(game);
+                    continue;
+                }
                 if (low.startsWith("wishtarget ")) {             // wishtarget <HERO> → SET_WISHING_WELL_TARGET_HERO
                     String[] wt = ln.trim().split("[,;\\s]+");
                     if (wt.length >= 2) TutorialDriver.wishTarget(game, wt[1].toUpperCase());

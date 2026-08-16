@@ -78,6 +78,16 @@ public final class ServerUser {
   private final java.util.Map<com.perblue.heroes.network.messages.RandomSeedType, Long> pendingSeeds =
       new java.util.EnumMap<>(com.perblue.heroes.network.messages.RandomSeedType.class);
 
+  // PORT (#72) incr. 3 — RÉCOMPENSE DOUBLE (vidéo). Après un combat/raid d'un mode « difficulty » SANS le VIP
+  // DOUBLE_PORT_REWARDS, la logique du jeu (giveLoot) pose un DoubleVideoLootContainer{loot, mode, diff} sur
+  // l'IndividualUser RUNTIME (getVideoDoubleLoot). Ce container n'a **AUCUNE** représentation wire (aucune classe de
+  // message ne le référence — vérifié : purement runtime, PERDU au restart même dans le jeu) → §6 : on persiste ce que
+  // le jeu persiste, donc RIEN. Comme le convertisseur reconstruit un IndividualUser frais à chaque requête, on
+  // MÉMORISE le container ici (état de SESSION, comme pendingSeeds), le ServerUser étant caché par connexion
+  // (LoginServer.connUsers) → le CLAIM (requête séparée, Action CLAIM_DOUBLE_PORT_REWARDS) le retrouve, fidèle au
+  // flux client (popup « regarder une vidéo pour doubler » juste après le combat). Consommé au claim, null sinon.
+  private com.perblue.heroes.game.objects.DoubleVideoLootContainer pendingDoubleLoot;
+
   private ServerUser(long userID, int shardID,
                      UserInfo userInfo, UserExtra userExtra, IndividualUserExtra individualUserExtra) {
     this.userID = userID;
@@ -2752,6 +2762,30 @@ public final class ServerUser {
   private boolean applyCommand(Action m, User user) {
     String cmd = m.command == null ? "" : m.command.name();
     switch (cmd) {
+      case "CLAIM_DOUBLE_PORT_REWARDS": {
+        // PORT (#72) incr. 3 — RÉCOMPENSE DOUBLE (regarder une vidéo pour doubler le butin d'un combat/raid de mode
+        // « difficulty »). Le client émet Action{CLAIM_DOUBLE_PORT_REWARDS} (ClientActionHelper.claimDoublePortRewards)
+        // après la vidéo. Le serveur ré-exécute la logique du jeu (§3) DifficultyModeHelper.claimDoubleRewards :
+        // crédite le DoubleVideoLootContainer posé par le combat/raid (getVideoDoubleLoot) puis le vide (anti double-
+        // claim). Anti-triche RÉEL : container absent → DOUBLE_REWARDS_NOT_AVAILABLE. Le container est un état de
+        // SESSION (pendingDoubleLoot, cf. champ) → on le restaure sur l'IndividualUser courant avant l'appel.
+        if (pendingDoubleLoot != null) user.getIndividual().setVideoDoubleLoot(pendingDoubleLoot);
+        try {
+          java.util.Collection<?> given = com.perblue.heroes.game.logic.DifficultyModeHelper.claimDoubleRewards(
+              user, com.perblue.heroes.game.specialevent.SpecialEventSnapshot.NONE);
+          pendingDoubleLoot = null;   // consommé (anti double-claim, comme le jeu vide le container)
+          System.out.println("[action] CLAIM_DOUBLE_PORT_REWARDS → récompense double créditée ("
+              + (given == null ? 0 : given.size()) + " drops) [logique du jeu]");
+          return true;
+        } catch (Throwable t) {
+          // claimDoubleRewards lève ClientErrorCodeException (DOUBLE_REWARDS_NOT_AVAILABLE) sans la DÉCLARER (dex2jar).
+          pendingDoubleLoot = null;   // rien à réclamer : on nettoie l'état de session
+          boolean antiCheat = t instanceof com.perblue.heroes.ClientErrorCodeException;
+          System.out.println("[action]     " + (antiCheat ? "⛔ CLAIM_DOUBLE_PORT_REWARDS REFUSÉ (anti-triche) : "
+              : "! CLAIM_DOUBLE_PORT_REWARDS échec : ") + t.getMessage());
+          return false;
+        }
+      }
       case "SELL_ITEM": {
         // Écran ITEMS (inventaire) : VENDRE un objet contre de l'or. Le client envoie SELL_ITEM{itemType,
         // COUNT} (ClientActionHelper.sellItem, fire-and-forget). Logique d'origine EXACTE UserHelper.sellItem :
@@ -3561,6 +3595,8 @@ public final class ServerUser {
     // recordOutcome : loot, attackers, defenders (ordre du client DifficultyModeAttackScreen) + attackEndTime.
     com.perblue.heroes.game.logic.DifficultyModeHelper.recordOutcome(user, m.gameMode, diff, outcome,
         m.stagesCleared, loot, attackers, defenders, m.attackEndTime, SpecialEventSnapshot.NONE);
+    // incr. 3 : mémorise le container de récompense double posé par giveLoot (null si VIP DOUBLE_PORT_REWARDS = auto-doublé).
+    this.pendingDoubleLoot = iu.getVideoDoubleLoot();
     resyncHeroes(user);
     resyncDiamonds(user);
     resyncCounts(user);
@@ -3614,6 +3650,8 @@ public final class ServerUser {
     // (2) crédit du butin + XP + compteurs + cooldown.
     com.perblue.heroes.game.logic.DifficultyModeHelper.recordRaidOutcome(user, m.gameMode, diff, raidCount, loot,
         m.raidTime, SpecialEventSnapshot.NONE);
+    // incr. 3 : mémorise le container de récompense double posé par giveLoot (null si VIP DOUBLE_PORT_REWARDS).
+    this.pendingDoubleLoot = iu.getVideoDoubleLoot();
     resyncHeroes(user);
     resyncDiamonds(user);
     resyncCounts(user);

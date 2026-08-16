@@ -4915,3 +4915,50 @@ cooldowns purgés) → pile `run-online.sh` → pilote `portraid PORT_DOCKS 3` (
 Fichiers : `server/java/dhserver/{ServerUser,LoginServer}.java`, `server/smoke/{PortRaidTest,PortRaidAdmin}.java`,
 `server/smoke/regression.sh`, `desktop-port/src/main/java/dhdesktop/{TutorialDriver,DesktopLauncher}.java`,
 `docs/PORT.md`, `MEMORY.md`.
+
+## 2026-08-16 (g122) — PORT (#72) incr. 3 : RÉCOMPENSE DOUBLE (CLAIM_DOUBLE_PORT_REWARDS) ✅ VÉRIFIÉ EN JEU + DB
+
+« Regarder une vidéo pour doubler » le butin du dernier combat/raid d'un mode « difficulty ». Client-autoritatif : après
+la vidéo, le client émet `Action{CLAIM_DOUBLE_PORT_REWARDS}` (`ClientActionHelper.claimDoublePortRewards`). Le serveur
+ré-exécute la logique du jeu (§3).
+
+**Recon (bytecode).** `DifficultyModeHelper.giveLoot` (privé, appelé par recordOutcome ET recordRaidOutcome) : pour un
+mode PORT (`VideoHelper.isPortMode`), si VIP `DOUBLE_PORT_REWARDS` (VIP 4) → copie le butin et le crédite **×2 inline** ;
+SINON → crédite ×1 + `new DoubleVideoLootContainer(loot, mode, diff)` + `IIndividualUser.setVideoDoubleLoot(container)`.
+`claimDoubleRewards(user, snap)` : lit `getIndividual().getVideoDoubleLoot()` → si null lève **`DOUBLE_REWARDS_NOT_AVAILABLE`**
+(anti-triche) ; sinon `RewardHelper.giveRewards(container.loot, container.mode, …)` + vide le container ; renvoie le loot.
+
+**FAIT §6 (persistance).** `DoubleVideoLootContainer` (POJO `{gameMode, loot:Collection<RewardDrop>, modeDifficulty}`,
+PAS un GruntMessage) n'est référencé QUE par DoubleVideoLootContainer/IndividualUser/IIndividualUser/VideoHelper/
+DifficultyModeHelper — **AUCUNE** classe de message/BootData → **purement runtime, non persisté par le jeu** (perdu au
+restart, même dans le jeu original). §6 = on persiste ce que le jeu persiste ⇒ RIEN en DB. Fidélité = **in-session** (le
+client montre la popup juste après le combat). Comme le converter (`ClientNetworkStateConverter`, classe du jeu)
+reconstruit un IndividualUser FRAIS à chaque requête, le container serait perdu entre la requête combat et la requête
+claim. Solution : champ de SESSION `ServerUser.pendingDoubleLoot` (comme `pendingSeeds`), posé dans
+`recordDifficultyModeAttack`/`recordRaidDifficultyMode` (`= iu.getVideoDoubleLoot()` après le record). Le `ServerUser`
+étant caché par connexion (`LoginServer.connUsers`, ligne 180), le CLAIM (même connexion) le retrouve → restauré via
+`user.getIndividual().setVideoDoubleLoot(pendingDoubleLoot)` avant `claimDoubleRewards`. AUCUN schéma DB inventé (§2/§4).
+
+**Serveur.** `ServerUser.applyCommand` case `CLAIM_DOUBLE_PORT_REWARDS` : restaure le container de session → `claimDoubleRewards`
+→ vide `pendingDoubleLoot` (anti double-claim). Refus (`DOUBLE_REWARDS_NOT_AVAILABLE`, non déclaré par dex2jar → catch
+`Throwable` + `instanceof`). Routé par le fallback générique `applyAction` de `LoginServer` (aucun else-if dédié requis),
+persistance sur succès. Seuils VIP (sondes) : `DOUBLE_PORT_REWARDS`=VIP 4.
+
+**Test `PortDoubleRewardTest`** (régression 122→123) : VIP 0 (pas d'auto-double) ; combat +5000 GOLD (pose le container)
+→ `applyAction(CLAIM_DOUBLE_PORT_REWARDS)` → +5000 encore (total +10000, ×2) ; re-claim → `DOUBLE_REWARDS_NOT_AVAILABLE`
+refusé (GOLD inchangé) ; claim sans combat (nouvelle instance) refusé ; GOLD (combat+double) persiste wire+DB (le
+container de session, lui, n'est pas persisté = fidèle au jeu).
+
+**✅ EN JEU (id=1).** Compte remis à VIP 0 + cooldowns PORT purgés → `portattack PORT_DOCKS` (combat, pose le container)
+→ `portdouble` (VRAIE `Action CLAIM_DOUBLE_PORT_REWARDS` via `getNetworkProvider().sendMessage`) → serveur
+`CLAIM_DOUBLE_PORT_REWARDS → récompense double créditée (1 drops) [logique du jeu]` → **DB GOLD 57 908 570 → 57 918 570
+(+10 000 = combat 5000 doublé)** ; 2e `portdouble` → **`CLAIM_DOUBLE_PORT_REWARDS REFUSÉ (anti-triche) :
+DOUBLE_REWARDS_NOT_AVAILABLE`**. Pilote `portdouble`.
+
+⇒ **PORT #72 : incr. 1 (combat) + 2 (raid) + 3 (récompense double) vérifiés EN JEU.** RESTE : incr. 4 planning/écran
+(`PortChooserScreen` : isOpen/open-days/cooldown/difficultés — vérif rendu le bon jour).
+
+Fichiers : `server/java/dhserver/ServerUser.java` (champ `pendingDoubleLoot` + stash dans les 2 record* + case
+`applyCommand`), `server/smoke/PortDoubleRewardTest.java`, `server/smoke/regression.sh`,
+`desktop-port/src/main/java/dhdesktop/{TutorialDriver,DesktopLauncher}.java` (pilote `portdouble`),
+`docs/PORT.md`, `MEMORY.md`.

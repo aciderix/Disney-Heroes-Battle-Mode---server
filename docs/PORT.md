@@ -63,8 +63,24 @@ serveur ne le gère PAS encore (aucun `DifficultyModeAttack`/`recordOutcome` dif
    (id=1) : outil DEV `PortRaidAdmin` (VIP4 + PORT 3★ + cooldowns purgés) → pilote `portraid PORT_DOCKS 3` (VRAI
    `RaidDifficultyMode` via `getNetworkProvider().sendMessage`) → serveur `recordRaidOutcome appliqué [persisté]` →
    **DB GOLD +15000 + cooldown posé** ; re-raid → **REFUSÉ `GAME_MODE_COOLDOWN`**. Pilote `portraid <MODE> [raids]`.
-3. ⬜ **RÉCOMPENSE DOUBLE (`Action CLAIM_DOUBLE_PORT_REWARDS` → `claimDoubleRewards`)** : anti-triche (dispo/quota),
-   crédit. Test + en jeu.
+3. ✅ **RÉCOMPENSE DOUBLE (`Action CLAIM_DOUBLE_PORT_REWARDS` → `claimDoubleRewards`)** : « regarder une vidéo pour
+   doubler » le butin du dernier combat/raid. Mécanique (bytecode) : `giveLoot` (appelé par recordOutcome/recordRaid)
+   — si VIP **`DOUBLE_PORT_REWARDS`** (VIP 4) → butin ×2 **inline** ; SINON → butin ×1 + pose un
+   `DoubleVideoLootContainer{loot, mode, diff}` sur l'IndividualUser runtime. `claimDoubleRewards(user, snap)` crédite
+   ce container (`giveRewards`) puis le VIDE ; container absent → **`DOUBLE_REWARDS_NOT_AVAILABLE`** (anti-triche).
+   - **FAIT §6 (persistance)** : `DoubleVideoLootContainer` n'est référencé par **AUCUNE** classe de message/BootData
+     (vérifié) → **purement runtime, non persisté par le jeu** (perdu au restart). Fidélité = **in-session** (le client
+     montre la popup juste après le combat). Comme le converter reconstruit un IndividualUser frais par requête, on
+     MÉMORISE le container sur le `ServerUser` (champ de session `pendingDoubleLoot`, posé dans `recordDifficultyModeAttack`
+     /`recordRaidDifficultyMode` via `getVideoDoubleLoot`), le `ServerUser` étant caché par connexion (`LoginServer.connUsers`)
+     → le CLAIM (requête séparée) le retrouve. AUCUN schéma DB inventé (§2/§4).
+   - Handler : `applyCommand` case `CLAIM_DOUBLE_PORT_REWARDS` (restaure `setVideoDoubleLoot(pendingDoubleLoot)` →
+     `claimDoubleRewards` → vide `pendingDoubleLoot`) ; routé par le fallback générique `applyAction` de `LoginServer`.
+   Test `PortDoubleRewardTest` (VIP 0 ; combat +5000 → CLAIM +5000 = ×2 ; re-claim → `DOUBLE_REWARDS_NOT_AVAILABLE`
+   refusé ; claim sans combat refusé ; GOLD persiste wire+DB). **✅ VÉRIFIÉ EN JEU** (id=1) : `portattack PORT_DOCKS`
+   (combat, pose le container) → `portdouble` (VRAIE `Action CLAIM_DOUBLE_PORT_REWARDS`) → serveur `récompense double
+   créditée [logique du jeu]` → **DB GOLD doublé** ; re-`portdouble` → **REFUSÉ `DOUBLE_REWARDS_NOT_AVAILABLE`**.
+   Pilote `portdouble`.
 4. ⬜ **PLANNING/ÉTAT** : `isOpen`/cooldown/difficulté lus par `PortChooserScreen` — vérifier que l'écran s'ouvre le bon
    jour avec les difficultés + cooldown corrects (poussée au boot si nécessaire, façon InvasionInfo).
 

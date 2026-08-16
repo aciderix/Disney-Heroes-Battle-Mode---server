@@ -1381,6 +1381,21 @@ public final class TutorialDriver {
         } catch (Throwable e) { System.out.println("[portraid] échec: " + e); e.printStackTrace(); }
     }
 
+    /** DEV : réclame la RÉCOMPENSE DOUBLE d'un mode « difficulty » (après un combat, sans le VIP DOUBLE_PORT_REWARDS)
+     *  en envoyant la VRAIE {@code Action CLAIM_DOUBLE_PORT_REWARDS} par le chemin réseau réel — le serveur ré-exécute
+     *  {@code claimDoubleRewards} (crédite le container de double butin posé par le combat, puis le vide). À lancer
+     *  APRÈS un `portattack`. Invoqué via "portdouble". */
+    public static void portDouble(GameMain game) {
+        try {
+            long goldBefore = game.getYourUser().getResource(com.perblue.heroes.network.messages.ResourceType.GOLD);
+            com.perblue.heroes.network.messages.Action m = new com.perblue.heroes.network.messages.Action();
+            m.command = com.perblue.heroes.network.messages.CommandType.CLAIM_DOUBLE_PORT_REWARDS;
+            System.out.println("[portdouble] CLAIM_DOUBLE_PORT_REWARDS, GOLD avant=" + goldBefore + " [chemin réseau réel]");
+            game.getNetworkProvider().sendMessage(m);
+            System.out.println("[portdouble] Action(CLAIM_DOUBLE_PORT_REWARDS) envoyée");
+        } catch (Throwable e) { System.out.println("[portdouble] échec: " + e); e.printStackTrace(); }
+    }
+
     /** DEV : ouvre l'écran du mastery shop {@code CollectionsShopScreen} (chemin réel, pushScreen). Invoqué via "shopscreen". */
     public static void shopScreen(GameMain game) {
         try {
