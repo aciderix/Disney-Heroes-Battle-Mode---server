@@ -239,6 +239,10 @@ public final class LoginServer {
               // l'écran pour l'envoyer. Poule et œuf : le VRAI backend la pousse au login, comme
               // `SocialHistory` pour le chat. On fait pareil.
               sendInvasionInfo(c, user, null);
+              // MARCHANDS (#72 incr. 1b) : le stock est POUSSÉ après le REFRESH_SPECIAL_EVENTS post-boot (et non
+              // dans la rafale de boot) — sinon le reset() du BootData côté client efface les marchands appliqués
+              // (ils vivent sur l'IndividualUser que le BootData reconstruit ; cf. SocialHistory tamponné). Voir
+              // le handler REFRESH_SPECIAL_EVENTS plus bas.
             } else if (m instanceof ChangeTutorialStep) {
               // Progression du tutoriel : le serveur est autoritaire → on met à jour l'état ET on
               // PERSISTE (SQLite, octets wire). Fire-and-forget côté client (aucune réponse attendue).
@@ -381,6 +385,16 @@ public final class LoginServer {
                     : raw.signinRewards.thisMonth.rewards.size();
                 System.out.println("[login]     ==> SpecialEventsRaw (reply, 0 évènement, "
                     + nDays + " jours de sign-in)");
+                // MARCHANDS (#72 incr. 1b) — POUSSER le stock ICI (post-boot, user client stabilisé → survit au
+                // reset du BootData). Génère si absent (persiste), sinon réutilise le blob persisté. Le client
+                // applique via GameMain→MerchantUpdate (initMerchantData + updateUI). Idempotent.
+                try {
+                  java.util.List<com.perblue.heroes.network.messages.MerchantUpdate> mus = user.bootMerchantUpdates();
+                  for (com.perblue.heroes.network.messages.MerchantUpdate mu : mus) c.send(mu);
+                  if (!mus.isEmpty()) { try { store.save(user); } catch (Exception e) {
+                    System.out.println("[login]     ! persistance marchands échouée: " + e); } }
+                  System.out.println("[login]     ==> MerchantUpdate x" + mus.size() + " (stock marchands)");
+                } catch (Throwable t) { System.out.println("[login]     ! push marchands échoué: " + t); }
               } else if (act.command == com.perblue.heroes.network.messages.CommandType.START_FIGHT_PIT_ATTACK
                   || act.command == com.perblue.heroes.network.messages.CommandType.START_COLISEUM_ATTACK) {
                 // ARÈNE #44 — START d'attaque : le client ATTEND Start(Arena|Coliseum)AttackResponse (héros du

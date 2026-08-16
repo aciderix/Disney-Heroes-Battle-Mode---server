@@ -74,8 +74,14 @@ Les upsells (`MERCHANT_SLOTS_PERK_UPSELL`) ont prix 0 (slots verrouillés — fi
 1. 🟢 **Génération du stock (blob serveur-autoritatif) — HEADLESS FAIT** : `ServerUser.generateMerchant(type)` roule
    `MerchantStats.<TYPE>_DROP_STATS` (via `merchantTable` réflexion) + `UserDTContext` → `MerchantData` (objets + coût =
    prix `items.tab` × qté + monnaie) → write-through `individualUserExtra.merchantData` (EnumMap). `MerchantGenTest`
-   (GEAR 10 objets, coûts = items.tab × qté, round-trip wire + DB, 2 marchands coexistent). **RESTE (incr. 1b)** : pousser
-   `MerchantUpdate` au boot/à l'accès + vérif EN JEU (écran marchand affiche objets + prix).
+   (GEAR 10 objets, coûts = items.tab × qté, round-trip wire + DB, 2 marchands coexistent).
+   - ✅ **incr. 1b — push + affichage EN JEU** : `ServerUser.bootMerchantUpdates()` (génère si absent les marchands
+     DISPONIBLES+débloqués, réutilise le persisté sinon) → `LoginServer` pousse les `MerchantUpdate` **après le
+     `REFRESH_SPECIAL_EVENTS` post-boot** (PAS dans la rafale de boot : le `reset()` du BootData efface sinon les
+     marchands appliqués — ils vivent sur l'`IndividualUser` reconstruit ; cf. SocialHistory). **✅ VÉRIFIÉ EN JEU (id=1)**
+     : serveur `MerchantUpdate x8` → client `GEAR : 10 objets` → écran **BADGE BAZAAR** affiche les objets + prix (CUTE-ING
+     STAR 5 290, DINOCO 400 87 515 en rouge=trop cher, etc.) + timer de refresh — capture `build/merchant_gear_ingame.png`.
+     Pilote `merchantscreen <TYPE>`.
 2. ⬜ **ACHAT (`PurchaseMerchantItem` → `MerchantHelper.purchaseItem`)** : anti-triche (coût/quantité RECALCULÉS serveur,
    `expectedCost` ignoré), débit monnaie + don objet + marque `purchased`, persistance. Vérif en jeu.
 3. ⬜ **REFRESH (`Action REFRESH_TRADER` → `MerchantHelper.refresh` + régénération)** : corrige le PARTIEL actuel ;

@@ -491,6 +491,12 @@ public final class DesktopLauncher {
                     TutorialDriver.shopScreen(game);
                     continue;
                 }
+                if (low.startsWith("merchantscreen ")) {         // merchantscreen <TYPE> → ouvre un marchand
+                    String[] ms = ln.trim().split("[,;\\s]+");
+                    if (ms.length >= 2) TutorialDriver.merchantScreen(game, ms[1].toUpperCase());
+                    else System.out.println("[merchantscreen] usage: merchantscreen <TYPE>");
+                    continue;
+                }
                 if (low.startsWith("wishtarget ")) {             // wishtarget <HERO> → SET_WISHING_WELL_TARGET_HERO
                     String[] wt = ln.trim().split("[,;\\s]+");
                     if (wt.length >= 2) TutorialDriver.wishTarget(game, wt[1].toUpperCase());

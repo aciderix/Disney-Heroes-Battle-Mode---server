@@ -4643,3 +4643,31 @@ vérif EN JEU (écran marchand affiche objets + prix). Puis incr. 2 (achat), 3 (
 
 Fichiers : `server/java/dhserver/ServerUser.java` (+generateMerchant/merchantTable/priceStat/merchantDataPersisted),
 `server/smoke/MerchantGenTest.java`, `server/smoke/regression.sh`, `docs/MERCHANT.md`, `MEMORY.md`.
+
+---
+
+## 2026-08-16 (g114) — MERCHANT (#72) incr. 1b : push MerchantUpdate post-boot ✅ VÉRIFIÉ EN JEU + VISUEL
+
+Livraison au client du stock marchand généré (incr. 1). `ServerUser.bootMerchantUpdates()` : pour chaque marchand
+DISPONIBLE + débloqué (GEAR/MEMORY/CHALLENGE/CRYPT/COLISEUM/FIGHT_PIT/WAR/EXPEDITIONS/INVASION), génère le stock s'il est
+absent/vide (write-through, persiste) sinon réutilise le blob persisté (le stock NE se régénère PAS à chaque login) →
+renvoie les `MerchantUpdate{type,data,reason=0}`.
+
+**Timing (leçon SocialHistory).** Poussé au boot direct = PERDU : le `reset()` du BootData côté client efface les
+marchands appliqués (ils vivent sur l'`IndividualUser` que le BootData reconstruit ; le handler client
+`GameMain.lambda$…$28` fait `getIndividual().initMerchantData + updateUI`). Corrigé : `LoginServer` pousse les
+`MerchantUpdate` **après le `REFRESH_SPECIAL_EVENTS` post-boot** (user client stabilisé) → survit. En jeu : d'abord
+`GEAR : 0 objets` (push au boot) → après correction `GEAR : 10 objets`.
+
+**✅ VÉRIFIÉ EN JEU + VISUEL (id=1).** Serveur `==> MerchantUpdate x8 (stock marchands)` → pilote `merchantscreen GEAR`
+(chemin réel `new MerchantScreen(GEAR)`) → **écran BADGE BAZAAR** affiche les 10 objets avec prix (CUTE-ING STAR 5 290,
+LUCKY CRICKET 3 910, DINOCO 400 87 515 en ROUGE=trop cher vs 39 000 jetons, CIRCLE OF LIFE 7 935, BROKEN NECKLACE 31 970,
+MAGIC BRUSH 18 285…) + « Refreshes next Saturday » + bouton REFRESH — capture `build/merchant_gear_ingame.png`. Prix =
+`items.tab` (TOKEN_PRICE) servis par NOTRE serveur. Pilote DEV `merchantscreen <TYPE>`.
+
+⇒ **MERCHANT #72 : incr. 1 (génération) + 1b (push/affichage) vérifiés EN JEU.** RESTE : incr. 2 achat
+(`PurchaseMerchantItem`→`purchaseItem`, anti-triche coût recalculé), incr. 3 refresh (`REFRESH_TRADER`→`refresh`+régén,
+corrige le PARTIEL en boucle), incr. 4 BLACK_MARKET limited-time.
+
+Fichiers : `server/java/dhserver/{ServerUser,LoginServer}.java`, `desktop-port/src/main/java/dhdesktop/{TutorialDriver,
+DesktopLauncher}.java`, `docs/MERCHANT.md`, `MEMORY.md`.

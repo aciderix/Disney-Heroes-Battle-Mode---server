@@ -3466,6 +3466,47 @@ public final class ServerUser {
     return (com.perblue.heroes.network.messages.MerchantData) individualUserExtra.merchantData.get(type);
   }
 
+  /** Marchands poussés à intégrer au BOOT (DISPONIBLES + débloqués), toujours en rotation permanente (pas
+   *  limited-time). L'ordre suit l'écran ; les limités (BLACK_MARKET/MEGA_MART) sont gérés à part (découverte). */
+  private static final com.perblue.heroes.network.messages.MerchantType[] BOOT_MERCHANTS = {
+      com.perblue.heroes.network.messages.MerchantType.GEAR,
+      com.perblue.heroes.network.messages.MerchantType.MEMORY,
+      com.perblue.heroes.network.messages.MerchantType.CHALLENGE,
+      com.perblue.heroes.network.messages.MerchantType.CRYPT,
+      com.perblue.heroes.network.messages.MerchantType.COLISEUM,
+      com.perblue.heroes.network.messages.MerchantType.FIGHT_PIT,
+      com.perblue.heroes.network.messages.MerchantType.WAR,
+      com.perblue.heroes.network.messages.MerchantType.EXPEDITIONS,
+      com.perblue.heroes.network.messages.MerchantType.INVASION,
+  };
+
+  /**
+   * MERCHANT (#72) incr. 1b — construit les {@code MerchantUpdate} à POUSSER au boot pour chaque marchand
+   * DISPONIBLE + débloqué : génère le stock s'il est absent/vide (blob write-through, persiste), sinon réutilise
+   * le stock persisté (le stock ne se régénère PAS à chaque login — refresh = timer/manuel). À envoyer par le
+   * {@code LoginServer} après le {@code BootData} (le client applique via {@code GameMain} → {@code MerchantUpdate}).
+   */
+  public synchronized java.util.List<com.perblue.heroes.network.messages.MerchantUpdate> bootMerchantUpdates() {
+    ServerContext.init();
+    User user = ClientNetworkStateConverter.getUser(userInfo, userExtra, "merchant");
+    IndividualUser iu = ClientNetworkStateConverter.getIndividualUser(
+        individualUserExtra, userID, userInfo.diamonds, "merchant");
+    ServerContext.bind(user, iu);
+    java.util.List<com.perblue.heroes.network.messages.MerchantUpdate> out = new java.util.ArrayList<>();
+    for (com.perblue.heroes.network.messages.MerchantType t : BOOT_MERCHANTS) {
+      try {
+        if (!com.perblue.heroes.game.logic.MerchantHelper.isMerchantUnlocked(t, user)) continue;
+        if (!com.perblue.heroes.game.logic.MerchantHelper.isAvailable(user, t)) continue;
+        com.perblue.heroes.network.messages.MerchantData data = merchantDataPersisted(t);
+        if (data == null || data.inventory == null || data.inventory.isEmpty()) data = generateMerchant(t);
+        com.perblue.heroes.network.messages.MerchantUpdate u = new com.perblue.heroes.network.messages.MerchantUpdate();
+        u.type = t; u.data = data; u.reason = 0;
+        out.add(u);
+      } catch (Throwable ignore) { /* un marchand qui échoue ne bloque pas le boot */ }
+    }
+    return out;
+  }
+
   // --- Sérialisation wire (octets identiques au réseau) pour la persistance ---
   public synchronized byte[] userInfoWire()   { return wire(userInfo); }
   public synchronized byte[] userExtraWire()  { return wire(userExtra); }

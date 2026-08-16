@@ -1258,6 +1258,18 @@ public final class TutorialDriver {
         } catch (Throwable t) { System.out.println("[wishscreen] échec: " + t); t.printStackTrace(); }
     }
 
+    /** DEV : OUVRE le VRAI écran d'un MARCHAND {@code MerchantScreen(type)} (chemin réel, pushScreen) — pour
+     *  vérification VISUELLE du stock généré serveur (objets + prix). Invoqué via "merchantscreen &lt;TYPE&gt;". */
+    public static void merchantScreen(GameMain game, String typeS) {
+        try {
+            com.perblue.heroes.network.messages.MerchantType t = com.perblue.heroes.network.messages.MerchantType.valueOf(typeS);
+            int n = 0; for (Object o : game.getYourUser().getMerchantItems(t)) n++;
+            System.out.println("[merchantscreen] " + t + " : " + n + " objets côté client [chemin réel]");
+            game.getScreenManager().pushScreen(new com.perblue.heroes.ui.screens.MerchantScreen(t));
+            System.out.println("[merchantscreen] MerchantScreen(" + t + ") poussé");
+        } catch (Throwable e) { System.out.println("[merchantscreen] échec: " + e); e.printStackTrace(); }
+    }
+
     /** DEV : ouvre l'écran du mastery shop {@code CollectionsShopScreen} (chemin réel, pushScreen). Invoqué via "shopscreen". */
     public static void shopScreen(GameMain game) {
         try {
