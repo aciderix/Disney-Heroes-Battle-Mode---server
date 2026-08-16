@@ -4395,3 +4395,43 @@ Pilotes DEV : `campfight <chapter> <level>` (pousse le chooser), `campquick` (s�
 
 Fichiers : `desktop-port/src/main/java/dhdesktop/{TutorialDriver,DesktopLauncher}.java`,
 `server/smoke/ExpAdminCollectionFight.java`, `docs/COLLECTIONS.md`, `MEMORY.md`.
+
+---
+
+## 2026-08-11 (g107) — COLLECTIONS (#72) incr. 3 : mastery shop (achat d'avatar) ✅ VÉRIFIÉ EN JEU + VISUEL
+
+Incrément cosmétique = « HERO MASTERY SHOP » : dépenser les MASTERY_TOKENS (gagnés par les claims, incr. 1) pour des
+avatars/bordures de collection.
+
+**Handler.** `Action BUY_COLLECTION_AVATAR{itemType=avatar}` (émetteur `ClientActionHelper.buyCollectionAvatar` ;
+l'ItemType passe par le champ `Action.itemType`) → `LoginServer` → `ServerUser.applyBuyCollectionAvatar` : ré-exécute
+la logique du jeu (§3) `CollectionHelper.buyCollectionAvatar(user, itemType)` : gate `getCumulativeCollectionLevel >=
+CollectionStats.getCumulativeCollectionLevelRequiredForPortrait` (sinon `COLLECTION_AVATAR_LOCKED`) ; débit
+`MASTERY_TOKENS` (`getAvatarCost`) ; `giveUser(itemType, 1)` (avatar = item, write-through). Persistance items/ressources
+write-through + resync.
+
+**Faits (sondes).** `getMasteryShopAvatars(user)` = 26 avatars ; `COLLECTION_AVATAR_DAMAGE` coûte 100 MASTERY_TOKENS et
+requiert cumLevel(DAMAGE) >= 8 (`getCumulativeCollectionLevel` = Σ highestClaimed/tier ; max 3/tier via debug →
+BRONZE/SILVER/GOLD=3 → 9). ItemType = fnum (valeur data-définie → `ItemType.valueOf`).
+
+**Test `CollectionAvatarTest`.** Achat → MASTERY_TOKENS −100 + avatar possédé (+1) ; anti-triche 1 : niveau non atteint
+→ `COLLECTION_AVATAR_LOCKED`, aucun débit ; anti-triche 2 : tokens insuffisants → refus, aucun avatar ; persist wire+DB.
+Régression → **114 tests**.
+
+**✅ VÉRIFIÉ EN JEU + VISUEL (id=1).** `ExpAdminAvatar` : cumLevel(DAMAGE)=9 + 1000 MASTERY_TOKENS. `buyavatar
+COLLECTION_AVATAR_DAMAGE` (chemin client réel) → serveur **`BUY_COLLECTION_AVATAR(COLLECTION_AVATAR_DAMAGE) appliqué
+[persisté]`** → **DB : MASTERY_TOKENS 1000→900 (−100), avatar possédé=1**. Écran **HERO MASTERY SHOP** ré-ouvert
+(`shopscreen`) affiche le solde **900** (chargé depuis notre serveur) — capture `build/avatar_shop_ingame.png`.
+
+**`CLAIM_COSMETIC_COLLECTION`** (collections d'emojis) : la logique serveur est ABSENTE du jar 12.1.0 (aucun helper ni
+consommateur — même catégorie que le filtre de profanité / `TOGGLE_HERO_FILTER`) ; le stockage
+`claimedCosmeticCollections` (Set runtime) est resyncable, mais la règle d'éligibilité (posséder toute la collection
+d'emojis) n'est pas exécutable sans l'inventer → **gap documenté honnêtement (§2/§4), non implémenté** (pas
+« optionnel » : absent du jar).
+
+⇒ **COLLECTIONS #72 : incr. 1 (claim) + 2 (maîtrise de combat) + 3 (mastery shop avatar) TOUS vérifiés EN JEU.**
+Pilotes DEV : `buyavatar <ITEM>`, `shopscreen`. Outil DEV : `ExpAdminAvatar`.
+
+Fichiers : `server/java/dhserver/{ServerUser,LoginServer}.java`, `server/smoke/{CollectionAvatarTest,ExpAdminAvatar}.java`,
+`server/smoke/regression.sh`, `desktop-port/src/main/java/dhdesktop/{TutorialDriver,DesktopLauncher}.java`,
+`docs/COLLECTIONS.md`, `MEMORY.md`.
