@@ -15,9 +15,9 @@
 >    les **dernières entrées** de `JOURNAL.md`, **`docs/SHIMS.md` en entier**, `docs/PRINCIPLES.md` (règles
 >    incontournables), `docs/PROTOCOL.md`, `docs/SERVER_PLAN.md`, `docs/ARCHITECTURE.md`, **`docs/SCREEN_PIPELINE.md`**
 >    (pipeline d'implémentation #73), **`docs/HEADLESS_VERIFICATION.md`** (pile de vérif #74 + §SUIVI), **et la doc
->    du MODE/SUJET en cours** — actuellement **`docs/FRIENDSHIPS.md`** (#72, mode « Amitiés/MISSIONS » : incréments
->    1-3 LIVRÉS côté serveur [1 ✅ en jeu ; **3c MISSIONS IDLE ✅ VÉRIFIÉ EN JEU (g85)** ; 2 favori/stamina, 3a empower,
->    3b campagne 🟢 headless 98/98], **incr. 4 RESTE = localiser les entrées UI empower/campagne** pour finir leur vérif en jeu). **`docs/CHALLENGES.md`** (#72, TERMINÉ & vérifié EN JEU :
+>    du MODE/SUJET en cours** — actuellement **`docs/PORT.md`** (#72, mode « Port / Docks & Entrepôt », sous-système
+>    générique `DifficultyModeHelper` : incr. 1 COMBAT ✅ VÉRIFIÉ EN JEU ; **RESTE incr. 2 raid, 3 récompense double,
+>    4 planning/écran**). **`docs/CHALLENGES.md`** (#72, TERMINÉ & vérifié EN JEU :
 >    rendu + CLAIM + achat de slot + cancel) et **`docs/SURGE.md`** (#72, TERMINÉ & 100 % vérifié EN JEU) restent les
 >    RÉFÉRENCES de méthode de bout
 >    en bout (rendu→combat→raid→récompenses→réclamation). Selon le sujet, aussi `docs/GUILD_WAR.md`, `docs/INVASION.md`, `docs/GUILD_GAPS.md`,
@@ -39,6 +39,8 @@
 > compression DOIT rappeler EXPLICITEMENT au successeur d'appliquer CETTE procédure de reprise EN PREMIER (relire
 > toute la doc ci-dessus, énumérer les règles §1-§8 + astuces/méthodologies/commandes, puis faire le point) AVANT
 > d'écrire du code ou de lancer un outil. Exigence explicite et répétée de l'utilisateur.
+
+Dernière mise à jour : **2026-08-16 (g120)** — **HOOK POST-COMPACTION (double sécurité) créé.** `.claude/hooks/post-compact-reprise.sh` + `.claude/settings.json` : un hook `SessionStart` (matcher `compact`) qui se déclenche APRÈS toute compression de contexte (manuelle `/compact` OU automatique) et INJECTE dans le nouveau contexte la consigne EXPLICITE + OBLIGATOIRE d'exécuter le RITUEL DE REPRISE **EN ENTIER AVANT TOUTE CHOSE**, en y intégrant les **derniers commits** (`git log --oneline -25`) et la liste des docs à relire. Sécurité redondante s'ajoutant au handoff de compression écrit. Défensif : n'injecte rien si `source != compact`. Testé (compact → JSON `additionalContext` ; startup → vide). Détail : `JOURNAL.md` g120. **RESTE PORT** : incr. 2 raid, incr. 3 double reward, incr. 4 planning/écran.
 
 Dernière mise à jour : **2026-08-16 (g119)** — **PORT (#72) incr. 1 (COMBAT `DifficultyModeAttack`) ✅ VÉRIFIÉ EN JEU + correctif warm-up PatchStats. Régression 121 tests.** Détail : `docs/PORT.md` §incr.1, `docs/SHIMS.md`, `JOURNAL.md` g119.
 **EN JEU (id=1)** : pilote `portattack PORT_DOCKS` (envoie le VRAI `DifficultyModeAttack` via `getNetworkProvider().sendMessage`) → serveur `recordOutcome appliqué [persisté]` → **DB GOLD +5000 + cooldown PORT_DOCKS_ATTACK posé** ; attaque répétée → **`DifficultyModeAttack REFUSÉ (anti-triche) : GAME_MODE_COOLDOWN`** (cooldown anti-triche OK). **Correctif PatchStats** : le combat en jeu poisonnait `PatchStats.<clinit>` (doChecks → getMaxDailyUsesRaw → parse paresseux `patched_heroes_talent_assignments.tab`, ligne PREDICTIVE_FORTIFICATION absente de l'enum, non ré-entrant sous accès concurrent). **Warm-up mono-thread ajouté dans `ServerContext.init`** (Class.forName PatchStats, patron GuildStats) → chargé proprement → combat OK. Pilote `portattack <MODE>`. **RESTE PORT** : incr. 2 raid (`RaidDifficultyMode`), incr. 3 récompense double (`CLAIM_DOUBLE_PORT_REWARDS`), incr. 4 planning/écran. **Candidats mode suivant** : FRANCHISE_TRIALS (event-gated).

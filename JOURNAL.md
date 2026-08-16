@@ -4836,3 +4836,36 @@ incr. 3 récompense double (`CLAIM_DOUBLE_PORT_REWARDS`→`claimDoubleRewards`),
 Fichiers : `server/java/dhserver/ServerContext.java` (warm-up PatchStats),
 `desktop-port/src/main/java/dhdesktop/{TutorialDriver,DesktopLauncher}.java` (pilote portattack), `docs/{PORT,SHIMS}.md`,
 `MEMORY.md`.
+
+## 2026-08-16 (g120) — HOOK POST-COMPACTION : double sécurité pour le rituel de reprise
+
+Demande utilisateur : « fait un hook qui se déclenche après une compression (manuelle ou automatique) qui indique
+explicitement à l'agent de faire ce rituel, soit précis, en y intégrant les derniers commits et lui indiquant de le
+faire obligatoirement avant toute chose en entier obligatoirement. Ça permettra d'ajouter une double sécurité en plus de
+ce que tu lui dira explicitement dans le handoff de compression. »
+
+**Réalisation.** Hook `SessionStart` (matcher `compact`) — Claude Code relance la session avec `source="compact"`
+APRÈS toute compaction (manuelle `/compact` OU automatique). Le hook injecte alors, dans le tout nouveau contexte, une
+consigne EXPLICITE et OBLIGATOIRE d'exécuter le RITUEL DE REPRISE **EN ENTIER AVANT TOUTE CHOSE**.
+
+- **`.claude/hooks/post-compact-reprise.sh`** : lit le JSON d'entrée (stdin) ; si `source != "compact"` → `exit 0`
+  (défensif, ne pollue pas les démarrages normaux) ; sinon construit la consigne (français, langue de travail) listant
+  les 9 étapes du rituel (MEMORY.md en entier, `git log --oneline -25`, JOURNAL.md, docs/SHIMS.md en entier,
+  PRINCIPLES/PROTOCOL/SERVER_PLAN/ARCHITECTURE/SCREEN_PIPELINE/HEADLESS_VERIFICATION, doc du mode en cours = docs/PORT.md,
+  CLAUDE.md ; énumération règles §1-§8 + astuces/commandes + outils d'industrialisation ; faire le point), **y intègre les
+  derniers commits** (`git -C "$CLAUDE_PROJECT_DIR" log --oneline -25`), rappelle la règle permanente (rien n'est
+  facultatif tant que non prouvé ; vérif EN JEU §8) et de transmettre le rituel à son propre successeur. Émission en JSON
+  `{"hookSpecificOutput":{"hookEventName":"SessionStart","additionalContext":…}}` (injection fiable dans le contexte).
+- **`.claude/settings.json`** : enregistre le hook sous `hooks.SessionStart` avec `matcher:"compact"` et
+  `command:"$CLAUDE_PROJECT_DIR/.claude/hooks/post-compact-reprise.sh"`.
+
+**Pourquoi projet et pas `~/.claude`** : `~/.claude/launcher-settings.json` est géré/régénéré à chaque session (éphémère) ;
+le hook doit survivre au conteneur → il vit dans le dépôt (`.claude/` versionné), donc voyage avec le repo et s'applique à
+toutes les sessions futures une fois mergé.
+
+**Tests.** `source:"compact"` → JSON `additionalContext` complet avec les 25 derniers commits. `source:"startup"` →
+sortie vide, `exit 0`. `settings.json` valide (JSON). Sécurité redondante : s'ajoute au handoff de compression que
+l'agent écrit explicitement (ceinture + bretelles).
+
+Fichiers : `.claude/hooks/post-compact-reprise.sh` (nouveau), `.claude/settings.json` (nouveau), `MEMORY.md`
+(entrée g120 + correction du pointeur « mode en cours » FRIENDSHIPS→PORT dans la note de reprise), `JOURNAL.md`.
