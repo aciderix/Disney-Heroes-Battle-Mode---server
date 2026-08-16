@@ -156,6 +156,17 @@ public final class ServerContext {
             new com.perblue.heroes.game.objects.GuildInfoPerkProvider(new GuildInfo());
         com.perblue.heroes.game.logic.GuildCheckInHelper.getMaxDailyCheckIns(warm);
       } catch (Throwable t) { System.out.println("[ctx] warm-up GuildStats (perks): " + t); }
+      // WARM-UP PatchStats (héros patchés) — MÊME classe de bug que GuildStats ci-dessus. Le combat des modes
+      // « difficulty » (PORT_DOCKS/WAREHOUSE) passe par doChecks → DailyActivityHelper.getMaxDailyUsesRaw, qui
+      // déclenche le PARSE PARESSEUX de patched_heroes_talent_assignments.tab. Une ligne (EVIL_QUEEN, talent
+      // PREDICTIVE_FORTIFICATION ABSENT de l'enum PatchTalent 12.1.0) fait lever saveRow ; en CHARGEMENT MONO-THREAD
+      // ici (stats déjà ouvertes), le parse se termine (cellule fautive absorbée) et PatchStats charge PROPREMENT.
+      // Sous accès RUNTIME concurrent (combat PORT en jeu), ce parse non ré-entrant se POISONNAIT
+      // (ExceptionInInitializerError → NPE sur la classe empoisonnée). On force donc le <clinit> UNE fois ici.
+      // (FAIT vérifié g118 : Class.forName réussit à ce stade — cf. sonde PatchProbe ; corrige le combat PORT en jeu.)
+      try {
+        Class.forName("com.perblue.heroes.game.data.patchedheroes.PatchStats");
+      } catch (Throwable t) { System.out.println("[ctx] warm-up PatchStats: " + t); }
       System.out.println("[ctx] DH.app headless + données du jeu + couche évènements spéciaux");
     } catch (Throwable t) {
       throw new RuntimeException("échec init contexte serveur (DH.app)", t);

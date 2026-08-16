@@ -33,11 +33,18 @@ serveur ne le gère PAS encore (aucun `DifficultyModeAttack`/`recordOutcome` dif
 - Planning basé sur le jour serveur (open days) — horloge serveur ancrée.
 
 ## Plan d'incréments
-1. ⬜ **COMBAT (`DifficultyModeAttack` → `DifficultyModeHelper.recordOutcome`)** : handler `LoginServer` (dispatch
-   message) → `ServerUser.recordDifficultyModeAttack` (convertit `modeDifficulty` int→`ModeDifficulty`, passe
-   `base.outcome`/`stagesCleared`/`base.attackers`/`lootEarned`), crédite + pose cooldown + persiste (write-through +
-   resync). Client-autoritatif partiel (loot #25). Test `PortAttackTest` (WIN → uses/cooldown + loot crédité, round-trip
-   + DB). Vérif en jeu (combat PORT_DOCKS → butin + cooldown).
+1. ✅ **COMBAT (`DifficultyModeAttack` → `DifficultyModeHelper.recordOutcome`)** : handler `LoginServer` →
+   `ServerUser.recordDifficultyModeAttack` (convertit `modeDifficulty` int→`ModeDifficulty.get`, passe
+   `base.outcome`/`stagesCleared`/`lootEarned`/`base.attackers`/`base.defenders`), crédite (`giveLoot`) + pose cooldown +
+   persiste. Test `PortAttackTest` (WIN → +5000 GOLD + cooldown `PORT_DOCKS_ATTACK`, round-trip + DB). **✅ VÉRIFIÉ EN JEU**
+   (id=1) : pilote `portattack PORT_DOCKS` (envoie le VRAI `DifficultyModeAttack` via `getNetworkProvider().sendMessage`)
+   → serveur `recordOutcome appliqué [persisté]` → **DB GOLD +5000 + cooldown posé** ; attaque répétée →
+   **`DifficultyModeAttack REFUSÉ (anti-triche) : GAME_MODE_COOLDOWN`** (cooldown anti-triche OK). Pilote `portattack <MODE>`.
+   - **Correctif PatchStats (g118)** : le 1er combat en jeu poisonnait `PatchStats.<clinit>` (`doChecks` →
+     `getMaxDailyUsesRaw` → parse paresseux de `patched_heroes_talent_assignments.tab` ; ligne EVIL_QUEEN /
+     `PREDICTIVE_FORTIFICATION` absent de l'enum → parse non ré-entrant poisonné sous accès concurrent). **Warm-up
+     mono-thread ajouté dans `ServerContext.init`** (comme GuildStats) : force le `<clinit>` UNE fois (cellule fautive
+     absorbée) → chargé proprement → combat PORT OK en jeu. Cf. `docs/SHIMS.md`.
 2. ⬜ **RAID (`RaidDifficultyMode` → `recordRaidOutcome`)** : multi-combat rapide, crédit + cooldown. Test + en jeu.
 3. ⬜ **RÉCOMPENSE DOUBLE (`Action CLAIM_DOUBLE_PORT_REWARDS` → `claimDoubleRewards`)** : anti-triche (dispo/quota),
    crédit. Test + en jeu.

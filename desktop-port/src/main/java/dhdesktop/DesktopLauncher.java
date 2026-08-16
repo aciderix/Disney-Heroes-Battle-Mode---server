@@ -509,6 +509,12 @@ public final class DesktopLauncher {
                     else System.out.println("[merchantrefresh] usage: merchantrefresh <TYPE>");
                     continue;
                 }
+                if (low.startsWith("portattack ")) {             // portattack <MODE> → combat mode difficulty (PORT)
+                    String[] pa = ln.trim().split("[,;\\s]+");
+                    if (pa.length >= 2) TutorialDriver.portAttack(game, pa[1].toUpperCase());
+                    else System.out.println("[portattack] usage: portattack <MODE>");
+                    continue;
+                }
                 if (low.startsWith("wishtarget ")) {             // wishtarget <HERO> → SET_WISHING_WELL_TARGET_HERO
                     String[] wt = ln.trim().split("[,;\\s]+");
                     if (wt.length >= 2) TutorialDriver.wishTarget(game, wt[1].toUpperCase());

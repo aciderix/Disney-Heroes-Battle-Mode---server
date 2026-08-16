@@ -4807,3 +4807,32 @@ récompense double (`CLAIM_DOUBLE_PORT_REWARDS`), incr. 4 planning/écran `PortC
 
 Fichiers : `server/java/dhserver/{ServerUser,LoginServer}.java`, `server/smoke/PortAttackTest.java`,
 `server/smoke/regression.sh`, `docs/PORT.md`, `MEMORY.md`.
+
+---
+
+## 2026-08-16 (g119) — PORT (#72) incr. 1 COMBAT ✅ VÉRIFIÉ EN JEU + correctif warm-up PatchStats
+
+Vérif en jeu du combat PORT (incr. 1, headless livré g118).
+
+**Correctif PatchStats (bloqueur en jeu).** Le 1er combat PORT en jeu échouait : `recordOutcome` → `doChecks` →
+`DailyActivityHelper.getMaxDailyUsesRaw` déclenche le parse paresseux de `patched_heroes_talent_assignments.tab` ; la
+ligne EVIL_QUEEN référence `PREDICTIVE_FORTIFICATION` (absent de l'enum `PatchTalent` 12.1.0) → `saveRow` lève. En
+mono-thread le parse est toléré (onStatError), mais **sous accès RUNTIME concurrent (combat en jeu)** ce parse non
+ré-entrant poisonnait `PatchStats.<clinit>` (`ExceptionInInitializerError` → NPE) → combat rejeté. Correctif = **warm-up
+MONO-THREAD** dans `ServerContext.init` (à la fin, stats ouvertes) : `Class.forName("…PatchStats")`, MÊME patron que le
+warm-up GuildStats/perks déjà présent. FAIT (§8) : à ce stade Class.forName réussit (sonde `PatchProbe`) → PatchStats
+chargée proprement. `docs/SHIMS.md` mis à jour (l'ancienne mise en garde « ne pas forcer » valait au BOOT ; à la fin
+d'init c'est sûr et nécessaire).
+
+**✅ VÉRIFIÉ EN JEU (id=1).** Pilote `portattack PORT_DOCKS` (chemin réseau réel : construit `DifficultyModeAttack{WIN,
+loot=5000 GOLD}` + `getNetworkProvider().sendMessage`) → serveur `<== DifficultyModeAttack : PORT_DOCKS diff=1 outcome=WIN
+→ recordOutcome appliqué [persisté]` → **DB : GOLD 57 888 570→57 893 570 (+5000), cooldown PORT_DOCKS_ATTACK futur**.
+Attaque RÉPÉTÉE (mode désormais en cooldown) → **`DifficultyModeAttack REFUSÉ (anti-triche) : GAME_MODE_COOLDOWN`** =
+l'anti-triche cooldown du jeu fonctionne. Pilote DEV `portattack <MODE>`. Régression 121 (inchangée).
+
+⇒ **PORT #72 : incr. 1 (combat) vérifié EN JEU.** RESTE : incr. 2 raid (`RaidDifficultyMode`→`recordRaidOutcome`),
+incr. 3 récompense double (`CLAIM_DOUBLE_PORT_REWARDS`→`claimDoubleRewards`), incr. 4 planning/écran `PortChooserScreen`.
+
+Fichiers : `server/java/dhserver/ServerContext.java` (warm-up PatchStats),
+`desktop-port/src/main/java/dhdesktop/{TutorialDriver,DesktopLauncher}.java` (pilote portattack), `docs/{PORT,SHIMS}.md`,
+`MEMORY.md`.

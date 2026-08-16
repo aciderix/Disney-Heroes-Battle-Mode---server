@@ -1324,6 +1324,33 @@ public final class TutorialDriver {
         } catch (Throwable e) { System.out.println("[merchantrefresh] échec: " + e); e.printStackTrace(); }
     }
 
+    /** DEV : joue un combat de mode « difficulty » (ex. PORT_DOCKS) en envoyant le VRAI message
+     *  {@code DifficultyModeAttack} (WIN + butin GOLD) par le chemin réseau réel
+     *  ({@code getNetworkProvider().sendMessage}) — le serveur ré-exécute recordOutcome. Invoqué via
+     *  "portattack &lt;MODE&gt;". */
+    public static void portAttack(GameMain game, String modeS) {
+        try {
+            com.perblue.heroes.network.messages.GameMode mode = com.perblue.heroes.network.messages.GameMode.valueOf(modeS);
+            long goldBefore = game.getYourUser().getResource(com.perblue.heroes.network.messages.ResourceType.GOLD);
+            com.perblue.heroes.network.messages.RewardDrop loot = new com.perblue.heroes.network.messages.RewardDrop();
+            loot.resourceType = com.perblue.heroes.network.messages.ResourceType.GOLD;
+            loot.itemType = com.perblue.heroes.network.messages.ItemType.DEFAULT;
+            loot.quantity = 5000;
+            com.perblue.heroes.network.messages.DifficultyModeAttack m = new com.perblue.heroes.network.messages.DifficultyModeAttack();
+            m.gameMode = mode; m.modeDifficulty = 1; m.stagesCleared = 3;
+            m.attackEndTime = com.perblue.heroes.util.TimeUtil.serverTimeNow();
+            m.lootEarned = new java.util.ArrayList<>(java.util.Collections.singletonList(loot));
+            m.base = new com.perblue.heroes.network.messages.AttackBase();
+            m.base.outcome = com.perblue.heroes.network.messages.CombatOutcome.WIN;
+            m.base.stars = 3;
+            m.base.attackers = new java.util.ArrayList<>();
+            m.base.defenders = new java.util.ArrayList<>();
+            System.out.println("[portattack] " + mode + " WIN, GOLD avant=" + goldBefore + " [chemin réseau réel]");
+            game.getNetworkProvider().sendMessage(m);
+            System.out.println("[portattack] DifficultyModeAttack(" + mode + ") envoyé");
+        } catch (Throwable e) { System.out.println("[portattack] échec: " + e); e.printStackTrace(); }
+    }
+
     /** DEV : ouvre l'écran du mastery shop {@code CollectionsShopScreen} (chemin réel, pushScreen). Invoqué via "shopscreen". */
     public static void shopScreen(GameMain game) {
         try {
