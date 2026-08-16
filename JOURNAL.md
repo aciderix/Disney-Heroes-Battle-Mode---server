@@ -4435,3 +4435,41 @@ Pilotes DEV : `buyavatar <ITEM>`, `shopscreen`. Outil DEV : `ExpAdminAvatar`.
 Fichiers : `server/java/dhserver/{ServerUser,LoginServer}.java`, `server/smoke/{CollectionAvatarTest,ExpAdminAvatar}.java`,
 `server/smoke/regression.sh`, `desktop-port/src/main/java/dhdesktop/{TutorialDriver,DesktopLauncher}.java`,
 `docs/COLLECTIONS.md`, `MEMORY.md`.
+
+---
+
+## 2026-08-16 (g108) — WISHING_WELL (#72) incr. 1 : héros CIBLE du puits ✅ VÉRIFIÉ EN JEU + VISUEL
+
+Nouveau mode « Puits aux souhaits » (gacha ciblé de shards). Incrément 1 = fixer le **héros CIBLE** qui biaise le
+tirage.
+
+**Handler.** `Action SET_WISHING_WELL_TARGET_HERO{heroType=cible}` (émetteur `ClientActionHelper.setWishingWellTargetHero` ;
+la cible passe par le champ `Action.heroType`) → `LoginServer` (dispatch `act.command`, lit `act.heroType`) →
+`ServerUser.applySetWishingWellTarget` : ré-exécute la logique du jeu (§3) `WishingWellHelper.setTargetHero(user, hero)` :
+valide `hero ∈ getAllEligibleHeroes` (héros non éligible → `WISHING_WELL_HERO_NOT_ALLOWED` = aucun effet = anti-triche) ;
+pose `IIndividualUser.setWishingWellHero(hero)` (write-through `individualUserExtra`) + ajuste les poids de pity ;
+`resyncCounts` (compteur de changement = `UserFlag`). Persistance quasi-gratuite (write-through), round-trip wire + DB.
+
+**Test `WishingWellTargetTest`** (régression → **115 tests**). DEFAULT→RALPH→VANELLOPE ; anti-triche : un héros non
+éligible (TEST_DUMMY) → refusé, cible inchangée ; persistance round-trip wire + DB (=VANELLOPE).
+
+**✅ VÉRIFIÉ EN JEU + VISUEL (id=1).** `SetTeamLevel 65` (débloque `Unlockable.WISH_CHEST`, req TL 30 ; sonde : 274 héros
+éligibles, RALPH/VANELLOPE inclus, cible initiale DEFAULT). Pilote `wishtarget RALPH` (chemin client réel
+`ClientActionHelper.setWishingWellTargetHero`) → serveur **`SET_WISHING_WELL_TARGET_HERO(RALPH) appliqué [persisté]`**
+(+ `[wishing-well] cible = RALPH [persisté]`) → **DB `server/data/dh-server.db` : `wishingWellHero=RALPH`** (lecture
+WAL-aware live). **CONFIRMATION VISUELLE** : `wishscreen` ouvre le VRAI écran **WISH CRATE** (`WishingWellChestScreen`,
+chemin réel `pushScreen`) → **portrait de RALPH** à gauche + **JACKPOT CHIP CHANCES** 1 000 shards RALPH @ 1,00 % +
+**REGULAR CHIP CHANCES** 100-300 shards RALPH @ 10,00 % (la table du puits est biaisée sur la cible) — capture
+`desktop-port/build/ww_screen.png`.
+
+**Contrat industriel (ModeGraph `--mode com/perblue/heroes/ui/wishingwell/`).** 8 classes du mode. Gate `WISH_CHEST`.
+Écran en lecture seule côté messages (la cible = un `Action`, pas un message de mode → normal). A/B (serveur→client)
+pour l'**incr. 2** : `LootResults{ lootDrops, oldWishHeroChipsWeight, oldWishJackpotWeight }` + `RewardDrop{ flags,
+itemType }` — les `oldWish*Weight` = poids de pity AVANT le souhait (animation de progression) → à peupler par le WISH.
+
+⇒ **WISHING_WELL #72 : incr. 1 (cible) vérifié EN JEU.** Pilotes DEV : `wishtarget <HERO>`, `wishscreen`. Outil DEV :
+`SetTeamLevel`. **RESTE** : incr. 2 (WISH `ChestType.WISH` via `openChest` : respect cible/poids + pity + persistance).
+
+Fichiers : `server/java/dhserver/{ServerUser,LoginServer}.java`, `server/smoke/{WishingWellTargetTest}.java`,
+`server/smoke/regression.sh`, `desktop-port/src/main/java/dhdesktop/{TutorialDriver,DesktopLauncher}.java`,
+`docs/WISHING_WELL.md`, `MEMORY.md`.

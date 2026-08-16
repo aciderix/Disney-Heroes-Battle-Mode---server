@@ -29,11 +29,31 @@ cible/poids du puits biaisent la table. `WishingWellHelper.isUnlocked` gate.
   ⇒ persistance quasi-gratuite. Aucun blob dédié.
 
 ## Plan d'incréments
-1. ⬜ **`SET_WISHING_WELL_TARGET_HERO` + `ServerUser.applySetWishingWellTarget`** : ré-exécute
+1. ✅ **`SET_WISHING_WELL_TARGET_HERO` + `ServerUser.applySetWishingWellTarget`** : ré-exécute
    `WishingWellHelper.setTargetHero` (valide éligibilité, pose la cible + poids + cooldown), persiste (write-through +
-   `resyncCounts`). Anti-triche = héros non éligible → rejet. Test `WishingWellTargetTest`. Puis vérif EN JEU.
+   `resyncCounts`). Anti-triche = héros non éligible → rejet. Test `WishingWellTargetTest`. **✅ VÉRIFIÉ EN JEU + VISUEL**
+   (voir §Vérif en jeu incr.1).
 2. ⬜ **WISH (`ChestType.WISH`)** : vérifier que le tirage du puits (coffre WISH, handler openChest existant) respecte
    la cible/poids + met à jour la pity ; persistance des poids. Vérif en jeu (souhait → shards + cible/pity).
+
+## Vérif en jeu — incrément 1 (✅ EN JEU + VISUEL, id=1)
+- Setup : `SetTeamLevel 65` (débloque `WISH_CHEST` req TL 30). id=1 : TL 65, puits débloqué, cible=DEFAULT, 274 héros
+  éligibles (RALPH/VANELLOPE inclus).
+- Pilote `wishtarget RALPH` (chemin client réel `ClientActionHelper.setWishingWellTargetHero`) → serveur
+  **`SET_WISHING_WELL_TARGET_HERO(RALPH) appliqué [persisté]`** (+ `[wishing-well] cible = RALPH [persisté]`).
+- **DB `server/data/dh-server.db` : `wishingWellHero=RALPH`** (lecture WAL-aware live).
+- **CONFIRMATION VISUELLE** : `wishscreen` ouvre le VRAI écran **WISH CRATE** (`WishingWellChestScreen`, chemin réel) →
+  portrait de **RALPH** à gauche + **JACKPOT CHIP CHANCES** = 1 000 shards RALPH @ 1,00 % + **REGULAR CHIP CHANCES** =
+  100-300 shards RALPH @ 10,00 % (table biaisée vers la cible) — capture `desktop-port/build/ww_screen.png`. Pilotes DEV
+  `wishtarget <HERO>` / `wishscreen`, outil `SetTeamLevel`.
+
+## Contrat industriel (ModeGraph `--mode com/perblue/heroes/ui/wishingwell/`) — pour l'incrément 2
+- **Gate** : `Unlockable.WISH_CHEST` (TL 30). Écran en **lecture seule** côté messages (la cible passe par un `Action`,
+  pas un message de mode → normal que ScreenContract ne détecte « aucun message client→serveur »).
+- **A/B (serveur→client, à peupler par le WISH)** : `LootResults{ .lootDrops, .oldWishHeroChipsWeight,
+  .oldWishJackpotWeight }` + `RewardDrop{ .flags, .itemType }`. Les deux `oldWish*Weight` = **poids de pity AVANT** le
+  souhait (l'écran anime la progression de pity) → l'incr. 2 devra les renseigner dans la réponse d'ouverture du coffre
+  `ChestType.WISH`. Messages référencés : `ChestType`, `ItemType`, `LootResults`, `ResourceType`, `RewardDrop`, `UnitType`.
 
 ## Notes §3/§4
 - Le tirage réutilise le codec+RNG de coffre du jeu (client-autoritatif partiel #25/§4bis, comme les autres loots).

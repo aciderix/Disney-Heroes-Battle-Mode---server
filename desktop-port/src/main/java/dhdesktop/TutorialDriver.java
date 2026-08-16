@@ -1218,6 +1218,29 @@ public final class TutorialDriver {
         } catch (Throwable t) { System.out.println("[buyavatar] échec: " + t); t.printStackTrace(); }
     }
 
+    /** DEV : fixe le HÉROS CIBLE du puits aux souhaits — chemin client réel
+     *  {@code ClientActionHelper.setWishingWellTargetHero(UnitType, listener)} (Action SET_WISHING_WELL_TARGET_HERO ;
+     *  le serveur ré-exécute WishingWellHelper.setTargetHero : gate éligibilité + pose cible + poids). Invoqué via
+     *  "wishtarget &lt;HERO&gt;". */
+    public static void wishTarget(GameMain game, String heroS) {
+        try {
+            com.perblue.heroes.network.messages.UnitType h = com.perblue.heroes.network.messages.UnitType.valueOf(heroS);
+            com.perblue.heroes.network.messages.UnitType before = game.getYourUser().getIndividual().getWishingWellHero();
+            System.out.println("[wishtarget] " + h + " avant : cible=" + before + " [chemin réel]");
+            com.perblue.heroes.game.ClientActionHelper.setWishingWellTargetHero(h, null);
+            System.out.println("[wishtarget] SET_WISHING_WELL_TARGET_HERO(" + h + ") envoyé");
+        } catch (Throwable t) { System.out.println("[wishtarget] échec: " + t); t.printStackTrace(); }
+    }
+
+    /** DEV : OUVRE le VRAI écran du puits aux souhaits {@code WishingWellChestScreen} (chemin réel, pushScreen) —
+     *  pour vérification VISUELLE (cible + coffre WISH). Invoqué via "wishscreen". */
+    public static void wishScreen(GameMain game) {
+        try {
+            game.getScreenManager().pushScreen(new com.perblue.heroes.ui.wishingwell.WishingWellChestScreen());
+            System.out.println("[wishscreen] WishingWellChestScreen poussé [chemin réel]");
+        } catch (Throwable t) { System.out.println("[wishscreen] échec: " + t); t.printStackTrace(); }
+    }
+
     /** DEV : ouvre l'écran du mastery shop {@code CollectionsShopScreen} (chemin réel, pushScreen). Invoqué via "shopscreen". */
     public static void shopScreen(GameMain game) {
         try {

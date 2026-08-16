@@ -491,6 +491,16 @@ public final class DesktopLauncher {
                     TutorialDriver.shopScreen(game);
                     continue;
                 }
+                if (low.startsWith("wishtarget ")) {             // wishtarget <HERO> → SET_WISHING_WELL_TARGET_HERO
+                    String[] wt = ln.trim().split("[,;\\s]+");
+                    if (wt.length >= 2) TutorialDriver.wishTarget(game, wt[1].toUpperCase());
+                    else System.out.println("[wishtarget] usage: wishtarget <HERO>");
+                    continue;
+                }
+                if (low.startsWith("wishscreen")) {              // wishscreen → ouvre le puits aux souhaits
+                    TutorialDriver.wishScreen(game);
+                    continue;
+                }
                 if (low.startsWith("expreset")) {                // expreset [diff] — RESET de l'expédition → ResetExpedition
                     String[] pr = ln.trim().split("[,;\\s]+");
                     int diff = pr.length >= 2 ? Integer.parseInt(pr[1].trim()) : 1;
