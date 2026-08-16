@@ -4778,3 +4778,32 @@ TOUS vérifiés EN JEU. **Candidats mode suivant** : FRANCHISE_TRIALS, PORT.
 
 Fichiers : `server/java/dhserver/ServerUser.java` (buildMerchant/discoverLimitedMerchant/LIMITED_MERCHANTS +
 bootMerchantUpdates), `server/smoke/MerchantLimitedTest.java`, `server/smoke/regression.sh`, `docs/MERCHANT.md`, `MEMORY.md`.
+
+---
+
+## 2026-08-16 (g118) — PORT (Docks/Entrepôt) : recon (pipeline #73) + incr. 1 COMBAT (headless)
+
+Mode suivant après MERCHANT. PORT = PvE planifié à butin, membre du sous-système GÉNÉRIQUE `DifficultyModeHelper`
+(GameMode `PORT_DOCKS`/`PORT_WAREHOUSE` ouverts des jours différents). Le serveur ne gérait AUCUN combat difficulty.
+
+**Recon (docs/PORT.md).** Combat client-autoritatif via `DifficultyModeAttack{ base:AttackBase, gameMode:GameMode,
+modeDifficulty:int, lootEarned:List<RewardDrop>, stagesCleared:int, attackEndTime:long }`. Entrée §3
+`DifficultyModeHelper.recordOutcome(user, GameMode, ModeDifficulty, CombatOutcome, stagesCleared, Collection loot,
+Collection attackers, Collection defenders, long time, snapshot)` — AUTONOME : `doChecks` (anti-triche : mode ouvert ce
+jour + hors cooldown + quota) → `giveLoot` (crédite le butin) + EXP + `recordDailyUse`/`incDailyUses` + `setCooldownEnd`
+(cooldown `getCooldownType`/`getCooldownDuration`) + étoiles/progression. Conversion difficulté : `ModeDifficulty.get(int)`.
+Aussi : raid (`RaidDifficultyMode`→`recordRaidOutcome`), double (`Action CLAIM_DOUBLE_PORT_REWARDS`→`claimDoubleRewards`),
+planning (`isOpen`/`getOpenDays`/`gameModeOffCooldown`/`getCooldownType`).
+
+**Incr. 1 COMBAT (headless).** `ServerUser.recordDifficultyModeAttack(DifficultyModeAttack)` : mappe le message →
+`recordOutcome` (loot, attackers, defenders dans l'ordre du client `DifficultyModeAttackScreen`) + resync
+(heroes/diamonds/counts) + persiste. Handler `LoginServer` (message `DifficultyModeAttack` ; anti-triche
+`ClientErrorCodeException` = fermé/cooldown → rien accordé). `PortAttackTest` (PORT_DOCKS ouvert le jour serveur ; WIN +
+butin 5000 GOLD → giveLoot crédite + cooldown `PORT_DOCKS_ATTACK` posé ; persist round-trip wire + DB). Régression
+**121 tests**.
+
+**RESTE** : vérif EN JEU du combat PORT (pilote combat difficulty), incr. 2 raid (`RaidDifficultyMode`), incr. 3
+récompense double (`CLAIM_DOUBLE_PORT_REWARDS`), incr. 4 planning/écran `PortChooserScreen`.
+
+Fichiers : `server/java/dhserver/{ServerUser,LoginServer}.java`, `server/smoke/PortAttackTest.java`,
+`server/smoke/regression.sh`, `docs/PORT.md`, `MEMORY.md`.

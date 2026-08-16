@@ -328,6 +328,23 @@ public final class LoginServer {
                 System.out.println("[login]     ! recordCampaignAttack échec: " + t);
                 t.printStackTrace();
               }
+            } else if (m instanceof com.perblue.heroes.network.messages.DifficultyModeAttack) {
+              // PORT (#72) — combat d'un mode « difficulty » (PORT_DOCKS/PORT_WAREHOUSE, etc.). Le client a joué
+              // (client-autoritatif) et envoie l'issue (fire-and-forget). Le serveur ré-exécute DifficultyModeHelper
+              // .recordOutcome (anti-triche : ouvert/cooldown/quota ; crédit butin + cooldown + uses + progression)
+              // et persiste. Anti-triche = ClientErrorCodeException (fermé/cooldown) → on n'accorde rien.
+              try {
+                com.perblue.heroes.network.messages.DifficultyModeAttack da = (com.perblue.heroes.network.messages.DifficultyModeAttack) m;
+                user.recordDifficultyModeAttack(da);
+                try { store.save(user); } catch (Exception e) {
+                  System.out.println("[login]     ! persistance échouée: " + e); }
+                System.out.println("[login] <== DifficultyModeAttack : " + da.gameMode + " diff=" + da.modeDifficulty
+                    + " outcome=" + (da.base == null ? "?" : da.base.outcome) + " → recordOutcome appliqué [persisté]");
+              } catch (Throwable t) {
+                if (t instanceof com.perblue.heroes.ClientErrorCodeException) {
+                  System.out.println("[login]     ⛔ DifficultyModeAttack REFUSÉ (anti-triche) : " + t.getMessage());
+                } else { System.out.println("[login]     ! recordDifficultyModeAttack échec: " + t); t.printStackTrace(); }
+              }
             } else if (m instanceof com.perblue.heroes.network.messages.FriendshipCampaignAttack) {
               // FRIENDSHIPS #72 incr. 3b — combat de CAMPAGNE D'AMITIÉ (MISSIONS). Le client a joué le combat
               // (client-autoritatif) et envoie l'issue (fire-and-forget). Le serveur AUTORITATIF ré-exécute

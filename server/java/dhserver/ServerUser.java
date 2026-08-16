@@ -3525,6 +3525,36 @@ public final class ServerUser {
       com.perblue.heroes.network.messages.MerchantType.MEGA_MART,
   };
 
+  /**
+   * PORT (#72) incr. 1 — COMBAT d'un mode « difficulty » ({@code DifficultyModeAttack}, ex. PORT_DOCKS/PORT_WAREHOUSE).
+   * Combat CLIENT-autoritatif (le client a joué + envoie l'issue, fire-and-forget façon {@code CampaignAttack}). Le
+   * serveur ré-exécute la logique du jeu (§3) {@code DifficultyModeHelper.recordOutcome} qui est AUTONOME : {@code doChecks}
+   * (anti-triche — mode ouvert ce jour, hors cooldown, quota) → {@code giveLoot} (crédite le butin) + EXP + uses/quotas
+   * ({@code recordDailyUse}/{@code incDailyUses}) + cooldown ({@code setCooldownEnd}) + étoiles/progression. Lève une
+   * {@code ClientErrorCodeException} si l'attaque est illégitime (fermé/cooldown/quota). Persistance write-through + resync.
+   * Butin = client-autoritatif partiel (#25/§4bis) : on passe le {@code lootEarned} client (le serveur pourrait re-rouler
+   * via {@code rollLoot} ; incrément ultérieur).
+   */
+  public synchronized void recordDifficultyModeAttack(com.perblue.heroes.network.messages.DifficultyModeAttack m)
+      throws com.perblue.heroes.ClientErrorCodeException {
+    ServerContext.init();
+    User user = ClientNetworkStateConverter.getUser(userInfo, userExtra, "difficulty");
+    IndividualUser iu = ClientNetworkStateConverter.getIndividualUser(
+        individualUserExtra, userID, userInfo.diamonds, "difficulty");
+    ServerContext.bind(user, iu);
+    com.perblue.heroes.game.data.ModeDifficulty diff = com.perblue.heroes.game.data.ModeDifficulty.get(m.modeDifficulty);
+    com.perblue.heroes.network.messages.CombatOutcome outcome = m.base == null ? null : m.base.outcome;
+    java.util.Collection<?> loot = m.lootEarned == null ? java.util.Collections.emptyList() : m.lootEarned;
+    java.util.Collection<?> attackers = m.base == null ? java.util.Collections.emptyList() : m.base.attackers;
+    java.util.Collection<?> defenders = m.base == null ? java.util.Collections.emptyList() : m.base.defenders;
+    // recordOutcome : loot, attackers, defenders (ordre du client DifficultyModeAttackScreen) + attackEndTime.
+    com.perblue.heroes.game.logic.DifficultyModeHelper.recordOutcome(user, m.gameMode, diff, outcome,
+        m.stagesCleared, loot, attackers, defenders, m.attackEndTime, SpecialEventSnapshot.NONE);
+    resyncHeroes(user);
+    resyncDiamonds(user);
+    resyncCounts(user);
+  }
+
   /** Lecture du blob marchand persisté (wire) — pour tests/handlers. {@code null} si non généré. */
   public synchronized com.perblue.heroes.network.messages.MerchantData merchantDataPersisted(
       com.perblue.heroes.network.messages.MerchantType type) {
