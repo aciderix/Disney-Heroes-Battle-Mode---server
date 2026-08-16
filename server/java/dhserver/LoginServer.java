@@ -1068,6 +1068,38 @@ public final class LoginServer {
                 System.out.println("[login] <== Action SET_WISHING_WELL_TARGET_HERO(" + target + ")"
                     + (ok ? " appliqué [persisté]" : " refusé"));
 
+              } else if (act.command == com.perblue.heroes.network.messages.CommandType.REFRESH_TRADER) {
+                // MARCHAND (#72 incr. 3) — RAFRAÎCHIT le stock d'un marchand. Protocole client (disasm
+                // ClientActionHelper.refreshMerchant) : Action{REFRESH_TRADER, extra{TYPE=MerchantType,
+                // REASON=MerchantRefreshType}}. Le serveur ré-exécute MerchantHelper.refresh (gate + facture :
+                // quota gratuit/jour, monnaie payante, item, vidéo — anti-triche) puis RE-GÉNÈRE le stock et
+                // re-pousse le MerchantUpdate. Corrige l'ancien « REFRESH_TRADER non appliquée (PARTIEL) ».
+                com.perblue.heroes.network.messages.MerchantType mt = null;
+                com.perblue.heroes.game.logic.MerchantHelper.MerchantRefreshType rt =
+                    com.perblue.heroes.game.logic.MerchantHelper.MerchantRefreshType.FREE;
+                try {
+                  Object tn = act.extra == null ? null : act.extra.get(com.perblue.heroes.network.messages.ActionExtraType.TYPE);
+                  if (tn != null) mt = com.perblue.heroes.network.messages.MerchantType.valueOf(tn.toString());
+                  Object rn = act.extra == null ? null : act.extra.get(com.perblue.heroes.network.messages.ActionExtraType.REASON);
+                  if (rn != null) rt = com.perblue.heroes.game.logic.MerchantHelper.MerchantRefreshType.valueOf(rn.toString());
+                } catch (Throwable t) { System.out.println("[login]     ! REFRESH_TRADER extras illisibles: " + t); }
+                if (mt == null) { System.out.println("[login]     ! REFRESH_TRADER sans MerchantType"); }
+                else {
+                  try {
+                    com.perblue.heroes.network.messages.MerchantData data = user.applyRefreshMerchant(mt, rt);
+                    try { store.save(user); } catch (Exception e) {
+                      System.out.println("[login]     ! persistance refresh marchand échouée: " + e); }
+                    com.perblue.heroes.network.messages.MerchantUpdate mu = new com.perblue.heroes.network.messages.MerchantUpdate();
+                    mu.type = mt; mu.data = data; mu.reason = 0;
+                    c.send(mu);
+                    System.out.println("[login] <== Action REFRESH_TRADER(" + mt + "," + rt + ") appliqué [persisté] + MerchantUpdate re-poussé");
+                  } catch (Throwable t) {
+                    if (t instanceof com.perblue.heroes.ClientErrorCodeException) {
+                      System.out.println("[login]     ⛔ REFRESH_TRADER REFUSÉ (anti-triche) : " + t.getMessage());
+                    } else { System.out.println("[login]     ! refresh marchand échec: " + t); t.printStackTrace(); }
+                  }
+                }
+
               } else if (act.command == com.perblue.heroes.network.messages.CommandType.START_STICKER_CHALLENGE
                   || act.command == com.perblue.heroes.network.messages.CommandType.CLAIM_STICKER_CHALLENGE
                   || act.command == com.perblue.heroes.network.messages.CommandType.CANCEL_STICKER_CHALLENGE) {

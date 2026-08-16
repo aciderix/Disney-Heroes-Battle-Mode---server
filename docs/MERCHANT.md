@@ -91,8 +91,18 @@ Les upsells (`MERCHANT_SLOTS_PERK_UPSELL`) ont prix 0 (slots verrouillés — fi
    + VISUEL** (id=1) : `merchantbuy GEAR` → CALAMARI 2 843 GEAR_TOKENS → serveur `appliqué [persisté] + MerchantUpdate
    re-poussé` → DB GEAR_TOKENS 39 000→36 157, CALAMARI possédé=1, purchased=1 ; écran BADGE BAZAAR solde 36 157 + CALAMARI
    grisé (vendu) — capture `build/merchant_purchase_ingame.png`. Pilote `merchantbuy <TYPE>`.
-3. ⬜ **REFRESH (`Action REFRESH_TRADER` → `MerchantHelper.refresh` + régénération)** : corrige le PARTIEL actuel ;
-   gratuit N/jour puis payant ; reroll du stock + persistance. Vérif en jeu.
+3. ✅ **REFRESH (`Action REFRESH_TRADER` → `MerchantHelper.refresh` + régénération)** — **corrige le PARTIEL**.
+   `ServerUser.applyRefreshMerchant(type, MerchantRefreshType)` : charge le blob dans le runtime (`initMerchantData`)
+   → `MerchantHelper.refresh` (GATE + FACTURE : quota gratuit/jour, monnaie payante `getRefreshCost`/`getRefreshCurrency`,
+   item, vidéo — lève si illégitime) → RE-GÉNÈRE le stock (`generateMerchant`, refresh ne le fait pas) → resync + persiste ;
+   `LoginServer` (Action `REFRESH_TRADER{TYPE,REASON}`) re-pousse `MerchantUpdate`. **Correctif timing** : `generateMerchant`
+   pose `nextAutoRefresh` = TIMESTAMP absolu du prochain refresh (planning `getAutoRefreshTimes`, offsets ms/jour) — avant
+   c'était un delta négatif → marchand « toujours dû » → refresh toujours gratuit. `MerchantRefreshTest` (refresh PAID
+   débite + re-roll 0 acheté ; anti-triche sans monnaie → refusé, stock inchangé ; persist wire). **✅ VÉRIFIÉ EN JEU +
+   VISUEL** (id=1) : `merchantrefresh GEAR` → serveur `REFRESH_TRADER(GEAR,PAID) appliqué [persisté]` (+ un `FIGHT_PIT,AUTO`
+   auto du client, aussi géré ⇒ plus AUCUN « non appliquée (PARTIEL) ») → DB GEAR_TOKENS 500 000→499 900 (−100), stock
+   re-roulé (10 objets, 0 acheté) ; écran BADGE BAZAAR : NOUVEAUX objets + solde 499 900 + « Refreshes today at 9:00 PM »
+   (timer corrigé) — capture `build/merchant_refresh_ingame.png`. Pilote `merchantrefresh <TYPE>`.
 4. ⬜ (option, à prouver) **BLACK_MARKET / MEGA_MART** limités : `checkForFoundMerchant` (découverte/planif) + expiration.
 
 ## Notes §3/§4

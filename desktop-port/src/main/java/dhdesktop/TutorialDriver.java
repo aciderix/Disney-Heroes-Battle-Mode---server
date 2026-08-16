@@ -1307,6 +1307,23 @@ public final class TutorialDriver {
         } catch (Throwable e) { System.out.println("[merchantbuy] échec: " + e); e.printStackTrace(); }
     }
 
+    /** DEV : RAFRAÎCHIT un marchand — chemin client réel {@code ClientActionHelper.refreshMerchant} (Action
+     *  REFRESH_TRADER ; le serveur ré-exécute MerchantHelper.refresh + re-roule le stock). Invoqué via
+     *  "merchantrefresh &lt;TYPE&gt;". */
+    public static void merchantRefresh(GameMain game, String typeS) {
+        try {
+            com.perblue.heroes.network.messages.MerchantType t = com.perblue.heroes.network.messages.MerchantType.valueOf(typeS);
+            com.perblue.heroes.game.specialevent.SpecialEventSnapshot NONE = com.perblue.heroes.game.specialevent.SpecialEventSnapshot.NONE;
+            com.perblue.heroes.game.logic.MerchantHelper.MerchantRefreshType rt =
+                com.perblue.heroes.game.logic.MerchantHelper.getFreeRefreshes(t, game.getYourUser()) > 0
+                    ? com.perblue.heroes.game.logic.MerchantHelper.MerchantRefreshType.FREE
+                    : com.perblue.heroes.game.logic.MerchantHelper.MerchantRefreshType.PAID;
+            System.out.println("[merchantrefresh] " + t + " type=" + rt + " [chemin réel]");
+            com.perblue.heroes.game.ClientActionHelper.refreshMerchant(t, rt, true, NONE);
+            System.out.println("[merchantrefresh] REFRESH_TRADER(" + t + "," + rt + ") envoyé");
+        } catch (Throwable e) { System.out.println("[merchantrefresh] échec: " + e); e.printStackTrace(); }
+    }
+
     /** DEV : ouvre l'écran du mastery shop {@code CollectionsShopScreen} (chemin réel, pushScreen). Invoqué via "shopscreen". */
     public static void shopScreen(GameMain game) {
         try {

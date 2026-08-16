@@ -4704,3 +4704,43 @@ exact), CALAMARI possédé=1, purchased=1** ; écran **BADGE BAZAAR** : solde 36
 Fichiers : `server/java/dhserver/{ServerUser,LoginServer}.java`, `server/smoke/MerchantPurchaseTest.java`,
 `server/smoke/regression.sh`, `desktop-port/src/main/java/dhdesktop/{TutorialDriver,DesktopLauncher}.java`,
 `docs/MERCHANT.md`, `MEMORY.md`.
+
+---
+
+## 2026-08-16 (g116) — MERCHANT (#72) incr. 3 : REFRESH (REFRESH_TRADER) ✅ EN JEU — CORRIGE LE PARTIEL
+
+Rafraîchissement du stock d'un marchand — l'incrément qui **corrige le `REFRESH_TRADER non appliquée (PARTIEL)`** qui
+tournait en boucle dans les logs depuis le début.
+
+**Handler.** `Action REFRESH_TRADER{ extra{ TYPE=MerchantType, REASON=MerchantRefreshType } }` (émetteur
+`ClientActionHelper.refreshMerchant`) → `LoginServer` → `ServerUser.applyRefreshMerchant(type, refreshType)` : charge le
+blob persisté dans le runtime (`initMerchantData`, pour que le gating lise l'état) → ré-exécute la logique du jeu (§3)
+`MerchantHelper.refresh` (GATE + FACTURE selon le type : `FREE`=quota/jour, `PAID`=monnaie via `MerchantStats
+.getRefreshCost`+`getRefreshCurrency`, `ITEM`, `VIDEO` ; lève `ClientErrorCodeException` si illégitime) — `refresh` ne
+régénère PAS le stock (vérifié bytecode) → on RE-GÉNÈRE via `generateMerchant` (nouveau roll, write-through) → resync
+(diamants/compteurs) + persiste ; re-pousse `MerchantUpdate`.
+
+**Correctif timing (bug de génération).** `getTimeUntilNextAutoRefresh = getMerchantAutoRefreshTime − now`. `generateMerchant`
+posait `nextAutoRefresh = getTimeUntilNextAutoRefresh` (un DELTA, négatif à la 1re génération) → `getMerchantAutoRefreshTime`
+< now → `shouldAutoRefresh=true` en permanence → chaque refresh était un auto-refresh GRATUIT (jamais facturé) + timer UI
+faux. Corrigé : `nextAutoRefreshTime(type)` calcule le TIMESTAMP absolu de la prochaine occurrence quotidienne depuis le
+planning du jeu `MerchantStats.getAutoRefreshTimes` (offsets ms dans la journée, ex. GEAR [75600000]=21 h). Donnée du jeu
+(§4). Résultat en jeu : timer « Refreshes today at 9:00 PM » (correct) + refresh PAID facturé.
+
+**Test `MerchantRefreshTest`** (régression → **119 tests**). Refresh PAID : monnaie débitée + stock re-roulé (tous non
+achetés) ; persist wire ; anti-triche : refresh sans monnaie → refusé, stock inchangé.
+
+**✅ VÉRIFIÉ EN JEU + VISUEL (id=1).** Blob vidé (outil `ClearMerch`) → boot régénère avec timing correct. `merchantrefresh
+GEAR` (chemin client réel `ClientActionHelper.refreshMerchant`, choisit FREE si quota sinon PAID) → serveur
+**`REFRESH_TRADER(GEAR,PAID) appliqué [persisté] + MerchantUpdate re-poussé`** ; le client a AUSSI auto-refreshé FIGHT_PIT
+(`REFRESH_TRADER(FIGHT_PIT,AUTO)` géré) ⇒ **plus AUCUN « non appliquée (PARTIEL) »**. DB : GEAR_TOKENS 500 000→499 900
+(−100 exact), stock re-roulé (10 objets, 0 acheté). Écran **BADGE BAZAAR** : NOUVEAUX objets (SUPER TEAM ASSEMBLE, MAGIC
+MIRROR, BAYMAX PATCH KIT…) + solde 499 900 + « Refreshes today at 9:00 PM » — capture `build/merchant_refresh_ingame.png`.
+Pilote DEV `merchantrefresh <TYPE>`.
+
+⇒ **MERCHANT #72 : incr. 1 (génération) + 1b (push) + 2 (achat) + 3 (refresh) vérifiés EN JEU.** RESTE : incr. 4
+BLACK_MARKET/MEGA_MART limited-time (`checkForFoundMerchant` découverte + expiration/cooldown).
+
+Fichiers : `server/java/dhserver/{ServerUser,LoginServer}.java`, `server/smoke/MerchantRefreshTest.java`,
+`server/smoke/regression.sh`, `desktop-port/src/main/java/dhdesktop/{TutorialDriver,DesktopLauncher}.java`,
+`docs/MERCHANT.md`, `MEMORY.md`.

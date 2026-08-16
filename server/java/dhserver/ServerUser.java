@@ -3398,6 +3398,26 @@ public final class ServerUser {
     } catch (Throwable t) { throw new RuntimeException("table de marchand introuvable: " + type, t); }
   }
 
+  /** Prochain refresh AUTO (timestamp absolu) d'un marchand, calculé depuis le planning du jeu
+   *  {@code MerchantStats.getAutoRefreshTimes} (offsets ms dans la journée, ex. GEAR 75600000 = 21 h). Prochaine
+   *  occurrence quotidienne après maintenant. Donnée du jeu (§4), pas d'invention. */
+  private static long nextAutoRefreshTime(com.perblue.heroes.network.messages.MerchantType type) {
+    long now = com.perblue.heroes.util.TimeUtil.serverTimeNow();
+    final long DAY = 86400000L;
+    long dayStart = (now / DAY) * DAY;
+    long best = Long.MAX_VALUE;
+    try {
+      for (Object o : com.perblue.heroes.game.data.misc.MerchantStats.getAutoRefreshTimes(type)) {
+        long off = ((Number) o).longValue();
+        for (int d = 0; d <= 8; d++) {                 // balaye ~1 semaine (couvre offsets quotidiens/hebdo)
+          long t = dayStart + off + d * DAY;
+          if (t > now && t < best) best = t;
+        }
+      }
+    } catch (Throwable ignore) { /* pas de planning → repli */ }
+    return best == Long.MAX_VALUE ? now + DAY : best;
+  }
+
   /** Prix de BASE d'un objet pour une monnaie = colonne d'{@code items.tab} (via {@code ItemStats.getStat}) :
    *  GOLD→GOLD_PRICE, DIAMONDS→DIAMOND_PRICE, jetons→TOKEN_PRICE. Donnée du jeu (§4), jamais inventée. */
   private static com.perblue.heroes.game.data.item.StatType priceStat(com.perblue.heroes.network.messages.ResourceType cur) {
@@ -3449,7 +3469,7 @@ public final class ServerUser {
     data.inventory = inv;
     data.expiration = 0L;
     data.cooldownEnd = 0L;
-    data.nextAutoRefresh = com.perblue.heroes.game.logic.MerchantHelper.getTimeUntilNextAutoRefresh(type, user);
+    data.nextAutoRefresh = nextAutoRefreshTime(type);      // TIMESTAMP absolu du prochain refresh auto (planning .tab)
     data.permUnlocked = com.perblue.heroes.game.logic.MerchantHelper.isMerchantUnlocked(type, user);
     data.staminaMemory = 0;
     // WRITE-THROUGH blob : le convertisseur ne gère pas les marchands → on écrit directement le wire (persisté + envoyé).
@@ -3508,6 +3528,36 @@ public final class ServerUser {
     resyncDiamonds(user);
     resyncCounts(user);
     return blob;
+  }
+
+  /**
+   * MERCHANT (#72) incr. 3 — RAFRAÎCHIT un marchand ({@code Action REFRESH_TRADER}). Le serveur ré-exécute la logique
+   * du jeu (§3) {@code MerchantHelper.refresh} qui GATE + FACTURE selon le type de refresh ({@code FREE}=quota/jour,
+   * {@code PAID}=monnaie via {@code MerchantStats.getRefreshCost}/{@code getRefreshCurrency}, {@code ITEM}, {@code VIDEO})
+   * — lève une {@code ClientErrorCodeException} si illégitime (quota épuisé, monnaie insuffisante…). {@code refresh} NE
+   * régénère PAS le stock (vérifié bytecode : gating/charge/track seulement) → on RE-GÉNÈRE ensuite le stock via
+   * {@link #generateMerchant} (nouveau roll, write-through). Renvoie le nouveau {@code MerchantData}.
+   */
+  public synchronized com.perblue.heroes.network.messages.MerchantData applyRefreshMerchant(
+      com.perblue.heroes.network.messages.MerchantType type,
+      com.perblue.heroes.game.logic.MerchantHelper.MerchantRefreshType refreshType)
+      throws com.perblue.heroes.ClientErrorCodeException {
+    ServerContext.init();
+    User user = ClientNetworkStateConverter.getUser(userInfo, userExtra, "merchant");
+    IndividualUser iu = ClientNetworkStateConverter.getIndividualUser(
+        individualUserExtra, userID, userInfo.diamonds, "merchant");
+    ServerContext.bind(user, iu);
+    // Charge l'état marchand courant dans le runtime (le gating peut lire cooldown/état).
+    com.perblue.heroes.network.messages.MerchantData cur = merchantDataPersisted(type);
+    if (cur != null) iu.initMerchantData(type, cur);
+    // GATE + FACTURE (code du jeu). Lève si illégitime (quota/monnaie).
+    com.perblue.heroes.game.logic.MerchantHelper.refresh(type, refreshType, user, SpecialEventSnapshot.NONE);
+    // RE-GÉNÈRE le stock (refresh ne le fait pas) — nouveau roll, write-through blob.
+    com.perblue.heroes.network.messages.MerchantData data = generateMerchant(type);
+    // Persistance des débits/compteurs hors this.extra (refresh payant → diamants ; quota → compteurs).
+    resyncDiamonds(user);
+    resyncCounts(user);
+    return data;
   }
 
   /** Marchands poussés à intégrer au BOOT (DISPONIBLES + débloqués), toujours en rotation permanente (pas
