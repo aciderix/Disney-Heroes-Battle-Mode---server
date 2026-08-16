@@ -103,7 +103,18 @@ Les upsells (`MERCHANT_SLOTS_PERK_UPSELL`) ont prix 0 (slots verrouillés — fi
    auto du client, aussi géré ⇒ plus AUCUN « non appliquée (PARTIEL) ») → DB GEAR_TOKENS 500 000→499 900 (−100), stock
    re-roulé (10 objets, 0 acheté) ; écran BADGE BAZAAR : NOUVEAUX objets + solde 499 900 + « Refreshes today at 9:00 PM »
    (timer corrigé) — capture `build/merchant_refresh_ingame.png`. Pilote `merchantrefresh <TYPE>`.
-4. ⬜ (option, à prouver) **BLACK_MARKET / MEGA_MART** limités : `checkForFoundMerchant` (découverte/planif) + expiration.
+4. ✅ **BLACK_MARKET / MEGA_MART** (limités dans le temps) : `ServerUser.discoverLimitedMerchant(type)` ré-exécute
+   `MerchantHelper.checkForFoundMerchant` (découverte pilotée stamina + RNG graine MERCHANT ; boucle bornée en posant le
+   pas = seuil garanti) → pose la fenêtre `expiration`=now+`getLimitedTimeMerchantDuration` (1 h) +
+   `cooldownEnd`=+`getLimitedTimeMerchantCooldown` (20 h) [durées `.tab`] → génère le stock (`buildMerchant`, qui LIT
+   expiration/cooldown de l'`iu`). `bootMerchantUpdates` découvre les limités déblocables & hors cooldown au boot (ne
+   re-roule pas s'ils sont déjà dans la fenêtre). `MerchantLimitedTest` (découverte → dispo + fenêtre 1 h/cooldown 20 h +
+   stock ; persist wire+DB). **✅ VÉRIFIÉ EN JEU + VISUEL** (id=1) : boot `MerchantUpdate x10` (+BLACK_MARKET +MEGA_MART) →
+   `merchantscreen BLACK_MARKET` → écran **BLACK MARKET** : 15 objets (PIGLET/MARIE/FLASH/STITCH hero chips + gear bits)
+   avec **monnaies mixtes** (diamants pour les chips, or pour les bits — annotations `{PriceType}` du drop) — capture
+   `build/merchant_blackmarket_ingame.png`.
+
+⇒ **MERCHANT #72 COMPLET : incr. 1 (génération) + 1b (push) + 2 (achat) + 3 (refresh) + 4 (limité) TOUS vérifiés EN JEU.**
 
 ## Notes §3/§4
 - Blob serveur-autoritatif : la génération roule les VRAIES tables `.tab` + `MerchantDTCode` (jamais inventer coûts/poids).

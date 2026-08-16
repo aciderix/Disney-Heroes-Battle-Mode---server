@@ -4744,3 +4744,37 @@ BLACK_MARKET/MEGA_MART limited-time (`checkForFoundMerchant` découverte + expir
 Fichiers : `server/java/dhserver/{ServerUser,LoginServer}.java`, `server/smoke/MerchantRefreshTest.java`,
 `server/smoke/regression.sh`, `desktop-port/src/main/java/dhdesktop/{TutorialDriver,DesktopLauncher}.java`,
 `docs/MERCHANT.md`, `MEMORY.md`.
+
+---
+
+## 2026-08-16 (g117) — MERCHANT (#72) incr. 4 : marchands LIMITÉS (BLACK_MARKET/MEGA_MART) ✅ EN JEU → MODE COMPLET
+
+Dernier incrément : les marchands limités dans le temps (BLACK_MARKET, MEGA_MART), découverts par accumulation de stamina.
+
+**Découverte.** `ServerUser.discoverLimitedMerchant(type)` : charge le blob persisté dans le runtime (pour respecter
+fenêtre/cooldown), et si déjà trouvé dans la fenêtre renvoie le stock tel quel ; sinon ré-exécute la logique du jeu (§3)
+`MerchantHelper.checkForFoundMerchant(user, elapsed)` en boucle bornée (pas = `getStaminaRequiredForGuaranteedDiscovery`
+× 2, RNG graine MERCHANT) jusqu'à la découverte — elle pose `expiration`=now+`getLimitedTimeMerchantDuration` (1 h) +
+`cooldownEnd`=expiration+`getLimitedTimeMerchantCooldown` (20 h), durées des `.tab` (`merchant_constants.tab`), reset
+stamina. `checkForFoundMerchant` respecte le cooldown (skip si `cooldownEnd > now`) → pas de re-découverte pendant 20 h.
+Puis `buildMerchant` génère le stock EN LISANT expiration/cooldown/stamina de l'`iu` (refactor de `generateMerchant` →
+`buildMerchant(user, iu, type)` partagé, pour préserver la fenêtre au lieu de la remettre à 0).
+
+`bootMerchantUpdates` : après les marchands permanents, boucle `LIMITED_MERCHANTS` = {BLACK_MARKET, MEGA_MART} et pousse
+ceux que `discoverLimitedMerchant` rend disponibles (déblocables & hors cooldown).
+
+**Test `MerchantLimitedTest`** (régression → **120 tests**). BLACK_MARKET : indispo au départ → découverte → dispo +
+fenêtre expiration≈now+1 h + cooldown≈expiration+20 h (tolérance 60 s) + stock non vide ; persist round-trip wire + DB
+(fenêtre + stock + toujours dispo après reload).
+
+**✅ VÉRIFIÉ EN JEU + VISUEL (id=1).** Boot → serveur `==> MerchantUpdate x10` (les 8 permanents + BLACK_MARKET +
+MEGA_MART découverts). `merchantscreen BLACK_MARKET` → **écran BLACK MARKET** : 15 objets — PIGLET/MARIE/FLASH/STITCH
+Hero Chips + gear bits (DOG'S BREAKFAST PLAN BIT, SECUR-T BIT…) avec **monnaies MIXTES** (diamants pour les hero chips, or
+pour les bits) confirmant les annotations `{PriceType=DIAMONDS/GOLD}` du drop table — capture
+`build/merchant_blackmarket_ingame.png`. Pilote DEV `merchantscreen BLACK_MARKET`.
+
+⇒ **MERCHANT #72 COMPLET** : incr. 1 (génération) + 1b (push) + 2 (achat) + 3 (refresh, corrige le PARTIEL) + 4 (limité)
+TOUS vérifiés EN JEU. **Candidats mode suivant** : FRANCHISE_TRIALS, PORT.
+
+Fichiers : `server/java/dhserver/ServerUser.java` (buildMerchant/discoverLimitedMerchant/LIMITED_MERCHANTS +
+bootMerchantUpdates), `server/smoke/MerchantLimitedTest.java`, `server/smoke/regression.sh`, `docs/MERCHANT.md`, `MEMORY.md`.

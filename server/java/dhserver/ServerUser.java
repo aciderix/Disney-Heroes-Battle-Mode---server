@@ -3441,7 +3441,14 @@ public final class ServerUser {
     IndividualUser iu = ClientNetworkStateConverter.getIndividualUser(
         individualUserExtra, userID, userInfo.diamonds, "merchant");
     ServerContext.bind(user, iu);
+    return buildMerchant(user, iu, type);
+  }
 
+  /** Roule + construit + stocke (write-through) le {@code MerchantData} d'un marchand, sur un {@code user}/{@code iu}
+   *  DÉJÀ liés. Les champs de fenêtre ({@code expiration}/{@code cooldownEnd}/{@code staminaMemory}) sont LUS depuis
+   *  l'{@code iu} (0 pour un marchand permanent ; fenêtre trouvée pour un marchand limité après {@code checkForFoundMerchant}). */
+  private com.perblue.heroes.network.messages.MerchantData buildMerchant(User user, IndividualUser iu,
+      com.perblue.heroes.network.messages.MerchantType type) {
     java.util.Random rnd = new Random();
     java.util.List<?> drops = merchantTable(type).rollNode("ROOT",
         new com.perblue.heroes.game.logic.droptable.UserDTContext(user), rnd);
@@ -3467,17 +3474,56 @@ public final class ServerUser {
     }
     com.perblue.heroes.network.messages.MerchantData data = new com.perblue.heroes.network.messages.MerchantData();
     data.inventory = inv;
-    data.expiration = 0L;
-    data.cooldownEnd = 0L;
+    // Fenêtre : 0 pour un marchand permanent ; valeurs trouvées (durée/cooldown .tab) pour un marchand limité.
+    data.expiration = iu.getMerchantExpiration(type);
+    data.cooldownEnd = iu.getMerchantCooldownEnd(type);
+    data.staminaMemory = iu.getMerchantStaminaMemory(type);
     data.nextAutoRefresh = nextAutoRefreshTime(type);      // TIMESTAMP absolu du prochain refresh auto (planning .tab)
     data.permUnlocked = com.perblue.heroes.game.logic.MerchantHelper.isMerchantUnlocked(type, user);
-    data.staminaMemory = 0;
     // WRITE-THROUGH blob : le convertisseur ne gère pas les marchands → on écrit directement le wire (persisté + envoyé).
     if (individualUserExtra.merchantData == null)
       individualUserExtra.merchantData = new java.util.EnumMap<>(com.perblue.heroes.network.messages.MerchantType.class);
     individualUserExtra.merchantData.put(type, data);
     return data;
   }
+
+  /**
+   * MERCHANT (#72) incr. 4 — DÉCOUVRE un marchand LIMITÉ dans le temps (BLACK_MARKET / MEGA_MART). Exécute la logique
+   * du jeu (§3) {@code MerchantHelper.checkForFoundMerchant} (découverte pilotée par la stamina + RNG graine MERCHANT)
+   * jusqu'à ce qu'il soit trouvé : elle pose la fenêtre {@code expiration}=now+{@code getLimitedTimeMerchantDuration}
+   * (1 h) + {@code cooldownEnd}=expiration+{@code getLimitedTimeMerchantCooldown} (20 h) — durées des {@code .tab}. Puis
+   * génère le stock (avec la fenêtre) en blob write-through. Renvoie le {@code MerchantData}, ou {@code null} si le
+   * marchand n'est pas déblocable / déjà en cooldown. Zéro invention (§4) : durées/cooldown = données du jeu.
+   */
+  public synchronized com.perblue.heroes.network.messages.MerchantData discoverLimitedMerchant(
+      com.perblue.heroes.network.messages.MerchantType type) {
+    ServerContext.init();
+    User user = ClientNetworkStateConverter.getUser(userInfo, userExtra, "merchant");
+    IndividualUser iu = ClientNetworkStateConverter.getIndividualUser(
+        individualUserExtra, userID, userInfo.diamonds, "merchant");
+    ServerContext.bind(user, iu);
+    if (!com.perblue.heroes.game.logic.MerchantHelper.isMerchantUnlocked(type, user)) return null;
+    // Charge l'état persisté (fenêtre/cooldown) dans le runtime → isAvailable/cooldown reflètent le blob.
+    com.perblue.heroes.network.messages.MerchantData existing = merchantDataPersisted(type);
+    if (existing != null) iu.initMerchantData(type, existing);
+    // Déjà trouvé et dans la fenêtre → on ne re-roule PAS (on renvoie le stock courant).
+    if (com.perblue.heroes.game.logic.MerchantHelper.isAvailable(user, type)) return existing;
+    // Accumule la stamina (élan) jusqu'à la découverte (borné pour éviter une boucle infinie). Le pas = seuil de
+    // découverte garantie → convergence rapide (RNG graine MERCHANT). checkForFoundMerchant respecte le cooldown.
+    int req = com.perblue.heroes.game.logic.MerchantHelper.getStaminaRequiredForGuaranteedDiscovery(user, type);
+    for (int i = 0; i < 64 && !com.perblue.heroes.game.logic.MerchantHelper.isAvailable(user, type); i++) {
+      com.perblue.heroes.game.logic.MerchantHelper.checkForFoundMerchant(user, (long) req * 2L);
+    }
+    if (!com.perblue.heroes.game.logic.MerchantHelper.isAvailable(user, type)) return null; // en cooldown/non trouvé
+    return buildMerchant(user, iu, type);
+  }
+
+  /** Marchands LIMITÉS dans le temps (découverte stamina + fenêtre/cooldown). Poussés au boot s'ils sont
+   *  actuellement trouvés/déblocables (hors cooldown). */
+  private static final com.perblue.heroes.network.messages.MerchantType[] LIMITED_MERCHANTS = {
+      com.perblue.heroes.network.messages.MerchantType.BLACK_MARKET,
+      com.perblue.heroes.network.messages.MerchantType.MEGA_MART,
+  };
 
   /** Lecture du blob marchand persisté (wire) — pour tests/handlers. {@code null} si non généré. */
   public synchronized com.perblue.heroes.network.messages.MerchantData merchantDataPersisted(
@@ -3597,6 +3643,17 @@ public final class ServerUser {
         u.type = t; u.data = data; u.reason = 0;
         out.add(u);
       } catch (Throwable ignore) { /* un marchand qui échoue ne bloque pas le boot */ }
+    }
+    // Marchands LIMITÉS (BLACK_MARKET/MEGA_MART) : le serveur DÉCOUVRE (stamina) ceux qui sont déblocables et hors
+    // cooldown → fenêtre limitée (1 h) + stock ; s'ils sont déjà trouvés dans la fenêtre, on re-pousse tel quel.
+    for (com.perblue.heroes.network.messages.MerchantType t : LIMITED_MERCHANTS) {
+      try {
+        com.perblue.heroes.network.messages.MerchantData data = discoverLimitedMerchant(t);
+        if (data == null || data.inventory == null || data.inventory.isEmpty()) continue;   // non déblocable / en cooldown
+        com.perblue.heroes.network.messages.MerchantUpdate u = new com.perblue.heroes.network.messages.MerchantUpdate();
+        u.type = t; u.data = data; u.reason = 0;
+        out.add(u);
+      } catch (Throwable ignore) { /* un marchand limité qui échoue ne bloque pas le boot */ }
     }
     return out;
   }
