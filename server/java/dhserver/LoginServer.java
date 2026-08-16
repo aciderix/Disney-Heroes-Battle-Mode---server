@@ -1011,6 +1011,17 @@ public final class LoginServer {
                 System.out.println("[login] <== Action CLAIM_COLLECTION_REWARDS(" + ct + "/" + tr + " niv." + level + ")"
                     + (ok ? " appliqué [persisté]" : " refusé"));
 
+              } else if (act.command == com.perblue.heroes.network.messages.CommandType.BUY_COLLECTION_AVATAR) {
+                // COLLECTIONS #72 incr. 3 — ACHAT d'avatar de collection (mastery shop). Protocole client (disasm
+                // ClientActionHelper.buyCollectionAvatar) : Action{BUY_COLLECTION_AVATAR, itemType=avatar}. Le serveur
+                // ré-exécute CollectionHelper.buyCollectionAvatar (gate COLLECTION_AVATAR_LOCKED + débit MASTERY_TOKENS).
+                com.perblue.heroes.network.messages.ItemType avatar = act.itemType;
+                boolean ok = avatar != null && user.applyBuyCollectionAvatar(avatar);
+                if (ok) { try { store.save(user); } catch (Exception e) {
+                  System.out.println("[login]     ! persist collection avatar: " + e); } }
+                System.out.println("[login] <== Action BUY_COLLECTION_AVATAR(" + avatar + ")"
+                    + (ok ? " appliqué [persisté]" : " refusé"));
+
               } else if (act.command == com.perblue.heroes.network.messages.CommandType.START_STICKER_CHALLENGE
                   || act.command == com.perblue.heroes.network.messages.CommandType.CLAIM_STICKER_CHALLENGE
                   || act.command == com.perblue.heroes.network.messages.CommandType.CANCEL_STICKER_CHALLENGE) {

@@ -1204,6 +1204,28 @@ public final class TutorialDriver {
         } catch (Throwable t) { System.out.println("[campquick] échec: " + t); t.printStackTrace(); }
     }
 
+    /** DEV : ACHÈTE un avatar de collection (mastery shop) — chemin client réel
+     *  {@code ClientActionHelper.buyCollectionAvatar(itemType)} (Action BUY_COLLECTION_AVATAR ; le serveur ré-exécute
+     *  buyCollectionAvatar : gate + débit MASTERY_TOKENS + don). Invoqué via "buyavatar &lt;ITEM&gt;". */
+    public static void buyAvatar(GameMain game, String itemS) {
+        try {
+            com.perblue.heroes.network.messages.ItemType it = com.perblue.heroes.network.messages.ItemType.valueOf(itemS);
+            long tok = game.getYourUser().getResource(com.perblue.heroes.network.messages.ResourceType.MASTERY_TOKENS);
+            System.out.println("[buyavatar] " + it + " avant : MASTERY_TOKENS=" + tok
+                + " possédé=" + game.getYourUser().getItemAmount(it) + " [chemin réel]");
+            com.perblue.heroes.game.ClientActionHelper.buyCollectionAvatar(it);
+            System.out.println("[buyavatar] BUY_COLLECTION_AVATAR(" + it + ") envoyé");
+        } catch (Throwable t) { System.out.println("[buyavatar] échec: " + t); t.printStackTrace(); }
+    }
+
+    /** DEV : ouvre l'écran du mastery shop {@code CollectionsShopScreen} (chemin réel, pushScreen). Invoqué via "shopscreen". */
+    public static void shopScreen(GameMain game) {
+        try {
+            game.getScreenManager().pushScreen(new com.perblue.heroes.ui.collections.CollectionsShopScreen());
+            System.out.println("[shopscreen] CollectionsShopScreen poussé [chemin réel]");
+        } catch (Throwable t) { System.out.println("[shopscreen] échec: " + t); t.printStackTrace(); }
+    }
+
     /** DEV : OUVRE le VRAI écran de détail de collection {@code CollectionsDetailScreen(type)} (chemin réel,
      *  pushScreen) — pour vérification VISUELLE (paliers + boutons de claim). Invoqué via "collectionscreen &lt;TYPE&gt;". */
     public static void collectionScreen(GameMain game, String typeS) {

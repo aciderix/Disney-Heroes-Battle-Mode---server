@@ -481,6 +481,16 @@ public final class DesktopLauncher {
                     TutorialDriver.campQuick(game);
                     continue;
                 }
+                if (low.startsWith("buyavatar ")) {              // buyavatar <ITEM> → BUY_COLLECTION_AVATAR
+                    String[] ba = ln.trim().split("[,;\\s]+");
+                    if (ba.length >= 2) TutorialDriver.buyAvatar(game, ba[1].toUpperCase());
+                    else System.out.println("[buyavatar] usage: buyavatar <ITEM>");
+                    continue;
+                }
+                if (low.startsWith("shopscreen")) {              // shopscreen → ouvre le mastery shop
+                    TutorialDriver.shopScreen(game);
+                    continue;
+                }
                 if (low.startsWith("expreset")) {                // expreset [diff] — RESET de l'expédition → ResetExpedition
                     String[] pr = ln.trim().split("[,;\\s]+");
                     int diff = pr.length >= 2 ? Integer.parseInt(pr[1].trim()) : 1;

@@ -2490,6 +2490,39 @@ public final class ServerUser {
   }
 
   /**
+   * COLLECTIONS (#72) incr. 3 — ACHAT d'un AVATAR de collection (« mastery shop » : {@code Action
+   * BUY_COLLECTION_AVATAR{itemType=avatar}}). Le serveur ré-exécute la logique du jeu (§3)
+   * {@code CollectionHelper.buyCollectionAvatar(user, itemType)} : gate {@code getCumulativeCollectionLevel >=
+   * getCumulativeCollectionLevelRequiredForPortrait} sinon lève {@code COLLECTION_AVATAR_LOCKED} (anti-triche = on
+   * n'achète pas un avatar dont le palier de collection n'est pas atteint) ; débite {@code MASTERY_TOKENS}
+   * ({@code getAvatarCost} ; lève si insuffisant) ; donne l'avatar ({@code giveUser(itemType, 1)} → items
+   * write-through). C'est le SINK des MASTERY_TOKENS gagnés par les claims (incr. 1). Persistance : items/ressources
+   * write-through + {@code resyncDiamonds}/{@code resyncCounts}. Zéro invention (§4). Renvoie {@code true} si appliqué.
+   */
+  public synchronized boolean applyBuyCollectionAvatar(com.perblue.heroes.network.messages.ItemType avatar) {
+    ServerContext.init();
+    if (avatar == null) return false;
+    User user = ClientNetworkStateConverter.getUser(userInfo, userExtra, "collection-avatar");
+    IndividualUser iu = ClientNetworkStateConverter.getIndividualUser(
+        individualUserExtra, userID, userInfo.diamonds, "collection-avatar");
+    ServerContext.bind(user, iu);
+    ServerContext.bindBattlePass(refreshBattlePass());
+    long tokBefore = user.getResource(com.perblue.heroes.network.messages.ResourceType.MASTERY_TOKENS);
+    try {
+      com.perblue.heroes.game.logic.CollectionHelper.buyCollectionAvatar(user, avatar);
+    } catch (Throwable t) {
+      boolean antiCheat = t instanceof com.perblue.heroes.ClientErrorCodeException;
+      System.out.println("[collection] achat avatar " + avatar
+          + (antiCheat ? " REFUSÉ (anti-triche : verrouillé/tokens insuffisants)" : " échec") + " : " + t);
+      return false;
+    }
+    resyncHeroes(user); resyncDiamonds(user); resyncCounts(user);
+    long tokSpent = tokBefore - user.getResource(com.perblue.heroes.network.messages.ResourceType.MASTERY_TOKENS);
+    System.out.println("[collection] avatar " + avatar + " acheté (MASTERY_TOKENS -" + tokSpent + ") [persisté]");
+    return true;
+  }
+
+  /**
    * Graine RNG annoncée par le client pour {@code type} (via {@code Action SET_SEED}), ou {@code null} si
    * aucune n'a été reçue. Destinée à la re-simulation/re-roll autoritatif (SERVER_PLAN §Partiels D/E).
    */
