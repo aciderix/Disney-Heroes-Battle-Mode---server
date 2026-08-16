@@ -45,6 +45,7 @@ TESTS=(
   LineupSaveTest LineupCooldownTest LineupFieldsTest
   CollectionClaimTest CollectionMasteryTest CollectionAvatarTest
   WishingWellTargetTest WishingWellWishTest
+  MerchantGenTest
 )
 
 echo "[reg] compilation (serveur + ${#TESTS[@]} tests) ..."

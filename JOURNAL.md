@@ -4611,3 +4611,35 @@ de l'incr. 1.
 ligne serveur écrite (recon). Régression inchangée (116). Détail : `docs/MERCHANT.md` §Recette/§Point dur.
 
 Fichiers : `docs/MERCHANT.md`, `JOURNAL.md`.
+
+---
+
+## 2026-08-16 (g113) — MERCHANT (#72) incr. 1 : génération du stock (blob) HEADLESS + coût RÉSOLU
+
+Implémentation de la génération de stock marchand (blob serveur-autoritatif), après le recon g111/g112.
+
+**Coût des objets — RÉSOLU (leçon pity §8, 3ᵉ application « c'est dans la data »).** Le coût de base vient d'`items.tab` :
+colonnes `VEND_VALUE`, `GOLD_PRICE`, `DIAMOND_PRICE`, `TOKEN_PRICE`, lues via `ItemStats.getStat(itemType,
+StatType.{GOLD,DIAMOND,TOKEN}_PRICE)`. `getItemCost` = `getMerchantItemPrice(..., mi.getCost())` × remise ; le base
+`mi.getCost()` = prix items.tab pour la monnaie du marchand × quantité. (J'avais failli déclarer un gap sur le coût des
+marchands à jetons — encore une fois faux : la donnée existe, il fallait chercher `items.tab` + `ItemStats.getStat`.)
+
+**Implémentation.** `ServerUser.generateMerchant(MerchantType)` : `merchantTable(type)` (réflexion sur
+`MerchantStats.getDropStats`, privé) `.rollNode("ROOT", new UserDTContext(user), rnd)` → `List<DropItem>` ; par item :
+`DropConverter.convert` → `RewardDrop` (skip itemType DEFAULT = ressources/upsells sans type), monnaie = `DropItem
+.getParameter("PriceType")` sinon `getMerchantPrimaryCurrency`, coût = `ItemStats.getStat(itemType, priceStat(currency))
+× quantité` → `MerchantItemData{item,cost,currency,purchased=false}`. `MerchantData{inventory, expiration=0, cooldownEnd=0,
+nextAutoRefresh=getTimeUntilNextAutoRefresh, permUnlocked=isMerchantUnlocked, staminaMemory=0}`. **Write-through** :
+`individualUserExtra.merchantData` (EnumMap<MerchantType,MerchantData>) — le convertisseur `ClientNetworkStateConverter`
+ne gère PAS les marchands (blob pur, cat. Arena/Surge). Helpers `merchantTable`/`priceStat`, lecteur
+`merchantDataPersisted(type)`.
+
+**Test `MerchantGenTest`** (régression → **117 tests**). GEAR : 10 objets, 8 tarifés (+2 upsells prix 0), **coût ==
+prix items.tab × qté vérifié POUR CHAQUE objet** (invariant), monnaie GEAR_TOKENS, non achetés ; round-trip wire + DB
+conservent stock/coûts/type/monnaie ; 2 marchands (GEAR+MEMORY) coexistent.
+
+**RESTE incr. 1b** : pousser `MerchantUpdate{type,data,reason}` au boot/à l'accès (mécanisme `GameMain.lambda$…$28`) +
+vérif EN JEU (écran marchand affiche objets + prix). Puis incr. 2 (achat), 3 (refresh, corrige le PARTIEL), 4 (BLACK_MARKET).
+
+Fichiers : `server/java/dhserver/ServerUser.java` (+generateMerchant/merchantTable/priceStat/merchantDataPersisted),
+`server/smoke/MerchantGenTest.java`, `server/smoke/regression.sh`, `docs/MERCHANT.md`, `MEMORY.md`.

@@ -61,23 +61,21 @@ Prouvé headless (`MerchGenProbe`/`MerchCostProbe`) :
 4. **Livraison client** : `GameMain.lambda$…$28(conn, MerchantUpdate)` → push `MerchantUpdate{type, data, reason}`
    (boot/on-demand). Pas dans BootData.
 
-### ⚠️ Point dur restant — COÛT des objets (à finir, NE PAS inventer §4)
-`getItemCost` lit le coût de BASE porté par l'objet (`mi.getCost()`) puis applique remise event/guilde. Ce coût de base
-vient de la génération :
-- **Marchands ANNOTÉS** (ex. BLACK_MARKET) : le `.tab` porte `{PriceType=DIAMONDS}{Cost=…}` → `DropItem.getParameter(
-  "Cost"/"PriceType")` après roll (data-driven, §4-OK, reconstructible). Behaviors `MerchantDTCode` : `Cost`, `PriceType`,
-  `CostScalar`, `RarityCostScalar`, `CostRarityScalar`.
-- **Marchands À JETONS** (GEAR/MEMORY…) : les objets roulés sortent **sans param `Cost`** (`params={}`) → le coût de base
-  est calculé côté serveur par **rareté** (behaviors `RarityCost*`), source pas encore localisée dans le jar/`.tab`
-  visible. **NE PAS conclure « gap »** avant d'avoir cherché (leçon pity §8) : à vérifier — table de coût par rareté,
-  `COST_STATS` (semble = coût de REFRESH indexé, pas item), ou formule item-value. **C'est le seul verrou restant de
-  l'incr. 1.**
+### COÛT des objets — RÉSOLU (data-driven, §4-OK)
+`getItemCost` = `getMerchantItemPrice(type, itemType, resType, currency, mi.getCost())` × remise guilde ; le coût de BASE
+`mi.getCost()` vient de la génération. **Source du prix trouvée (leçon pity §8 : « c'est dans la data » — 3ᵉ fois)** :
+`items.tab` a les colonnes **`VEND_VALUE`, `GOLD_PRICE`, `DIAMOND_PRICE`, `TOKEN_PRICE`**, lues via
+**`ItemStats.getStat(itemType, StatType.{GOLD,DIAMOND,TOKEN}_PRICE)`**. Coût de base = prix de l'objet pour la monnaie du
+marchand × quantité. Monnaie = `PriceType` du drop (marchands annotés) sinon `getMerchantPrimaryCurrency(type)`
+(GEAR→GEAR_TOKENS, jetons→`TOKEN_PRICE`). Vérifié : EYE_OF_FATES TOKEN_PRICE=65320, HISSY_FIT 32085 GEAR_TOKENS, etc.
+Les upsells (`MERCHANT_SLOTS_PERK_UPSELL`) ont prix 0 (slots verrouillés — fidèle).
 
 ## Plan d'incréments
-1. ⏳ **Génération + affichage du stock (blob serveur-autoritatif)** : roll ✅ + stockage blob (à câbler
-   `individualUserExtra.merchantData`) + `MerchantUpdate` push. **Bloqué** sur le coût de base des marchands à jetons
-   (voir §Point dur). Option : démarrer par un marchand à coûts ANNOTÉS. Test headless (stock non vide + coûts + round-trip
-   wire + DB). Vérif EN JEU : écran marchand affiche des objets avec prix.
+1. 🟢 **Génération du stock (blob serveur-autoritatif) — HEADLESS FAIT** : `ServerUser.generateMerchant(type)` roule
+   `MerchantStats.<TYPE>_DROP_STATS` (via `merchantTable` réflexion) + `UserDTContext` → `MerchantData` (objets + coût =
+   prix `items.tab` × qté + monnaie) → write-through `individualUserExtra.merchantData` (EnumMap). `MerchantGenTest`
+   (GEAR 10 objets, coûts = items.tab × qté, round-trip wire + DB, 2 marchands coexistent). **RESTE (incr. 1b)** : pousser
+   `MerchantUpdate` au boot/à l'accès + vérif EN JEU (écran marchand affiche objets + prix).
 2. ⬜ **ACHAT (`PurchaseMerchantItem` → `MerchantHelper.purchaseItem`)** : anti-triche (coût/quantité RECALCULÉS serveur,
    `expectedCost` ignoré), débit monnaie + don objet + marque `purchased`, persistance. Vérif en jeu.
 3. ⬜ **REFRESH (`Action REFRESH_TRADER` → `MerchantHelper.refresh` + régénération)** : corrige le PARTIEL actuel ;

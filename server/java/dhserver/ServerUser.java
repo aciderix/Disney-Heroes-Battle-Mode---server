@@ -3385,6 +3385,87 @@ public final class ServerUser {
     } catch (Throwable t) { throw new RuntimeException("table du puits aux souhaits introuvable", t); }
   }
 
+  /** Table de drop d'un MARCHAND (champ statique privé {@code MerchantStats.getDropStats(type)}) → sa
+   *  {@code DropTable}. Code+données du jeu (§3, tables {@code *_merchant_drops.tab}). */
+  private static DropTable merchantTable(com.perblue.heroes.network.messages.MerchantType type) {
+    try {
+      Method get = com.perblue.heroes.game.data.misc.MerchantStats.class.getDeclaredMethod("getDropStats",
+          com.perblue.heroes.network.messages.MerchantType.class);
+      get.setAccessible(true);
+      Object stats = get.invoke(null, type);
+      Method getTable = stats.getClass().getMethod("getTable");
+      return (DropTable) getTable.invoke(stats);
+    } catch (Throwable t) { throw new RuntimeException("table de marchand introuvable: " + type, t); }
+  }
+
+  /** Prix de BASE d'un objet pour une monnaie = colonne d'{@code items.tab} (via {@code ItemStats.getStat}) :
+   *  GOLD→GOLD_PRICE, DIAMONDS→DIAMOND_PRICE, jetons→TOKEN_PRICE. Donnée du jeu (§4), jamais inventée. */
+  private static com.perblue.heroes.game.data.item.StatType priceStat(com.perblue.heroes.network.messages.ResourceType cur) {
+    if (cur == com.perblue.heroes.network.messages.ResourceType.GOLD) return com.perblue.heroes.game.data.item.StatType.GOLD_PRICE;
+    if (cur == com.perblue.heroes.network.messages.ResourceType.DIAMONDS) return com.perblue.heroes.game.data.item.StatType.DIAMOND_PRICE;
+    return com.perblue.heroes.game.data.item.StatType.TOKEN_PRICE;   // *_TOKENS (GEAR/MEMORY/…)
+  }
+
+  /**
+   * MERCHANT (#72) incr. 1 — GÉNÈRE le stock d'un marchand (BLOB serveur-autoritatif). Roule la vraie table du jeu
+   * ({@code MerchantStats.<TYPE>_DROP_STATS} via {@code MerchantDTCode} + contexte {@code UserDTContext}), construit
+   * le {@code MerchantData} (objets + coût de base = prix de l'objet dans {@code items.tab} pour la monnaie du marchand,
+   * × quantité + monnaie via {@code PriceType} du drop ou monnaie primaire), le stocke en WRITE-THROUGH dans
+   * {@code individualUserExtra.merchantData} (EnumMap&lt;MerchantType,MerchantData&gt;) → persisté + poussable au client
+   * via {@code MerchantUpdate}. Zéro invention (§3/§4) : table + prix = données du jeu. Renvoie le {@code MerchantData}.
+   */
+  public synchronized com.perblue.heroes.network.messages.MerchantData generateMerchant(
+      com.perblue.heroes.network.messages.MerchantType type) {
+    ServerContext.init();
+    User user = ClientNetworkStateConverter.getUser(userInfo, userExtra, "merchant");
+    IndividualUser iu = ClientNetworkStateConverter.getIndividualUser(
+        individualUserExtra, userID, userInfo.diamonds, "merchant");
+    ServerContext.bind(user, iu);
+
+    java.util.Random rnd = new Random();
+    java.util.List<?> drops = merchantTable(type).rollNode("ROOT",
+        new com.perblue.heroes.game.logic.droptable.UserDTContext(user), rnd);
+    com.perblue.heroes.network.messages.ResourceType primary =
+        com.perblue.heroes.game.logic.MerchantHelper.getMerchantPrimaryCurrency(type);
+    java.util.List<com.perblue.heroes.network.messages.MerchantItemData> inv = new java.util.ArrayList<>();
+    for (Object o : drops) {
+      com.perblue.common.droptable.DropItem di = (com.perblue.common.droptable.DropItem) o;
+      java.util.List<?> conv = new DropConverter(user).convert(java.util.Collections.singletonList(di));
+      if (conv.isEmpty()) continue;
+      com.perblue.heroes.network.messages.RewardDrop rd = (com.perblue.heroes.network.messages.RewardDrop) conv.get(0);
+      if (rd.itemType == null || rd.itemType == com.perblue.heroes.network.messages.ItemType.DEFAULT) continue; // ressources/upsell sans itemType
+      // Monnaie : PriceType du drop (marchands annotés) sinon monnaie primaire du marchand.
+      com.perblue.heroes.network.messages.ResourceType cur = primary;
+      String pt = di.getParameter("PriceType");
+      if (pt != null) { try { cur = com.perblue.heroes.network.messages.ResourceType.valueOf(pt); } catch (Exception ignore) {} }
+      // Coût de base = prix unitaire (items.tab) × quantité vendue.
+      long unit = (long) com.perblue.heroes.game.data.item.ItemStats.getStat(rd.itemType, priceStat(cur));
+      long cost = unit * Math.max(1, rd.quantity);
+      com.perblue.heroes.network.messages.MerchantItemData mid = new com.perblue.heroes.network.messages.MerchantItemData();
+      mid.item = rd; mid.cost = cost; mid.currency = cur; mid.purchased = false;
+      inv.add(mid);
+    }
+    com.perblue.heroes.network.messages.MerchantData data = new com.perblue.heroes.network.messages.MerchantData();
+    data.inventory = inv;
+    data.expiration = 0L;
+    data.cooldownEnd = 0L;
+    data.nextAutoRefresh = com.perblue.heroes.game.logic.MerchantHelper.getTimeUntilNextAutoRefresh(type, user);
+    data.permUnlocked = com.perblue.heroes.game.logic.MerchantHelper.isMerchantUnlocked(type, user);
+    data.staminaMemory = 0;
+    // WRITE-THROUGH blob : le convertisseur ne gère pas les marchands → on écrit directement le wire (persisté + envoyé).
+    if (individualUserExtra.merchantData == null)
+      individualUserExtra.merchantData = new java.util.EnumMap<>(com.perblue.heroes.network.messages.MerchantType.class);
+    individualUserExtra.merchantData.put(type, data);
+    return data;
+  }
+
+  /** Lecture du blob marchand persisté (wire) — pour tests/handlers. {@code null} si non généré. */
+  public synchronized com.perblue.heroes.network.messages.MerchantData merchantDataPersisted(
+      com.perblue.heroes.network.messages.MerchantType type) {
+    if (individualUserExtra.merchantData == null) return null;
+    return (com.perblue.heroes.network.messages.MerchantData) individualUserExtra.merchantData.get(type);
+  }
+
   // --- Sérialisation wire (octets identiques au réseau) pour la persistance ---
   public synchronized byte[] userInfoWire()   { return wire(userInfo); }
   public synchronized byte[] userExtraWire()  { return wire(userExtra); }
