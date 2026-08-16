@@ -1022,6 +1022,17 @@ public final class LoginServer {
                 System.out.println("[login] <== Action BUY_COLLECTION_AVATAR(" + avatar + ")"
                     + (ok ? " appliqué [persisté]" : " refusé"));
 
+              } else if (act.command == com.perblue.heroes.network.messages.CommandType.SET_WISHING_WELL_TARGET_HERO) {
+                // WISHING_WELL #72 — fixe le héros cible du puits. Protocole client (disasm ClientActionHelper) :
+                // Action{SET_WISHING_WELL_TARGET_HERO, heroType=cible}. Le serveur ré-exécute WishingWellHelper
+                // .setTargetHero (valide éligibilité + pose cible/poids/cooldown) + persiste.
+                com.perblue.heroes.network.messages.UnitType target = act.heroType;
+                boolean ok = target != null && user.applySetWishingWellTarget(target);
+                if (ok) { try { store.save(user); } catch (Exception e) {
+                  System.out.println("[login]     ! persist wishing-well: " + e); } }
+                System.out.println("[login] <== Action SET_WISHING_WELL_TARGET_HERO(" + target + ")"
+                    + (ok ? " appliqué [persisté]" : " refusé"));
+
               } else if (act.command == com.perblue.heroes.network.messages.CommandType.START_STICKER_CHALLENGE
                   || act.command == com.perblue.heroes.network.messages.CommandType.CLAIM_STICKER_CHALLENGE
                   || act.command == com.perblue.heroes.network.messages.CommandType.CANCEL_STICKER_CHALLENGE) {

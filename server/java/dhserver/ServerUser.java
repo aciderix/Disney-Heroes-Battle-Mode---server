@@ -2523,6 +2523,36 @@ public final class ServerUser {
   }
 
   /**
+   * WISHING_WELL (#72) — fixe le HÉROS CIBLE du puits aux souhaits ({@code Action SET_WISHING_WELL_TARGET_HERO{
+   * heroType=cible}}). Le serveur ré-exécute la logique du jeu (§3) {@code WishingWellHelper.setTargetHero(user,
+   * hero)} : valide {@code hero ∈ getAllEligibleHeroes} (héros non éligible → aucun effet = anti-triche), pose
+   * {@code setWishingWellHero} (write-through {@code individualUserExtra.wishingWellHero}), horodate/compte le
+   * changement ({@code setTime}/{@code setCount(UserFlag)}) et ajuste les poids de pity ({@code getWeightConstants}/
+   * {@code checkMinWeights}). Persistance : write-through + {@code resyncCounts} (compteur de changement de cible).
+   * Zéro invention (§4). Renvoie {@code true} si la cible a bien été posée.
+   */
+  public synchronized boolean applySetWishingWellTarget(com.perblue.heroes.network.messages.UnitType hero) {
+    ServerContext.init();
+    if (hero == null) return false;
+    User user = ClientNetworkStateConverter.getUser(userInfo, userExtra, "wishing-well");
+    IndividualUser iu = ClientNetworkStateConverter.getIndividualUser(
+        individualUserExtra, userID, userInfo.diamonds, "wishing-well");
+    ServerContext.bind(user, iu);
+    try {
+      com.perblue.heroes.game.logic.WishingWellHelper.setTargetHero(user, hero);
+    } catch (Throwable t) {
+      System.out.println("[wishing-well] cible " + hero + " échec : " + t);
+      return false;
+    }
+    resyncCounts(user);
+    com.perblue.heroes.network.messages.UnitType now = iu.getWishingWellHero();
+    boolean ok = now == hero;
+    System.out.println("[wishing-well] cible = " + now + (ok ? "" : " (demandé " + hero + " NON posé : non éligible ?)")
+        + " [persisté]");
+    return ok;
+  }
+
+  /**
    * Graine RNG annoncée par le client pour {@code type} (via {@code Action SET_SEED}), ou {@code null} si
    * aucune n'a été reçue. Destinée à la re-simulation/re-roll autoritatif (SERVER_PLAN §Partiels D/E).
    */
