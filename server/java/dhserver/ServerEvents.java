@@ -82,6 +82,60 @@ public final class ServerEvents {
   }
 
   /**
+   * Construit un événement <b>DROP_BONUS</b> (composant {@code DropBonus}) déclarant {@code modes} affectés sur
+   * {@code [startMs, endMs]}, via les classes du jeu. C'est le levier de la <b>ROTATION QUOTIDIENNE FIDÈLE</b> : contrairement
+   * à MODES_OPEN (override, ouvre quel que soit le jour), un DropBonus rend {@code isModeDropBonusActive(mode)=true} et le jeu
+   * applique alors <b>SA PROPRE table</b> {@code DifficultyModeHelper.getOpenDays(mode)} (PORT_DOCKS [6,4,2,1] / PORT_WAREHOUSE
+   * [7,5,3,1]) → les modes s'ouvrent seulement leurs jours. Fait §8 (bytecode {@code isOpen}) :
+   * {@code isOpen = isUnlocked && (isModeOpen || (isModeDropBonusActive && getOpenDays.contains(dayOfWeek)))}.
+   *
+   * <p>Contrat (bytecode {@code DropBonus.load(info, full, node)}) : lit {@code gameModeFilter}/{@code stuffFilter}/{@code bonus}
+   * sur le nœud COMPLET (param2). Le composant est construit par la FABRIQUE du jeu ({@code createComponent("dropBonus")},
+   * enregistré par {@code SpecialEventsHelper} avec {@code DropBonusFactory} → provider/generics câblés, §4). {@code refresh}
+   * peuple {@code DropBonusSnapshot.multipliers} avec CHAQUE mode de {@code gameModeFilter} en clé → {@code isModeDropBonusActive}.
+   * {@code stuffFilter} vide = n'affecte pas la clé (le peuplement boucle sur {@code affectedGameModes}, pas sur le stuff).
+   *
+   * @param bonus multiplicateur de bonus de drop (int) ; la rotation ne dépend QUE de la présence du mode en clé, mais un
+   *              DropBonus « réel » porte un bonus (fidèle : le jeu ouvre PORT via un event à bonus). 0 = rotation sans bonus.
+   */
+  public static SpecialEventInfo buildDropBonusEvent(long id, Collection<GameMode> modes, int bonus, long startMs, long endMs) {
+    try {
+      StringBuilder inc = new StringBuilder();
+      for (GameMode m : modes) { if (inc.length() > 0) inc.append(','); inc.append("{\"gameMode\":\"").append(m.name()).append("\"}"); }
+      String full =
+          "{\"kind\":\"DROP_BONUS\",\"id\":" + id + ",\"formatVersion\":0,"
+        + "\"timeRange\":[{\"serverFilter\":\"1-999999\",\"start\":" + startMs
+        +   ",\"end\":{\"kind\":\"TIME\",\"endTime\":" + endMs + "}}],"
+        + "\"gameModeFilter\":{\"include\":[" + inc + "]},"
+        + "\"stuffFilter\":{},\"bonus\":" + bonus + "}";
+      JsonValue root = JSON.parse(full);
+
+      SpecialEventInfo info = new SpecialEventInfo(SpecialEventType.class);
+      setField(info, "id", id);
+      setField(info, "type", SpecialEventType.DROP_BONUS);
+      setField(info, "formatVersion", 0);
+
+      EventVisibility vis = new EventVisibility(new int[0]);
+      vis.load(info, root, root.get("timeRange"));
+      addComponent(info, vis);
+
+      // Composant DropBonus via la FABRIQUE du jeu (provider câblé) — load lit gameModeFilter/stuffFilter/bonus sur le full.
+      IEventComponent db = SpecialEventBuilder.createComponent("dropBonus");
+      Method load = findMethod(db.getClass(), "load", SpecialEventInfo.class, JsonValue.class, JsonValue.class);
+      load.setAccessible(true);
+      load.invoke(db, info, root, root.get("dropBonus"));
+      addComponent(info, db);
+
+      addComponent(info, buildMinimalCard(info));
+      return info;
+    } catch (RuntimeException e) {
+      throw e;
+    } catch (Exception e) {
+      throw new RuntimeException("buildDropBonusEvent", e);
+    }
+  }
+
+  /**
    * Construit une carte d'affichage {@code eventCardDisplay} MINIMALE (cachée) — via la FABRIQUE du jeu
    * ({@code SpecialEventBuilder.createComponent}) + un remplissage GÉNÉRIQUE PAR TYPE (pas champ-par-champ) : String→""
    * (sauf {@code preset}="none", le preset wildcard vide {@code *.eventCard.none}), {@code EventString}→vide (via son

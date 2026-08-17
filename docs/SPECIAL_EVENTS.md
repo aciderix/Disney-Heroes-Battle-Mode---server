@@ -154,25 +154,36 @@ client est un incrément ultérieur (construire une carte minimale via la fabriq
    (cooldown + chance `dailyUses port*_use=1`). Pilotes `portpress`/`portpreviewattack`, outils `PortEnterAdmin`/`PortStateProbe`.
    Détail : `docs/PORT.md` §« ENTRÉE COMPLÈTE ». **Confirme que la boucle event→client→entrée→combat→autorité est complète.**
 
-### ⭐ FAIT §8 (g128, bytecode `DifficultyModeHelper.isOpen`) — DEUX leviers d'ouverture, ROTATION = `DropBonus`
-`isOpen(mode, user, snap) = Unlockables.isUnlocked(mode, user) && (`
-  `snap.isModeOpen(mode)`  **← MODES_OPEN = override, ouvre le mode QUEL QUE SOIT LE JOUR (ce qu'on utilise en incr. 1/2)**
-  ` || ( snap.isModeDropBonusActive(mode) && getOpenDays(mode).contains(TimeUtil.getUserDailyActivityDayOfWeek(user)) ) )`
-- `isModeDropBonusActive(mode)` = le `DropBonusSnapshot.getMultipliers()` **contient `mode` en clé** (bytecode `BaseEventSnapshot`).
-- `getOpenDays(mode)` = **DONNÉE DU JEU** : `PortHelper.DOCKS_OPEN_DAYS`/`WAREHOUSE_OPEN_DAYS` (DOCKS [6,4,2,1] / WAREHOUSE
-  [7,5,3,1]), `TrialsHelper.*_OPEN_DAYS` pour FRANCHISE_TRIALS.
-⇒ **La ROTATION QUOTIDIENNE FIDÈLE n'est PAS un MODES_OPEN par jour** : c'est un event **`DropBonus`** déclarant les modes PORT
-  → `isModeDropBonusActive`=true → **le jeu applique lui-même sa table `getOpenDays`** (DOCKS et WAREHOUSE alternent
-  naturellement). MODES_OPEN reste l'override opérateur « forcer ouvert ».
-- **Contrat `DropBonus.load(info, full, node)`** (bytecode) : lit `gameModeFilter`{include:[{gameMode:…}]} (via `EnumFilter`),
-  `stuffFilter` (via `StuffFilter`), `bonus`:int (→ multiplier). Ctor `DropBonus(ISpecialEventType, Class<G> gameModeType,
-  IStuffProvider)` → **construire via la fabrique du jeu `SpecialEventBuilder.createComponent("dropBonus")`** (comme la carte),
-  puis `load` — provider/generics câblés par le jeu, rien à la main (§4).
+### ⭐⭐ FAIT §8 (g130, bytecode COMPLET `DifficultyModeHelper.isOpen`) — la ROTATION par jour est le DÉFAUT (corrige g124 ET g128)
+**Vraie structure relevée au bytecode** (une lecture antérieure — g128 — était INCOMPLÈTE ; correction) :
+```
+isOpen(mode, user, snap) =
+     snap.isModeOpen(mode)                     ← MODES_OPEN = OVERRIDE (ouvre quel que soit le jour)
+  OR snap.isModeDropBonusActive(mode)          ← DropBonus = OVERRIDE AUSSI (PAS gaté par le jour !)
+  OR getOpenDays(mode).contains(dayOfWeek)     ← DÉFAUT : rotation par jour, table DU JEU, SANS AUCUN event
+```
+(les 3 sont des **OU indépendants** ; le `dayOfWeek` = `TimeUtil.getUserDailyActivityDayOfWeek(user, snap.snapshotTime)`.)
+- `getOpenDays(mode)` = **DONNÉE DU JEU** : `PortHelper.DOCKS_OPEN_DAYS`/`WAREHOUSE_OPEN_DAYS` (DOCKS **[6,4,2,1]** / WAREHOUSE
+  **[7,5,3,1]**), `TrialsHelper.*_OPEN_DAYS` pour FRANCHISE_TRIALS.
+- `isModeDropBonusActive(mode)` = `DropBonusSnapshot.getMultipliers()` **contient `mode` en clé** (peuplé par `DropBonus.refresh`
+  pour chaque mode du `gameModeFilter`).
 
-3. ⬜ **`DropBonus` (ROTATION fidèle par jour) — PROCHAIN.** `ServerEvents.buildDropBonusEvent(id, modes, bonus, start, end)`
-   (même patron que `buildModesOpenEvent`, composant via `createComponent("dropBonus")`) ; `bootDefaultEvents` bascule de
-   « MODES_OPEN les 2 modes toujours » vers « DropBonus PORT → rotation `getOpenDays` ». Vérif EN JEU : avancer l'horloge
-   serveur (`AdminClock`) sur un jour DOCKS puis un jour WAREHOUSE → seul le mode du jour ouvre. + **persistance shard** (config
-   opérateur dans `shard_state` au lieu de ré-installer au bind).
+⇒ **La ROTATION QUOTIDIENNE FIDÈLE (DOCKS/WAREHOUSE alternent par jour) est le comportement PAR DÉFAUT du jeu — AUCUN événement
+  requis.** MODES_OPEN et DropBonus sont deux **OVERRIDES OPÉRATEUR** (live-ops : forcer un mode ouvert un jour HORS son planning).
+- **CORRECTION g124** : « WAREHOUSE jamais ouvert sans event » était **FAUX** — WAREHOUSE s'ouvre par défaut ses jours [7,5,3,1] ;
+  il était simplement fermé les autres jours (dont le jour de test). **CORRECTION g128** : la rotation n'est PAS « un DropBonus » ;
+  DropBonus est un override, pas le moteur de rotation.
+- **CONSÉQUENCE sur `bootDefaultEvents()`** : il ouvre en dur les DEUX modes PORT en permanence (MODES_OPEN) → **écrase la rotation
+  naturelle** = le point NON-FIDÈLE (a). Fidèle = **NE PAS forcer** (laisser `getOpenDays` faire) et réserver l'engine aux
+  overrides opérateur (config admin persistée). Prouvé headless `SpecialEventsRotationTest` : sans event, `isOpen == getOpenDays.
+  contains(jour)` ; override MODES_OPEN/DropBonus ouvre un mode fermé ce jour ; retrait → refermé.
+- **`buildDropBonusEvent(id, modes, bonus, start, end)`** LIVRÉ (fabrique du jeu `createComponent("dropBonus")` + `load` ;
+  provider/generics câblés §4) : disponible comme **override opérateur** (un DropBonus porte aussi un vrai bonus de drop).
+
+3. ⬜ **RENDRE `bootDefaults` FIDÈLE + config admin (PROCHAIN)** : ne plus forcer les 2 modes PORT ouverts en permanence (laisser
+   la rotation `getOpenDays` du jeu) ; l'engine (MODES_OPEN/DropBonus) devient un **OVERRIDE opérateur** piloté par un outil admin
+   (`AdminEvents` : ouvrir/fermer un mode, planifier une fenêtre) + **persistance shard** (`shard_state`, survit aux redémarrages).
+   Vérif EN JEU : sans override, WAREHOUSE fermé les jours hors [7,5,3,1] (« OPENS TOMORROW ») et ouvert ses jours ; override →
+   forcé ouvert. **Décision utilisateur** : basculer le défaut vers la rotation fidèle (WAREHOUSE non-jouable hors planning) ?
 4. ⬜ discounts marchands/coffres (`ChestDiscount`/merchant). 5. ⬜ `AdditionalChances`, `Contest`/`TeamLevel`. (Un builder par
    composant, même patron.)

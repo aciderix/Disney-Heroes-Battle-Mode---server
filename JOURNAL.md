@@ -5241,3 +5241,34 @@ DB de test. Correctif setup (`PortEnterAdmin`) : recaler `LAST_USER_DAILY_RESET 
 → le décompte se lit correctement (prouvé DB : `getRemainingDailyUses = 1/2` après le win, `LAST_USER_DAILY_RESET` non-futur).
 
 Fichiers : `server/smoke/PortEnterAdmin.java` (recale l'ancre de reset quotidien). Captures `build/port_we_chances_*.png`.
+
+## 2026-08-17 (g130) — SPECIAL_EVENTS : CORRECTION §8 majeure — la rotation par jour est le DÉFAUT du jeu (pas un event)
+
+En relisant `DifficultyModeHelper.isOpen` EN ENTIER au bytecode (ma lecture g128 était INCOMPLÈTE), vraie structure :
+```
+isOpen(mode) =  isModeOpen(mode)                    [MODES_OPEN = OVERRIDE, tout jour]
+             OU isModeDropBonusActive(mode)         [DropBonus  = OVERRIDE aussi, tout jour]
+             OU getOpenDays(mode).contains(dayOfWeek)  [DÉFAUT : rotation par jour, table DU JEU, SANS event]
+```
+Trois OU indépendants. ⇒ **La rotation quotidienne fidèle (DOCKS [6,4,2,1] / WAREHOUSE [7,5,3,1]) est le comportement PAR
+DÉFAUT du jeu — aucun événement requis.** MODES_OPEN et DropBonus sont des **OVERRIDES OPÉRATEUR** (forcer un mode ouvert un
+jour hors planning).
+
+**Corrige g124** : « WAREHOUSE jamais ouvert sans event » était FAUX (il s'ouvre ses jours [7,5,3,1] ; fermé les autres, dont
+le jour de nos tests → d'où le « besoin » apparent d'un event). **Corrige g128** : la rotation n'est PAS « un DropBonus ».
+
+**Conséquence** : le vrai point NON-FIDÈLE = `bootDefaultEvents()` force les 2 modes PORT ouverts EN PERMANENCE (MODES_OPEN)
+→ écrase la rotation naturelle. Décision utilisateur : **basculer vers la rotation fidèle** (retirer l'override en dur ; laisser
+`getOpenDays` faire) + garder l'engine comme **override opérateur** (outil admin + persistance shard).
+
+**Livré ce commit** : `ServerEvents.buildDropBonusEvent(id, modes, bonus, start, end)` (fabrique du jeu
+`createComponent("dropBonus")` + `load` ; provider/generics câblés §4 ; disponible comme override opérateur, porte aussi un vrai
+bonus de drop). Test `SpecialEventsRotationTest` (sémantique prouvée headless : sans event `isOpen==getOpenDays.contains(jour)` ;
+override MODES_OPEN/DropBonus ouvre un mode fermé ce jour ; retrait → refermé). Régression 126/126.
+
+**PROCHAIN (approuvé)** : rendre `bootDefaults` fidèle (rotation naturelle par défaut) + `AdminEvents` (override opérateur
+open/close/planifier) + persistance `shard_state`. `SpecialEventsModesOpenTest` à mettre à jour (le défaut n'ouvre plus WAREHOUSE
+en permanence).
+
+Fichiers : `server/java/dhserver/ServerEvents.java` (buildDropBonusEvent), `server/smoke/SpecialEventsRotationTest.java`,
+`server/smoke/regression.sh`, `docs/SPECIAL_EVENTS.md`, `MEMORY.md`.
