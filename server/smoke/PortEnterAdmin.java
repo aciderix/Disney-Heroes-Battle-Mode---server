@@ -24,6 +24,10 @@ public final class PortEnterAdmin {
         try { su.grantHero(t, Rarity.RED, 100, 6); System.out.println("[portenteradmin] " + t + " → RED niv.100 6★"); }
         catch (Throwable e) { System.out.println("[portenteradmin] " + t + " échec: " + e); }
       }
+      // Ancre de reset quotidien COHÉRENTE avec l'horloge courante (offset persisté=0 → heure réelle). Sinon un
+      // LAST_USER_DAILY_RESET estampillé dans le FUTUR (reliquat d'une session à horloge avancée) fait remettre les
+      // compteurs à 0 À LA LECTURE (checkAndUpdateDailyValues) → le décompte 2/2→1/2→0/2 n'est pas visible.
+      su.gameUser().setTime(TimeType.LAST_USER_DAILY_RESET, com.perblue.heroes.util.TimeUtil.serverTimeNow());
       var iu = su.gameIndividual();
       for (GameMode mode : new GameMode[]{GameMode.PORT_DOCKS, GameMode.PORT_WAREHOUSE}) {
         CooldownType cd = com.perblue.heroes.game.logic.DifficultyModeHelper.getCooldownType(mode);

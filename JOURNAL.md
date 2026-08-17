@@ -5218,3 +5218,26 @@ rotation fidèle par jour (`getOpenDays`) ; puis autres composants (`DropBonus`,
 
 Fichiers : `desktop-port/src/main/java/dhdesktop/{TutorialDriver,DesktopLauncher}.java` (pilotes `portpress`/`portpreviewattack`),
 `server/smoke/PortEnterAdmin.java` + `server/smoke/PortStateProbe.java` (outils DEV, hors régression), `docs/PORT.md`, `MEMORY.md`.
+
+## 2026-08-17 (g129) — Décompte de chances PORT (2/2→1/2→0/2) : PROUVÉ RÉEL EN JEU + persiste au reload
+
+Question utilisateur : le décompte 2/2→1/2→0/2 fonctionne-t-il ? **OUI, prouvé en jeu et au reload.**
+
+**Chaîne de faits** :
+- Combat WAREHOUSE → `recordOutcome` → `DailyActivityHelper.recordDailyUse` (= `if(!tryConsumeEventUse) incDailyUses(key)`)
+  → `incDailyUses(portWarehouse_use)` + `incDailyUses(port_any)`, écrit **write-through** dans
+  `individualUserExtra.dailyUses` (persisté). Vérifié DB après le VRAI combat en jeu : `portWarehouse_use=1`.
+- La vitrine « CHANCES LEFT » = `DailyActivityHelper.getRemainingDailyUses = max − getDailyUses`.
+- **EN JEU** : vitrine AVANT = **2/2** (capture `port_we_chances_2of2.png`) → 1 combat WAREHOUSE gagné (serveur
+  `recordOutcome [persisté]`) → **RELOAD** du client depuis la DB → vitrine = **1/2** + bouton ENTER grisé
+  « COOLDOWN 3m 28s » (capture `port_we_chances_1of2.png`). DOCKS reste 2/2 (non joué). ⇒ décompte réel + persiste au reload.
+
+**Point §8 élucidé (pourquoi ça semblait « 2/2 » lors du 1ᵉʳ passage)** : `getDailyUses` appelle d'abord
+`DailyActivityHelper.checkAndUpdateDailyValues`, qui remet les compteurs à 0 quand `now` n'est pas le même jour-joueur
+que `TimeType.LAST_USER_DAILY_RESET`. Le compte de test avait ce timestamp estampillé **~13h dans le FUTUR** (reliquat
+d'une session à horloge décalée `AdminClock`, alors que l'offset persisté actuel = 0) → chaque lecture rebattait à 2/2.
+**Pas un bug de persistance du code** (le compteur brut ET le timestamp sont bien persistés) — un artefact d'horloge de la
+DB de test. Correctif setup (`PortEnterAdmin`) : recaler `LAST_USER_DAILY_RESET = serverTimeNow()` (cohérent, offset 0)
+→ le décompte se lit correctement (prouvé DB : `getRemainingDailyUses = 1/2` après le win, `LAST_USER_DAILY_RESET` non-futur).
+
+Fichiers : `server/smoke/PortEnterAdmin.java` (recale l'ancre de reset quotidien). Captures `build/port_we_chances_*.png`.
