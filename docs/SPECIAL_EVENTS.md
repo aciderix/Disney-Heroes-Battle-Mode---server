@@ -149,5 +149,30 @@ client est un incrément ultérieur (construire une carte minimale via la fabriq
    1 évènement(s))` → `PortChooserScreen` affiche **THE WAREHOUSE avec bouton ENTER** (au lieu de « OPENS TOMORROW »),
    CHANCES 2/2, comme THE DOCKS → entrée par la vitrine normale. Capture `build/port_warehouse_open_client_ingame.ppm`.
    Débloque aussi FRANCHISE_TRIALS (même levier). RESTE : persistance shard + rotation fidèle par jour.
-3. ⬜ `DropBonus` / `AdditionalChances`. 4. ⬜ discounts marchands/coffres. 5. ⬜ `Contest`/`TeamLevel`. (Un builder par
+2bis. ✅ **THE WAREHOUSE entré PAR LA VITRINE & joué de bout en bout EN JEU (g128).** Bouton ENTER réel → `ModePreviewScreen`
+   → ATTACK → sélecteur → combat DANS THE WAREHOUSE → VICTOIRE → serveur `recordOutcome [persisté]` + persistance DB prouvée
+   (cooldown + chance `dailyUses port*_use=1`). Pilotes `portpress`/`portpreviewattack`, outils `PortEnterAdmin`/`PortStateProbe`.
+   Détail : `docs/PORT.md` §« ENTRÉE COMPLÈTE ». **Confirme que la boucle event→client→entrée→combat→autorité est complète.**
+
+### ⭐ FAIT §8 (g128, bytecode `DifficultyModeHelper.isOpen`) — DEUX leviers d'ouverture, ROTATION = `DropBonus`
+`isOpen(mode, user, snap) = Unlockables.isUnlocked(mode, user) && (`
+  `snap.isModeOpen(mode)`  **← MODES_OPEN = override, ouvre le mode QUEL QUE SOIT LE JOUR (ce qu'on utilise en incr. 1/2)**
+  ` || ( snap.isModeDropBonusActive(mode) && getOpenDays(mode).contains(TimeUtil.getUserDailyActivityDayOfWeek(user)) ) )`
+- `isModeDropBonusActive(mode)` = le `DropBonusSnapshot.getMultipliers()` **contient `mode` en clé** (bytecode `BaseEventSnapshot`).
+- `getOpenDays(mode)` = **DONNÉE DU JEU** : `PortHelper.DOCKS_OPEN_DAYS`/`WAREHOUSE_OPEN_DAYS` (DOCKS [6,4,2,1] / WAREHOUSE
+  [7,5,3,1]), `TrialsHelper.*_OPEN_DAYS` pour FRANCHISE_TRIALS.
+⇒ **La ROTATION QUOTIDIENNE FIDÈLE n'est PAS un MODES_OPEN par jour** : c'est un event **`DropBonus`** déclarant les modes PORT
+  → `isModeDropBonusActive`=true → **le jeu applique lui-même sa table `getOpenDays`** (DOCKS et WAREHOUSE alternent
+  naturellement). MODES_OPEN reste l'override opérateur « forcer ouvert ».
+- **Contrat `DropBonus.load(info, full, node)`** (bytecode) : lit `gameModeFilter`{include:[{gameMode:…}]} (via `EnumFilter`),
+  `stuffFilter` (via `StuffFilter`), `bonus`:int (→ multiplier). Ctor `DropBonus(ISpecialEventType, Class<G> gameModeType,
+  IStuffProvider)` → **construire via la fabrique du jeu `SpecialEventBuilder.createComponent("dropBonus")`** (comme la carte),
+  puis `load` — provider/generics câblés par le jeu, rien à la main (§4).
+
+3. ⬜ **`DropBonus` (ROTATION fidèle par jour) — PROCHAIN.** `ServerEvents.buildDropBonusEvent(id, modes, bonus, start, end)`
+   (même patron que `buildModesOpenEvent`, composant via `createComponent("dropBonus")`) ; `bootDefaultEvents` bascule de
+   « MODES_OPEN les 2 modes toujours » vers « DropBonus PORT → rotation `getOpenDays` ». Vérif EN JEU : avancer l'horloge
+   serveur (`AdminClock`) sur un jour DOCKS puis un jour WAREHOUSE → seul le mode du jour ouvre. + **persistance shard** (config
+   opérateur dans `shard_state` au lieu de ré-installer au bind).
+4. ⬜ discounts marchands/coffres (`ChestDiscount`/merchant). 5. ⬜ `AdditionalChances`, `Contest`/`TeamLevel`. (Un builder par
    composant, même patron.)
