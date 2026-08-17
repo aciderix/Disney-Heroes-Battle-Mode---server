@@ -5306,3 +5306,18 @@ PORT_WAREHOUSE` + restart → ENTER). Puis autres composants (discounts marchand
 Fichiers : `server/java/dhserver/ServerEvents.java`, `server/java/dhserver/LoginServer.java`, `server/smoke/AdminEvents.java`
 (nouveau), `server/smoke/SpecialEventsModesOpenTest.java`, `server/smoke/SpecialEventsRotationTest.java`, `docs/SPECIAL_EVENTS.md`,
 `MEMORY.md`.
+
+## 2026-08-17 (g131b) — SPECIAL_EVENTS rotation fidèle : ✅ VÉRIFIÉ EN JEU (défaut « OPENS TOMORROW » + override admin « ENTER »)
+
+Vérif EN JEU (id=1) de l'incrément g131, en DEUX phases :
+- **DÉFAUT FIDÈLE (config opérateur VIDE)** : serveur logue `événements opérateur chargés : 0 (rotation par défaut du jeu)`
+  → vitrine `PortChooserScreen` : **THE DOCKS = ENTER** (jour 2 ∈ [6,4,2,1]) et **THE WAREHOUSE = « OPENS TOMORROW »**
+  (grisé ; jour 2 ∉ [7,5,3,1]). C'est la rotation naturelle du jeu (`getOpenDays`) — plus le « both always open » non-fidèle.
+  Capture `build/port_we_default_opens_tomorrow.png`.
+- **OVERRIDE OPÉRATEUR** : `AdminEvents --open PORT_WAREHOUSE --days 3` (persiste la config dans `shard_state`) → **restart
+  serveur** → serveur logue `événements opérateur chargés : 1 override(s) live-ops` → vitrine : **THE WAREHOUSE = ENTER**
+  (forcé ouvert un jour hors planning). Capture `build/port_we_override_enter.png`. Puis `AdminEvents --clear` → retour au défaut.
+
+⇒ Boucle complète prouvée EN JEU : rotation fidèle par défaut (getOpenDays du jeu) + override opérateur persistant via
+`AdminEvents` (config `shard_state`, rechargée au boot). Le point non-fidèle « 2 modes ouverts en permanence » est corrigé.
+Crash flaky `PatchStats`/`SyncStatDataClientHelper` au boot loggé mais NON fatal cette fois (client survécu). Régression 126/126.
