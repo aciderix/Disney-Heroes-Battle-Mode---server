@@ -107,7 +107,26 @@ Test demandé : **entrer** dans THE DOCKS et THE WAREHOUSE et les jouer (un test
   `portenter <MODE>` (→ sélecteur d'équipe, = ce que `ModePreviewScreen.doAttack` construit) + `portteam` (sélection +
   `startBattleInner`). Captures `build/port_chooser_ingame.ppm`, `build/port_docks_played_ingame.ppm`.
 
-- **THE WAREHOUSE — EVENT-GATÉ (fait établi §8, PAS un bug).** En tentant d'entrer, découverte : l'OUVERTURE des modes PORT
+- **THE WAREHOUSE ✅ ENTRÉ PAR LA VITRINE & JOUÉ DE BOUT EN BOUT EN JEU (g128, via le moteur SPECIAL_EVENTS).** Une fois
+  l'événement `MODES_OPEN` poussé au client (SPECIAL_EVENTS incr. 2), THE WAREHOUSE affiche un **bouton ENTER actif** dans la
+  vitrine `PortChooserScreen` (CHANCES 2/2). Entrée par le **VRAI chemin d'UI** (pas le court-circuit `portenter`) : pilote
+  `portpress PORT_WAREHOUSE` = `new ModeData(PORT_WAREHOUSE, SpecialEventsHelper.snapshot()).handleButtonPress()` —
+  **byte-identique** au listener `PortChooserScreen$WarehouseBox$1.onClicked` (même `ModeData`, même snapshot client réel) →
+  `isAvailable=true` → `ModePreviewScreen` (aperçu THE WAREHOUSE : 3★, 5 ennemis, LOOT, difficulté EASY) → `portpreviewattack`
+  = `ModePreviewScreen.doAttack()` (bouton NEXT/ATTACK, réflexion) → `DifficultyModeHeroChooserScreen(mode, difficulty, null,
+  **snapshot réel**)` → `portteam` (5 héros + `startBattleInner`) → **combat rendu DANS THE WAREHOUSE** (décor conteneurs
+  « DUKE'S MOVIES », 3 étages, ennemis « Resist » = Normal Immunity) → **VICTOIRE** → écran **REWARDS** (Hero XP +33 ×5 +
+  items ×7 + GET 2X REWARDS) → client envoie `DifficultyModeAttack` → serveur **`PORT_WAREHOUSE diff=1 outcome=WIN →
+  recordOutcome appliqué [persisté]`**. **Persistance VÉRIFIÉE EN DB** (`PortStateProbe`/dump brut) : cooldown
+  `PORT_WAREHOUSE_ATTACK` posé (futur) + **compteur de chance consommé & persisté** (`individualUserExtra.dailyUses`
+  `portWarehouse_use=1`, `port_any=1`, write-through) + GOLD crédité. Setup `PortEnterAdmin` (roster RED 100 6★ + purge
+  cooldowns + chances fraîches — l'OUVERTURE vient de l'event, RIEN ne force le gate §2). Pilotes `portpress <MODE>` +
+  `portpreviewattack` (+ `portteam`). Captures `build/port_we_{vitrine_enter,preview,combat_stage3,rewards}.png`,
+  `build/port_warehouse_vitrine_win_ingame.ppm`. **NB** `getRemainingDailyUses` peut relire « 2/2 » : c'est la **remise à
+  zéro quotidienne À LA LECTURE** du jeu (ancre de reset du compte de test = chaque lecture paraît un nouveau jour) — le
+  compteur BRUT persisté est bien à 1 (§8 : consommation réelle prouvée, pas un gap).
+
+- **THE WAREHOUSE — mécanisme d'ouverture : EVENT-GATÉ (fait établi §8, PAS un bug).** L'OUVERTURE des modes PORT
   est pilotée par le **planning d'ÉVÉNEMENTS SPÉCIAUX**, pas par le simple jour-de-semaine. `DifficultyModeHelper.isOpen`
   (ordinaux PORT) → `BaseEventSnapshot.isModeOpen(mode)` → `ModesOpenSnapshot.getOpenModes()` (l'ensemble des modes ouverts,
   peuplé par le composant d'événement `ModesOpen`). Notre serveur ré-hébergé n'a **pas d'événements live** → `getOpenModes`

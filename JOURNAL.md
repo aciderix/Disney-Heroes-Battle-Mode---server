@@ -5164,3 +5164,57 @@ Régression 125/125 (le fail WishingWellWishTest observé une fois = flaky RNG :
 
 Fichiers : `server/java/dhserver/ServerEvents.java` (buildMinimalCard + toRaw + bootDefaultEvents), `server/java/dhserver/
 LoginServer.java` (push au REFRESH_SPECIAL_EVENTS), `docs/SPECIAL_EVENTS.md`, `MEMORY.md`.
+
+## 2026-08-17 (g128) — THE WAREHOUSE ✅ ENTRÉ PAR LA VITRINE & JOUÉ DE BOUT EN BOUT EN JEU (bouton ENTER réel)
+
+Réponse à la question utilisateur (« es-tu entré dans warehouse maintenant qu'il est dispo ? ») : **OUI**, par le VRAI chemin
+d'UI — pas le court-circuit `portenter` (qui poussait directement le sélecteur avec un snapshot NONE).
+
+**Chemin ENTER fidèle (recon bytecode).** Le bouton ENTER d'une carte de `PortChooserScreen` = listener
+`PortChooserScreen$WarehouseBox$1.onClicked` → `new ModeData(mode, this.snapshot).handleButtonPress()` où
+`this.snapshot = SpecialEventsHelper.snapshot()` (le VRAI snapshot client, où l'event `MODES_OPEN` poussé en incr. 2 est
+appliqué). `handleButtonPress()` → si `isAvailable()` → `pushScreen(new ModePreviewScreen(mode, snapshot, null))`. La preview
+a un bouton NEXT/ATTACK (`ModePreviewScreen$3.onClicked` → `doAttack()`) → `pushScreen(new DifficultyModeHeroChooserScreen(
+mode, difficulty, farming, snapshot))` — avec le snapshot RÉEL (≠ NONE du court-circuit).
+
+**Pilotes FIDÈLES ajoutés** (`TutorialDriver`/`DesktopLauncher`, patron §B-bis = API réelle du client) :
+  • `portpress <MODE>` = `new ModeData(mode, SpecialEventsHelper.snapshot()).handleButtonPress()` — **byte-identique** au clic ENTER.
+  • `portpreviewattack` = `ModePreviewScreen.doAttack()` (privé, réflexion) — bouton NEXT/ATTACK de la preview.
+  (puis `portteam` = sélection 5 héros + `startBattleInner`, déjà existant.)
+
+**Setup compte** : outil DEV `PortEnterAdmin` (roster RED 100 6★ pour gagner + purge cooldowns PORT + CHANCES QUOTIDIENNES
+fraîches via `setDailyUses(useKey/challengeKey/resetUseKey, 0)`). L'OUVERTURE de WAREHOUSE vient de l'ÉVÉNEMENT (moteur
+`ServerEvents`, poussé au boot + au REFRESH_SPECIAL_EVENTS) — RIEN ici ne force le gate (§2, pas de debug).
+
+**✅ EN JEU (id=1).** Vitrine **THE PORT** : THE DOCKS ENTER (2/2) ET **THE WAREHOUSE ENTER (CHANCES 2/2, EARN GOLD, NORMAL
+IMMUNITY)** → `portpress PORT_WAREHOUSE` logue `isOpen(snapClient)=true isAvailable=true` → **`ModePreviewScreen`** (aperçu
+THE WAREHOUSE : 3★, 5 ennemis niv.8 White, LOOT, difficulté EASY, boutons NEXT + Raid 1) → `portpreviewattack` →
+**`DifficultyModeHeroChooserScreen`** → `portteam` (5 héros) → **combat rendu DANS THE WAREHOUSE** (décor conteneurs
+« DUKE'S OFFICIALLY LICENSED MOVIES », 3 étages, ennemis en « Resist » = Normal Immunity) → **VICTOIRE** → écran **REWARDS**
+(Hero XP +33 ×5 dont un level-up + items ×7 + GET 2X REWARDS) → client envoie `DifficultyModeAttack` → serveur
+**`DifficultyModeAttack : PORT_WAREHOUSE diff=1 outcome=WIN → recordOutcome appliqué [persisté]`**.
+
+**Persistance VÉRIFIÉE EN DB** (probe `PortStateProbe` + dump brut des maps, pile arrêtée) :
+  • cooldown `PORT_WAREHOUSE_ATTACK` posé dans le FUTUR (+~455s) — n'est posé QUE par `recordOutcome` après un combat WAREHOUSE ;
+  • **compteur de chance CONSOMMÉ & PERSISTÉ** : `individualUserExtra.dailyUses` = `{portWarehouse_use=1, port_any=1, …}`
+    (`IndividualUser.setDailyUses`/`incDailyUses` écrivent **write-through** dans `individualUserExtra.dailyUses`, comme les
+    cooldowns → auto-persisté, aucun resync requis) ;
+  • GOLD crédité (57 918 570) ; PORT_DOCKS intact (cooldown 0, non joué).
+
+**Point §8 investigué et TRANCHÉ (rien laissé « absent » sans preuve).** `getRemainingDailyUses`/`PortStateProbe` relisaient
+« 2/2 » alors qu'une chance venait d'être consommée. Investigation : `DifficultyModeHelper.recordOutcome` appelle bien
+`DailyActivityHelper.recordDailyUse` = `if (!tryConsumeEventUse) user.incDailyUses(key)` + `incDailyUses(port_any)` +
+`setCooldownEnd`. Le compteur BRUT est bien monté à 1 en DB (cf. dump) — la lecture « 2/2 » vient de la **remise à zéro
+quotidienne À LA LECTURE** du jeu (le getter considère un nouveau jour quand l'ancre de reset du compte de test est passée)
+→ comportement du jeu, **PAS un gap de persistance** (la consommation est réellement stockée).
+
+**Flaky connu** : le client est tombé une fois sur le crash intermittent de boot `PatchStats.<clinit>` via
+`SyncStatDataClientHelper` (côté client, cf. g118) → `onClose` ; un **relaunch** l'a résolu (2ᵉ run OK jusqu'à la victoire).
+
+**Bilan.** La boucle SPECIAL_EVENTS→PORT est complète de bout en bout par l'UI RÉELLE : event ouvre WAREHOUSE → vitrine ENTER →
+preview → sélecteur → combat joué DANS le mode → victoire → serveur autoritatif enregistre & persiste (gold + cooldown +
+chance). Régression 125/125. **RESTE SPECIAL_EVENTS** : persistance shard (config opérateur au lieu de ré-installer au bind) +
+rotation fidèle par jour (`getOpenDays`) ; puis autres composants (`DropBonus`, discounts, `Contest`, `TeamLevel`).
+
+Fichiers : `desktop-port/src/main/java/dhdesktop/{TutorialDriver,DesktopLauncher}.java` (pilotes `portpress`/`portpreviewattack`),
+`server/smoke/PortEnterAdmin.java` + `server/smoke/PortStateProbe.java` (outils DEV, hors régression), `docs/PORT.md`, `MEMORY.md`.

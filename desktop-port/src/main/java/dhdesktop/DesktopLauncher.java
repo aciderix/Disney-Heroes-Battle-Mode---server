@@ -535,6 +535,16 @@ public final class DesktopLauncher {
                     else System.out.println("[portenter] usage: portenter <MODE>");
                     continue;
                 }
+                if (low.startsWith("portpress ")) {              // portpress <MODE> → clic ENTER réel de la vitrine (handleButtonPress)
+                    String[] pp = ln.trim().split("[,;\\s]+");
+                    if (pp.length >= 2) TutorialDriver.portPress(game, pp[1].toUpperCase());
+                    else System.out.println("[portpress] usage: portpress <MODE>");
+                    continue;
+                }
+                if (low.equals("portpreviewattack") || low.startsWith("portpreviewattack ")) {  // preview → bouton ATTACK réel (doAttack)
+                    TutorialDriver.portPreviewAttack(game);
+                    continue;
+                }
                 if (low.equals("portteam") || low.startsWith("portteam ")) {       // sélecteur → équipe + combat
                     TutorialDriver.portTeam(game);
                     continue;

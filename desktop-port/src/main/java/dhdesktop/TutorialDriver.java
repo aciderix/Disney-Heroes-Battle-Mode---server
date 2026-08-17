@@ -1306,6 +1306,49 @@ public final class TutorialDriver {
         } catch (Throwable e) { System.out.println("[portenter] échec: " + e); e.printStackTrace(); }
     }
 
+    /** DEV — ENTRER par la VITRINE : reproduit EXACTEMENT le clic du bouton ENTER d'une carte de {@code PortChooserScreen}.
+     *  Le listener du jeu ({@code PortChooserScreen$WarehouseBox$1.onClicked}) fait {@code new ModeData(mode, this.snapshot)
+     *  .handleButtonPress()} où {@code this.snapshot = SpecialEventsHelper.snapshot()} (le VRAI snapshot client, où notre
+     *  événement poussé est appliqué). On construit donc le MÊME {@code ModeData} avec le MÊME snapshot et on appelle
+     *  {@code handleButtonPress()} — byte-identique au bouton (patron §B-bis : API réelle du client, pas de coordonnée
+     *  devinée). {@code handleButtonPress} pousse {@code ModePreviewScreen} si {@code isAvailable()} (aperçu du mode avec le
+     *  bouton ATTACK). Étape 1/3 de l'entrée vitrine (puis "portpreviewattack" → "portteam"). Invoqué via
+     *  "portpress &lt;MODE&gt;". */
+    public static void portPress(GameMain game, String modeS) {
+        try {
+            com.perblue.heroes.network.messages.GameMode mode = com.perblue.heroes.network.messages.GameMode.valueOf(modeS);
+            var snap = com.perblue.heroes.game.logic.SpecialEventsHelper.snapshot();  // MÊME source que PortChooserScreen
+            boolean open = com.perblue.heroes.game.logic.DifficultyModeHelper.isOpen(mode, game.getYourUser(), snap);
+            com.perblue.heroes.ui.data.ModeData md = new com.perblue.heroes.ui.data.ModeData(mode, snap);
+            System.out.println("[portpress] " + mode + " isOpen(snapClient)=" + open + " isAvailable=" + md.isAvailable()
+                + " → ModeData.handleButtonPress() [clic ENTER réel de la vitrine]");
+            md.handleButtonPress();
+            Object cur = game.getScreenManager().getScreen();
+            System.out.println("[portpress] écran après clic ENTER = " + (cur == null ? "null" : cur.getClass().getSimpleName()));
+        } catch (Throwable e) { System.out.println("[portpress] échec: " + e); e.printStackTrace(); }
+    }
+
+    /** DEV — sur un {@code ModePreviewScreen} rendu (l'aperçu ouvert par le bouton ENTER de la vitrine), déclenche le bouton
+     *  ATTACK : le listener du jeu ({@code ModePreviewScreen$3.onClicked}) appelle {@code doAttack()} (privé) qui pousse le
+     *  VRAI {@code DifficultyModeHeroChooserScreen(mode, difficulty, farming, snapshot)} avec le snapshot RÉEL (≠ le
+     *  court-circuit "portenter" qui passe NONE). On invoque {@code doAttack()} par réflexion (même chemin exact). Étape 2/3.
+     *  Invoqué via "portpreviewattack". */
+    public static void portPreviewAttack(GameMain game) {
+        try {
+            Object screen = game.getScreenManager().getScreen();
+            if (screen == null || !screen.getClass().getSimpleName().contains("ModePreviewScreen")) {
+                System.out.println("[portpreviewattack] écran courant = "
+                    + (screen == null ? "null" : screen.getClass().getSimpleName()) + " (pas ModePreviewScreen)"); return;
+            }
+            java.lang.reflect.Method doAttack = screen.getClass().getDeclaredMethod("doAttack");
+            doAttack.setAccessible(true);
+            System.out.println("[portpreviewattack] ModePreviewScreen.doAttack() [bouton ATTACK réel]");
+            doAttack.invoke(screen);
+            Object cur = game.getScreenManager().getScreen();
+            System.out.println("[portpreviewattack] écran après ATTACK = " + (cur == null ? "null" : cur.getClass().getSimpleName()));
+        } catch (Throwable e) { System.out.println("[portpreviewattack] échec: " + e); e.printStackTrace(); }
+    }
+
     /** DEV — sur un {@code DifficultyModeHeroChooserScreen} rendu, sélectionne jusqu'à 5 héros possédés via le VRAI
      *  chemin {@code unitSelected} (comme un tap) puis lance le combat {@code startBattleInner()} → AttackScreen (jouable
      *  en AUTO via {@code dh.autofight}) → à la VICTOIRE, le client envoie {@code DifficultyModeAttack}. Étape 3/3.
