@@ -5367,3 +5367,28 @@ procéder, DÈS LE DÉBUT de sa reprise et AVANT TOUTE POURSUITE du travail enga
 la doc listée en tête de MEMORY, énumérer les règles §1-§8 + astuces/outils, faire le point) pour récupérer TOUT le contexte.
 
 Fichiers : `docs/FRANCHISE_TRIALS.md` (nouveau), `docs/PHASE2_PLAN.md` (nouveau), `docs/EXPLORATION.md`, `MEMORY.md`.
+
+## 2026-08-17 (g133) — FRANCHISE_TRIALS incr. 0 : contrat WIRE confirmé (WireCheck) + recon-completion
+
+Incrément 0 du plan `docs/FRANCHISE_TRIALS.md` : sécuriser le contrat wire (défaut nº3) AVANT tout handler + finir la recon
+structurelle.
+
+**Contrat WIRE confirmé** (`server/smoke/TrialsWireTest.java`, régression 127) — round-trip `writeAll`→`read` des 3 messages
+avec les types EXACTS :
+- `GetTrialEventData{eventID}` ✔.
+- `TrialEventData{eventID, chancesUsed, dailyResetsUsed, lastChancesResetTime, paidChancesRemaining, paidResetsUsed,
+  subtrials:Map<Integer,TrialEventSubtrialData>}` ✔ ; `TrialEventSubtrialData.nodeLevelStatuses:Map<Integer,CampaignLevelStatus>`
+  ✔ (⇒ un trial = des sous-trials, chacun = des nœuds « campagne » avec étoiles/complétion).
+- `TrialEventAttack{base:AttackBase, eventID, nodeNumber, subtrialNumber, stagesCleared, lootEarned:List<RewardDrop>,
+  attackEndTime}` ✔.
+
+**Recon-completion (bytecode)** : hiérarchie `GenericTrial`/`GenericSubtrial`/`GenericTrialNode` (interfaces) + impls
+`BaseEvent*` (logique PARTAGÉE = serveur-utilisable §3) / `ClientEvent*` ; gating héros riche (franchise/collection/level/
+rarity/recency/role/stars/team/specific). Record §3 = `GenericTrialNode.recordOutcome(...)` + `rollDrops()` (le serveur
+reconstruit le trial et exécute la logique du jeu, patron `DifficultyModeHelper`/PORT). Données extraites :
+`spotlight_trial_*.tab`, `event_trial_*.tab`, `patched_heroes_*_trial_config.tab`. Détail : `docs/FRANCHISE_TRIALS.md` §8.
+
+Régression **127/127**. **Prochaine action = incr. 1** (`GetTrialEventData`→`TrialEventData`, en démarrant par la famille B /
+SPOTLIGHT data-driven, la plus simple à mener EN JEU).
+
+Fichiers : `server/smoke/TrialsWireTest.java` (nouveau), `server/smoke/regression.sh`, `docs/FRANCHISE_TRIALS.md`.

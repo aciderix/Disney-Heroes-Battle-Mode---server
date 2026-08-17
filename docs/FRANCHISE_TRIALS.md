@@ -113,4 +113,28 @@ FRANCHISE_TRIALS (famille A) **est** un composant SPECIAL_EVENTS (`TrialEventInf
 - **`totalRequestedDonations`-like** décisions opérateur : a priori AUCUNE ici (tout vient de `TrialEventInfo`/stats).
 - **Où persister le blob `TrialEventData`** : colonne user dédiée vs `shard_state`/table `user_trials` (per-user, per-event).
 
-## Statut : RECON FAITE (2026-08-17). Prochaine action = incrément 0 (completion contrat wire + WireCheck) puis incr. 1.
+## 8. Incrément 0 — recon-completion (FAIT, 2026-08-17)
+- **Contrat WIRE confirmé** (`server/smoke/TrialsWireTest.java`, régression) — défaut nº3 écarté par round-trip `writeAll`→`read` :
+  - `TrialEventData.subtrials` = **`Map<Integer, TrialEventSubtrialData>`** (clé = numéro de sous-trial).
+  - `TrialEventSubtrialData.nodeLevelStatuses` = **`Map<Integer, CampaignLevelStatus>`** (clé = numéro de nœud ; **chaque nœud =
+    un niveau façon campagne** : `stars`/complétion/`totalWins`…). ⇒ un trial = des sous-trials, chacun = des nœuds « campagne ».
+  - `TrialEventAttack{base:AttackBase, eventID, nodeNumber, subtrialNumber, stagesCleared, lootEarned:List<RewardDrop>, attackEndTime}`.
+- **Hiérarchie d'objets** (`game/objects/trials/`) : interfaces `GenericTrial`/`GenericSubtrial`/`GenericTrialNode` ;
+  implémentations **`BaseEventTrial`/`BaseEventSubtrial`/`BaseEventTrialNode`** (logique PARTAGÉE = serveur-utilisable §3) +
+  `ClientEventTrial`/… (client). **Gating de héros** riche : `HeroFranchiseGatingCriterion`, `HeroCollectionGatingCriterion`,
+  `HeroLevel/Rarity/Recency/Role/Stars/TeamGatingCriterion`, `SpecificHeroesGatingCriterion`, `CombinedGatingCriterion`.
+- **Record (§3)** : `GenericTrialNode.recordOutcome(CombatOutcome, stagesCleared:int, Collection, Collection, Collection, time:long,
+  snapshot)` + `rollDrops()` → le serveur **reconstruit** le trial (`BaseEventTrial…` depuis `TrialEventInfo`/stats + l'état
+  persisté `TrialEventData`) et **exécute `recordOutcome`** (avance nœud/sous-trial, conso chance), puis re-sérialise vers
+  `TrialEventData` — MÊME patron que `DifficultyModeHelper.recordOutcome` (PORT). Aucune règle réécrite.
+- **Données extraites** (`game-data/stats/`) : `spotlight_trial_{constants,difficulties,enemies,enemy_config}.tab`,
+  `event_trial_{arena_rules,constants,rewards}.tab`, `patched_heroes_{base_trial_config,franchise_trials_enemy_config}.tab`.
+- **Chances** : `ClientTrialEventHelper.getChancesLeft/hasChancesLeft` → `GenericTrial.getChancesRemaining` (dérivé de
+  `TrialEventData.chancesUsed` + `TrialEventInfo.getChancesPerReset`/resets). SPOTLIGHT : `spotlightTrialUses`.
+
+**RESTE incr. 0 → à finir AU MOMENT de l'incrément concerné** (pas de reverse premature, mais méthodes exactes à lire ALORS,
+COMPLÈTES) : signatures de construction `BaseEventTrial(...)` (incr. 1/2), contrat `TrialEventInfoFactory.load` JSON (incr. 5),
+build d'un `GenericTrial` SPOTLIGHT depuis `SpotlightTrialStats` (incr. 4).
+
+## Statut : RECON FAITE + incr. 0 (contrat wire ✔ WireCheck). Prochaine action = incr. 1 (`GetTrialEventData` → `TrialEventData`,
+## en démarrant par la famille B / SPOTLIGHT data-driven, la plus simple à mener EN JEU).

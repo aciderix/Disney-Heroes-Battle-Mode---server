@@ -52,6 +52,7 @@ TESTS=(
   PortWarehouseTest
   SpecialEventsModesOpenTest
   SpecialEventsRotationTest
+  TrialsWireTest
 )
 
 echo "[reg] compilation (serveur + ${#TESTS[@]} tests) ..."
