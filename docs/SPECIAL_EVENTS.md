@@ -60,6 +60,33 @@ Reproduire le JSON À LA MAIN oblige à reconstituer un schéma d'AFFICHAGE (`ev
 l'ouverture de modes, aux exigences obscures (`preset`…). Le deviner par essais = fragile + risque §4 (invention). ~28
 essais headless ont décodé le pipeline + la majorité du schéma, mais pas `eventCardDisplay`.
 
+## ✅ PERCÉE (2026-08-17) — la voie OBJET + `toJson()` FONCTIONNE
+
+Contrat de chargement **définitif** (bytecode `SpecialEventInfo.newComponent`) :
+`component.load(info, fullJson, fullJson.get(key))` → **param2 = event complet**, **param3 = sous-nœud `fullJson.get(key)`**.
+`EventVisibility.load` branche sur `info.getFormatVersion()` : **fv=0 (flat)** → param3 = **tableau `timeRange`** ;
+fv≥1 → `{timeRanges:[…]}`.
+
+**Recette PROUVÉE (headless, `BuildProbe`)** — construire l'event en OBJETS du jeu (fv=0) puis injecter :
+```
+full = JsonReader.parse("{kind:MODES_OPEN, id, formatVersion:0, timeRange:[{serverFilter:'1-999999',start,end:{kind:TIME,endTime}}], gameModeFilter:{include:[{gameMode:'PORT_WAREHOUSE'}]}}")
+info = new SpecialEventInfo(SpecialEventType.class) ; set id/type=MODES_OPEN/formatVersion=0 (réflexion)
+EventVisibility vis = new EventVisibility(new int[]{}) ; vis.load(info, full, full.get("timeRange")) ; addComponent(vis)
+ModesOpen mo = new ModesOpen(MODES_OPEN, GameMode.class) ; mo.load(info, full, full) ; addComponent(mo)
+SpecialEvents se = new SpecialEvents() ; se.setEvents([info])
+→ injecter dans EventHelperInner.SPECIAL_EVENTS (+ vider SNAPSHOT_CACHE) [réflexion]
+```
+**Résultat : `DifficultyModeHelper.isOpen(PORT_WAREHOUSE, snapshotWithoutRefresh()) = TRUE`** (mécanisme fidèle confirmé,
+sans debug). `SpecialEventInfo.toJson()` émet le **JSON canonique** (format composant fv=1) :
+`{kind:MODES_OPEN, id, disabled:false, formatVersion:1, QAApproved:false, visibility:{timeRanges:[{serverFilter,start,end:{kind:TIME,endTime}}]}, modesOpen:{gameModeFilter:{include:[{gameMode:PORT_WAREHOUSE}]}}}`.
+
+**Reste (client)** : le JSON poussé au client est re-parsé par `buildEvent` → `checkUnitType()` **exige un composant
+`eventCardDisplay`** (sinon NPE). Il faut donc AUSSI construire un `eventCardDisplay` (fabrique du jeu
+`SpecialEventBuilder.createComponent("eventCardDisplay")` OK) et le charger — son `load` répartit ses champs entre param2
+(top-level) et param3 (`displayInfo`) de façon non triviale (`preset` reste à localiser). Pour l'INJECTION SERVEUR pure,
+`eventCardDisplay` n'est PAS requis (pas de `checkUnitType`) → **le serveur autoritatif ouvre déjà WAREHOUSE**. Le client
+a besoin du JSON complet (avec `eventCardDisplay`) pour AFFICHER/entrer le mode.
+
 ## Voies FIDÈLES (recommandation)
 
 1. **Construire l'event via l'API OBJET du jeu → `toJson()`** (JSON canonique par construction, zéro devinette, §4).
