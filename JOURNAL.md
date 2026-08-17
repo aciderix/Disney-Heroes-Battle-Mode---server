@@ -5048,3 +5048,35 @@ serait un durcissement futur possible.
 
 Fichiers : `desktop-port/src/main/java/dhdesktop/{TutorialDriver,DesktopLauncher}.java` (pilotes `portenter`/`portteam`),
 `server/smoke/PortWarehouseTest.java`, `server/smoke/regression.sh`, `docs/PORT.md`, `MEMORY.md`.
+
+## 2026-08-17 (g125) — SPECIAL_EVENTS (live-ops opérateur) : recon approfondie (incr. 1 ModesOpen) — point dur → décision
+
+Suite à la demande (gérer les events live par admin serveur, fidèlement, pour l'ensemble des features, pas que Warehouse).
+Doc `docs/SPECIAL_EVENTS.md` créé (pipeline + schéma + architecture cible + plan).
+
+**Pipeline cartographié (bytecode)** : `SpecialEventsHelper.setSpecialEvents(SpecialEventsRaw)` [déjà appelé, VIDE] →
+`buildEvents` → `buildEvent(jsonString)` → `SpecialEventBuilder.buildEvent` → `new JsonReader().parse` →
+`SpecialEventInfo.load` → `formatVersion==0` ? `loadFlatFormat` : `loadComponentFormat` → composants. Snapshot :
+`snapshotWithoutRefresh()` OK headless (`snapshot()` NPE UI). `isModeOpen`→`ModesOpenSnapshot.getOpenModes()`.
+
+**Réutilisabilité confirmée** : composants `ModesOpen, DropBonus, AdditionalChances, ChestDiscount, ExtraChest,
+MerchantDiscount, MerchantRefreshDiscount, Contest, TeamLevel, MiscMultipliers, FlagUserOnLogin`.
+
+**Schéma JSON décodé (~90 %, format composant formatVersion≥1)** — vérifié via le parseur du jeu : top-level
+`kind`(=SpecialEventType, ex. MODES_OPEN)/`id`/`formatVersion` ; `visibility` = tableau de `VisibilityRange`
+`{serverFilter:"1-999999", start:<epochMs>, end:{kind:"TIME", endTime:<epochMs>}}` ; `modesOpen`:
+`{gameModeFilter:{include:[{gameMode:"PORT_WAREHOUSE"}], exclude:[…]}}`. **BLOQUE** sur `eventCardDisplay` (carte UI
+imposée par `checkUnitType`) aux champs requis obscurs (`sortIndex`,`title`,`summary`,`preset`… `preset` refuse
+""/NONE/DEFAULT).
+
+**Voie objet (contourne l'UI)** : construire `SpecialEventInfo` + composants via l'API du jeu et injecter via
+`SpecialEvents.setEvents` dans `EventHelperInner.SPECIAL_EVENTS` (réflexion). `ModesOpen`+`EnumFilter` construits OK ;
+reste le contrat 2-params de `EventVisibility.load` (param3 = tableau `timeRange` lu directement ; param2 = contexte
+serverFilter → `VisibilityRange` NPE `local2.name`). ~30 probes headless.
+
+**Faits** : ouvrir WAREHOUSE via events = LE mécanisme fidèle (pas de `debugAllModesOpen` §2). Ne PAS inventer le JSON à
+la main (§4). Voies fidèles restantes : (1) objet→`toJson()`/injection [proche du but] ; (2) obtenir un event JSON RÉEL
+(vérité terrain) puis paramétrer. **Décision utilisateur demandée** avant de continuer (sous-système plus profond qu'un
+incrément de mode standard). PORT #72 reste COMPLET (DOCKS joué en jeu ; WAREHOUSE même code, event-gaté).
+
+Fichiers : `docs/SPECIAL_EVENTS.md` (nouveau), `MEMORY.md`, `JOURNAL.md`.
