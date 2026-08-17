@@ -2877,6 +2877,16 @@ public final class LoginServer {
             + ServerContext.clockOffsetMillis() + " ms)");
       }
     } catch (Exception e) { System.out.println("[login] ! ancre d'horloge : " + e); }
+    // ÉVÉNEMENTS OPÉRATEUR (live-ops) — chargés depuis shard_state (clé "operator_events") dans le holder statique de
+    // ServerEvents. Défaut = VIDE → aucune ouverture forcée → le jeu applique sa ROTATION par défaut (getOpenDays). Un
+    // opérateur AJOUTE des overrides (MODES_OPEN/DropBonus) via l'outil AdminEvents ; ils survivent aux redémarrages.
+    try {
+      byte[] evBlob = store.loadShardState(/*shardID*/ 1, "operator_events");
+      java.util.List<com.perblue.common.specialevent.SpecialEventInfo> ops = ServerEvents.eventsFromConfig(evBlob);
+      ServerEvents.setOperatorEvents(ops);
+      System.out.println("[login] événements opérateur chargés : " + ops.size()
+          + (ops.isEmpty() ? " (rotation par défaut du jeu)" : " override(s) live-ops"));
+    } catch (Exception e) { System.out.println("[login] ! événements opérateur : " + e); }
     ServerUser user = store.loadOrCreate(/*userID*/ 1L, /*shardID*/ 1);
     System.out.println("[login] compte id=1 chargé/créé (" + user.tutorialActCount()
         + " actes de tuto) — DB " + dbPath);

@@ -5272,3 +5272,37 @@ en permanence).
 
 Fichiers : `server/java/dhserver/ServerEvents.java` (buildDropBonusEvent), `server/smoke/SpecialEventsRotationTest.java`,
 `server/smoke/regression.sh`, `docs/SPECIAL_EVENTS.md`, `MEMORY.md`.
+
+## 2026-08-17 (g131) — SPECIAL_EVENTS : rotation fidèle PAR DÉFAUT + overrides opérateur persistés (AdminEvents, shard_state)
+
+Suite du fait §8 g130 (rotation par jour `getOpenDays` = défaut du jeu ; MODES_OPEN/DropBonus = overrides). Décision
+utilisateur : **rotation fidèle par défaut** (retirer l'override en dur « 2 modes ouverts en permanence »).
+
+**Implémenté** :
+- `ServerEvents` : holder statique `OPERATOR_EVENTS` (défaut VIDE → aucune ouverture forcée → le jeu applique `getOpenDays`).
+  `setOperatorEvents`/`operatorEvents`/`bootDefaultEvents`(=operatorEvents)/`installBootDefaults`(=install(operatorEvents)).
+- **Persistance shard** (config opérateur, pas les events sérialisés) : specs `{kind,modes,bonus,start,end}` en JSON, stockées
+  en `shard_state` clé `operator_events`. `eventsFromConfig(blob)` reconstruit via NOS builders (buildModesOpenEvent/
+  buildDropBonusEvent) — PAS le re-parse `buildEvent` DU JEU, qui empruntait un chemin de refresh guild
+  (GuildCheckInHelper.getMaxDailyCheckIns → GuildStats.<clinit> empoisonné) fragile SANS user bindé. Helpers `configSpecs`,
+  `writeConfig`, `specJson`.
+- `LoginServer.main` : charge la config au boot (`store.loadShardState(1,"operator_events")` → `eventsFromConfig` →
+  `setOperatorEvents`). Défaut vide = rotation par défaut.
+- **Outil `AdminEvents`** (opérateur) : `--status` (lecture pure des specs, pas d'install — celle-ci exige un user bindé,
+  faite au boot), `--open <MODE> [--days N]` (override MODES_OPEN), `--drop-bonus <MODE> [--bonus B]` (override DropBonus),
+  `--close <MODE>`, `--clear`. Persiste la config (⚠ redémarrer le serveur pour recharger).
+
+**Tests** : `SpecialEventsModesOpenTest` réécrit (holder + round-trip config→eventsFromConfig, défaut vide = pas forcé) ;
+`SpecialEventsRotationTest` (défaut `isOpen==getOpenDays.contains(jour)` ; override MODES_OPEN/DropBonus ouvre un mode fermé ce
+jour ; retrait → refermé). Régression **126/126**. AdminEvents vérifié CLI (open→status OUI→close→status non).
+
+**Point technique (§8)** : le re-parse `buildEvent` d'un event sérialisé plante au refresh (chemin guild sans user bindé) —
+d'où le choix de persister la CONFIG (specs) et reconstruire via nos builders (qui s'installent proprement, prouvé par
+ModesOpenTest). Au BOOT l'install se fait avec un vrai user bindé (comme ModesOpenTest) → OK.
+
+**RESTE** : vérif EN JEU (défaut → WAREHOUSE « OPENS TOMORROW » aujourd'hui, jour ∉ [7,5,3,1] ; `AdminEvents --open
+PORT_WAREHOUSE` + restart → ENTER). Puis autres composants (discounts marchands/coffres, Contest/TeamLevel).
+
+Fichiers : `server/java/dhserver/ServerEvents.java`, `server/java/dhserver/LoginServer.java`, `server/smoke/AdminEvents.java`
+(nouveau), `server/smoke/SpecialEventsModesOpenTest.java`, `server/smoke/SpecialEventsRotationTest.java`, `docs/SPECIAL_EVENTS.md`,
+`MEMORY.md`.

@@ -182,12 +182,76 @@ public final class ServerEvents {
     return raw;
   }
 
-  /** Les événements opérateur par défaut (mêmes que {@link #installBootDefaults}) — pour push client via {@link #toRaw}. */
-  public static List<SpecialEventInfo> bootDefaultEvents() {
+  /**
+   * Événements opérateur COURANTS (overrides live-ops). <b>Défaut = VIDE</b> → le jeu applique sa <b>ROTATION par défaut</b>
+   * ({@code getOpenDays} : DOCKS [6,4,2,1] / WAREHOUSE [7,5,3,1]) ; un opérateur AJOUTE des overrides (MODES_OPEN/DropBonus)
+   * via l'outil {@code AdminEvents}, persistés dans {@code shard_state} (chargés au boot par {@code LoginServer}). Fait §8
+   * (g130) : forcer les modes ouverts en permanence écraserait la rotation fidèle → on NE force RIEN par défaut.
+   */
+  private static volatile List<SpecialEventInfo> OPERATOR_EVENTS = new ArrayList<>();
+
+  /** Remplace l'ensemble des événements opérateur (appelé au boot par {@code LoginServer} depuis le store shard). */
+  public static void setOperatorEvents(List<SpecialEventInfo> events) {
+    OPERATOR_EVENTS = (events == null) ? new ArrayList<>() : new ArrayList<>(events);
+  }
+  /** Copie des événements opérateur courants (pour push client via {@link #toRaw} / installation). */
+  public static List<SpecialEventInfo> operatorEvents() { return new ArrayList<>(OPERATOR_EVENTS); }
+
+  /** Rétro-compat (anciennement défauts en dur DOCKS+WAREHOUSE) : désormais = événements opérateur (défaut VIDE). */
+  public static List<SpecialEventInfo> bootDefaultEvents() { return operatorEvents(); }
+
+  // --- PERSISTANCE : config OPÉRATEUR = descripteurs (specs) reconstruits par NOS builders ------------------------------
+  // On persiste la CONFIG opérateur (liste de specs {kind, modes, bonus, start, end}), PAS les événements sérialisés :
+  // on reconstruit via buildModesOpenEvent/buildDropBonusEvent (qui s'installent proprement), au lieu du re-parse
+  // buildEvent du jeu qui emprunte un chemin de refresh fragile (GuildStats). Format = JSON du jeu (JsonValue).
+
+  /** Reconstruit les événements opérateur depuis la CONFIG persistée (JSON de specs) via nos builders. */
+  public static List<SpecialEventInfo> eventsFromConfig(byte[] configBlob) {
     List<SpecialEventInfo> events = new ArrayList<>();
-    events.add(buildModesOpenEvent(900_001L,
-        Arrays.asList(GameMode.PORT_DOCKS, GameMode.PORT_WAREHOUSE), defaultStart(), defaultEnd()));
+    for (JsonValue spec : configSpecs(configBlob)) {
+      try { events.add(eventFromSpec(spec)); }
+      catch (Throwable t) { System.out.println("[events] spec ignorée (" + spec + "): " + t); }
+    }
     return events;
+  }
+
+  /** Construit UN événement depuis une spec {kind, modes[], bonus, start, end}. */
+  private static SpecialEventInfo eventFromSpec(JsonValue spec) {
+    String kind = spec.getString("kind", "MODES_OPEN");
+    long id = spec.getLong("id", System.nanoTime() & 0xFFFFFFL);
+    long start = spec.getLong("start", defaultStart());
+    long end = spec.getLong("end", defaultEnd());
+    List<GameMode> modes = new ArrayList<>();
+    JsonValue ms = spec.get("modes");
+    if (ms != null) for (JsonValue m = ms.child; m != null; m = m.next) modes.add(GameMode.valueOf(m.asString()));
+    if ("DROP_BONUS".equals(kind)) return buildDropBonusEvent(id, modes, spec.getInt("bonus", 1), start, end);
+    return buildModesOpenEvent(id, modes, start, end);
+  }
+
+  /** Liste des specs (JsonValue) d'une config persistée (vide si null). */
+  public static List<JsonValue> configSpecs(byte[] configBlob) {
+    List<JsonValue> out = new ArrayList<>();
+    if (configBlob == null || configBlob.length == 0) return out;
+    JsonValue root = JSON.parse(new String(configBlob, java.nio.charset.StandardCharsets.UTF_8));
+    JsonValue specs = root.get("specs");
+    if (specs != null) for (JsonValue s = specs.child; s != null; s = s.next) out.add(s);
+    return out;
+  }
+
+  /** Sérialise une liste de specs (chaînes JSON d'objet) en octets de config persistable. */
+  public static byte[] writeConfig(List<String> specJsons) {
+    StringBuilder sb = new StringBuilder("{\"specs\":[");
+    for (int i = 0; i < specJsons.size(); i++) { if (i > 0) sb.append(','); sb.append(specJsons.get(i)); }
+    sb.append("]}");
+    return sb.toString().getBytes(java.nio.charset.StandardCharsets.UTF_8);
+  }
+
+  /** Construit la chaîne JSON d'UNE spec d'override opérateur. */
+  public static String specJson(String kind, Collection<GameMode> modes, int bonus, long start, long end) {
+    StringBuilder m = new StringBuilder();
+    for (GameMode g : modes) { if (m.length() > 0) m.append(','); m.append('"').append(g.name()).append('"'); }
+    return "{\"kind\":\"" + kind + "\",\"modes\":[" + m + "],\"bonus\":" + bonus
+        + ",\"start\":" + start + ",\"end\":" + end + "}";
   }
 
   /**
@@ -215,12 +279,12 @@ public final class ServerEvents {
   }
 
   /**
-   * Pose les événements opérateur au boot (appelé après {@code setSpecialEvents} dans {@code ServerContext.bind}).
-   * Incr. 1 : ouvre les DEUX modes PORT (DOCKS + WAREHOUSE) — l'autorité serveur les accepte alors tous deux.
-   * (La rotation fidèle par jour d'ouverture pourra être ajoutée en s'appuyant sur {@code getOpenDays}.)
+   * Installe les événements OPÉRATEUR courants (appelé après {@code setSpecialEvents} dans {@code ServerContext.bind}).
+   * Défaut = VIDE → aucune ouverture forcée → le jeu applique sa <b>rotation par défaut</b> ({@code getOpenDays}). Un
+   * opérateur peut ajouter des overrides (via {@code AdminEvents}, chargés au boot par {@code LoginServer}).
    */
   public static void installBootDefaults() {
-    install(bootDefaultEvents());
+    install(operatorEvents());
   }
 
   /** Snapshot courant de la couche événements (sans refresh UI, sûr headless) — à passer aux checks serveur. */
