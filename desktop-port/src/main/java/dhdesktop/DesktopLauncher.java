@@ -529,6 +529,16 @@ public final class DesktopLauncher {
                     TutorialDriver.portScreen(game);
                     continue;
                 }
+                if (low.startsWith("portenter ")) {              // portenter <MODE> → ENTER réel (ModePreviewScreen)
+                    String[] pe = ln.trim().split("[,;\\s]+");
+                    if (pe.length >= 2) TutorialDriver.portEnter(game, pe[1].toUpperCase());
+                    else System.out.println("[portenter] usage: portenter <MODE>");
+                    continue;
+                }
+                if (low.equals("portteam") || low.startsWith("portteam ")) {       // sélecteur → équipe + combat
+                    TutorialDriver.portTeam(game);
+                    continue;
+                }
                 if (low.startsWith("wishtarget ")) {             // wishtarget <HERO> → SET_WISHING_WELL_TARGET_HERO
                     String[] wt = ln.trim().split("[,;\\s]+");
                     if (wt.length >= 2) TutorialDriver.wishTarget(game, wt[1].toUpperCase());

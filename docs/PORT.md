@@ -94,6 +94,34 @@ serveur ne le gère PAS encore (aucun `DifficultyModeAttack`/`recordOutcome` dif
 
 ## ⇒ PORT #72 COMPLET (incr. 1 combat + 2 raid + 3 récompense double + 4 planning — tous ✅ VÉRIFIÉS EN JEU).
 
+## Vérif « ENTRÉE COMPLÈTE » du mode (jouer de bout en bout via le VRAI flux d'UI)
+
+Test demandé : **entrer** dans THE DOCKS et THE WAREHOUSE et les jouer (un test complet = jouer le mode en entier).
+
+- **THE DOCKS ✅ JOUÉ DE BOUT EN BOUT EN JEU.** Flux réel : bouton ENTER (`ModeData.handleButtonPress` → `ModePreviewScreen`)
+  → `DifficultyModeHeroChooserScreen(PORT_DOCKS, ONE)` (écran **« CHOOSE YOUR HEROES! »**) → `unitSelected`×5 +
+  `startBattleInner()` → **`DifficultyModeAttackScreen`** (combat rendu, auto-combat `dh.autofight`) → **VICTOIRE** →
+  écran **REWARDS** (Hero XP +33 ×5, items ×12, bouton **GET 2X REWARDS! 📺** = l'entrée de l'incr. 3) → client envoie
+  `DifficultyModeAttack` → serveur `PORT_DOCKS diff=1 outcome=WIN → recordOutcome appliqué [persisté]`. Setup : équipe
+  boostée (`ExpAdminBoost`, RED 100 6★) + horloge à un jour DOCKS-ouvert avec chances fraîches (`AdminClock`). Pilotes
+  `portenter <MODE>` (→ sélecteur d'équipe, = ce que `ModePreviewScreen.doAttack` construit) + `portteam` (sélection +
+  `startBattleInner`). Captures `build/port_chooser_ingame.ppm`, `build/port_docks_played_ingame.ppm`.
+
+- **THE WAREHOUSE — EVENT-GATÉ (fait établi §8, PAS un bug).** En tentant d'entrer, découverte : l'OUVERTURE des modes PORT
+  est pilotée par le **planning d'ÉVÉNEMENTS SPÉCIAUX**, pas par le simple jour-de-semaine. `DifficultyModeHelper.isOpen`
+  (ordinaux PORT) → `BaseEventSnapshot.isModeOpen(mode)` → `ModesOpenSnapshot.getOpenModes()` (l'ensemble des modes ouverts,
+  peuplé par le composant d'événement `ModesOpen`). Notre serveur ré-hébergé n'a **pas d'événements live** → `getOpenModes`
+  par défaut = **DOCKS seulement**, WAREHOUSE jamais (vérifié sur tous les jours, avec vrai snapshot). L'« OPENS TOMORROW »
+  de `PortChooserScreen` vient de `getOpenDays`/`getNextOpenDay` (affichage), indépendant du gate réel `isModeOpen`. ⇒
+  **THE WAREHOUSE est event-gaté comme FRANCHISE_TRIALS** ; on ne le FORCE PAS en prod (le flag debug DU JEU
+  `BaseEventSnapshot.debugAllModesOpen` existe mais l'utiliser en serveur autoritatif = « faux OK » §2 interdit).
+  - **Logique serveur PROUVÉE (§8, « rien d'absent sans preuve »)** : `PortWarehouseTest` LÈVE le gate via
+    `debugAllModesOpen` (réservé au test, remis à false) → `isOpen(PORT_WAREHOUSE)=true` → combat WAREHOUSE WIN → **+7000
+    GOLD + cooldown `PORT_WAREHOUSE_ATTACK`** + persistance wire+DB. THE WAREHOUSE emprunte le MÊME `recordOutcome` que
+    THE DOCKS (le mode n'est qu'un paramètre) → couvert par la vérif en jeu de DOCKS ; seul son gate d'ouverture (live
+    events) l'empêche d'être entré en jeu sur notre serveur.
+  - Le test asserte AUSSI qu'au défaut (gate non levé) WAREHOUSE est fermé (documente l'event-gate).
+
 ## Notes §3/§4
 - Combat client-autoritatif : le serveur ré-exécute `recordOutcome` sur SON état ; le loot suit #25/§4bis (client-reporté
   partiel, le serveur roule `rollLoot` mais retombe sur le loot client si divergence RNG, comme campagne/expédition).

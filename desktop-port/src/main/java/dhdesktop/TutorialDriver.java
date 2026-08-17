@@ -1290,6 +1290,54 @@ public final class TutorialDriver {
         } catch (Throwable e) { System.out.println("[portscreen] échec: " + e); e.printStackTrace(); }
     }
 
+    /** DEV — ENTRER dans un mode PORT pour le JOUER : pousse le sélecteur d'équipe {@code DifficultyModeHeroChooserScreen
+     *  (mode, ONE, null, NONE)} — EXACTEMENT ce que {@code ModePreviewScreen.doAttack} construit à l'entrée (le vrai écran
+     *  « choisir son équipe pour combattre »). Étape 1/2 (puis "portteam" sélectionne + lance le combat). Invoqué via
+     *  "portenter &lt;MODE&gt;". */
+    public static void portEnter(GameMain game, String modeS) {
+        try {
+            com.perblue.heroes.network.messages.GameMode mode = com.perblue.heroes.network.messages.GameMode.valueOf(modeS);
+            var NONE = com.perblue.heroes.game.specialevent.SpecialEventSnapshot.NONE;
+            boolean open = com.perblue.heroes.game.logic.DifficultyModeHelper.isOpen(mode, game.getYourUser(), NONE);
+            System.out.println("[portenter] " + mode + " isOpen=" + open + " → DifficultyModeHeroChooserScreen(ONE) [chemin réel]");
+            game.getScreenManager().pushScreen(new com.perblue.heroes.ui.herochooser.DifficultyModeHeroChooserScreen(
+                mode, com.perblue.heroes.game.data.ModeDifficulty.ONE, null, NONE));
+            System.out.println("[portenter] DifficultyModeHeroChooserScreen(" + mode + ", ONE) poussé");
+        } catch (Throwable e) { System.out.println("[portenter] échec: " + e); e.printStackTrace(); }
+    }
+
+    /** DEV — sur un {@code DifficultyModeHeroChooserScreen} rendu, sélectionne jusqu'à 5 héros possédés via le VRAI
+     *  chemin {@code unitSelected} (comme un tap) puis lance le combat {@code startBattleInner()} → AttackScreen (jouable
+     *  en AUTO via {@code dh.autofight}) → à la VICTOIRE, le client envoie {@code DifficultyModeAttack}. Étape 3/3.
+     *  Invoqué via "portteam". */
+    public static void portTeam(GameMain game) {
+        try {
+            Object screen = game.getScreenManager().getScreen();
+            if (screen == null || !screen.getClass().getSimpleName().contains("DifficultyModeHeroChooser")) {
+                System.out.println("[portteam] écran courant = "
+                    + (screen == null ? "null" : screen.getClass().getSimpleName()) + " (pas DifficultyModeHeroChooserScreen)"); return;
+            }
+            com.perblue.heroes.ui.herochooser.DifficultyModeHeroChooserScreen s =
+                (com.perblue.heroes.ui.herochooser.DifficultyModeHeroChooserScreen) screen;
+            var provider = com.perblue.heroes.game.logic.CollectionHelper.fromUser(game.getYourUser());
+            java.util.List<com.perblue.heroes.network.messages.UnitType> want = new java.util.ArrayList<>();
+            for (Object ho : game.getYourUser().getHeroes()) {
+                com.perblue.heroes.game.objects.IHero h = (com.perblue.heroes.game.objects.IHero) ho;
+                want.add(h.getType());
+            }
+            for (com.perblue.heroes.network.messages.UnitType t : want) {
+                if (s.getSelectedHeroes().size >= 5) break;
+                var hero = game.getYourUser().getHero(t);
+                if (!(hero instanceof com.perblue.heroes.game.objects.UnitData)) continue;
+                com.perblue.heroes.game.objects.UnitData ud = (com.perblue.heroes.game.objects.UnitData) hero;
+                if (s.canSelectUnit(ud)) s.unitSelected(ud, provider, 0f, 0f);
+            }
+            System.out.println("[portteam] héros sélectionnés=" + s.getSelectedHeroes().size + " → startBattleInner()");
+            s.startBattleInner();
+            System.out.println("[portteam] combat lancé (AUTO via dh.autofight) → à la victoire : DifficultyModeAttack [chemin réel]");
+        } catch (Throwable e) { System.out.println("[portteam] échec: " + e); e.printStackTrace(); }
+    }
+
     /** DEV : ACHÈTE l'objet le moins cher ABORDABLE d'un marchand — chemin client réel
      *  {@code ClientActionHelper.purchaseMerchantItem} (message PurchaseMerchantItem ; le serveur ré-exécute
      *  purchaseItem : anti-triche + débit + don + purchased). Invoqué via "merchantbuy &lt;TYPE&gt;". */

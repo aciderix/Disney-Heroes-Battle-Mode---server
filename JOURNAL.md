@@ -4997,3 +4997,54 @@ activable sans événement hébergé, sinon documenter le gate §8 et prendre un
 
 Fichiers : `desktop-port/src/main/java/dhdesktop/{TutorialDriver,DesktopLauncher}.java` (pilote `portscreen`),
 `docs/PORT.md`, `MEMORY.md`. (Aucun changement serveur — incr. rendu-only.)
+
+## 2026-08-17 (g124) — PORT (#72) : ENTRÉE COMPLÈTE en jeu — DOCKS joué de bout en bout ; WAREHOUSE event-gaté (prouvé)
+
+Demande utilisateur : pour que ce soit vraiment complet, ENTRER dans THE DOCKS et THE WAREHOUSE et les jouer (un test
+complet = jouer le mode en entier), au lieu de n'injecter que les messages.
+
+**Flux d'entrée réel (recon bytecode).** Bouton ENTER de `PortChooserScreen$DocksBox` → `ModeData.handleButtonPress`
+→ (si dispo) `ModePreviewScreen(mode, snap, null)` → son `doAttack()` pousse `DifficultyModeHeroChooserScreen(mode,
+highestDiff, farmed, snap)`. Le sélecteur : `unitSelected(UnitData, provider, x, y)` (comme un tap) + `startBattleInner()`
+→ `DifficultyModeAttackScreen` (combat rendu). À la victoire, le client envoie `DifficultyModeAttack` (déjà géré, incr. 1).
+NB : pousser `ModePreviewScreen` directement CRASHE (`createTitleAndStarsRow` → `getDifficultyModeStars(mode, null)` NPE,
+champ `difficulty` non initialisé) → le pilote pousse directement le `DifficultyModeHeroChooserScreen(mode, ONE, null, NONE)`
+(exactement ce que `doAttack` construit).
+
+**Pilotes.** `portenter <MODE>` (`TutorialDriver.portEnter`) → pousse le sélecteur d'équipe ; `portteam` (`portTeam`) →
+sélectionne jusqu'à 5 héros possédés (`unitSelected`) + `startBattleInner()`. Câblés dans `DesktopLauncher`. Combat joué
+en AUTO (`dh.autofight` = bouton AUTO d'origine).
+
+**✅ THE DOCKS — JOUÉ DE BOUT EN BOUT EN JEU.** Setup : `ExpAdminBoost` (équipe RALPH/HERCULES/MAUI/SULLEY/VANELLOPE RED
+100 6★) + `AdminClock --offset-hours 24` (jour DOCKS-ouvert + chances quotidiennes fraîches). Séquence : `portenter
+PORT_DOCKS` → écran **« CHOOSE YOUR HEROES! »** (roster niv.100 6★, capture) → `portteam` (5 héros → startBattleInner) →
+combat `DifficultyModeAttackScreen` auto → **VICTOIRE** → écran **REWARDS** (Hero XP +33 ×5, items ×12, bouton **GET 2X
+REWARDS! 📺** = l'entrée de l'incr. 3, capture) → serveur `<== DifficultyModeAttack : PORT_DOCKS diff=1 outcome=WIN →
+recordOutcome appliqué [persisté]`. Captures `build/port_docks_played_ingame.ppm`.
+
+**THE WAREHOUSE — EVENT-GATÉ (fait établi §8, PAS un bug).** En tentant d'entrer (`portenter PORT_WAREHOUSE`), le client
+logue `isOpen=false`. Investigation (bytecode `DifficultyModeHelper.isOpen`) : le switch d'ordinaux PORT va à la branche
+`BaseEventSnapshot.isModeOpen(mode)` → `SpecialEventSnapshotState.getComponentSnapshot(ModesOpenSnapshot).getOpenModes()`
+(+ flag debug `debugAllModesOpen`). L'ensemble des modes ouverts est peuplé par le composant d'ÉVÉNEMENT `ModesOpen`
+(planning d'événements spéciaux). Notre serveur ré-hébergé n'a pas d'événements live (`SpecialEventsRaw` vide) → `getOpenModes`
+par défaut = **DOCKS seulement**, WAREHOUSE jamais (vérifié sur 8 jours consécutifs avec vrai snapshot via
+`snapshotWithoutRefresh`, `snapshotTime` réel qui avance). L'« OPENS TOMORROW » de `PortChooserScreen` vient de
+`getOpenDays`/`getNextOpenDay` (affichage), DÉCORRÉLÉ du gate réel `isModeOpen`. ⇒ **WAREHOUSE est event-gaté comme
+FRANCHISE_TRIALS.** On NE le force PAS en serveur autoritatif (le flag debug `debugAllModesOpen` existe mais l'utiliser en
+prod = « faux OK » §2 interdit).
+
+**Logique serveur WAREHOUSE PROUVÉE (§8, « rien d'absent sans preuve »).** `PortWarehouseTest` (régression 123→124) :
+(1) asserte qu'au défaut WAREHOUSE est FERMÉ (documente l'event-gate) ; (2) lève le gate via `BaseEventSnapshot.
+debugAllModesOpen=true` (réservé au test, remis à false en `finally`) → `isOpen(PORT_WAREHOUSE)=true` → combat WAREHOUSE
+WIN → **+7000 GOLD + cooldown `PORT_WAREHOUSE_ATTACK`** + persistance wire+DB. THE WAREHOUSE emprunte le MÊME `recordOutcome`
+que THE DOCKS (le `GameMode` n'est qu'un paramètre) → entièrement couvert par la vérif en jeu de DOCKS ; seul son gate
+d'ouverture (événements live) l'empêche d'être joué en jeu sur notre serveur.
+
+**Bilan.** THE DOCKS = mode joué EN ENTIER en jeu (le test complet demandé). THE WAREHOUSE = même sous-système, logique
+serveur prouvée headless, ouverture event-gatée documentée. Horloge remise à l'heure réelle (`AdminClock --reset`) après
+le test. NB : crash CLIENT intermittent au boot sur `PatchStats.<clinit>` (poison concurrent, MÊME bug que le warm-up
+serveur g118 mais côté client `SyncStatDataClientHelper`) rencontré 1× — flaky, sans rapport avec PORT ; un warm-up client
+serait un durcissement futur possible.
+
+Fichiers : `desktop-port/src/main/java/dhdesktop/{TutorialDriver,DesktopLauncher}.java` (pilotes `portenter`/`portteam`),
+`server/smoke/PortWarehouseTest.java`, `server/smoke/regression.sh`, `docs/PORT.md`, `MEMORY.md`.
