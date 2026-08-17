@@ -109,8 +109,38 @@ a besoin du JSON complet (avec `eventCardDisplay`) pour AFFICHER/entrer le mode.
 - **Vérif** : test headless (event → `isModeOpen(WAREHOUSE)=true`) + EN JEU (entrer & jouer WAREHOUSE, boucle la
   demande PORT).
 
+## ✅ MOTEUR LIVRÉ (`server/java/dhserver/ServerEvents.java`)
+
+Approche **industrielle** (rien à la main) : on construit les événements avec les **classes DU JEU** et on les injecte
+dans la **machinerie DU JEU** — c'est elle qui calcule `isModeOpen`/snapshots.
+- `buildModesOpenEvent(id, modes, startMs, endMs)` → `SpecialEventInfo` : construit `EventVisibility` + `ModesOpen` via
+  leur `load(info, full, full.get(key))` (contrat définitif), format flat (`formatVersion=0`). Zéro schéma JSON à la main
+  (l'entrée par composant est minimale et paramétrée ; `SpecialEventInfo.toJson()` en donnerait la forme canonique).
+- `install(events)` : pose la liste dans `SpecialEventsHelper` (remplace `SPECIAL_EVENTS`, invalide le cache,
+  `refresh(true)`) → le serveur autoritatif voit l'effet. `snapshot()` = `snapshotWithoutRefresh()` (sûr headless).
+- `installBootDefaults()` : ouvre **PORT_DOCKS + PORT_WAREHOUSE**, appelé dans **`ServerContext.bind`** (après le raw
+  vide) → à chaque bind, l'état opérateur est garanti (idempotent, global à la couche).
+- **Snapshot RÉEL passé aux handlers PORT** (`recordDifficultyModeAttack`/`recordRaidDifficultyMode`/double) au lieu de
+  `NONE` → `doChecks`/`isOpen` voient les événements (corrige aussi le bug « NONE = planning à l'époque »).
+
+**Vérifié headless** (`SpecialEventsModesOpenTest`) : sans événement → WAREHOUSE fermé ; événement MODES_OPEN → WAREHOUSE
+ouvert ; défauts opérateur → DOCKS+WAREHOUSE ouverts. **Pas de flag debug (§2).**
+
+**Carte UI client (`eventCardDisplay`)** : NON requise pour l'AUTORITÉ serveur (l'injection ne passe pas par
+`checkUnitType`). Elle n'est nécessaire que pour POUSSER le JSON au client (affichage/entrée par la vitrine). Le champ
+`preset` d'`eventCardDisplay` référence un preset RÉEL de `assets/strings/EventPresets.properties` (pas `""`) ; il
+n'existe **aucun preset `MODES_OPEN`** → un event d'ouverture de mode est « technique » (pas de panneau visible). Le push
+client est un incrément ultérieur (construire une carte minimale via la fabrique du jeu + toJson).
+
 ## Plan d'incréments
 
-1. ⏳ **`ModesOpen`** (ce doc) : voie 1 (objet→toJson) OU exemple réel → `ServerEvents.buildModesOpenEvent` →
-   persistance shard + push boot → **ouvrir PORT_WAREHOUSE en jeu (entrer & jouer)**. + FRANCHISE_TRIALS (même levier).
-2. ⬜ `DropBonus` / `AdditionalChances` (bonus de butin / chances). 3. ⬜ discounts marchands/coffres. 4. ⬜ `Contest`/`TeamLevel`.
+1. ✅ **`ModesOpen` (moteur + autorité serveur) — VÉRIFIÉ EN JEU.** `ServerEvents` construit et injecte l'événement ;
+   WAREHOUSE ouvert côté serveur (headless ✅ `SpecialEventsModesOpenTest`). **EN JEU (id=1)** : pilote
+   `portenter PORT_WAREHOUSE` → `portteam` → combat rendu (THE WAREHOUSE, étages) → **VICTOIRE** → écran REWARDS →
+   serveur **`DifficultyModeAttack : PORT_WAREHOUSE diff=1 outcome=WIN → recordOutcome appliqué [persisté]`** (avant :
+   `GAME_MODE_NOT_OPEN`). Capture `build/port_warehouse_played_ingame.ppm`. **RESTE incr. 1 (raffinements)** : persistance
+   shard (au lieu de re-poser au bind) et rotation fidèle par jour (`getOpenDays`).
+2. ⬜ **Push client** (`eventCardDisplay` minimal + `toJson` → `SpecialEventsRaw` poussé au boot) → le client AFFICHE
+   WAREHOUSE ouvert et laisse entrer par la vitrine. Débloque aussi FRANCHISE_TRIALS.
+3. ⬜ `DropBonus` / `AdditionalChances`. 4. ⬜ discounts marchands/coffres. 5. ⬜ `Contest`/`TeamLevel`. (Un builder par
+   composant, même patron.)

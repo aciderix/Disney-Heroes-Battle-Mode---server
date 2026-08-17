@@ -2772,7 +2772,7 @@ public final class ServerUser {
         if (pendingDoubleLoot != null) user.getIndividual().setVideoDoubleLoot(pendingDoubleLoot);
         try {
           java.util.Collection<?> given = com.perblue.heroes.game.logic.DifficultyModeHelper.claimDoubleRewards(
-              user, com.perblue.heroes.game.specialevent.SpecialEventSnapshot.NONE);
+              user, ServerEvents.snapshot());
           pendingDoubleLoot = null;   // consommé (anti double-claim, comme le jeu vide le container)
           System.out.println("[action] CLAIM_DOUBLE_PORT_REWARDS → récompense double créditée ("
               + (given == null ? 0 : given.size()) + " drops) [logique du jeu]");
@@ -3593,8 +3593,11 @@ public final class ServerUser {
     java.util.Collection<?> attackers = m.base == null ? java.util.Collections.emptyList() : m.base.attackers;
     java.util.Collection<?> defenders = m.base == null ? java.util.Collections.emptyList() : m.base.defenders;
     // recordOutcome : loot, attackers, defenders (ordre du client DifficultyModeAttackScreen) + attackEndTime.
+    // Snapshot RÉEL de la couche événements (pas NONE) : doChecks/isOpen doit voir les événements MODES_OPEN opérateur
+    // (ex. WAREHOUSE ouvert), sinon la planification d'ouverture est fausse. Cf. ServerEvents / docs/SPECIAL_EVENTS.md.
+    com.perblue.heroes.game.specialevent.SpecialEventSnapshot snap = ServerEvents.snapshot();
     com.perblue.heroes.game.logic.DifficultyModeHelper.recordOutcome(user, m.gameMode, diff, outcome,
-        m.stagesCleared, loot, attackers, defenders, m.attackEndTime, SpecialEventSnapshot.NONE);
+        m.stagesCleared, loot, attackers, defenders, m.attackEndTime, snap);
     // incr. 3 : mémorise le container de récompense double posé par giveLoot (null si VIP DOUBLE_PORT_REWARDS = auto-doublé).
     this.pendingDoubleLoot = iu.getVideoDoubleLoot();
     resyncHeroes(user);
@@ -3645,11 +3648,13 @@ public final class ServerUser {
           com.perblue.heroes.game.logic.RewardHelper.mergeRewards(loot, ro.loot);
       }
     }
+    // Snapshot RÉEL de la couche événements (pas NONE) → doChecks/isOpen voit les événements MODES_OPEN (cf. ServerEvents).
+    com.perblue.heroes.game.specialevent.SpecialEventSnapshot snap = ServerEvents.snapshot();
     // (1) anti-triche + débit tickets (lève ClientErrorCodeException si illégitime).
-    com.perblue.heroes.game.logic.DifficultyModeHelper.useRaidTickets(user, m.gameMode, diff, raidCount, SpecialEventSnapshot.NONE);
+    com.perblue.heroes.game.logic.DifficultyModeHelper.useRaidTickets(user, m.gameMode, diff, raidCount, snap);
     // (2) crédit du butin + XP + compteurs + cooldown.
     com.perblue.heroes.game.logic.DifficultyModeHelper.recordRaidOutcome(user, m.gameMode, diff, raidCount, loot,
-        m.raidTime, SpecialEventSnapshot.NONE);
+        m.raidTime, snap);
     // incr. 3 : mémorise le container de récompense double posé par giveLoot (null si VIP DOUBLE_PORT_REWARDS).
     this.pendingDoubleLoot = iu.getVideoDoubleLoot();
     resyncHeroes(user);

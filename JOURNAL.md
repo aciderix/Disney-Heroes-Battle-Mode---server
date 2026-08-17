@@ -5080,3 +5080,53 @@ la main (§4). Voies fidèles restantes : (1) objet→`toJson()`/injection [proc
 incrément de mode standard). PORT #72 reste COMPLET (DOCKS joué en jeu ; WAREHOUSE même code, event-gaté).
 
 Fichiers : `docs/SPECIAL_EVENTS.md` (nouveau), `MEMORY.md`, `JOURNAL.md`.
+
+## 2026-08-17 (g126) — SPECIAL_EVENTS incr. 1 : moteur ServerEvents (ModesOpen) ✅ WAREHOUSE ouvert & joué en jeu
+
+Suite à la demande utilisateur : reconstruire le mécanisme d'événements de façon INDUSTRIELLE (rien à la main) pour
+couvrir TOUT ce qui en dépend (Warehouse + le reste). Recadrage explicite : « industrialisé = ne pas faire à la main ».
+
+**Approche (industrielle, §3/§4).** On n'écrit NI le schéma JSON NI les règles : `server/java/dhserver/ServerEvents.java`
+construit les événements avec les CLASSES DU JEU et les injecte dans la MACHINERIE DU JEU — c'est elle qui calcule
+`isModeOpen`/snapshots. Contrat de chargement définitif relevé au bytecode : `component.load(info, fullJson,
+fullJson.get(key))` (param2=event complet, param3=sous-nœud). `EventVisibility.load` branche sur `getFormatVersion()`
+(fv=0 → param3 = tableau `timeRange`).
+
+**Module `ServerEvents`.**
+- `buildModesOpenEvent(id, modes, startMs, endMs)` → `SpecialEventInfo` : `new SpecialEventInfo(SpecialEventType.class)`
+  (id/type=MODES_OPEN/formatVersion=0 par réflexion) + `EventVisibility.load(info, full, full.get("timeRange"))` +
+  `ModesOpen.load(info, full, full)` (lit `gameModeFilter.include`) + `addComponent` (réflexion). L'entrée par composant
+  est minimale et paramétrée (pas de schéma à la main) ; `SpecialEventInfo.toJson()` en donnerait la forme canonique.
+- `install(events)` : `SpecialEvents.setEvents` + remplace `EventHelperInner.SPECIAL_EVENTS` + invalide `SNAPSHOT_CACHE` +
+  `lastSnapshotTime=0` + `refresh(true)` (reconstruit le snapshot). `snapshot()` = `snapshotWithoutRefresh()` (sûr headless).
+- `installBootDefaults()` : ouvre PORT_DOCKS+PORT_WAREHOUSE ; appelé dans `ServerContext.bind` (après le raw vide) →
+  idempotent, l'état opérateur est garanti à chaque bind (état global à la couche événements).
+
+**Intégration.** Les handlers PORT (`recordDifficultyModeAttack`/`recordRaidDifficultyMode`/double reward) passent
+désormais un **snapshot RÉEL** (`ServerEvents.snapshot()`) au lieu de `SpecialEventSnapshot.NONE` → `doChecks`/`isOpen`
+voient les événements (corrige aussi le « NONE = planning évalué à l'époque »).
+
+**Test `SpecialEventsModesOpenTest`** (régression 124→125) : sans événement → WAREHOUSE fermé ; événement MODES_OPEN
+ciblé → WAREHOUSE ouvert ; défauts opérateur → DOCKS+WAREHOUSE ouverts. Prouve que c'est L'ÉVÉNEMENT qui décide (pas un
+hack ; c'est `ModesOpenSnapshot.getOpenModes()` du jeu). NB : `gameUser()` re-bind → réinstalle les défauts (on cache le
+User dans le test) ; le snapshot est mémoïsé par temps (d'où `refresh(true)`+reset dans `install`).
+
+**✅ EN JEU (id=1).** Compte boosté (RED 100 6★) + cooldowns PORT purgés. `portenter PORT_WAREHOUSE` (le client logue
+`isOpen=false` — il n'a pas l'événement, injection serveur seulement) → `portteam` → combat rendu **DANS THE WAREHOUSE**
+(fond conteneurs, étages 3/3) → **VICTOIRE** → écran **REWARDS** (Hero XP +33 ×5 + items ×7 + GET 2X REWARDS) → serveur
+**`DifficultyModeAttack : PORT_WAREHOUSE diff=1 outcome=WIN → recordOutcome appliqué [persisté]`**. Avant ce moteur, le
+serveur refusait (`GAME_MODE_NOT_OPEN`). Captures `build/port_warehouse_played_ingame.ppm`.
+
+**Point dur écarté (`eventCardDisplay`).** La carte UI est imposée par `checkUnitType` UNIQUEMENT au re-parse JSON (client)
+— pas à l'injection serveur. Donc l'autorité serveur ouvre WAREHOUSE sans elle. Son champ `preset` référence un preset
+RÉEL de `assets/strings/EventPresets.properties` (pas `""`) et il n'existe AUCUN preset `MODES_OPEN` → event « technique ».
+Le push client (affichage/entrée par la vitrine) = incrément 2.
+
+**Bilan.** Le mécanisme d'événements est reconstruit industriellement (moteur générique, extensible à tous les composants
+via un builder chacun) ; WAREHOUSE est désormais ouvert et jouable côté serveur, vérifié en jeu. **RESTE** : incr. 2 push
+client (carte minimale + toJson → SpecialEventsRaw poussé), persistance shard, rotation fidèle par jour (`getOpenDays`),
+puis DropBonus/discounts/Contest.
+
+Fichiers : `server/java/dhserver/ServerEvents.java` (nouveau), `server/java/dhserver/ServerContext.java` (install au boot),
+`server/java/dhserver/ServerUser.java` (snapshot réel dans les handlers PORT), `server/smoke/SpecialEventsModesOpenTest.java`,
+`server/smoke/regression.sh`, `docs/SPECIAL_EVENTS.md`, `MEMORY.md`.

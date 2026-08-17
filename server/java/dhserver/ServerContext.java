@@ -243,6 +243,10 @@ public final class ServerContext {
       // (SpecialEventsHelper.setSpecialEvents). Nouveau joueur sans évènement live = raw vide → aucun
       // contest actif (getActiveContestsWithTask renvoie une liste vide au lieu de NPE).
       SpecialEventsHelper.setSpecialEvents(new SpecialEventsRaw(), user, user.getShardID());
+      // SPECIAL_EVENTS (live-ops opérateur) : après le raw vide, on POSE les événements opérateur (objets du jeu,
+      // cf. ServerEvents). Incr. 1 : ouverture des modes PORT (DOCKS + WAREHOUSE) → le serveur autoritatif les accepte.
+      // Idempotent (ré-installé à chaque bind ; l'état est global à la couche événements). Cf. docs/SPECIAL_EVENTS.md.
+      try { ServerEvents.installBootDefaults(); } catch (Throwable t) { System.out.println("[ctx] events install: " + t); }
     } catch (Throwable t) { throw new RuntimeException("échec bind DH.app", t); }
   }
 
