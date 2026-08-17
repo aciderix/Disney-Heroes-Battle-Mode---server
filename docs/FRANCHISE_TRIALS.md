@@ -136,5 +136,63 @@ FRANCHISE_TRIALS (famille A) **est** un composant SPECIAL_EVENTS (`TrialEventInf
 COMPLÈTES) : signatures de construction `BaseEventTrial(...)` (incr. 1/2), contrat `TrialEventInfoFactory.load` JSON (incr. 5),
 build d'un `GenericTrial` SPOTLIGHT depuis `SpotlightTrialStats` (incr. 4).
 
-## Statut : RECON FAITE + incr. 0 (contrat wire ✔ WireCheck). Prochaine action = incr. 1 (`GetTrialEventData` → `TrialEventData`,
-## en démarrant par la famille B / SPOTLIGHT data-driven, la plus simple à mener EN JEU).
+## 9. FAIT DÉCISIF (incr. 0, 2026-08-17) — TOUT trial EST un ÉVÉNEMENT SPÉCIAL → ordre des incréments RÉVISÉ
+- **`ClientTrialEventHelper.createTrial(SpecialEventInfo)`** : le `GenericTrial` runtime est créé DEPUIS un `SpecialEventInfo`
+  (composant `TrialEventInfo`, clé "trial"). ⇒ **il n'y a PAS de trial « data-driven sans event »** : SPOTLIGHT / TEAM / EVENT /
+  FRANCHISE sont TOUS des événements spéciaux. `GetTrialEventData` est envoyé par `ClientTrialEventHelper`.
+- **Conséquence** : rien n'est jouable EN JEU tant qu'un **event trial** n'est pas construit + poussé. Donc le PRÉREQUIS =
+  **`ServerEvents.buildTrialEvent(...)`** (composant "trial", `createComponent("trial")` + `load`), PAS l'incr. 5. Le trial
+  s'appuie sur le moteur SPECIAL_EVENTS déjà en place (g131) — cohérent avec « FRANCHISE_TRIALS est un composant SPECIAL_EVENTS ».
+- **SPOTLIGHT = le plus SIMPLE** (server-usable `SpotlightTrialHelper`) : `getSpecialEvent(snap)`, `isSpotlightTrialActive(user,
+  snap)`, `getTotalEventUses`/`setTotalEventUses(user, n, snap)`, `onSpotlightTrialUse(user, snap)`, `rollLoot(user, snap)`.
+  État per-user = **compteur unique `spotlightTrialUses`** (DÉJÀ persisté `individualUserExtra`), PAS la structure `subtrials`
+  riche. ⇒ **candidat POINT DE DÉPART** une fois un event trial constructible.
+- **Schéma `TrialEventInfo.load(info, full, node)`** (clés JSON relevées) : `kind`, `nodeCount`, `nodeText`, `enemyLevel`,
+  `enemyRarity`, `enemyStars`, `enemyLineups`, `enemyLineupDups`, `combatModifiers`, `combatModifierDups`, `chances`,
+  `chancesBehavior` (DAILY/FIXED/UNLIMITED), `activeDays`, `day`, `gatingCriteria`, `gatingCriteriaDups`, `multiWins`,
+  `background`, `image`, `preset`, `presetLineups`, `questCategory`, `environment`, `enableRaiding`, `enableStatSlots`,
+  `resetStaminaCost`, `maxDailyResets`, `maxPaidDailyResets`, `maxPaidResets`, `enhancedPrimeBadgeLevelReq`/`patchLevelReq`/
+  `primeBadgeLevelReq`. Riche mais STRUCTURÉ → constructible (patron `buildDropBonusEvent`). ⚠️ sous-schémas (types de
+  `enemyLevel`/`gatingCriteria`, valeurs d'enum) à lire COMPLETS au build (incr. 1-révisé).
+
+## Plan RÉVISÉ (trial = event)
+1. **`ServerEvents.buildTrialEvent(...)`** (PRÉREQUIS) : construire un event trial MINIMAL mais VALIDE (via `createComponent
+   ("trial")` + `load` d'un JSON `TrialEventInfo` minimal : `kind`, `nodeCount`, ennemis fixes, `chances`, `activeDays`, sans
+   gating) → l'injecter (`ServerEvents.install`) → `isSpotlightTrialActive`/`isOpen`=true headless. + `AdminEvents --open-trial`.
+2. **`GetTrialEventData` → `TrialEventData`** : servir l'état per-user (SPOTLIGHT : `spotlightTrialUses` ; général : blob
+   subtrials). Handler `LoginServer`.
+3. **`TrialEventAttack`** → record (`GenericTrialNode.recordOutcome` reconstruit / `SpotlightTrialHelper.onSpotlightTrialUse`
+   + `rollLoot`), crédit loot, conso chance, persistance.
+4. **Reset** (quotidien/payant). 5. **Gating héros** (`userCanMeetRequirements`) + franchises. 6. **Complétion franchise**
+   (`PatchedHeroesHelper`). 7. **Vérif EN JEU** par brique (dès qu'un event trial est poussé au client).
+
+## 10. POINT DUR (incr. 1-révisé, 2026-08-17) — construire le `TrialEventInfo` (schéma riche, PAS de vérité terrain client)
+- **Fait établi** : le trial jouable = un `SpecialEventInfo` avec composant "trial" (`TrialEventInfo`). Le client ne fait que le
+  LIRE (`createTrial(eventInfo)`) — **il n'embarque AUCUN JSON d'event trial** (recon : ni assets, ni jar, ni tutoriel [= texte
+  UI seulement] ; ils venaient du backend PerBlue). `EventPresets.properties` fournit un preset wildcard vide `*.trial.none`
+  (comme `*.eventCard.none`) → utilisable pour `preset`, mais PAS la définition du trial.
+- **Schéma `TrialEventInfo.load`** riche et NICHÉ (objets à discriminateur `kind` : `chancesBehavior:{kind:DAILY/FIXED/UNLIMITED}`,
+  `image:{kind:MATCH/IMAGE/UNIT,…}`, `activeDays:{day:…}`, `enemyLevel/Rarity/Stars/Lineups` = listes typées, `gatingCriteria`,
+  `combatModifiers`, `chances`:int, `nodeCount`, `resetStaminaCost`/`resourceCostType`, `maxDailyResets`/`maxPaidResets`…).
+  ⇒ **le construire À LA MAIN = l'anti-pattern proscrit** (mur `eventCardDisplay`, « industrialisé = pas à la main »).
+- **Données du jeu disponibles (§4)** : `spotlight_trial_{constants,difficulties,enemies,enemy_config}.tab`,
+  `event_trial_{arena_rules,constants,rewards}.tab`, `patched_heroes_{base_trial_config,franchise_trials_enemy_config}.tab` —
+  contiennent la config RÉELLE (ennemis, difficultés, récompenses) qu'un event référence, mais PAS la structure d'event elle-même.
+
+### Options (décision utilisateur — comme le point dur SPECIAL_EVENTS)
+- **(A) Object-path INDUSTRIEL** : `createComponent("trial")` + remplissage GÉNÉRIQUE PAR TYPE des champs de `TrialEventInfo`
+  (patron `buildMinimalCard` : listes→élément valide, int→défaut sensé, enum→défaut, preset→"none"), en s'appuyant SUR les `.tab`
+  pour le contenu ennemis (extrait, non inventé §4). Avantage : pas de JSON à la main, réutilise la fabrique du jeu. Risque : le
+  trial produit est « minimal/synthétique » tant que le contenu n'est pas tiré finement des `.tab`.
+- **(B) Reconstruire depuis les `.tab` (le plus fidèle §4)** : assembler un `TrialEventInfo` SPOTLIGHT à partir de
+  `spotlight_trial_*.tab` (ennemis/difficultés/récompenses réels du jeu) — le contenu vient à 100 % de la donnée du jeu.
+  Plus lourd (mapper chaque `.tab` → champ), mais 0 invention.
+- **(C) Vérité terrain externe** : si l'utilisateur peut fournir un VRAI JSON d'event trial (capture backend/version), on
+  construit dessus (fidélité maximale, comme l'aurait fait le serveur d'origine).
+- **(D) PAUSE trials, faire d'abord les composants SPECIAL_EVENTS simples** (discounts/Contest — même moteur), revenir aux
+  trials ensuite. (La recon trials reste acquise et documentée.)
+
+**Reco** : (A) object-path industriel adossé aux `.tab` pour un premier trial jouable EN JEU (dérisque tout le reste :
+`GetTrialEventData`/`TrialEventAttack`/spotlight uses), puis affiner le contenu via (B). (C) si une vérité terrain est dispo.
+
+## Statut : RECON COMPLÈTE + incr. 0 (contrat wire ✔). **POINT DUR = construction du `TrialEventInfo` → DÉCISION UTILISATEUR.**
