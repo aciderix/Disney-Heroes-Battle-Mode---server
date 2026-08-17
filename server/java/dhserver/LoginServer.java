@@ -425,8 +425,15 @@ public final class LoginServer {
               if (act.command == com.perblue.heroes.network.messages.CommandType.REFRESH_SPECIAL_EVENTS) {
                 com.perblue.heroes.network.messages.SpecialEventsRaw raw =
                     new com.perblue.heroes.network.messages.SpecialEventsRaw();
-                raw.changed = false;
-                raw.events = new java.util.ArrayList<>();
+                // SPECIAL_EVENTS (live-ops) : on POUSSE au client les événements opérateur (sérialisés par le JEU via
+                // ServerEvents.toRaw → SpecialEventInfo.toJson). Le client les re-parse (buildEvent) et AFFICHE leurs
+                // effets (ex. PORT_WAREHOUSE ouvert dans PortChooserScreen). Cf. docs/SPECIAL_EVENTS.md incr. 2.
+                raw.changed = true;
+                try {
+                  raw.events = ServerEvents.toRaw(ServerEvents.bootDefaultEvents()).events;
+                } catch (Throwable t) {
+                  System.out.println("[login]     ! events toRaw échec: " + t); raw.events = new java.util.ArrayList<>();
+                }
                 // Récompenses de connexion quotidienne (bâtiment SIGN IN) : construites depuis la table du
                 // jeu (signin_rewards.tab) — le client applique via SigninHelper.setData. Cf. ServerUser.
                 try {
@@ -439,7 +446,8 @@ public final class LoginServer {
                 int nDays = raw.signinRewards == null || raw.signinRewards.thisMonth == null
                     || raw.signinRewards.thisMonth.rewards == null ? 0
                     : raw.signinRewards.thisMonth.rewards.size();
-                System.out.println("[login]     ==> SpecialEventsRaw (reply, 0 évènement, "
+                System.out.println("[login]     ==> SpecialEventsRaw (reply, "
+                    + (raw.events == null ? 0 : raw.events.size()) + " évènement(s), "
                     + nDays + " jours de sign-in)");
                 // MARCHANDS (#72 incr. 1b) — POUSSER le stock ICI (post-boot, user client stabilisé → survit au
                 // reset du BootData). Génère si absent (persiste), sinon réutilise le blob persisté. Le client

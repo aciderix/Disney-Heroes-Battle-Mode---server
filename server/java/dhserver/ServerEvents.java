@@ -71,12 +71,69 @@ public final class ServerEvents {
       mo.load(info, root, root);   // ModesOpen lit "gameModeFilter" sur le nœud complet (param2)
       addComponent(info, mo);
 
+      // Carte d'affichage minimale (cachée) — requise pour que le JSON soit RE-PARSABLE par le CLIENT (checkUnitType).
+      addComponent(info, buildMinimalCard(info));
       return info;
     } catch (RuntimeException e) {
       throw e;
     } catch (Exception e) {
       throw new RuntimeException("buildModesOpenEvent", e);
     }
+  }
+
+  /**
+   * Construit une carte d'affichage {@code eventCardDisplay} MINIMALE (cachée) — via la FABRIQUE du jeu
+   * ({@code SpecialEventBuilder.createComponent}) + un remplissage GÉNÉRIQUE PAR TYPE (pas champ-par-champ) : String→""
+   * (sauf {@code preset}="none", le preset wildcard vide {@code *.eventCard.none}), {@code EventString}→vide (via son
+   * {@code load} sur un nœud vide), {@code UnitTypeLookup}→{@code FixedUnitTypeLookup(DEFAULT)}, enum→DEFAULT, Class→UnitType.
+   * La carte n'a AUCUN rôle serveur ; elle rend juste l'événement RE-PARSABLE par le client ({@code checkUnitType}).
+   */
+  @SuppressWarnings({"rawtypes", "unchecked"})
+  private static IEventComponent buildMinimalCard(SpecialEventInfo info) throws Exception {
+    IEventComponent card = SpecialEventBuilder.createComponent("eventCardDisplay");
+    JsonValue emptyObj = JSON.parse("{}");
+    for (Field f : card.getClass().getDeclaredFields()) {
+      f.setAccessible(true);
+      Class<?> t = f.getType();
+      try {
+        if (t == String.class) f.set(card, "preset".equals(f.getName()) ? "none" : "");
+        else if (t == int.class) f.setInt(card, 0);
+        else if (t == long.class) f.setLong(card, 0L);
+        else if (t == boolean.class) f.setBoolean(card, "hidden".equals(f.getName()));
+        else if (t == com.perblue.common.specialevent.EventString.class)
+          f.set(card, com.perblue.common.specialevent.EventString.load(info, f.getName(), emptyObj));
+        else if (t == Class.class) f.set(card, com.perblue.heroes.network.messages.UnitType.class);
+        else if (t == java.lang.Enum.class) f.set(card, com.perblue.heroes.network.messages.UnitType.DEFAULT);
+        else if (t.getName().endsWith("UnitTypeLookup"))
+          f.set(card, new com.perblue.common.specialevent.components.pieces.FixedUnitTypeLookup(
+              com.perblue.heroes.network.messages.UnitType.DEFAULT));
+      } catch (Throwable ignore) { /* champ non contraint : laissé tel quel */ }
+    }
+    return card;
+  }
+
+  /**
+   * Sérialise des événements en {@code SpecialEventsRaw} (via le sérialiseur DU JEU {@code SpecialEventInfo.toJson()}) —
+   * à POUSSER au CLIENT pour qu'il AFFICHE les événements (le client re-parse ce JSON par {@code buildEvent}).
+   */
+  public static com.perblue.heroes.network.messages.SpecialEventsRaw toRaw(List<SpecialEventInfo> events) {
+    com.perblue.heroes.network.messages.SpecialEventsRaw raw = new com.perblue.heroes.network.messages.SpecialEventsRaw();
+    raw.events = new ArrayList<>();
+    for (SpecialEventInfo info : events) {
+      com.perblue.heroes.network.messages.SpecialEventRaw ev = new com.perblue.heroes.network.messages.SpecialEventRaw();
+      ev.eventID = info.getID();
+      ev.jsonString = String.valueOf(info.toJson());
+      raw.events.add(ev);
+    }
+    return raw;
+  }
+
+  /** Les événements opérateur par défaut (mêmes que {@link #installBootDefaults}) — pour push client via {@link #toRaw}. */
+  public static List<SpecialEventInfo> bootDefaultEvents() {
+    List<SpecialEventInfo> events = new ArrayList<>();
+    events.add(buildModesOpenEvent(900_001L,
+        Arrays.asList(GameMode.PORT_DOCKS, GameMode.PORT_WAREHOUSE), defaultStart(), defaultEnd()));
+    return events;
   }
 
   /**
@@ -109,10 +166,7 @@ public final class ServerEvents {
    * (La rotation fidèle par jour d'ouverture pourra être ajoutée en s'appuyant sur {@code getOpenDays}.)
    */
   public static void installBootDefaults() {
-    List<SpecialEventInfo> events = new ArrayList<>();
-    events.add(buildModesOpenEvent(900_001L,
-        Arrays.asList(GameMode.PORT_DOCKS, GameMode.PORT_WAREHOUSE), defaultStart(), defaultEnd()));
-    install(events);
+    install(bootDefaultEvents());
   }
 
   /** Snapshot courant de la couche événements (sans refresh UI, sûr headless) — à passer aux checks serveur. */

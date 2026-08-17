@@ -140,7 +140,14 @@ client est un incrément ultérieur (construire une carte minimale via la fabriq
    serveur **`DifficultyModeAttack : PORT_WAREHOUSE diff=1 outcome=WIN → recordOutcome appliqué [persisté]`** (avant :
    `GAME_MODE_NOT_OPEN`). Capture `build/port_warehouse_played_ingame.ppm`. **RESTE incr. 1 (raffinements)** : persistance
    shard (au lieu de re-poser au bind) et rotation fidèle par jour (`getOpenDays`).
-2. ⬜ **Push client** (`eventCardDisplay` minimal + `toJson` → `SpecialEventsRaw` poussé au boot) → le client AFFICHE
-   WAREHOUSE ouvert et laisse entrer par la vitrine. Débloque aussi FRANCHISE_TRIALS.
+2. ✅ **Push client — VÉRIFIÉ EN JEU.** `ServerEvents.buildMinimalCard(info)` : carte `eventCardDisplay` cachée construite
+   via la FABRIQUE du jeu (`createComponent`) + remplissage **GÉNÉRIQUE PAR TYPE** (pas champ-par-champ : String→"" sauf
+   `preset`="none" [wildcard réel `*.eventCard.none`] ; `EventString`→vide ; `UnitTypeLookup`→`FixedUnitTypeLookup(DEFAULT)`)
+   → `SpecialEventInfo.toJson()` produit un JSON **RE-PARSABLE par le client** (`checkUnitType` satisfait). `toRaw(events)`
+   → `SpecialEventsRaw` (chaque `jsonString` = `toJson`). `LoginServer` répond au `REFRESH_SPECIAL_EVENTS` avec
+   `ServerEvents.toRaw(bootDefaultEvents())` (au lieu du raw vide). **EN JEU (id=1)** : serveur `SpecialEventsRaw (reply,
+   1 évènement(s))` → `PortChooserScreen` affiche **THE WAREHOUSE avec bouton ENTER** (au lieu de « OPENS TOMORROW »),
+   CHANCES 2/2, comme THE DOCKS → entrée par la vitrine normale. Capture `build/port_warehouse_open_client_ingame.ppm`.
+   Débloque aussi FRANCHISE_TRIALS (même levier). RESTE : persistance shard + rotation fidèle par jour.
 3. ⬜ `DropBonus` / `AdditionalChances`. 4. ⬜ discounts marchands/coffres. 5. ⬜ `Contest`/`TeamLevel`. (Un builder par
    composant, même patron.)

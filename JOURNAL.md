@@ -5130,3 +5130,37 @@ puis DropBonus/discounts/Contest.
 Fichiers : `server/java/dhserver/ServerEvents.java` (nouveau), `server/java/dhserver/ServerContext.java` (install au boot),
 `server/java/dhserver/ServerUser.java` (snapshot réel dans les handlers PORT), `server/smoke/SpecialEventsModesOpenTest.java`,
 `server/smoke/regression.sh`, `docs/SPECIAL_EVENTS.md`, `MEMORY.md`.
+
+## 2026-08-17 (g127) — SPECIAL_EVENTS incr. 2 : push client — le CLIENT affiche WAREHOUSE ouvert (ENTER) ✅ en jeu
+
+Incr. 2 : pousser les événements au CLIENT pour qu'il AFFICHE leurs effets (ex. WAREHOUSE ouvert dans PortChooserScreen).
+Le blocage était la carte `eventCardDisplay`, exigée par `checkUnitType` au re-parse client (buildEvent).
+
+**Levée INDUSTRIELLE du blocage (rien à la main).** `ServerEvents.buildMinimalCard(info)` construit une carte cachée via
+la FABRIQUE du jeu (`SpecialEventBuilder.createComponent("eventCardDisplay")`) puis la remplit par un filler GÉNÉRIQUE PAR
+TYPE (pas champ-par-champ) : `String`→"" (sauf `preset`="none", le preset wildcard vide `*.eventCard.none` extrait de
+`assets/strings/EventPresets.properties`) ; `EventString`→vide (via son `load` sur `{}`) ; `UnitTypeLookup`→
+`FixedUnitTypeLookup(UnitType.DEFAULT)` ; enum→DEFAULT ; Class→UnitType. `SpecialEventInfo.toJson()` produit alors un JSON
+que le client RE-PARSE sans erreur (vérifié `RawCheck` : RE-PARSE OK). La carte n'a AUCUN rôle serveur (l'injection ne
+passe pas par checkUnitType) ; elle sert juste à rendre l'event parsable côté client.
+
+**Push.** `ServerEvents.toRaw(events)` → `SpecialEventsRaw{events:[SpecialEventRaw{eventID, jsonString=toJson}]}`.
+`LoginServer` répond désormais au `REFRESH_SPECIAL_EVENTS` (que le client redemande au boot) avec
+`ServerEvents.toRaw(bootDefaultEvents())` au lieu d'un raw vide (`changed=true`). Le client applique via
+`SpecialEventsHelper.setSpecialEvents` → sa couche événements ouvre les modes.
+
+**✅ EN JEU (id=1).** Serveur logue `==> SpecialEventsRaw (reply, 1 évènement(s), 31 jours de sign-in)`. Pilote `portscreen`
+→ `PortChooserScreen` rendu : **THE DOCKS** ENTER (CHANCES 2/2) ET **THE WAREHOUSE** désormais **ENTER** (CHANCES 2/2,
+« EARN GOLD / ENEMIES HAVE NORMAL IMMUNITY ») — AVANT ce push, WAREHOUSE affichait « OPENS TOMORROW » (grisé). Le joueur
+peut donc entrer WAREHOUSE par la VITRINE normale. Capture `build/port_warehouse_open_client_ingame.ppm`. (NB : le log du
+pilote `portscreen` dit `WAREHOUSE=fermé` car il interroge `isOpen(..., NONE)` — snapshot NONE, diagnostic trompeur ;
+l'ÉCRAN rendu utilise le vrai snapshot client avec l'event appliqué → ENTER.)
+
+**Bilan.** Boucle SPECIAL_EVENTS complète serveur→client : le moteur construit l'event (classes du jeu), l'injecte côté
+serveur (autorité) ET le sérialise pour le client (affichage) — WAREHOUSE ouvert et jouable par la vitrine, vérifié en jeu.
+Régression 125/125 (le fail WishingWellWishTest observé une fois = flaky RNG : passe en isolé 3/3 + re-run complet 125/125).
+**RESTE** : persistance shard (config opérateur) + rotation fidèle par jour (`getOpenDays`) ; puis autres composants
+(`DropBonus`, discounts marchands/coffres, `Contest`, `TeamLevel`…), même moteur, un builder chacun.
+
+Fichiers : `server/java/dhserver/ServerEvents.java` (buildMinimalCard + toRaw + bootDefaultEvents), `server/java/dhserver/
+LoginServer.java` (push au REFRESH_SPECIAL_EVENTS), `docs/SPECIAL_EVENTS.md`, `MEMORY.md`.
