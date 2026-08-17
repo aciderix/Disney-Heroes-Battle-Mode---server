@@ -81,8 +81,18 @@ serveur ne le gère PAS encore (aucun `DifficultyModeAttack`/`recordOutcome` dif
    (combat, pose le container) → `portdouble` (VRAIE `Action CLAIM_DOUBLE_PORT_REWARDS`) → serveur `récompense double
    créditée [logique du jeu]` → **DB GOLD doublé** ; re-`portdouble` → **REFUSÉ `DOUBLE_REWARDS_NOT_AVAILABLE`**.
    Pilote `portdouble`.
-4. ⬜ **PLANNING/ÉTAT** : `isOpen`/cooldown/difficulté lus par `PortChooserScreen` — vérifier que l'écran s'ouvre le bon
-   jour avec les difficultés + cooldown corrects (poussée au boot si nécessaire, façon InvasionInfo).
+4. ✅ **PLANNING/ÉTAT (`PortChooserScreen`)** — **RENDU-ONLY, aucun code serveur requis**. Contrat industriel (#73,
+   `contract.sh --mode Port`) : **0 message envoyé, 0 champ wire lu, 0 gate `Unlockable`** → l'écran lit TOUT via les
+   helpers du jeu (`DifficultyModeHelper.isOpen`×7, `getCooldownEnd`, `getRemainingDailyUses`, `isResetAvailable`,
+   `hasChallengeChances`, `getUseKey`/`getChallengeKey`/`getCooldownType`) sur l'**état PERSISTÉ + l'horloge serveur**.
+   Rien à pousser au boot (contrairement à InvasionInfo). **✅ VÉRIFIÉ EN JEU + VISUEL** (id=1, jour serveur 1) : pilote
+   `portscreen` (chemin réel `pushScreen(new PortChooserScreen())`) → écran **THE PORT** : **THE DOCKS** (PORT_DOCKS)
+   « EARN XP / ENEMIES HAVE FANTASTIC IMMUNITY / **ENTER** / CHANCES LEFT: 0/2 » (quota lu de l'état persisté = combats/
+   raids consommés) ; **THE WAREHOUSE** (PORT_WAREHOUSE) « EARN GOLD / ENEMIES HAVE NORMAL IMMUNITY / **OPENS TOMORROW** »
+   (fermé le jour serveur → prochain jour d'ouverture calculé des open-days). Capture `build/port_chooser_ingame.ppm`.
+   Pilote `portscreen`.
+
+## ⇒ PORT #72 COMPLET (incr. 1 combat + 2 raid + 3 récompense double + 4 planning — tous ✅ VÉRIFIÉS EN JEU).
 
 ## Notes §3/§4
 - Combat client-autoritatif : le serveur ré-exécute `recordOutcome` sur SON état ; le loot suit #25/§4bis (client-reporté

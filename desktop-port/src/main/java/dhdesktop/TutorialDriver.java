@@ -1270,6 +1270,26 @@ public final class TutorialDriver {
         } catch (Throwable e) { System.out.println("[merchantscreen] échec: " + e); e.printStackTrace(); }
     }
 
+    /** DEV : OUVRE le VRAI écran de PLANNING du Port {@code PortChooserScreen} (chemin réel, pushScreen) — pour
+     *  vérification VISUELLE du planning : mode(s) PORT ouvert(s) le jour serveur, difficultés, cooldown. L'écran lit
+     *  isOpen/cooldown/uses/reset de l'état PERSISTÉ + horloge serveur (aucun handler/push requis). Invoqué via
+     *  "portscreen". */
+    public static void portScreen(GameMain game) {
+        try {
+            var NONE = com.perblue.heroes.game.specialevent.SpecialEventSnapshot.NONE;
+            StringBuilder sb = new StringBuilder();
+            for (com.perblue.heroes.network.messages.GameMode m : new com.perblue.heroes.network.messages.GameMode[]{
+                    com.perblue.heroes.network.messages.GameMode.PORT_DOCKS,
+                    com.perblue.heroes.network.messages.GameMode.PORT_WAREHOUSE}) {
+                boolean open = com.perblue.heroes.game.logic.DifficultyModeHelper.isOpen(m, game.getYourUser(), NONE);
+                sb.append(m).append("=").append(open ? "OUVERT" : "fermé").append(" ");
+            }
+            System.out.println("[portscreen] planning côté client : " + sb.toString().trim() + " [chemin réel]");
+            game.getScreenManager().pushScreen(new com.perblue.heroes.ui.screens.PortChooserScreen());
+            System.out.println("[portscreen] PortChooserScreen poussé");
+        } catch (Throwable e) { System.out.println("[portscreen] échec: " + e); e.printStackTrace(); }
+    }
+
     /** DEV : ACHÈTE l'objet le moins cher ABORDABLE d'un marchand — chemin client réel
      *  {@code ClientActionHelper.purchaseMerchantItem} (message PurchaseMerchantItem ; le serveur ré-exécute
      *  purchaseItem : anti-triche + débit + don + purchased). Invoqué via "merchantbuy &lt;TYPE&gt;". */

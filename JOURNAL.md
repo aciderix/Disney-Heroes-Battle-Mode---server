@@ -4962,3 +4962,38 @@ Fichiers : `server/java/dhserver/ServerUser.java` (champ `pendingDoubleLoot` + s
 `applyCommand`), `server/smoke/PortDoubleRewardTest.java`, `server/smoke/regression.sh`,
 `desktop-port/src/main/java/dhdesktop/{TutorialDriver,DesktopLauncher}.java` (pilote `portdouble`),
 `docs/PORT.md`, `MEMORY.md`.
+
+## 2026-08-17 (g123) — PORT (#72) incr. 4 : PLANNING (PortChooserScreen) ✅ VÉRIFIÉ EN JEU + VISUEL → PORT COMPLET
+
+Dernier incrément du mode PORT : l'écran de PLANNING `PortChooserScreen` (choix DOCKS/WAREHOUSE + difficulté). **RENDU-ONLY,
+aucun code serveur** — établi par le contrat industriel.
+
+**Contrat (#73, `contract.sh --mode Port`).** Union du mode = `PortChooserScreen` + `GetPortResetWindow` + `PortInfoWindow`.
+Résultat : **0 message ENVOYÉ client→serveur, 0 champ wire LU (serveur→client), 0 gate `Unlockable`**. ⇒ l'écran ne dépend
+d'AUCUN handler ni d'AUCUNE poussée au boot (contrairement à InvasionInfo). Il lit tout via les helpers du jeu sur l'état
+PERSISTÉ + l'horloge serveur : `DifficultyModeHelper.isOpen`×7 (planning open-days par mode/difficulté), `getCooldownEnd`,
+`getRemainingDailyUses` (quota « chances left »), `isResetAvailable`, `hasChallengeChances`, `getUseKey`/`getChallengeKey`/
+`getCooldownType`. Tout cela est DÉJÀ fourni par notre serveur (cooldowns/compteurs/étoiles persistés write-through +
+horloge serveur ancrée). Donc rien à implémenter côté serveur ; incr. 4 = vérif rendu en jeu.
+
+**Pilote.** `PortChooserScreen()` a un ctor sans argument (comme `UINavHelper` l'instancie). Pilote DEV `portscreen`
+(`TutorialDriver.portScreen`) : log le planning côté client (`isOpen` par mode) puis `pushScreen(new PortChooserScreen())`
+(chemin réel). Câblé `portscreen` dans `DesktopLauncher`.
+
+**✅ EN JEU + VISUEL (id=1, jour serveur 1).** `portscreen` → écran **THE PORT** rendu correctement :
+- **THE DOCKS** (PORT_DOCKS, ouvert le jour 1) : « EARN XP », « ENEMIES HAVE FANTASTIC IMMUNITY », bouton **ENTER** actif,
+  « CHANCES LEFT: 0 / 2 » (quota quotidien lu de l'état persisté — mes combats/raids des incr. 1-3 l'ont consommé).
+- **THE WAREHOUSE** (PORT_WAREHOUSE, fermé le jour 1) : « EARN GOLD », « ENEMIES HAVE NORMAL IMMUNITY », bouton grisé
+  **OPENS TOMORROW** (prochain jour d'ouverture calculé des open-days + horloge serveur).
+Le client logue `planning côté client : PORT_DOCKS=OUVERT PORT_WAREHOUSE=fermé`. Capture `build/port_chooser_ingame.ppm`.
+Ce rendu prouve le planning (ouvert/fermé/opens-tomorrow), les libellés de récompense (XP/Gold) + d'immunité, et la lecture
+du quota — tous dérivés de l'état persisté + horloge, sans handler.
+
+⇒ **PORT #72 COMPLET** : incr. 1 (combat `DifficultyModeAttack`→`recordOutcome`) + 2 (raid `RaidDifficultyMode`→
+`useRaidTickets`+`recordRaidOutcome`) + 3 (récompense double `CLAIM_DOUBLE_PORT_REWARDS`→`claimDoubleRewards`) + 4
+(planning `PortChooserScreen`), TOUS vérifiés en jeu. Le sous-système générique `DifficultyModeHelper` (PORT_DOCKS/WAREHOUSE
++ siblings) est désormais couvert côté serveur. **Candidats mode suivant** : FRANCHISE_TRIALS (event-gated — vérifier
+activable sans événement hébergé, sinon documenter le gate §8 et prendre un autre `⬜` via `contract.sh --mode`).
+
+Fichiers : `desktop-port/src/main/java/dhdesktop/{TutorialDriver,DesktopLauncher}.java` (pilote `portscreen`),
+`docs/PORT.md`, `MEMORY.md`. (Aucun changement serveur — incr. rendu-only.)

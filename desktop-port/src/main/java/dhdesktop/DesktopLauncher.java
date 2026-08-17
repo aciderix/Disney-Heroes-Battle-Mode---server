@@ -525,6 +525,10 @@ public final class DesktopLauncher {
                     TutorialDriver.portDouble(game);
                     continue;
                 }
+                if (low.equals("portscreen") || low.startsWith("portscreen ")) {   // portscreen → PortChooserScreen (planning)
+                    TutorialDriver.portScreen(game);
+                    continue;
+                }
                 if (low.startsWith("wishtarget ")) {             // wishtarget <HERO> → SET_WISHING_WELL_TARGET_HERO
                     String[] wt = ln.trim().split("[,;\\s]+");
                     if (wt.length >= 2) TutorialDriver.wishTarget(game, wt[1].toUpperCase());
