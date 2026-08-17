@@ -5321,3 +5321,49 @@ Vérif EN JEU (id=1) de l'incrément g131, en DEUX phases :
 ⇒ Boucle complète prouvée EN JEU : rotation fidèle par défaut (getOpenDays du jeu) + override opérateur persistant via
 `AdminEvents` (config `shard_state`, rechargée au boot). Le point non-fidèle « 2 modes ouverts en permanence » est corrigé.
 Crash flaky `PatchStats`/`SyncStatDataClientHelper` au boot loggé mais NON fatal cette fois (client survécu). Régression 126/126.
+
+## 2026-08-17 (g132) — FRANCHISE_TRIALS / TEAM_TRIALS : recon COMPLÈTE industrialisée + plan ; + PHASE 2 planifiée
+
+Décision utilisateur : attaquer FRANCHISE_TRIALS avec une couche d'industrialisation, recon PROPRE et COMPLÈTE (pas de
+lecture partielle — éviter le pb g128 où une lecture incomplète d'`isOpen` avait mené à une fausse conclusion), documenter
+le travail à faire ; finir les composants SPECIAL_EVENTS restants une fois trials validé ; puis Phase 2 (planifiée).
+
+**Recon (pipeline #73/#74 `contract.sh --mode` + bytecode ENTIER).** Le mode « Trials » = 2 familles :
+- **Cœur wire partagé** : `GetTrialEventData{eventID}` → `TrialEventData{eventID, chancesUsed, dailyResetsUsed,
+  lastChancesResetTime, paidChancesRemaining, paidResetsUsed, subtrials:Map<?,TrialEventSubtrialData>}` — **handler
+  MANQUANT** ; builder ABSENT du client (état backend PerBlue, patron `ArenaInfo`/`MerchantData`) → serveur-autoritatif.
+  Combat : `TrialEventAttack{base:AttackBase, eventID, nodeNumber, subtrialNumber, stagesCleared, lootEarned, attackEndTime}`
+  (client-autoritatif, fire-and-forget façon `DifficultyModeAttack` ; construit par `ClientNetworkStateConverter.getTrialEventAttack`).
+- **Famille A — FRANCHISE/EVENT trials** = **composant SPECIAL_EVENTS** `game/specialevent/TrialEventInfo` (implémente
+  `IEventComponent`, clé **"trial"** via `TrialEventInfoFactory`), portant TOUTE la définition : ennemis (level/rarity/stars/
+  lineups + `TrialEventDupeBehavior`), combat modifiers, **franchises**, **gating criteria** (héros autorisés), sous-trials/
+  multi-wins, chances/resets, jours actifs, carte, `getEnhancedPrimeBadgeLevelRequirement`. Runtime = `GenericTrial`/
+  `GenericTrialNode`. Écrans `TrialEventSubTrialChooserScreen`→`TrialEventHeroChooserScreen`→`TrialEventAttackScreen`
+  (extends `LootAttackScreen`). Complétion → `PatchedHeroesHelper.handleFranchiseTrialCompletion` (lien patched heroes).
+  ⇒ **prolonge le moteur `ServerEvents`** (`buildTrialEvent` via `createComponent("trial")`).
+- **Famille B — TEAM_TRIALS_BLUE/RED/YELLOW + SPOTLIGHT** = data-driven (`game/data/teamtrials/TeamTrialsStats`/
+  `SpotlightTrialStats`/`EventTrialStats`), rotation par jour (`TrialsHelper.{SPOTLIGHT,BLUE,YELLOW,RED}_OPEN_DAYS` =
+  branche `getOpenDays`, DÉFAUT du jeu §8 g130). SPOTLIGHT persiste déjà (`individualUserExtra.spotlightTrialEventID/Uses`).
+  Écran `TeamTrialsChooserScreen`. Gate `Unlockable.TEAM_TRIALS` (TL55).
+
+**Logique §3** : `ClientTrialEventHelper` (isOpen/getGameMode/getLineupType/getChances*/getSpotlightHero/
+userCanMeetRequirements), `TrialsHelper.resetTrialEvent`, `SpotlightTrialHelper`, `GenericTrial`/`GenericTrialNode.recordOutcome`.
+
+**PLAN (docs/FRANCHISE_TRIALS.md)** : incr. 0 recon-completion (WireCheck `TrialEventData`/`TrialEventAttack`/
+`TrialEventSubtrialData` ; contrat `TrialEventInfoFactory.load` ; structure `TeamTrialsStats`) → 1 `GetTrialEventData`
+(blob serveur-autoritatif per-user) → 2 `TrialEventAttack` record (anti-triche chances/gating + loot + avance sous-trial) →
+3 resets (quotidien/payant) → 4 **famille B data-driven** (proposée comme POINT DE DÉPART EN JEU, plus simple) → 5 famille A
+event-driven (`buildTrialEvent` + `AdminEvents --open-trial`) → 6 complétion franchise → 7 vérif EN JEU par brique.
+
+**PHASE 2 planifiée (docs/PHASE2_PLAN.md)** : A vérif globale/oubli/anti-triche/persistance/fidélité, B perfs port Win/Linux
+NON destructives (oracle-certification spine Opt.3), C front-end joueur/launcher (liste/connexion serveurs, multi-serveur §5),
+D backend hébergement/gestion multi-shard/observabilité/sauvegardes, E intégration & tests APK, F tests inter-machines réels
+(latence/NAT/TLS/charge/multi-région/sécurité), G CI/repro/doc self-hoster/légal. Non engagé (priorité aux tâches en cours).
+
+**EXPLORATION.md mis à jour** (g131b) : ~9 modes ⬜→✅ ; seul FRANCHISE_TRIALS reste ⬜.
+
+**⚠️ RAPPEL HANDOFF (exigence utilisateur, répétée)** : tout handoff de compression DOIT dire EXPLICITEMENT au successeur de
+procéder, DÈS LE DÉBUT de sa reprise et AVANT TOUTE POURSUITE du travail engagé, au RITUEL DE REPRISE **COMPLET** (relire toute
+la doc listée en tête de MEMORY, énumérer les règles §1-§8 + astuces/outils, faire le point) pour récupérer TOUT le contexte.
+
+Fichiers : `docs/FRANCHISE_TRIALS.md` (nouveau), `docs/PHASE2_PLAN.md` (nouveau), `docs/EXPLORATION.md`, `MEMORY.md`.
