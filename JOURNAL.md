@@ -5541,3 +5541,36 @@ conso chance + loot client-reporté + persistance). 4 resets. 5 gating héros + 
 
 ⇒ **PROCHAINE ACTION = décision utilisateur sur le fork (A/C/D)** avant d'écrire le handler (éviter d'inventer la structure §4).
 Régression 129/129 inchangée. Fichiers : `docs/FRANCHISE_TRIALS.md` §15, `MEMORY.md`, `JOURNAL.md`.
+
+## 2026-08-18 (g138) — FRANCHISE_TRIALS : CORRECTION §8 — structure des franchise trials data-driven (PatchStats/.tab), pas backend
+
+Décision utilisateur : EVENT/FRANCHISE trials « définis par le serveur → à l'admin de les définir ». Lecture des FAQ PerBlue
+(helpshift 626 franchise-trials / 653 franchise season release) — helpshift bloque le fetch (403) ; contenu récupéré via WebSearch
++ wiki Fandom. Mécanique : chaque franchise trial n'accepte QUE les héros d'une FRANCHISE (ex. Zootopia trial = persos Zootopia) ;
+récompenses = Badge Bits (bas) + Patch Essence (haut, 5 tiers → système Patch) ; nodes 1-N difficulté croissante ; SAISONS ~1 mois,
+quelques franchises featured par saison.
+
+**CORRECTION du §15 (g137, lecture partielle)** : j'avais conclu « structure backend-authored, pas dans les .tab » en ne regardant
+QUE `EventTrialStats`. **FAUX pour les FRANCHISE trials** : leur structure est ENTIÈREMENT dans les `.tab` patched_heroes —
+- `patched_heroes_franchise_season_mapping.tab` : calendrier de SAISONS (colonnes = dates) → `TRIAL$0_FRANCHISE_0` = franchise
+  vedette par saison (WILDCARD/CARS/FROZEN/THE_LION_KING/KIM_POSSIBLE/BEAUTY_AND_THE_BEAST/…), `TRIAL$0_ACTIVE_DAYS`=Lun/Jeu/Dim, patch caps.
+- `patched_heroes_base_trial_config.tab` : NODE_COUNT=14, WAVE_COUNT=3, MAX_DAILY_RESETS=60, FRANCHISES, gating (PRIME_BADGE_LEVEL_REQ=230,
+  ENHANCED=280, PATCH_LEVEL_REQ=305), ENABLE_RAIDING=TRUE, ENABLE_STAT_SLOTS=TRUE.
+- `patched_heroes_franchise_trials_enemy_config.tab` : 14 stages (STARS/RARITY/LEVELS/REWARDS/BONUSES) — RANDOM_BADGE (stages bas) →
+  PATCH_ESSENCE_n (stages hauts, ASSIGN_REAL_GEAR à partir du stage 5).
+- Ennemis = héros de la franchise (`PatchStats.getFranchiseTrialEnemyPoolForSeason` / `HeroHelper.getAllHeroesInFranchise`).
+- Logique du jeu PRÊTE (§3) : `PatchStats.{getPatchableFranchisesForSeason,getFranchiseTrialEnemyPoolForSeason,getGameModeFranchises,
+  getFranchiseTrialsStageNumber}` ; `PatchedHeroesHelper.{franchiseTrialsUnlocked,handleFranchiseTrialCompletion,getPatchEssenceTier,
+  getPatchEssenceCost,spendPatchEssence,getAmountOfEssenceAvailable}`. Pas de `GameMode.FRANCHISE_TRIALS` (purs event trials `TrialEventInfo`).
+
+⇒ **AUCUNE invention / AUCUN JSON backend requis (§4)** : le franchise trial se construit en EXÉCUTANT `PatchStats` (franchises de la
+saison + config ennemis/stages + héros de franchise). **Rôle admin = activer/planifier** (fidèle au calendrier de saison, override
+`AdminEvents` possible). Feasibility déjà prouvée (g137 : serveur construit `ClientEventTrial` headless, ctor pur).
+
+**Plan RÉVISÉ (fully faithful)** : 1 build `TrialEventInfo` franchise depuis `PatchStats` (chercher un builder DU JEU → l'exécuter §3 ;
+sinon object-path peuplé depuis PatchStats) → `getSubtrials()>0`. 2 `GetTrialEventData` blob per-user serveur-autoritatif. 3
+`TrialEventAttack` → `BaseEventTrialNode.recordOutcome` + conso chance + loot. 4 resets. 5 gating franchise. 6 complétion
+`PatchedHeroesHelper` (Patch Essence). 7 `AdminEvents --open-trial <FRANCHISE|saison>`. 8 vérif EN JEU.
+
+Régression 129/129 inchangée. Fichiers : `docs/FRANCHISE_TRIALS.md` §16, `MEMORY.md`, `JOURNAL.md`.
+Sources FAQ/wiki : perblue.helpshift.com/hc/en/3-disney-heroes/faq/626 ; disneyheroesbattlemode.fandom.com/wiki/Trials.

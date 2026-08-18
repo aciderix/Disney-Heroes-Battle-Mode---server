@@ -312,4 +312,30 @@ la structure depuis les `.tab`) NON VIABLE**. Forks réels (décision utilisateu
    + persistance. 4. resets (quotidien/payant `doDailyReset`/`doPaidReset`). 5. gating héros (`getGatingCriteria`) + franchises. 6.
    complétion franchise (`PatchedHeroesHelper.handleFranchiseTrialCompletion`). 7. vérif EN JEU.
 
-## Statut : incr. 1 ✅ **TEAM_TRIALS_{BLUE,RED,YELLOW} + SPOTLIGHT_TRIAL VÉRIFIÉS EN JEU** (4 DifficultyMode-trials, réutilisent PORT). EVENT/FRANCHISE : recon COMPLÈTE + feasibility PROUVÉE (serveur construit `ClientEventTrial`) ; **POINT DUR = source de la structure du trial → décision utilisateur (A synthèse / C vérité terrain / D pause)**.
+## 16. CORRECTION §8 (g138) — la structure des FRANCHISE trials EST data-driven (`.tab`), PAS backend-authored
+⚠️ **Le §15 concluait à tort** que la structure venait du backend PerBlue (lecture partielle : je n'avais regardé que `EventTrialStats`,
+pas `PatchStats`). **FAIT (données extraites + `PatchStats`)** : la structure des **FRANCHISE trials est ENTIÈREMENT dans les `.tab`** —
+- `patched_heroes_franchise_season_mapping.tab` : **calendrier des SAISONS** (colonnes = dates de début) → `TRIAL$0_FRANCHISE_0`
+  (= la franchise vedette PAR SAISON : WILDCARD/CARS/FROZEN/THE_LION_KING/KIM_POSSIBLE/…), `TRIAL$0_ACTIVE_DAYS` (Lun/Jeu/Dim), patch caps.
+- `patched_heroes_base_trial_config.tab` : `NODE_COUNT=14`, `WAVE_COUNT=3`, `MAX_DAILY_RESETS=60`, `FRANCHISES`, gating (`PRIME_BADGE_LEVEL_REQ`…),
+  `ENABLE_RAIDING`, `ENABLE_STAT_SLOTS`.
+- `patched_heroes_franchise_trials_enemy_config.tab` : **14 stages** (stars/rarity/level/rewards) — Badge Bits (bas) → **PATCH_ESSENCE** (haut).
+- Ennemis = héros de la franchise (`PatchStats.getFranchiseTrialEnemyPoolForSeason` / `HeroHelper.getAllHeroesInFranchise`).
+- Logique du jeu PRÊTE (§3) : `PatchStats.getPatchableFranchisesForSeason`/`getFranchiseTrialEnemyPoolForSeason`/`getGameModeFranchises`/
+  `getFranchiseTrialsStageNumber` ; `PatchedHeroesHelper.franchiseTrialsUnlocked`/`handleFranchiseTrialCompletion`/`getPatchEssenceTier`/
+  `spendPatchEssence`. (Pas de `GameMode.FRANCHISE_TRIALS` : ce sont de PURS event trials `TrialEventInfo`, umbrella `EVENT_TRIAL`.)
+
+⇒ **AUCUNE invention, AUCUN JSON backend requis (§4)** : on construit le franchise trial en EXÉCUTANT `PatchStats` (franchises de la saison +
+config ennemis/stages + héros de franchise). **Rôle admin = activer/planifier** (décision utilisateur « défini par le serveur → à l'admin de
+les définir ») — fidèle au calendrier de saison du jeu, override admin possible (patron SPECIAL_EVENTS `AdminEvents`).
+
+### Plan RÉVISÉ (fully faithful, data-driven — plus de fork « invention »)
+1. **Build `TrialEventInfo` franchise** depuis `PatchStats` (saison → franchise(s) + `base_trial_config` [nodeCount/waves/gating] +
+   `franchise_trials_enemy_config` [stages] + ennemis = héros de la franchise). Vérifier si un builder DU JEU existe (client) → l'exécuter
+   (§3) ; sinon object-path en peuplant depuis `PatchStats` (données du jeu, pas inventées). Cible : `ClientEventTrial.getSubtrials()>0`.
+2. `GetTrialEventData` → blob per-user serveur-autoritatif (chances/resets/subtrials) + persistance + handler.
+3. `TrialEventAttack` → `BaseEventTrialNode.recordOutcome` (avance nœud) + conso chance + loot client-reporté + persistance.
+4. resets (`doDailyReset`/`doPaidReset`). 5. gating franchise (`getGatingCriteria` = seuls héros de la franchise). 6. complétion
+   `PatchedHeroesHelper.handleFranchiseTrialCompletion` (Patch Essence). 7. `AdminEvents --open-trial <FRANCHISE|saison>`. 8. vérif EN JEU.
+
+## Statut : incr. 1 ✅ **TEAM_TRIALS_{BLUE,RED,YELLOW} + SPOTLIGHT_TRIAL VÉRIFIÉS EN JEU** (4 DifficultyMode-trials). EVENT/FRANCHISE : recon COMPLÈTE + feasibility PROUVÉE + **structure data-driven confirmée (`PatchStats`/`.tab`) → build FIDÈLE possible, admin-planifié, 0 invention**. Prochaine action = incr. 1 (build `TrialEventInfo` franchise depuis `PatchStats`).
