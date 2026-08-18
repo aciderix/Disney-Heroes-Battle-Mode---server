@@ -5503,3 +5503,41 @@ restants, puis Phase 2 (planifiée).
 
 Fichiers : `server/smoke/SpotlightTrialTest.java` (nouveau), `server/smoke/regression.sh`, `docs/FRANCHISE_TRIALS.md` §14,
 `docs/EXPLORATION.md`, `MEMORY.md`, `JOURNAL.md`.
+
+## 2026-08-18 (g137) — FRANCHISE_TRIALS : EVENT/FRANCHISE trials — recon COMPLÈTE + feasibility PROUVÉE + point dur (décision utilisateur)
+
+Après les 4 DifficultyMode-trials (§12-14, ✅ EN JEU), attaque du SEUL sous-système restant : EVENT_TRIAL / FRANCHISE trials
+(le « TrialEventInfo » riche). Recon bytecode COMPLÈTE (pas de lecture partielle §8).
+
+**Cartographie** : serveur-autoritatif à BLOB (patron Arena/Surge/Expedition — `GameMain` REÇOIT `TrialEventData`, aucun builder
+client). Flux : `GetTrialEventData{eventID}` → serveur répond `TrialEventData{chancesUsed, dailyResetsUsed, lastChancesResetTime,
+paidChancesRemaining, paidResetsUsed, subtrials:Map<Integer,TrialEventSubtrialData{nodeLevelStatuses:Map<Integer,CampaignLevelStatus>}>}`
+(HANDLER MANQUANT) ; combat client-autoritatif → `TrialEventAttack{base, eventID, nodeNumber, subtrialNumber, stagesCleared,
+lootEarned, attackEndTime}` (HANDLER MANQUANT, construit par `ClientNetworkStateConverter.getTrialEventAttack`).
+STRUCTURE (subtrials/nœuds/ennemis/franchises/gating/chances) = composant d'event `game.specialevent.TrialEventInfo` (clé "trial") ;
+ÉTAT per-user = blob `TrialEventData`. Runtime `ClientEventTrial extends BaseEventTrial` : `setUserData`, `getChancesRemaining`
+(lit `userData.chancesUsed` vs `getChancesPerReset`), `getSubtrials`. Logique §3 : `BaseEventTrialNode.recordOutcome(outcome,
+stagesCleared, …, snap)` (avance le nœud façon campagne via `ICampaignLevelStatus.setStars`), `checkForDailyReset`/`doPaidReset`.
+
+**✅ FEASIBILITY PROUVÉE (spike headless /tmp/TrialFeasSpike, jetable)** : `new ClientEventTrial(user, eventInfo)` se CONSTRUIT
+CÔTÉ SERVEUR sans réseau ni GL (ctor vérifié au bytecode : `BaseEventTrial.init()` + build subtrials + `DailyActivityHelper`, AUCUN
+`sendMessage`/`Gdx`). Lu OK : `eventID=970001`, `chancesPerReset=2`. ⇒ le serveur peut EXÉCUTER la vraie logique du jeu
+(`ClientEventTrial` + `node.recordOutcome`), §3-conforme. (`createTrial` du helper reste client-only car il ENVOIE
+`GetTrialEventData` ; le ctor est pur.)
+
+**⚠️ POINT DUR CONFIRMÉ (§10)** : le spike montre `subtrials=0` — le filler générique de `buildTrialEvent` (g133) ne peuple pas
+les nœuds, ET **`EventTrialStats` (`event_trial_*.tab`) ne contient QUE récompenses + arena-rules + constantes, PAS la structure**
+(ennemis/nœuds/franchises). La structure d'un event trial venait du **JSON d'event backend PerBlue** (comme `eventCardDisplay`).
+⇒ **option B (reconstruire la structure depuis les `.tab`) NON VIABLE**. Forks (décision utilisateur, comme SPECIAL_EVENTS) :
+(A) synthèse object-path d'une structure MINIMALE VALIDE (ennemis EXTRAITS d'une source du jeu — campagne/`.tab` — pas inventés §4 ;
+franchise choisie) → trial jouable mais synthétique ; (C) vraie vérité terrain (JSON d'event réel) → fidélité maximale ; (D) pause
+(les 4 DifficultyMode-trials = le gros du mode livré ; faire d'abord les composants SPECIAL_EVENTS restants, revenir avec une
+vérité terrain).
+
+**Plan EVENT/FRANCHISE** (une fois le fork tranché) : 0 ✅ wire + ✅ feasibility. 1 structure (`TrialEventInfo` ≥1 subtrial/nœud).
+2 `GetTrialEventData` (blob per-user serveur-autoritatif + persistance + handler). 3 `TrialEventAttack` (`node.recordOutcome` +
+conso chance + loot client-reporté + persistance). 4 resets. 5 gating héros + franchises. 6 complétion franchise
+(`PatchedHeroesHelper`). 7 vérif EN JEU.
+
+⇒ **PROCHAINE ACTION = décision utilisateur sur le fork (A/C/D)** avant d'écrire le handler (éviter d'inventer la structure §4).
+Régression 129/129 inchangée. Fichiers : `docs/FRANCHISE_TRIALS.md` §15, `MEMORY.md`, `JOURNAL.md`.
