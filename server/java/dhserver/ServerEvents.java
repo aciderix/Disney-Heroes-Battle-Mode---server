@@ -136,6 +136,96 @@ public final class ServerEvents {
   }
 
   /**
+   * Construit un événement <b>TRIAL</b> (composant {@code TrialEventInfo}, clé "trial") — le PRÉREQUIS de FRANCHISE_TRIALS
+   * (tout trial est un événement spécial). <b>Object-path INDUSTRIEL</b> (décision utilisateur, patron {@code buildMinimalCard}) :
+   * on construit le composant via la FABRIQUE du jeu ({@code createComponent("trial")}) puis on remplit ses champs par un
+   * filler GÉNÉRIQUE PAR TYPE — PAS de JSON `TrialEventInfo` à la main (schéma riche/niché = anti-pattern proscrit). Le contenu
+   * ennemis (listes vides ici) sera tiré des {@code .tab} aux incréments suivants (§4). Le trial est OUVERT tous les jours
+   * ({@code activeDays=[EVERYDAY]}) et de type {@code HERO_SPOTLIGHT} (le plus simple : état per-user = compteur
+   * {@code spotlightTrialUses}).
+   *
+   * @param trialType type de trial ({@code GenericTrialType.HERO_SPOTLIGHT} par défaut).
+   */
+  @SuppressWarnings({"rawtypes", "unchecked"})
+  public static SpecialEventInfo buildTrialEvent(long id, com.perblue.heroes.network.messages.GenericTrialType trialType,
+                                                 long startMs, long endMs) {
+    try {
+      String full = "{\"kind\":\"TRIAL\",\"id\":" + id + ",\"formatVersion\":0,"
+        + "\"timeRange\":[{\"serverFilter\":\"1-999999\",\"start\":" + startMs
+        +   ",\"end\":{\"kind\":\"TIME\",\"endTime\":" + endMs + "}}]}";
+      JsonValue root = JSON.parse(full);
+
+      SpecialEventInfo info = new SpecialEventInfo(SpecialEventType.class);
+      setField(info, "id", id);
+      setField(info, "type", SpecialEventType.TRIAL);
+      setField(info, "formatVersion", 0);
+
+      EventVisibility vis = new EventVisibility(new int[0]);
+      vis.load(info, root, root.get("timeRange"));
+      addComponent(info, vis);
+
+      // Composant "trial" via la FABRIQUE du jeu + remplissage GÉNÉRIQUE PAR TYPE (object-path, pas de JSON riche à la main).
+      IEventComponent trial = SpecialEventBuilder.createComponent("trial");
+      fillTrialFields(trial, trialType == null ? com.perblue.heroes.network.messages.GenericTrialType.HERO_SPOTLIGHT : trialType);
+      addComponent(info, trial);
+
+      addComponent(info, buildMinimalCard(info));
+      return info;
+    } catch (RuntimeException e) {
+      throw e;
+    } catch (Exception e) {
+      throw new RuntimeException("buildTrialEvent", e);
+    }
+  }
+
+  /**
+   * Remplissage GÉNÉRIQUE PAR TYPE d'un {@code TrialEventInfo} (object-path) : {@code activeDays=[EVERYDAY]} (ouvert),
+   * {@code trialType}=paramètre, {@code preset}="none", listes→vides (contenu ennemis tiré des .tab plus tard §4),
+   * Set/Map→vides, int→défauts (chances=2), boolean→false, enum→1ʳᵉ constante, {@code EventString}→vide, String→"".
+   */
+  @SuppressWarnings({"rawtypes", "unchecked"})
+  private static void fillTrialFields(IEventComponent trial, com.perblue.heroes.network.messages.GenericTrialType trialType) throws Exception {
+    JsonValue emptyObj = JSON.parse("{}");
+    for (Field f : trial.getClass().getDeclaredFields()) {
+      if (java.lang.reflect.Modifier.isStatic(f.getModifiers())) continue;
+      f.setAccessible(true);
+      Class<?> t = f.getType();
+      String name = f.getName();
+      try {
+        if ("activeDays".equals(name)) {
+          java.util.List days = new java.util.ArrayList();
+          days.add(Enum.valueOf((Class) Class.forName("com.perblue.heroes.game.objects.trials.GenericTrialActiveDays"), "EVERYDAY"));
+          f.set(trial, days);
+        } else if ("trialType".equals(name)) {
+          f.set(trial, trialType);
+        } else if ("preset".equals(name)) {
+          f.set(trial, "none");
+        } else if (t == java.util.List.class) {
+          f.set(trial, new java.util.ArrayList());
+        } else if (t == java.util.Set.class) {
+          f.set(trial, new java.util.HashSet());
+        } else if (t == java.util.Map.class) {
+          f.set(trial, new java.util.HashMap());
+        } else if (t == int.class) {
+          f.setInt(trial, "chancesPerReset".equals(name) ? 2 : 0);
+        } else if (t == boolean.class) {
+          f.setBoolean(trial, false);
+        } else if (t == String.class) {
+          f.set(trial, "");
+        } else if (t == com.perblue.common.specialevent.EventString.class) {
+          f.set(trial, com.perblue.common.specialevent.EventString.load(null, name, emptyObj));
+        } else if (t.isEnum()) {
+          Object[] consts = t.getEnumConstants();
+          Object def = null;
+          for (Object c : consts) if ("DEFAULT".equals(((Enum<?>) c).name())) { def = c; break; }
+          f.set(trial, def != null ? def : consts[0]);
+        }
+        // autres types (objets structurés non contraints) : laissés null — à peupler depuis les .tab aux incréments suivants.
+      } catch (Throwable ignore) { /* champ non contraint : laissé tel quel */ }
+    }
+  }
+
+  /**
    * Construit une carte d'affichage {@code eventCardDisplay} MINIMALE (cachée) — via la FABRIQUE du jeu
    * ({@code SpecialEventBuilder.createComponent}) + un remplissage GÉNÉRIQUE PAR TYPE (pas champ-par-champ) : String→""
    * (sauf {@code preset}="none", le preset wildcard vide {@code *.eventCard.none}), {@code EventString}→vide (via son

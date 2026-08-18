@@ -195,4 +195,28 @@ build d'un `GenericTrial` SPOTLIGHT depuis `SpotlightTrialStats` (incr. 4).
 **Reco** : (A) object-path industriel adossé aux `.tab` pour un premier trial jouable EN JEU (dérisque tout le reste :
 `GetTrialEventData`/`TrialEventAttack`/spotlight uses), puis affiner le contenu via (B). (C) si une vérité terrain est dispo.
 
-## Statut : RECON COMPLÈTE + incr. 0 (contrat wire ✔). **POINT DUR = construction du `TrialEventInfo` → DÉCISION UTILISATEUR.**
+## 11. FAIT DÉCISIF (incr. 1, 2026-08-17) — SPOTLIGHT/TEAM = DifficultyModes (RÉUTILISENT PORT) ; seuls EVENT/FRANCHISE = TrialEventInfo
+Vérifié au bytecode (§8) : **`DifficultyModeHelper.getOpenDays` gère `TEAM_*` et `SPOTLIGHT`** (branches `TrialsHelper.*_OPEN_DAYS`) ;
+`SpotlightTrialHelper.getSpecialEvent` cherche un event **MODES_OPEN ouvrant `GameMode.SPOTLIGHT`** et `isSpotlightTrialActive` =
+`DifficultyModeHelper.isOpen(GameMode.SPOTLIGHT)` + `SpotlightTrialStats` (`.tab`) ; **`TeamTrialsChooserScreen` utilise
+`DifficultyModeHelper` + le MÊME `ModePreviewScreen` que PORT**. ⇒ **REVISION MAJEURE** :
+- **TEAM_TRIALS_{BLUE,RED,YELLOW} + SPOTLIGHT_TRIAL = des DifficultyModes** (comme PORT_DOCKS/WAREHOUSE). Ils réutilisent
+  **TOUTE l'infra PORT déjà livrée** : ouverture via MODES_OPEN (`AdminEvents --open TEAM_TRIALS_BLUE`) OU rotation `getOpenDays`
+  par défaut ; combat `DifficultyModeAttack` → `ServerUser.recordDifficultyModeAttack` (mode = paramètre) ; planning
+  `ModePreviewScreen`/`DifficultyModeHeroChooserScreen`. **Aucun nouveau code combat** (comme WAREHOUSE). SPOTLIGHT ajoute la
+  conso `spotlightTrialUses` (`SpotlightTrialHelper.onSpotlightTrialUse`) — à câbler si besoin.
+- **EVENT_TRIAL / FRANCHISE trials = le seul sous-système NOUVEAU** (riche `TrialEventInfo` + `GetTrialEventData`/
+  `TrialEventAttack`/subtrials). C'est là que `ServerEvents.buildTrialEvent` (object-path, option A — LIVRÉ) s'applique.
+  ⚠️ `ClientTrialEventHelper.createTrial` est CLIENT-only (envoie `GetTrialEventData` → NPE headless) → vérif via serveur.
+
+### Plan RE-RÉVISÉ (par ordre de simplicité)
+1. **TEAM_TRIALS_BLUE via le chemin PORT (QUICK WIN)** : `AdminEvents --open TEAM_TRIALS_BLUE` → `isOpen` → combat
+   `recordDifficultyModeAttack` (déjà en place). Test headless + **vérif EN JEU** (vitrine `TeamTrialsChooserScreen`/`ModePreview`
+   → ENTER → combat → victoire → `recordOutcome [persisté]`). Zéro nouveau code serveur (validation de la réutilisation).
+2. **SPOTLIGHT_TRIAL** : idem + conso `spotlightTrialUses` (`SpotlightTrialHelper.onSpotlightTrialUse`) si le combat ne la fait pas.
+3. **EVENT_TRIAL / FRANCHISE** (le vrai nouveau) : `buildTrialEvent` (TrialEventInfo, contenu ennemis tiré des `.tab` §4) +
+   `GetTrialEventData`→`TrialEventData` (blob) + `TrialEventAttack` record + subtrials + gating + complétion `PatchedHeroesHelper`.
+   Le plus lourd — après validation de 1-2.
+
+## Statut : RECON COMPLÈTE + incr. 0 wire ✔ + incr. 1 fait décisif (SPOTLIGHT/TEAM = PORT). `buildTrialEvent` livré (pour EVENT/FRANCHISE).
+## Prochaine action = valider TEAM_TRIALS_BLUE par le chemin PORT (headless + en jeu) — le QUICK WIN.
