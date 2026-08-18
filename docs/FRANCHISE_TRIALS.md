@@ -236,4 +236,19 @@ Vérifié au bytecode (§8) : **`DifficultyModeHelper.getOpenDays` gère `TEAM_*
   conso `spotlightTrialUses`. Pilote `teamtrialsscreen` (planning côté client, NON-fatal — ne pousse pas le `TeamTrialsChooserScreen` brut dont
   `updateScreenUI` exige un `cardContent` bâti par le cycle show()).
 
-## Statut : incr. 1 ✅ **TEAM_TRIALS_BLUE VÉRIFIÉ EN JEU** (QUICK WIN, réutilise PORT). Reste : (2) SPOTLIGHT (uses), (3) EVENT/FRANCHISE (TrialEventInfo).
+## 13. LES 3 COULEURS ✅ VÉRIFIÉES EN JEU + fidélité §4bis confirmée vs la communauté (2026-08-18, g135)
+- **RED + YELLOW ✅ EN JEU** (après BLUE) — même chemin exact (`portpress <MODE>`→`ModePreviewScreen`→`portpreviewattack`→
+  `DifficultyModeHeroChooserScreen`→`portteam`→combat→VICTOIRE→REWARDS) → serveur `DifficultyModeAttack : TEAM_TRIALS_{RED,YELLOW}
+  diff=1 outcome=WIN → recordOutcome appliqué [persisté]`. **Chaque couleur restreint les héros à SA team** (gating vérifié EN JEU :
+  les 5 héros fieldés diffèrent visiblement par couleur ; message d'écran « Heroes from the {Blue,Red,Yellow} Team battle in this
+  mode! »), et donne un **Badge Bit** distinct (coffre bleu / chariot rouge / pêche jaune = les `SHARD_*` de `team_trials_*_loot.tab`).
+  Setup : `TeamTrialsRosterBoost` (roster complet RED 100 6★ pour couvrir les 3 couleurs) + `AdminEvents --open TEAM_TRIALS_{RED,YELLOW}`.
+- **Fidélité §4bis (vérité-terrain communauté)** : `getOpenDays` (extrait des `.tab`) correspond EXACTEMENT au wiki (numérotation
+  `1=Dim…7=Sam`) : RED `{6,3,1}`=Dim/Mar/Ven ✓, BLUE `{7,4,1}`=Dim/Mer/Sam ✓, YELLOW `{5,2,1}`=Dim/Lun/Jeu ✓. `SPOTLIGHT_TRIAL`
+  `getOpenDays=[]` (aucun jour par défaut → purement event-driven, cohérent §11). Récompense = Badge Bits (confirmé). NB gate : wiki
+  dit TL20, notre `.tab` v12.1.0 = `Unlockable.TEAM_TRIALS` TL55 (écart de version ; notre valeur fait foi pour 12.1.0).
+- **Leçon piloting** : entre deux combats, TOUJOURS revenir au hub (`nav HOME`) et laisser l'écran REWARDS se fermer AVANT de relancer
+  un `portpress` — sinon le combat se lance par-dessus l'overlay REWARDS non fermé et le rendu se fige (faux « hang » = erreur de
+  séquençage, PAS un bug moteur : YELLOW rejoué proprement seul → WIN immédiat).
+
+## Statut : incr. 1 ✅ **TEAM_TRIALS_{BLUE,RED,YELLOW} VÉRIFIÉS EN JEU** (QUICK WIN, réutilisent PORT ; gating couleur + jours fidèles). Reste : (2) SPOTLIGHT (uses), (3) EVENT/FRANCHISE (TrialEventInfo).

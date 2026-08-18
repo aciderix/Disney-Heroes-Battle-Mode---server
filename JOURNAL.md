@@ -5432,3 +5432,34 @@ EVENT/FRANCHISE (`TrialEventInfo` riche : `GetTrialEventData`→`TrialEventData`
 Fichiers : `server/smoke/TeamTrialsAttackTest.java` (nouveau), `server/smoke/{PortAttack,PortRaid,PortDoubleReward}Test.java` (fix déterminisme),
 `server/smoke/regression.sh`, `desktop-port/src/main/java/dhdesktop/{TutorialDriver,DesktopLauncher}.java` (pilote `teamtrialsscreen`),
 `server/java/dhserver/ServerEvents.java` (`buildTrialEvent`/`fillTrialFields`, g133b), `docs/FRANCHISE_TRIALS.md` §11-12, `MEMORY.md`.
+
+## 2026-08-18 (g135) — FRANCHISE_TRIALS : les 3 couleurs TEAM_TRIALS_{BLUE,RED,YELLOW} ✅ VÉRIFIÉES EN JEU + fidélité §4bis vs wiki
+
+Suite à la question utilisateur (« tu as testé blue, il y a d'autres couleurs ? ») : oui — RED / YELLOW / BLUE (+ SPOTLIGHT).
+Fidèle à §8, on a VÉRIFIÉ RED et YELLOW EN JEU (plutôt que d'affirmer « même code »).
+
+**Setup** : `TeamTrialsRosterBoost` (nouveau, /tmp) grante TOUT le roster (348 héros) RED 100 6★ → chaque couleur a une équipe forte
+(le gating restreint aux héros de la couleur) ; `AdminEvents --open TEAM_TRIALS_RED` + `--open TEAM_TRIALS_YELLOW` (persistés shard,
+BLUE déjà ouvert). **EN JEU (id=1)** : pour chaque couleur, `portpress TEAM_TRIALS_<C>` (isOpen(snapClient)=true, isAvailable=true) →
+`ModePreviewScreen` « <C> TEAM » → `portpreviewattack` → `DifficultyModeHeroChooserScreen` (5 héros de la couleur) → `portteam` →
+combat AUTO → VICTOIRE → REWARDS → serveur `DifficultyModeAttack : TEAM_TRIALS_<C> diff=1 outcome=WIN → recordOutcome appliqué [persisté]`.
+- RED ✅ (badge « chariot rouge », équipe rouge), BLUE ✅ (g134, badge coffre bleu), YELLOW ✅ (badge « pêche jaune », équipe jaune —
+  Little John/Robin Hood, chef Ratatouille… = franchises jaunes du wiki). **Gating couleur confirmé EN JEU** : les 3 équipes fieldées
+  sont visiblement DIFFÉRENTES (chaque couleur = ses héros). Récompense = Badge Bits (`SHARD_*` des `team_trials_<c>_loot.tab`).
+- Captures `desktop-port/build/tt_{preview,result,red_preview,red_result,yellow_result}.png`.
+
+**Fidélité §4bis (vérité-terrain communauté, fournie par l'utilisateur)** : nos `getOpenDays` (extraits `.tab`, `DifficultyModeHelper`)
+correspondent EXACTEMENT au wiki avec la numérotation `1=Dim…7=Sam` : RED `{6,3,1}`=Dim/Mar/Ven ✓, BLUE `{7,4,1}`=Dim/Mer/Sam ✓,
+YELLOW `{5,2,1}`=Dim/Lun/Jeu ✓ ; `SPOTLIGHT_TRIAL getOpenDays=[]` (aucun jour par défaut → purement event-driven, cohérent §11).
+Récompense Badge Bits confirmée. Gate : wiki dit TL20, notre `.tab` v12.1.0 = `Unlockable.TEAM_TRIALS` TL55 (écart de version ; notre
+valeur fait foi pour 12.1.0). ⇒ extraction fidèle (§4), 0 invention.
+
+**Leçon piloting (§8, non un bug)** : la 1ʳᵉ tentative YELLOW s'est figée — le combat avait été lancé PAR-DESSUS l'écran REWARDS de RED
+non fermé (piloting : `portpress` enchaîné sans revenir au hub). Correctif : `nav HOME` + laisser REWARDS se fermer AVANT le combat
+suivant. YELLOW rejoué SEUL depuis un client frais → WIN immédiat. ⇒ ce n'était PAS un bug moteur/couleur, juste du séquençage.
+
+⇒ **TEAM_TRIALS (3 couleurs) COMPLET EN JEU.** RESTE trials : (2) SPOTLIGHT_TRIAL (`getOpenDays=[]` → ouvrir via `AdminEvents --open
+SPOTLIGHT_TRIAL` ; conso `spotlightTrialUses` via `SpotlightTrialHelper.onSpotlightTrialUse`), (3) EVENT/FRANCHISE (`TrialEventInfo`
+riche : `GetTrialEventData`/`TrialEventAttack`/subtrials/gating/complétion `PatchedHeroesHelper`).
+
+Fichiers : `docs/FRANCHISE_TRIALS.md` §13, `MEMORY.md`, `JOURNAL.md`. (Outil `TeamTrialsRosterBoost` = /tmp, non committé — setup jetable.)
