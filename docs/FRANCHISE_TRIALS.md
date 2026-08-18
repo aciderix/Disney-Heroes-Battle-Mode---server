@@ -218,5 +218,22 @@ Vérifié au bytecode (§8) : **`DifficultyModeHelper.getOpenDays` gère `TEAM_*
    `GetTrialEventData`→`TrialEventData` (blob) + `TrialEventAttack` record + subtrials + gating + complétion `PatchedHeroesHelper`.
    Le plus lourd — après validation de 1-2.
 
-## Statut : RECON COMPLÈTE + incr. 0 wire ✔ + incr. 1 fait décisif (SPOTLIGHT/TEAM = PORT). `buildTrialEvent` livré (pour EVENT/FRANCHISE).
-## Prochaine action = valider TEAM_TRIALS_BLUE par le chemin PORT (headless + en jeu) — le QUICK WIN.
+## 12. TEAM_TRIALS_BLUE ✅ VÉRIFIÉ EN JEU (2026-08-18, g134) — le QUICK WIN validé de bout en bout
+- **Headless** (`server/smoke/TeamTrialsAttackTest.java`, régression 128) : `getOpenDays(BLUE)=[7,4,1]` (branche `TrialsHelper.BLUE_OPEN_DAYS`,
+  même `switch` que PORT — vérifié au bytecode) ; ouverture via override opérateur MODES_OPEN (`ServerEvents`, chemin `AdminEvents --open`) ;
+  combat `DifficultyModeAttack` → `recordDifficultyModeAttack` → `recordOutcome` (+6000 GOLD + cooldown `TEAM_TRIALS_BLUE_ATTACK`) ; persistance wire+DB.
+  **ZÉRO nouveau code combat** (le `GameMode` n'est qu'un paramètre).
+- **⚠️ FAIT §8 (lecture COMPLÈTE de `isOpen`)** : `isOpen` calcule le jour-de-semaine depuis **`snapshot.snapshotTime`** (PAS `serverTimeNow()`) →
+  `SpecialEventSnapshot.NONE` (snapshotTime≈epoch) donne un jour SANS rapport avec le jour serveur. C'était un défaut de déterminisme LATENT des
+  3 tests PORT (choix/vérif d'ouverture avec NONE = faux positif jour-epoch, puis `recordOutcome` échouait le VRAI jour hors rotation). **Corrigé** :
+  ouverture DÉTERMINISTE via override opérateur + assertion avec `ServerEvents.snapshot()` (temps réel, le même que `recordOutcome`).
+- **✅ EN JEU (id=1, TL200)** : `AdminEvents --open TEAM_TRIALS_BLUE` (persisté shard) → client `isOpen(snapClient)=true` → pilote `portpress
+  TEAM_TRIALS_BLUE` → **`ModePreviewScreen` « BLUE TEAM » rendu** (mêmes ennemis lvl 15 que `team_trials_blue_enemies.tab` : MR_INCREDIBLE/NICK_WILDE,
+  LOOT) → `portpreviewattack` → `DifficultyModeHeroChooserScreen` (5 héros Blue Team) → `portteam` → **combat AUTO → VICTOIRE → REWARDS (coffre +
+  Hero XP ×5)** → serveur **`DifficultyModeAttack : TEAM_TRIALS_BLUE diff=1 outcome=WIN → recordOutcome appliqué [persisté]`** → **DB : cooldown
+  `TEAM_TRIALS_BLUE_ATTACK` ACTIF (+499s), combat persisté**. Captures `build/tt_preview.png` / `tt_result.png`. **Même infra PORT (ModePreviewScreen/
+  DifficultyModeHeroChooserScreen/recordOutcome), confirmée EN JEU.** ⇒ TEAM_TRIALS_{RED,YELLOW} = MÊME code (mode=paramètre) ; SPOTLIGHT ajoute la
+  conso `spotlightTrialUses`. Pilote `teamtrialsscreen` (planning côté client, NON-fatal — ne pousse pas le `TeamTrialsChooserScreen` brut dont
+  `updateScreenUI` exige un `cardContent` bâti par le cycle show()).
+
+## Statut : incr. 1 ✅ **TEAM_TRIALS_BLUE VÉRIFIÉ EN JEU** (QUICK WIN, réutilise PORT). Reste : (2) SPOTLIGHT (uses), (3) EVENT/FRANCHISE (TrialEventInfo).

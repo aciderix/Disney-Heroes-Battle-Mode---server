@@ -529,6 +529,10 @@ public final class DesktopLauncher {
                     TutorialDriver.portScreen(game);
                     continue;
                 }
+                if (low.equals("teamtrialsscreen") || low.startsWith("teamtrialsscreen ")) {  // → TeamTrialsChooserScreen (vitrine)
+                    TutorialDriver.teamTrialsScreen(game);
+                    continue;
+                }
                 if (low.startsWith("portenter ")) {              // portenter <MODE> → ENTER réel (ModePreviewScreen)
                     String[] pe = ln.trim().split("[,;\\s]+");
                     if (pe.length >= 2) TutorialDriver.portEnter(game, pe[1].toUpperCase());

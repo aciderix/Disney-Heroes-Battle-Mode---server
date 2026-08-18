@@ -5392,3 +5392,43 @@ Régression **127/127**. **Prochaine action = incr. 1** (`GetTrialEventData`→`
 SPOTLIGHT data-driven, la plus simple à mener EN JEU).
 
 Fichiers : `server/smoke/TrialsWireTest.java` (nouveau), `server/smoke/regression.sh`, `docs/FRANCHISE_TRIALS.md`.
+
+## 2026-08-18 (g134) — FRANCHISE_TRIALS incr. 1 : TEAM_TRIALS_BLUE ✅ VÉRIFIÉ EN JEU (QUICK WIN, réutilise PORT) + fix déterminisme jour des tests PORT
+
+Suite du fait décisif §11 (SPOTLIGHT/TEAM = DifficultyModes réutilisant PORT ; seuls EVENT/FRANCHISE = TrialEventInfo nouveau).
+
+**Confirmation bytecode (§8, lecture COMPLÈTE)** : `DifficultyModeHelper.getOpenDays` branche `TEAM_TRIALS_BLUE → TrialsHelper.BLUE_OPEN_DAYS`
+(RED/YELLOW/SPOTLIGHT idem, MÊME `switch` que PORT_DOCKS/WAREHOUSE). `isVisible` (5-arg) gate les trials par `contentColumn.getTrialDifficultyCap()`
+(= 104 dans l'ère courante, donc diff ONE visible) + `hasUserCompletedDifficulty` ; `getLineupType(TEAM_TRIALS_BLUE)=HeroLineupType.TEAM_TRIALS_BLUE`
+(lineup dédié). `recordDifficultyModeAttack` passe `ServerEvents.snapshot()` (temps réel) à `recordOutcome`.
+
+**⚠️ FAIT §8 (déterminisme)** : `isOpen(mode,user,snap)` calcule le jour-de-semaine depuis **`snap.snapshotTime`** (bytecode offset 81-89), PAS
+`serverTimeNow()`. Donc `SpecialEventSnapshot.NONE` (snapshotTime≈epoch = 1 Jan 1970) donne un jour SANS rapport avec le jour serveur. Les 3 tests
+PORT (`PortAttack/Raid/DoubleReward`) choisissaient/vérifiaient l'ouverture avec NONE (faux positif jour-epoch) puis `recordOutcome` (snapshot réel)
+échouait `GAME_MODE_NOT_OPEN` les jours hors rotation — **défaut de déterminisme LATENT**, révélé quand la date a basculé sur un jour hors
+`PORT_DOCKS_OPEN_DAYS=[6,4,2,1]` (jour 3). **Corrigé** : ouverture DÉTERMINISTE via override opérateur MODES_OPEN (`ServerEvents.setOperatorEvents`
++ `installBootDefaults`, réinstallé à chaque bind, y compris le bind interne de `recordDifficultyModeAttack`) + assertion avec `ServerEvents.snapshot()`
+(temps réel, le même que `recordOutcome`). Les 3 tests sont désormais day-independent.
+
+**Test headless** `server/smoke/TeamTrialsAttackTest.java` (régression 128) : `getOpenDays(BLUE)=[7,4,1]` ; sans event → défaut == `getOpenDays.contains(jour)` ;
+override MODES_OPEN → ouvert ; combat WIN → +6000 GOLD + cooldown `TEAM_TRIALS_BLUE_ATTACK` (recordOutcome PORT réutilisé) ; persistance wire + DB ;
+override retiré → retour au défaut. **ZÉRO nouveau code combat serveur** (le `GameMode` n'est qu'un paramètre — comme WAREHOUSE).
+
+**✅ VÉRIFIÉ EN JEU (id=1, TL200, 5 héros 6★)** : setup `PortEnterAdmin` (boost + TL + reset daily) + `AdminEvents --open TEAM_TRIALS_BLUE` (persisté
+`shard_state`, chargé au boot). Pilotes : nouveau `teamtrialsscreen` (planning côté client — affiche **TEAM_TRIALS_BLUE=OUVERT** via le snapshot client
+réel ; NON-fatal : ne pousse pas `TeamTrialsChooserScreen` brut, dont `updateScreenUI` exige un `cardContent` bâti par show()/initialize() → NPE fatale
+sinon), puis réutilisation des pilotes PORT `portpress TEAM_TRIALS_BLUE` (isOpen(snapClient)=true, isAvailable=true → `ModeData.handleButtonPress()` →
+**`ModePreviewScreen` « BLUE TEAM » rendu** : « Heroes from the Blue Team battle in this mode! », ennemis lvl 15 MR_INCREDIBLE/NICK_WILDE =
+`team_trials_blue_enemies.tab`, LOOT, EASY+NEXT), `portpreviewattack` (→ `DifficultyModeHeroChooserScreen`, 5 héros Blue Team via `canSelectUnit`),
+`portteam` (sélection + `startBattleInner` → combat AUTO). **VICTOIRE → écran REWARDS (coffre + Hero XP ×5)**. Serveur :
+`[login] <== DifficultyModeAttack : TEAM_TRIALS_BLUE diff=1 outcome=WIN → recordOutcome appliqué [persisté]`. **DB (snapshot .db+wal)** : cooldown
+`TEAM_TRIALS_BLUE_ATTACK` ACTIF (+499s) → combat persisté. Captures `desktop-port/build/tt_preview.png` / `tt_result.png`.
+
+⇒ **TEAM_TRIALS_BLUE COMPLET EN JEU** (réutilise ModePreviewScreen/DifficultyModeHeroChooserScreen/recordOutcome de PORT). TEAM_TRIALS_{RED,YELLOW} =
+MÊME code (mode=paramètre). **RESTE trials** : (2) SPOTLIGHT (conso `spotlightTrialUses` via `SpotlightTrialHelper.onSpotlightTrialUse`), (3)
+EVENT/FRANCHISE (`TrialEventInfo` riche : `GetTrialEventData`→`TrialEventData` blob, `TrialEventAttack` record, subtrials, gating, complétion
+`PatchedHeroesHelper`). Puis composants SPECIAL_EVENTS restants, puis Phase 2 (planifiée).
+
+Fichiers : `server/smoke/TeamTrialsAttackTest.java` (nouveau), `server/smoke/{PortAttack,PortRaid,PortDoubleReward}Test.java` (fix déterminisme),
+`server/smoke/regression.sh`, `desktop-port/src/main/java/dhdesktop/{TutorialDriver,DesktopLauncher}.java` (pilote `teamtrialsscreen`),
+`server/java/dhserver/ServerEvents.java` (`buildTrialEvent`/`fillTrialFields`, g133b), `docs/FRANCHISE_TRIALS.md` §11-12, `MEMORY.md`.

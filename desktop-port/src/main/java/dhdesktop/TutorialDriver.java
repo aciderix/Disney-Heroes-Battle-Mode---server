@@ -1274,6 +1274,34 @@ public final class TutorialDriver {
      *  vérification VISUELLE du planning : mode(s) PORT ouvert(s) le jour serveur, difficultés, cooldown. L'écran lit
      *  isOpen/cooldown/uses/reset de l'état PERSISTÉ + horloge serveur (aucun handler/push requis). Invoqué via
      *  "portscreen". */
+    /** DEV — pousse le VRAI {@code TeamTrialsChooserScreen} (la vitrine des Team Trials + Spotlight, sœur de
+     *  {@code PortChooserScreen}) pour vérifier EN JEU que TEAM_TRIALS_BLUE/RED/YELLOW + SPOTLIGHT s'affichent OUVERTS
+     *  (ENTER) quand l'événement opérateur MODES_OPEN les ouvre — même infra PORT (fait FRANCHISE_TRIALS §11). Le combat
+     *  se joue ensuite avec les MÊMES pilotes que PORT (portpress &lt;MODE&gt; → portpreviewattack → portteam), car
+     *  Team Trials réutilise {@code ModeData}/{@code ModePreviewScreen}/{@code DifficultyModeHeroChooserScreen}.
+     *  Invoqué via "teamtrialsscreen". */
+    public static void teamTrialsScreen(GameMain game) {
+        try {
+            var snap = com.perblue.heroes.game.logic.SpecialEventsHelper.snapshot();
+            StringBuilder sb = new StringBuilder();
+            for (com.perblue.heroes.network.messages.GameMode m : new com.perblue.heroes.network.messages.GameMode[]{
+                    com.perblue.heroes.network.messages.GameMode.TEAM_TRIALS_BLUE,
+                    com.perblue.heroes.network.messages.GameMode.TEAM_TRIALS_RED,
+                    com.perblue.heroes.network.messages.GameMode.TEAM_TRIALS_YELLOW,
+                    com.perblue.heroes.network.messages.GameMode.SPOTLIGHT_TRIAL}) {
+                boolean open = com.perblue.heroes.game.logic.DifficultyModeHelper.isOpen(m, game.getYourUser(), snap);
+                sb.append(m).append("=").append(open ? "OUVERT" : "fermé").append(" ");
+            }
+            System.out.println("[teamtrialsscreen] planning côté client : " + sb.toString().trim() + " [chemin réel, snap client]");
+            // NB : on NE pousse PAS `new TeamTrialsChooserScreen()` en brut — son updateScreenUI (appelé chaque frame) exige
+            // un `cardContent` bâti par le cycle show()/initialize() que ce raccourci ne rejoue pas (NPE fatale sur le thread
+            // de rendu). Le combat se joue par les pilotes PORT réutilisés (portpress <MODE> → portpreviewattack → portteam),
+            // qui passent par ModeData/ModePreviewScreen (rendus proprement) — la preuve d'ouverture ci-dessus vient du MÊME
+            // snapshot client que la vitrine. La vitrine elle-même se vérifiera par la nav réelle du jeu (menu), pas en brut.
+            System.out.println("[teamtrialsscreen] (ouvertures ci-dessus = snapshot client réel ; entrée combat via portpress <MODE>)");
+        } catch (Throwable e) { System.out.println("[teamtrialsscreen] échec: " + e); e.printStackTrace(); }
+    }
+
     public static void portScreen(GameMain game) {
         try {
             var NONE = com.perblue.heroes.game.specialevent.SpecialEventSnapshot.NONE;
