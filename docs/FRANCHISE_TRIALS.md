@@ -338,4 +338,37 @@ les définir ») — fidèle au calendrier de saison du jeu, override admin poss
 4. resets (`doDailyReset`/`doPaidReset`). 5. gating franchise (`getGatingCriteria` = seuls héros de la franchise). 6. complétion
    `PatchedHeroesHelper.handleFranchiseTrialCompletion` (Patch Essence). 7. `AdminEvents --open-trial <FRANCHISE|saison>`. 8. vérif EN JEU.
 
-## Statut : incr. 1 ✅ **TEAM_TRIALS_{BLUE,RED,YELLOW} + SPOTLIGHT_TRIAL VÉRIFIÉS EN JEU** (4 DifficultyMode-trials). EVENT/FRANCHISE : recon COMPLÈTE + feasibility PROUVÉE + **structure data-driven confirmée (`PatchStats`/`.tab`) → build FIDÈLE possible, admin-planifié, 0 invention**. Prochaine action = incr. 1 (build `TrialEventInfo` franchise depuis `PatchStats`).
+## 17. EVENT/FRANCHISE incr. 1 (structure) — RECETTE DE CONSTRUCTION PROUVÉE (g139)
+**Flux `init()` (bytecode `BaseEventTrial.init`)** : itère `TrialEventInfo.getSubtrials()` (List<`TrialEventSubtrialInfo`>) → `addSubtrial`,
+PUIS `TrialEventInfo.getNodeCounts()` (List<`TrialEventNodeCount`>) → pour chaque, si `subtrialMatches(i)` → `subtrial.createNodes(getValue())`.
+
+**Recette VÉRIFIÉE (spike `/tmp/TrialStructSpike`) — `ClientEventTrial.getSubtrials()=1`, `nodes(sub0)=14`** :
+- champ `TrialEventInfo.subtrials` = `[ new TrialEventSubtrialInfo(info, JSON("{\"title\":{},\"preset\":\"none\"}")) ]` (1 par franchise).
+- champ `TrialEventInfo.nodeCount` = `[ new TrialEventNodeCount(JSON("{\"nodeCount\":N,\"scope\":{}}"), namedRangesMap) ]`
+  (⚠ clés EXACTES : `nodeCount` (pas `value`) + `scope` OBLIGATOIRE ; `scope:{}` = ALL → s'applique à subtrial 0. `TrialEventScope`
+  lit `subtrialNumber`/`nodeNumber`/`waveNumber`/`resetNumber` = `SparseRange` (ex "1-14"), défaut ALL. `scope:{subtrialNumber:"0"}` a
+  donné nodes=0 → à creuser ; `scope:{}` marche).
+- pièces normalement chargées d'un JSON (`TrialEventNodeCount(JsonValue,Map)`, `TrialEventEnemyLineup(JsonValue,Map)`,
+  `TrialEventScope`, `TrialEventGatingCriterion`…) → on assemble de PETITS fragments JSON dont le CONTENU vient des `.tab` (§4).
+
+**Accesseurs de contenu du jeu (§3/§4, lus — pas en dur)** : `PatchStats.getPatchableFranchisesForSeason(u)` (franchises de la saison,
+~70), `getFranchiseTrialEnemyPoolForSeason(u)` (283 héros ce cycle), `validEnemyUnitTypeForSeason`, `getPatchLevelHardCapForSeason()=25`,
+`getFranchiseTrialsStageNumber()=5`. `HeroHelper.getAllHeroesInFranchise(Franchise)` = héros d'une franchise (ennemis + gating).
+
+**⚠ QUESTION OUVERTE (à trancher AVANT de figer, §4/§8)** : le NB DE NŒUDS de l'event. 3 valeurs candidates : `base_trial_config.tab`
+`NODE_COUNT=14` ; `getFranchiseTrialsStageNumber()=5` ; wiki « Nodes 1-7 ». Ne PAS deviner → lire la bonne source (probable `NODE_COUNT`
+du base_trial_config via son `DHConstantStats`, ou la structure réelle par franchise). Idem : combien de subtrials (1/franchise ? les 4
+`FRANCHISES` du base_trial_config `WILDCARD,THE_JUNGLE_BOOK,THE_LITTLE_MERMAID,MOANA` = la saison courante, ≠ la liste patchable complète).
+
+### RESTE incr. 1 (contenu) puis 2-8 : enemyLineups (héros de franchise, stars/rarity/level des 14 stages `franchise_trials_enemy_config.tab`),
+gatingCriteria (franchise), rewards (Badge Bits→Patch Essence), chances (`base_trial_config` MAX_DAILY_RESETS=60, WAVE_COUNT=3) → puis
+`GetTrialEventData` blob → `TrialEventAttack` record (`BaseEventTrialNode.recordOutcome`) → resets → gating → complétion Patch Essence →
+`AdminEvents --open-trial <FRANCHISE>` → **EN JEU**.
+
+### ✅ incr. 1a LIVRÉ (g139) — `ServerEvents.buildFranchiseTrialEvent(id,start,end)` : STRUCTURE FIDÈLE data-driven
+Lit `base_trial_config` via `PatchStats.BASE_TRIAL_CONFIG_STATS.getStats()` (0 en dur, §4) : `NODE_COUNT`, `FRANCHISES` (franchises de
+la saison), `MAX_DAILY_RESETS`, gating levels. Bâtit **1 sous-trial par franchise × `NODE_COUNT` nœuds**. `FranchiseTrialStructTest`
+(régression 130) prouve EN HEADLESS : `new ClientEventTrial(u, info)` → **subtrials=4** (WILDCARD/THE_JUNGLE_BOOK/THE_LITTLE_MERMAID/MOANA)
+**× 14 nœuds** chacun, franchises = saison. Nb de nœuds tranché = `NODE_COUNT` (14) du base_trial_config (pas `getFranchiseTrialsStageNumber`).
+
+## Statut : 4 DifficultyMode-trials ✅ EN JEU. EVENT/FRANCHISE incr. 1a (STRUCTURE) ✅ headless (`buildFranchiseTrialEvent` : subtrials/franchise × NODE_COUNT, data-driven). **Prochaine action = incr. 1b (CONTENU : enemyLineups = héros de franchise + stages `franchise_trials_enemy_config.tab` ; gating franchise ; rewards Badge Bits→Patch Essence) → 2 `GetTrialEventData` blob → 3 `TrialEventAttack` record → … → EN JEU.**

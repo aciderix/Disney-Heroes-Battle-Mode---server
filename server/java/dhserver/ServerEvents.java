@@ -179,6 +179,80 @@ public final class ServerEvents {
   }
 
   /**
+   * Construit un événement <b>FRANCHISE TRIAL</b> FIDÈLE (structure) depuis les données du jeu ({@code PatchStats}
+   * {@code patched_heroes_base_trial_config.tab}) — <b>rôle backend autoritatif</b> : le client LIT cet event des
+   * évènements actifs ({@code isFranchiseTrialAvailable}) ; c'était au backend PerBlue de le construire depuis ces mêmes `.tab`.
+   * <b>0 invention (§4)</b> : {@code NODE_COUNT}, {@code FRANCHISES} (les franchises de la saison), {@code MAX_DAILY_RESETS},
+   * {@code WAVE_COUNT}, gating levels… sont LUS de {@code BASE_TRIAL_CONFIG_STATS.getStats()}. Structure produite :
+   * 1 sous-trial par franchise de la saison × {@code NODE_COUNT} nœuds. (Le CONTENU ennemis/gating/récompenses par nœud =
+   * incrément suivant : ennemis = héros de la franchise + stages de {@code franchise_trials_enemy_config.tab}.)
+   */
+  @SuppressWarnings({"rawtypes", "unchecked"})
+  public static SpecialEventInfo buildFranchiseTrialEvent(long id, long startMs, long endMs) {
+    try {
+      SpecialEventInfo info = buildTrialEvent(id, com.perblue.heroes.network.messages.GenericTrialType.CAMPAIGN, startMs, endMs);
+      Object trial = info.getComponent((Class) Class.forName("com.perblue.heroes.game.specialevent.TrialEventInfo"));
+
+      // Lire base_trial_config VIA les stats du jeu (§3/§4) — pas de valeur en dur.
+      Field bf = Class.forName("com.perblue.heroes.game.data.patchedheroes.PatchStats").getDeclaredField("BASE_TRIAL_CONFIG_STATS");
+      bf.setAccessible(true);
+      Object dhcs = bf.get(null);
+      Object cst = dhcs.getClass().getMethod("getStats").invoke(dhcs);   // BaseTrialConfigConstants
+      int nodeCount        = readInt(cst, "NODE_COUNT");
+      int maxDailyResets   = readInt(cst, "MAX_DAILY_RESETS");
+      boolean allowRaiding = readBool(cst, "ENABLE_RAIDING");
+      boolean statSlots    = readBool(cst, "ENABLE_STAT_SLOTS");
+      int primeBadge       = readInt(cst, "PRIME_BADGE_LEVEL_REQ");
+      int enhancedPrime    = readInt(cst, "ENHANCED_PRIME_BADGE_LEVEL_REQ");
+      int patchLevelReq    = readInt(cst, "PATCH_LEVEL_REQ");
+      String franchisesStr = (String) readField(cst, "FRANCHISES");
+
+      Class franchiseCls = (Class) Class.forName("com.perblue.heroes.network.messages.Franchise");
+      java.util.Set franchises = new java.util.LinkedHashSet();
+      java.util.List subtrials = new java.util.ArrayList();
+      for (String fr : franchisesStr.split(",")) {
+        fr = fr.trim(); if (fr.isEmpty()) continue;
+        Object franchise = Enum.valueOf(franchiseCls, fr);
+        franchises.add(franchise);
+        // 1 sous-trial par franchise (title/preset = simple ossature de schéma ; le contenu vient des .tab).
+        Object sub = Class.forName("com.perblue.heroes.game.specialevent.trial.TrialEventSubtrialInfo")
+            .getConstructor(SpecialEventInfo.class, JsonValue.class)
+            .newInstance(info, JSON.parse("{\"title\":{},\"preset\":\"none\"}"));
+        subtrials.add(sub);
+      }
+      // nodeCount : NODE_COUNT nœuds appliqués à TOUS les sous-trials (scope ALL). Clés EXACTES nodeCount/scope (schéma du jeu).
+      Object tnc = Class.forName("com.perblue.heroes.game.specialevent.trial.TrialEventNodeCount")
+          .getConstructor(JsonValue.class, java.util.Map.class)
+          .newInstance(JSON.parse("{\"nodeCount\":" + nodeCount + ",\"scope\":{}}"), new java.util.HashMap());
+
+      setField(trial, "subtrials", subtrials);
+      setField(trial, "nodeCount", new java.util.ArrayList(java.util.List.of(tnc)));
+      setField(trial, "franchises", franchises);
+      setField(trial, "maxDailyResets", maxDailyResets);
+      setField(trial, "allowRaiding", allowRaiding);
+      setField(trial, "enableStatSlots", statSlots);
+      setField(trial, "primeBadgeLevelReq", primeBadge);
+      setField(trial, "enhancedPrimeBadgeLevelReq", enhancedPrime);
+      setField(trial, "patchLevelReq", patchLevelReq);
+      return info;
+    } catch (RuntimeException e) {
+      throw e;
+    } catch (Exception e) {
+      throw new RuntimeException("buildFranchiseTrialEvent", e);
+    }
+  }
+
+  private static Object readField(Object o, String name) throws Exception {
+    Field f = o.getClass().getDeclaredField(name); f.setAccessible(true); return f.get(o);
+  }
+  private static int readInt(Object o, String name) throws Exception {
+    Field f = o.getClass().getDeclaredField(name); f.setAccessible(true); return f.getInt(o);
+  }
+  private static boolean readBool(Object o, String name) throws Exception {
+    Field f = o.getClass().getDeclaredField(name); f.setAccessible(true); return f.getBoolean(o);
+  }
+
+  /**
    * Remplissage GÉNÉRIQUE PAR TYPE d'un {@code TrialEventInfo} (object-path) : {@code activeDays=[EVERYDAY]} (ouvert),
    * {@code trialType}=paramètre, {@code preset}="none", listes→vides (contenu ennemis tiré des .tab plus tard §4),
    * Set/Map→vides, int→défauts (chances=2), boolean→false, enum→1ʳᵉ constante, {@code EventString}→vide, String→"".

@@ -5574,3 +5574,35 @@ sinon object-path peuplé depuis PatchStats) → `getSubtrials()>0`. 2 `GetTrial
 
 Régression 129/129 inchangée. Fichiers : `docs/FRANCHISE_TRIALS.md` §16, `MEMORY.md`, `JOURNAL.md`.
 Sources FAQ/wiki : perblue.helpshift.com/hc/en/3-disney-heroes/faq/626 ; disneyheroesbattlemode.fandom.com/wiki/Trials.
+
+## 2026-08-18 (g139) — FRANCHISE_TRIALS EVENT/FRANCHISE incr. 1a : STRUCTURE FIDÈLE data-driven (headless)
+
+Suite décision utilisateur (franchise trials « définis par le serveur → à l'admin ») + correction g138 (structure dans les .tab).
+Première brique d'implémentation : la STRUCTURE du franchise trial, construite depuis les données du jeu (§4, 0 invention).
+
+**Recette de construction PROUVÉE (bytecode `BaseEventTrial.init` + spike)** : `init()` itère `TrialEventInfo.getSubtrials()`
+(→ `addSubtrial`) puis `getNodeCounts()` (→ `subtrial.createNodes(value)` si `subtrialMatches`). Fragments JSON EXACTS :
+- subtrial = `new TrialEventSubtrialInfo(info, JSON("{\"title\":{},\"preset\":\"none\"}"))` (1 par franchise).
+- nodeCount = `new TrialEventNodeCount(JSON("{\"nodeCount\":N,\"scope\":{}}"), map)` — clés `nodeCount`+`scope` (pas `value`) ;
+  `scope:{}` = ALL (s'applique à tous les sous-trials) ; `TrialEventScope` lit subtrialNumber/nodeNumber/waveNumber/resetNumber (SparseRange).
+
+**`ServerEvents.buildFranchiseTrialEvent(id,start,end)`** (nouveau) : lit `base_trial_config` via
+`PatchStats.BASE_TRIAL_CONFIG_STATS.getStats()` (BaseTrialConfigConstants : NODE_COUNT/FRANCHISES/MAX_DAILY_RESETS/ENABLE_RAIDING/
+ENABLE_STAT_SLOTS/PRIME_BADGE_LEVEL_REQ/ENHANCED_PRIME_BADGE_LEVEL_REQ/PATCH_LEVEL_REQ — réflexion sur le champ privé + getStats()),
+bâtit 1 sous-trial par franchise de la saison × NODE_COUNT nœuds, pose franchises/maxDailyResets/allowRaiding/gating levels. Tout LU
+du jeu, rien en dur (§4). Helpers `readInt`/`readBool`/`readField`.
+
+**Test** `server/smoke/FranchiseTrialStructTest.java` (régression 130) : lit les valeurs attendues des mêmes stats (pas de doublon
+en dur), construit l'event, `new ClientEventTrial(u, info)` → **subtrials=4** (WILDCARD/THE_JUNGLE_BOOK/THE_LITTLE_MERMAID/MOANA) ×
+**14 nœuds** chacun ; `getFranchises()` = saison. Nb de nœuds tranché = NODE_COUNT (14) du base_trial_config (≠
+getFranchiseTrialsStageNumber=5, qui est autre chose).
+
+**RESTE (bien mappé)** : incr. 1b CONTENU (enemyLineups = héros de franchise `HeroHelper.getAllHeroesInFranchise`/
+`PatchStats.getFranchiseTrialEnemyPoolForSeason`, stages `franchise_trials_enemy_config.tab` = 14 stages stars/rarity/level →
+Badge Bits puis Patch Essence ; gating franchise = `TrialEventGatingCriterion` franchise ; rewards) → 2 `GetTrialEventData`
+(blob serveur-autoritatif per-user + persistance + handler `LoginServer`) → 3 `TrialEventAttack` (`BaseEventTrialNode.recordOutcome`
++ conso chance + loot client-reporté + persistance) → 4 resets (`doDailyReset`/`doPaidReset`) → 5 gating héros → 6 complétion
+`PatchedHeroesHelper.handleFranchiseTrialCompletion` (Patch Essence) → 7 `AdminEvents --open-trial <FRANCHISE|saison>` → 8 vérif EN JEU.
+
+Régression 130/130. Fichiers : `server/java/dhserver/ServerEvents.java` (buildFranchiseTrialEvent + readInt/readBool/readField),
+`server/smoke/FranchiseTrialStructTest.java` (nouveau), `server/smoke/regression.sh`, `docs/FRANCHISE_TRIALS.md` §17, `MEMORY.md`.
