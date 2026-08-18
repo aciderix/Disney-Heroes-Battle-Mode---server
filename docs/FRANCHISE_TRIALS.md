@@ -371,4 +371,20 @@ la saison), `MAX_DAILY_RESETS`, gating levels. Bâtit **1 sous-trial par franchi
 (régression 130) prouve EN HEADLESS : `new ClientEventTrial(u, info)` → **subtrials=4** (WILDCARD/THE_JUNGLE_BOOK/THE_LITTLE_MERMAID/MOANA)
 **× 14 nœuds** chacun, franchises = saison. Nb de nœuds tranché = `NODE_COUNT` (14) du base_trial_config (pas `getFranchiseTrialsStageNumber`).
 
-## Statut : 4 DifficultyMode-trials ✅ EN JEU. EVENT/FRANCHISE incr. 1a (STRUCTURE) ✅ headless (`buildFranchiseTrialEvent` : subtrials/franchise × NODE_COUNT, data-driven). **Prochaine action = incr. 1b (CONTENU : enemyLineups = héros de franchise + stages `franchise_trials_enemy_config.tab` ; gating franchise ; rewards Badge Bits→Patch Essence) → 2 `GetTrialEventData` blob → 3 `TrialEventAttack` record → … → EN JEU.**
+### incr. 1b (CONTENU ennemis) — SCHÉMA MAPPÉ (g139) ; build intriqué à mener méthodiquement
+Données `patched_heroes_franchise_trials_enemy_config.tab` (14 stages) : `STARS` 2→6, `RARITY` 7→76, `LEVELS` 55→435,
+`ASSIGN_REAL_GEAR` (TRUE dès stage 5), `REWARDS`/`BONUSES` (RANDOM_BADGE stages 1-4 → PATCH_ESSENCE_1..5 stages 5-14).
+Schéma des pièces (fragments JSON, ctor `(JsonValue, Map)`) — **clés EXACTES relevées** :
+- `TrialEventEnemyLevel`/`EnemyRarity`/`EnemyStars` = `{"expr":"<val>","random":{"kind":"NORMAL"},"scope":{…}}` (⚠ `random` OBLIGATOIRE
+  → `TrialEventRandomMode{kind:NORMAL|PER, node/reset/subtrial/wave}` sinon NPE ; `expr` = bycep expression = la valeur du stage).
+- `TrialEventEnemyLineup` = `{"kind":"AUTO"|"MANUAL","categories":{"kind":"FRANCHISE","franchises":["MOANA"]}|…,"random":{…},"scope":{…}}`
+  (AUTO tire des héros filtrés ; `TrialEventHeroFilter` kinds : FRANCHISE/HERO/COLLECTION/RECENCY/role/team, clés `franchise(s)`/`min`/`max`).
+- `scope` = `TrialEventScope{subtrialNumber/nodeNumber/waveNumber/resetNumber = SparseRange}` (défaut ALL).
+- **POINT OUVERT (spike)** : avec level/rarity/stars/lineup ALL-scopés, `node.createEnemies()` = **0 ennemis** → il MANQUE la couche
+  vagues/compte (`WAVE_COUNT=3` du base_trial_config ; `TrialEventEnemyLineup.addHeroes(Array, ContentColumn, Random, int,int,int, info)`
+  = 3 int probables count/wave/node ; `createWaves(int)`/`getRawWaveEnemies(wave)`). À élucider AVANT de figer (§8, pas deviner).
+  ⇒ incr. 1b = build méthodique (14 stages × level/rarity/stars scopés par nœud + lineup AUTO franchise par sous-trial + vagues) →
+  `node.createEnemies()>0` avec héros de la franchise. **Combat = client-autoritatif** : ce contenu sert au RENDU client (le serveur
+  ne combat pas) → nécessaire pour la vérif EN JEU, mais l'autorité serveur (incr. 2-3) peut se tester AVANT (headless).
+
+## Statut : 4 DifficultyMode-trials ✅ EN JEU. EVENT/FRANCHISE : incr. 1a STRUCTURE ✅ (subtrials/franchise × NODE_COUNT, data-driven, régression 130) ; incr. 1b CONTENU ennemis = schéma mappé (expr/random/scope + AUTO franchise ; reste couche vagues/compte → `createEnemies>0`). **Prochaine action possible : soit finir 1b (vagues/compte ennemis), soit prioriser l'AUTORITÉ SERVEUR incr. 2 (`GetTrialEventData` → blob per-user serveur-autoritatif, testable headless) puis 3 (`TrialEventAttack` record) — le cœur mission — et revenir au contenu pour l'EN JEU.**
