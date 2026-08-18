@@ -5463,3 +5463,43 @@ SPOTLIGHT_TRIAL` ; conso `spotlightTrialUses` via `SpotlightTrialHelper.onSpotli
 riche : `GetTrialEventData`/`TrialEventAttack`/subtrials/gating/complétion `PatchedHeroesHelper`).
 
 Fichiers : `docs/FRANCHISE_TRIALS.md` §13, `MEMORY.md`, `JOURNAL.md`. (Outil `TeamTrialsRosterBoost` = /tmp, non committé — setup jetable.)
+
+## 2026-08-18 (g136) — FRANCHISE_TRIALS : SPOTLIGHT_TRIAL ✅ VÉRIFIÉ EN JEU (2ᵉ quick win) → 4 DifficultyMode-trials complets
+
+Suite à l'info utilisateur (wiki PerBlue « Hero Spotlight Trials » : héros vedette auto-maxé + équipe de 3, chips du vedette,
+pas de raid, chances/jour). Vérifié EN JEU (fidèle §8) + garde-fou anti-hardcode (§4, à la demande utilisateur).
+
+**Fait §8 (bytecode)** : `SPOTLIGHT_TRIAL` est un DifficultyMode AUTO-SUFFISANT — `recordOutcome` (offset 206) ET
+`recordRaidOutcome` (166) appellent EUX-MÊMES `SpotlightTrialHelper.onSpotlightTrialUse` (incrémente `spotlightTrialUses` =
+`getTotalEventUses`+1, clé = eventID). Cooldown `SPOTLIGHT_TRIAL_ATTACK`, VIP `SPOTLIGHT_TRIAL_COOLDOWN`. `getOpenDays(SPOTLIGHT)=[]`
+(aucune rotation → event-driven pur ; `SpotlightTrialHelper.getSpecialEvent` cherche un event MODES_OPEN ouvrant SPOTLIGHT →
+`AdminEvents --open SPOTLIGHT_TRIAL` suffit). `canRaid = GenericTrial.isRaidingAllowed` = false (wiki « cannot raid »). ⇒ ZÉRO
+nouveau code combat.
+
+**Aucun hardcode (§4, garde-fou utilisateur)** : SPOTLIGHT n'a qu'UNE difficulté valide par shard, LUE du jeu
+`SpotlightTrialStats.getDifficultyForShard(shardID)` (=SIX pour shard 1) — `isVisible` l'EXIGE (diff ≠ celle du shard →
+GAME_MODE_LOCKED, d'où l'échec initial à diff=ONE). Héros vedette LU de `SpotlightTrialStats.getSpotlightHero()` (=FOZZIE,
+`spotlight_trial_constants.tab: SPOTLIGHT_HERO`). Les deux lus dynamiquement dans le test, jamais recopiés. (Sondes de diag
+`/tmp/Spot*Probe.java` jetables, non committées.)
+
+**Headless** `server/smoke/SpotlightTrialTest.java` (régression 129) : getOpenDays=[] → fermé ; override MODES_OPEN → isOpen +
+isSpotlightTrialActive=true ; combat WIN (diff LUE) → butin + cooldown + `spotlightTrialUses` 0→1 ; persistance wire+DB ; override
+retiré → re-fermé.
+
+**✅ EN JEU (id=1, TL200, roster boosté)** : `AdminEvents --open SPOTLIGHT_TRIAL` (persisté shard) → `portpress SPOTLIGHT_TRIAL`
+(isOpen(snapClient)=true) → **`ModePreviewScreen` « HAPPY ANNIVERSARY! Earn some Hero Chips by helping Fozzie fight the Creeps »**
+(héros vedette FOZZIE, 3 ennemis lvl 240 = diff SIX, LOOT = chips FOZZIE 0/100) → `portpreviewattack` →
+`DifficultyModeHeroChooserScreen` → `portteam` (**héros sélectionnés = 3** = wiki « team of 3 total » ; FOZZIE auto-inclus,
+héros auto-maxés niv 565) → combat AUTO → VICTOIRE → **REWARDS : chips FOZZIE ×2 + 3 héros niv 565** → serveur
+`DifficultyModeAttack : SPOTLIGHT_TRIAL diff=6 outcome=WIN → recordOutcome appliqué [persisté]` → **DB (snapshot db+wal) :
+`spotlightTrialUses`=1, `spotlightTrialEventID`=1795779**. Captures `desktop-port/build/tt_spotlight_{preview,result}.png`.
+Toutes les mécaniques wiki confirmées EN JEU (équipe de 3, héros maxés le temps du combat, chips du vedette, diff fixe par shard).
+
+⇒ **Les 4 DifficultyMode-trials (TEAM_TRIALS_BLUE/RED/YELLOW + SPOTLIGHT_TRIAL) COMPLETS EN JEU** — tous réutilisent l'infra PORT
+(mode = paramètre de `recordOutcome`). **RESTE trials** : (3) EVENT_TRIAL / FRANCHISE trials — le seul sous-système NOUVEAU
+(`TrialEventInfo` riche : `GetTrialEventData`→`TrialEventData` blob, `TrialEventAttack` record, subtrials, gating héros, complétion
+`PatchedHeroesHelper` ; `ServerEvents.buildTrialEvent`/`fillTrialFields` déjà amorcés g133). Puis composants SPECIAL_EVENTS
+restants, puis Phase 2 (planifiée).
+
+Fichiers : `server/smoke/SpotlightTrialTest.java` (nouveau), `server/smoke/regression.sh`, `docs/FRANCHISE_TRIALS.md` §14,
+`docs/EXPLORATION.md`, `MEMORY.md`, `JOURNAL.md`.

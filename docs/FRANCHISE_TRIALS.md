@@ -251,4 +251,22 @@ Vérifié au bytecode (§8) : **`DifficultyModeHelper.getOpenDays` gère `TEAM_*
   un `portpress` — sinon le combat se lance par-dessus l'overlay REWARDS non fermé et le rendu se fige (faux « hang » = erreur de
   séquençage, PAS un bug moteur : YELLOW rejoué proprement seul → WIN immédiat).
 
-## Statut : incr. 1 ✅ **TEAM_TRIALS_{BLUE,RED,YELLOW} VÉRIFIÉS EN JEU** (QUICK WIN, réutilisent PORT ; gating couleur + jours fidèles). Reste : (2) SPOTLIGHT (uses), (3) EVENT/FRANCHISE (TrialEventInfo).
+## 14. SPOTLIGHT_TRIAL ✅ VÉRIFIÉ EN JEU (2026-08-18, g136) — 2ᵉ QUICK WIN (recordOutcome + spotlightTrialUses)
+- **Fait §8 (bytecode)** : `recordOutcome`/`recordRaidOutcome` (offset 206/166) appellent EUX-MÊMES `SpotlightTrialHelper.onSpotlightTrialUse`
+  (incrémente `spotlightTrialUses` = `getTotalEventUses`+1, clé = eventID). SPOTLIGHT est un DifficultyMode AUTO-SUFFISANT (cooldown
+  `SPOTLIGHT_TRIAL_ATTACK`, VIP `SPOTLIGHT_TRIAL_COOLDOWN`) → **zéro nouveau code combat**. `getOpenDays(SPOTLIGHT)=[]` (event-driven
+  pur) → ouvrable QUE par override MODES_OPEN (`SpotlightTrialHelper.getSpecialEvent` cherche justement un MODES_OPEN ouvrant SPOTLIGHT).
+- **Aucun hardcode (§4)** : SPOTLIGHT n'a qu'UNE difficulté valide par shard = `SpotlightTrialStats.getDifficultyForShard(shardID)` (=SIX
+  pour shard 1) — `isVisible` l'EXIGE (diff ≠ celle du shard → GAME_MODE_LOCKED). Héros vedette = `SpotlightTrialStats.getSpotlightHero()`
+  (=FOZZIE, `spotlight_trial_constants.tab: SPOTLIGHT_HERO`). Les DEUX lus du jeu, jamais en dur.
+- **Headless** `server/smoke/SpotlightTrialTest.java` (régression 129) : override MODES_OPEN → `isOpen`+`isSpotlightTrialActive`=true ;
+  combat WIN (diff lue) → butin + cooldown + `spotlightTrialUses` 0→1 ; persistance wire+DB.
+- **✅ EN JEU (id=1)** : `AdminEvents --open SPOTLIGHT_TRIAL` → `portpress SPOTLIGHT_TRIAL` (isOpen=true) → **`ModePreviewScreen` « HAPPY
+  ANNIVERSARY! Earn some Hero Chips by helping Fozzie fight the Creeps »** (héros vedette FOZZIE, ennemis lvl 240 = diff SIX, LOOT = chips
+  FOZZIE 0/100) → `portpreviewattack` → `portteam` (**3 héros** = wiki « team of 3 total », FOZZIE auto-maxé niv 565) → combat AUTO →
+  VICTOIRE → REWARDS (**chips FOZZIE ×2** + 3 héros niv 565 auto-maxés) → serveur `DifficultyModeAttack : SPOTLIGHT_TRIAL diff=6 WIN →
+  recordOutcome appliqué [persisté]` → **DB `spotlightTrialUses`=1 + `spotlightTrialEventID`=1795779**. Captures
+  `build/tt_spotlight_{preview,result}.png`. Conforme au wiki (équipe de 3, héros maxés en combat, chips du vedette, pas de raid
+  [`canRaid=isRaidingAllowed`=false]).
+
+## Statut : incr. 1 ✅ **TEAM_TRIALS_{BLUE,RED,YELLOW} + SPOTLIGHT_TRIAL VÉRIFIÉS EN JEU** (les 4 DifficultyMode-trials réutilisent PORT). Reste : (3) EVENT/FRANCHISE trials (nouveau `TrialEventInfo` : `GetTrialEventData`/`TrialEventAttack`/subtrials/gating/complétion `PatchedHeroesHelper`).
