@@ -1967,6 +1967,18 @@ public final class LoginServer {
               c.send(reply);
               System.out.println("[login] <== GetUserChallengeDataExtra(" + gq.targetUserID
                   + ") → ==> UserChallengeDataExtra (" + (reply.slots == null ? 0 : reply.slots.size()) + " slots)");
+            } else if (m instanceof com.perblue.heroes.network.messages.GetTrialEventData) {
+              // FRANCHISE_TRIALS (EVENT/FRANCHISE) incr. 2 — le client envoie GetTrialEventData{eventID} et attend un
+              // TrialEventData (état per-user : chances/resets/sous-trials) pour rendre l'écran du trial. Builder ABSENT du
+              // jar client (état backend PerBlue) → construit+persisté serveur-autoritativement (ServerTrials, patron ArenaInfo).
+              com.perblue.heroes.network.messages.GetTrialEventData req =
+                  (com.perblue.heroes.network.messages.GetTrialEventData) m;
+              com.perblue.heroes.network.messages.TrialEventData td = ServerTrials.getData(user, req.eventID);
+              try { store.save(user); } catch (Exception e) { System.out.println("[login]     ! persist trial: " + e); }
+              td.setAsReplyTo(m);
+              c.send(td);
+              System.out.println("[login] <== GetTrialEventData(" + req.eventID + ") → ==> TrialEventData (chancesUsed="
+                  + td.chancesUsed + ", sous-trials=" + (td.subtrials == null ? 0 : td.subtrials.size()) + ")");
             } else if (m instanceof com.perblue.heroes.network.messages.GetExpedition) {
               // EXPEDITION #72 incr. 1 — rafraîchissement d'un run ACTIF : le client envoie GetExpedition, le serveur
               // répond GetExpeditionResponse (patron GetSurge) avec le run PERSISTÉ (ou vide → sélection de difficulté).

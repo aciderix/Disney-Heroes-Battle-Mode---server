@@ -400,4 +400,12 @@ bien formé (parseur du jeu l'accepte), 14 enemyLevel/Rarity/Stars, 4 lineups ×
 **⚠ La GÉNÉRATION effective des ennemis (createWaves/createEnemies) + le combat = CLIENT-AUTORITATIF → vérifiés EN JEU (§8)** (headless,
 `createEnemies` renvoie les vagues mais ne les peuple pas hors contexte combat client).
 
-## Statut : 4 DifficultyMode-trials ✅ EN JEU. EVENT/FRANCHISE : incr. 1a STRUCTURE ✅ + incr. 1b CONTENU ennemis ✅ (data-driven, schéma complet, régression 131). **Prochaine action = incr. 2 AUTORITÉ SERVEUR : `GetTrialEventData` → blob per-user serveur-autoritatif (chances/resets/subtrials) + persistance + handler `LoginServer` ; puis 3 `TrialEventAttack` record ; puis push event (`AdminEvents --open-trial`) + vérif EN JEU (rendu vitrine + combat + Patch Essence).**
+### ✅ incr. 2 LIVRÉ (g141) — AUTORITÉ SERVEUR : `GetTrialEventData` → `TrialEventData` (blob per-user serveur-autoritatif)
+`ServerTrials.getData(su, eventID)` sert l'état per-user (frais si nouveau/nouvelle saison, sinon persisté ; keyé par eventID) ;
+`freshData` = 0 chance / 0 reset / subtrials vide. **Persistance** : nouvelle colonne BLOB `trialEventData` (patron `expeditionRun`)
+— `ServerUser.trialEventWire`/`setTrialEventWire`/`trialEventDataOrNull`/`setTrialEventData` + migration + save/load `UserStore`.
+**Handler** `LoginServer` : `GetTrialEventData{eventID}` → `ServerTrials.getData` → persiste → répond `TrialEventData`
+(builder ABSENT du jar client → serveur-autoritatif, patron `ArenaInfo`/`GetExpeditionResponse`). `ServerTrialsDataTest`
+(régression 132) : frais/persisté, round-trip wire + DB, changement d'eventID → frais.
+
+## Statut : 4 DifficultyMode-trials ✅ EN JEU. EVENT/FRANCHISE : 1a STRUCTURE ✅ + 1b CONTENU ✅ + 2 AUTORITÉ SERVEUR (`GetTrialEventData` blob) ✅ (régression 132). **Prochaine action = incr. 3 `TrialEventAttack` → record (`BaseEventTrialNode.recordOutcome` : avance nœud + conso chance + loot) sur le blob per-user ; puis push event (`AdminEvents --open-trial`) + vérif EN JEU.**

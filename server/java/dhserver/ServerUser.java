@@ -3835,6 +3835,21 @@ public final class ServerUser {
   public synchronized com.perblue.heroes.network.messages.ExpeditionRunData expeditionRunOrNull() { return expeditionRun; }
   /** Remplace le run d'expédition (après ResetExpedition / combat) — l'appelant persiste via {@code store.save}. */
   public synchronized void setExpeditionRun(com.perblue.heroes.network.messages.ExpeditionRunData r) { expeditionRun = r; }
+
+  // FRANCHISE_TRIALS (EVENT/FRANCHISE) — l'ÉTAT per-user d'un event trial (TrialEventData : chances/resets/subtrials) est
+  // SERVEUR-AUTORITATIF (aucun builder client) → persisté à part (colonne BLOB `trialEventData`). NULL = aucun état (le
+  // serveur en sert un frais via ServerTrials). Un seul event trial actif à la fois (patron expeditionRun ; keyé par eventID).
+  private com.perblue.heroes.network.messages.TrialEventData trialEventData;
+  /** Octets wire de l'état de trial persisté (NULL si aucun). */
+  public synchronized byte[] trialEventWire() { return trialEventData == null ? null : wire(trialEventData); }
+  /** Restaure l'état de trial persisté (au chargement DB ; NULL = aucun). */
+  public synchronized void setTrialEventWire(byte[] bytes) {
+    if (bytes != null && bytes.length > 0) trialEventData = read(bytes);
+  }
+  /** État de trial courant (persisté), ou {@code null}. Accès pour {@link ServerTrials}. */
+  public synchronized com.perblue.heroes.network.messages.TrialEventData trialEventDataOrNull() { return trialEventData; }
+  /** Remplace l'état de trial (GetTrialEventData / record TrialEventAttack) — l'appelant persiste via {@code store.save}. */
+  public synchronized void setTrialEventData(com.perblue.heroes.network.messages.TrialEventData d) { trialEventData = d; }
   /** Sticker FAVORI (SET_FAVORITE_STICKER) : posé dans {@code userExtra} (source lue par {@code getUser}) + miroir
    *  {@code BasicUserInfo} — {@code User.setFavoriteSticker} n'écrit PAS dans extra (champ User seul). Auto-persisté. */
   public synchronized void setFavoriteSticker(com.perblue.heroes.network.messages.StickerType type) {

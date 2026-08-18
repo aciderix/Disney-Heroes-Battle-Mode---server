@@ -5641,3 +5641,35 @@ persistance + handler `LoginServer`. 3 `TrialEventAttack` → `BaseEventTrialNod
 
 Régression 131/131. Fichiers : `server/java/dhserver/ServerEvents.java` (contenu ennemis + mkTrialPiece),
 `server/smoke/FranchiseTrialContentTest.java` (nouveau), `server/smoke/regression.sh`, `docs/FRANCHISE_TRIALS.md` §17, `MEMORY.md`.
+
+## 2026-08-18 (g141) — FRANCHISE_TRIALS EVENT/FRANCHISE incr. 2 : AUTORITÉ SERVEUR (GetTrialEventData → TrialEventData blob)
+
+Après structure (1a) + contenu ennemis (1b), le cœur mission : l'AUTORITÉ SERVEUR sur l'état per-user du trial.
+
+`GetTrialEventData{eventID}` (client) → le serveur répond `TrialEventData{chancesUsed, dailyResetsUsed, lastChancesResetTime,
+paidChancesRemaining, paidResetsUsed, subtrials:Map}`. Ce message n'a PAS de builder client (état backend PerBlue) → construit
++ persisté serveur-autoritativement (patron `ArenaInfo`/`GetExpeditionResponse`).
+
+**ServerTrials (nouveau)** : `freshData(eventID)` = état vierge (0 chance, 0 reset, subtrials vide, lastChancesResetTime=now) ;
+`getData(su, eventID)` = état persisté s'il concerne CET event, sinon frais (nouvel event/saison → keyé par eventID, patron
+`expeditionID`) qu'on pose sur `su`.
+
+**Persistance (patron `expeditionRun`)** : `ServerUser` champ `trialEventData` + `trialEventWire()`/`setTrialEventWire()`/
+`trialEventDataOrNull()`/`setTrialEventData()` (sérialisation wire via `wire()`/`read()`). `UserStore` : migration colonne BLOB
+`trialEventData` (ALTER TABLE) + INSERT/SELECT dans save/loadIfExists/loadOrCreate (NULL = aucun état / pré-migration).
+
+**Handler `LoginServer`** : `GetTrialEventData` → `ServerTrials.getData(user, req.eventID)` → `store.save(user)` → `setAsReplyTo`
++ `c.send(td)` + log `<== GetTrialEventData(eventID) → ==> TrialEventData (chancesUsed=…, sous-trials=…)`.
+
+**Test** `server/smoke/ServerTrialsDataTest.java` (régression 132) : freshData vierge ; getData sert frais puis état courant (pas
+re-frais) ; round-trip wire + DB (save/loadIfExists) : eventID + chancesUsed persistés ; nouvel eventID → état frais (chancesUsed=0).
+
+**RESTE** : incr. 3 `TrialEventAttack` → `ServerUser.recordTrialEventAttack` (reconstruire `ClientEventTrial` via
+`buildFranchiseTrialEvent` + `setUserData(blob persisté)` → exécuter `BaseEventTrialNode.recordOutcome` [avance nœud/subtrial +
+conso chance] + crédit loot client-reporté → resérialiser le blob → persister) + handler. Puis push event (`AdminEvents
+--open-trial`) + vérif EN JEU (vitrine `TrialEventSubTrialChooserScreen` → combat franchise → Patch Essence via
+`PatchedHeroesHelper.handleFranchiseTrialCompletion`).
+
+Régression 132/132. Fichiers : `server/java/dhserver/ServerTrials.java` (nouveau), `ServerUser.java` (accesseurs blob trial),
+`UserStore.java` (colonne + save/load), `LoginServer.java` (handler GetTrialEventData), `server/smoke/ServerTrialsDataTest.java`
+(nouveau), `server/smoke/regression.sh`, `docs/FRANCHISE_TRIALS.md` §17, `MEMORY.md`.
