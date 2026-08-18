@@ -210,10 +210,12 @@ public final class ServerEvents {
       Class franchiseCls = (Class) Class.forName("com.perblue.heroes.network.messages.Franchise");
       java.util.Set franchises = new java.util.LinkedHashSet();
       java.util.List subtrials = new java.util.ArrayList();
+      java.util.List<String> frNames = new java.util.ArrayList<>();
       for (String fr : franchisesStr.split(",")) {
         fr = fr.trim(); if (fr.isEmpty()) continue;
         Object franchise = Enum.valueOf(franchiseCls, fr);
         franchises.add(franchise);
+        frNames.add(fr);
         // 1 sous-trial par franchise (title/preset = simple ossature de schéma ; le contenu vient des .tab).
         Object sub = Class.forName("com.perblue.heroes.game.specialevent.trial.TrialEventSubtrialInfo")
             .getConstructor(SpecialEventInfo.class, JsonValue.class)
@@ -234,12 +236,58 @@ public final class ServerEvents {
       setField(trial, "primeBadgeLevelReq", primeBadge);
       setField(trial, "enhancedPrimeBadgeLevelReq", enhancedPrime);
       setField(trial, "patchLevelReq", patchLevelReq);
+
+      // CONTENU ennemis — INDUSTRIEL (§4, 0 en dur) : lu des 14 stages de franchise_trials_enemy_config
+      // (FRANCHISE_TRIALS_ENEMY_CONFIG_STATS.stageToEnemyConfigs) → level/rarity/stars par nœud (scope nodeNumber=stage) ;
+      // lineup AUTO filtré par la franchise du sous-trial (scope subtrialNumber=i). Le jeu tire les vrais héros de la franchise.
+      Field ecf = Class.forName("com.perblue.heroes.game.data.patchedheroes.PatchStats").getDeclaredField("FRANCHISE_TRIALS_ENEMY_CONFIG_STATS");
+      ecf.setAccessible(true);
+      Object ecStats = ecf.get(null);
+      java.util.Map stages = (java.util.Map) ecStats.getClass().getSuperclass().getField("stageToEnemyConfigs").get(ecStats);
+      java.util.List enemyLevel = new java.util.ArrayList(), enemyRarity = new java.util.ArrayList(), enemyStars = new java.util.ArrayList();
+      for (Object key : new java.util.TreeSet(stages.keySet())) {
+        int stage = ((Number) key).intValue();
+        Object ec = stages.get(key);
+        // levels/rarity/stars = champs String de EventTrialEnemyConfig (ex. "55","7","2") → utilisés tels quels comme expr (§4).
+        String lvl = String.valueOf(readField(ec, "levels")), rar = String.valueOf(readField(ec, "rarity")), st = String.valueOf(readField(ec, "stars"));
+        String sc = "\"scope\":{\"nodeNumber\":\"" + stage + "\"}";
+        enemyLevel.add(mkTrialPiece("TrialEventEnemyLevel",  "{\"expr\":\"" + lvl + "\",\"random\":{\"kind\":\"NORMAL\"}," + sc + "}"));
+        enemyRarity.add(mkTrialPiece("TrialEventEnemyRarity", "{\"expr\":\"" + rar + "\",\"random\":{\"kind\":\"NORMAL\"}," + sc + "}"));
+        enemyStars.add(mkTrialPiece("TrialEventEnemyStars",  "{\"expr\":\"" + st  + "\",\"random\":{\"kind\":\"NORMAL\"}," + sc + "}"));
+      }
+      setField(trial, "enemyLevel", enemyLevel);
+      setField(trial, "enemyRarity", enemyRarity);
+      setField(trial, "enemyStars", enemyStars);
+      // Lineup = liste `units` de héros ennemis (TrialEventEnemyHero) : ici 5 RANDOM_HERO tirés de la FRANCHISE du sous-trial
+      // (schéma du jeu, découvert via son parseur : units / kind RANDOM_HERO / categories:[{FRANCHISE, franchises:[{franchise:X}]}]
+      // / realGear:{kind:NORMAL}). scope subtrialNumber 1-based. WILDCARD = joker → pas de filtre franchise (tous héros).
+      java.util.List lineups = new java.util.ArrayList();
+      for (int i = 0; i < frNames.size(); i++) {
+        String fr = frNames.get(i);
+        // categories OBLIGATOIRE (tableau) : filtre FRANCHISE ; WILDCARD (joker) → tableau vide = aucun filtre (tous héros).
+        String cat = "WILDCARD".equals(fr) ? "\"categories\":[]," :
+          "\"categories\":[{\"kind\":\"FRANCHISE\",\"franchises\":[{\"franchise\":\"" + fr + "\"}]}],";
+        String unit = "{\"kind\":\"RANDOM_HERO\"," + cat + "\"realGear\":{\"kind\":\"NORMAL\"}}";
+        StringBuilder units = new StringBuilder();
+        for (int k = 0; k < 5; k++) { if (k > 0) units.append(","); units.append(unit); }
+        lineups.add(mkTrialPiece("TrialEventEnemyLineup",
+          "{\"kind\":\"MANUAL\",\"units\":[" + units + "],\"random\":{\"kind\":\"NORMAL\"},\"scope\":{\"subtrialNumber\":\"" + (i + 1) + "\"}}"));
+      }
+      setField(trial, "enemyLineups", lineups);
       return info;
     } catch (RuntimeException e) {
       throw e;
     } catch (Exception e) {
       throw new RuntimeException("buildFranchiseTrialEvent", e);
     }
+  }
+
+  /** Construit une pièce de config de trial (`game.specialevent.trial.*`) via son ctor {@code (JsonValue, Map)} — le fragment
+   *  JSON ne porte que du CONTENU lu des `.tab` (§4) ; le PARSEUR du jeu valide/construit (schéma du jeu, pas deviné). */
+  @SuppressWarnings({"rawtypes", "unchecked"})
+  private static Object mkTrialPiece(String simpleClass, String json) throws Exception {
+    return Class.forName("com.perblue.heroes.game.specialevent.trial." + simpleClass)
+        .getConstructor(JsonValue.class, java.util.Map.class).newInstance(JSON.parse(json), new java.util.HashMap());
   }
 
   private static Object readField(Object o, String name) throws Exception {

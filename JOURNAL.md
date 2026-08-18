@@ -5606,3 +5606,38 @@ Badge Bits puis Patch Essence ; gating franchise = `TrialEventGatingCriterion` f
 
 Régression 130/130. Fichiers : `server/java/dhserver/ServerEvents.java` (buildFranchiseTrialEvent + readInt/readBool/readField),
 `server/smoke/FranchiseTrialStructTest.java` (nouveau), `server/smoke/regression.sh`, `docs/FRANCHISE_TRIALS.md` §17, `MEMORY.md`.
+
+## 2026-08-18 (g140) — FRANCHISE_TRIALS EVENT/FRANCHISE incr. 1b : CONTENU ennemis FIDÈLE (schéma complet découvert, industriel)
+
+Suite incr. 1a (structure). Demande utilisateur : finir 1b « industriellement/récursivement, proprement ». Méthode employée =
+**le parseur du jeu comme ORACLE** (chaque erreur de construction révèle la clé/format exact suivant → schéma découvert
+industriellement, 0 devinette). Contenu peuplé EN BOUCLE depuis les données du jeu (§4, 0 invention).
+
+**`buildFranchiseTrialEvent` (contenu)** : lit les 14 stages de `FRANCHISE_TRIALS_ENEMY_CONFIG_STATS.stageToEnemyConfigs`
+(EventTrialEnemyConfig : levels/rarity/stars = champs STRING "55"/"7"/"2", rewards/bonuses, assignRealGear) →
+- `enemyLevel/Rarity/Stars` = 14 pièces `{expr:<val du stage>, random:{kind:NORMAL}, scope:{nodeNumber:<stage>}}`.
+- `enemyLineups` = 1 par sous-trial `{kind:MANUAL, units:[5× hero], scope:{subtrialNumber:<i+1>}}`, chaque hero =
+  `{kind:RANDOM_HERO, categories:[{kind:FRANCHISE, franchises:[{franchise:<F>}]}], realGear:{kind:NORMAL}}` (WILDCARD → categories:[]).
+Helper `mkTrialPiece(cls, json)` (ctor JSON du jeu).
+
+**Schéma EXACT découvert (parseur oracle)** : `TrialEventNodeCount` = `{nodeCount, scope}` (pas `value`) ; `TrialEventScope` =
+SparseRange 1-based (`subtrialNumber`/`nodeNumber`/`waveNumber`/`resetNumber`, défaut ALL) ; `TrialEventEnemyLevel/Rarity/Stars` =
+`{expr, random:{kind:NORMAL}, scope}` (random OBLIGATOIRE) ; `TrialEventEnemyLineup` = `{kind:AUTO|MANUAL, units:[…], random, scope}`
+CHAMP `manualHeroes` ; `TrialEventEnemyHero` = `{kind:RANDOM_HERO|RANDOM_NPC|SPECIFIC_UNIT, categories:[…], realGear:{kind:NORMAL|DISABLE}}` ;
+`TrialEventHeroFilter` FRANCHISE = `{kind:FRANCHISE, franchises:[{franchise:NAME}]}` (tableau d'objets). `addHeroes` remplit jusqu'à 5.
+
+**Test** `server/smoke/FranchiseTrialContentTest.java` (régression 131) : le PARSEUR DU JEU accepte l'event (bonne formation) ;
+14 enemyLevel/Rarity/Stars (= 14 stages) ; 4 lineups × 5 units ; enemyLevel[0] = niveau du stage 1 (lu du jeu) ; runtime
+`ClientEventTrial` = 4 sous-trials × 14 nœuds.
+
+**⚠ Limite headless (§8)** : `createWaves`/`createEnemies` renvoient les vagues VIDES hors contexte de combat client (la génération
+effective des ennemis se fait côté CLIENT au combat — client-autoritatif). Le contenu est BIEN FORMÉ (data-driven, parseur-validé) ;
+la génération d'ennemis + le combat se vérifient EN JEU. Availability OK (3 héros MOANA dispo headless).
+
+**RESTE** : incr. 2 `GetTrialEventData` → `TrialEventData` blob per-user serveur-autoritatif (chances/resets/subtrials:Map) +
+persistance + handler `LoginServer`. 3 `TrialEventAttack` → `BaseEventTrialNode.recordOutcome` + conso chance + loot. 4 resets.
+5 gating franchise. 6 complétion `PatchedHeroesHelper.handleFranchiseTrialCompletion` (Patch Essence). 7 `AdminEvents --open-trial`
+(push event). 8 vérif EN JEU (vitrine → combat franchise → Patch Essence).
+
+Régression 131/131. Fichiers : `server/java/dhserver/ServerEvents.java` (contenu ennemis + mkTrialPiece),
+`server/smoke/FranchiseTrialContentTest.java` (nouveau), `server/smoke/regression.sh`, `docs/FRANCHISE_TRIALS.md` §17, `MEMORY.md`.

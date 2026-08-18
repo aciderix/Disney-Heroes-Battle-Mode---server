@@ -387,4 +387,17 @@ Schéma des pièces (fragments JSON, ctor `(JsonValue, Map)`) — **clés EXACTE
   `node.createEnemies()>0` avec héros de la franchise. **Combat = client-autoritatif** : ce contenu sert au RENDU client (le serveur
   ne combat pas) → nécessaire pour la vérif EN JEU, mais l'autorité serveur (incr. 2-3) peut se tester AVANT (headless).
 
-## Statut : 4 DifficultyMode-trials ✅ EN JEU. EVENT/FRANCHISE : incr. 1a STRUCTURE ✅ (subtrials/franchise × NODE_COUNT, data-driven, régression 130) ; incr. 1b CONTENU ennemis = schéma mappé (expr/random/scope + AUTO franchise ; reste couche vagues/compte → `createEnemies>0`). **Prochaine action possible : soit finir 1b (vagues/compte ennemis), soit prioriser l'AUTORITÉ SERVEUR incr. 2 (`GetTrialEventData` → blob per-user serveur-autoritatif, testable headless) puis 3 (`TrialEventAttack` record) — le cœur mission — et revenir au contenu pour l'EN JEU.**
+### ✅ incr. 1b LIVRÉ (g140) — CONTENU ennemis FIDÈLE, data-driven, SCHÉMA COMPLET découvert (parseur du jeu = oracle)
+`buildFranchiseTrialEvent` peuple EN BOUCLE depuis les 14 stages (`FRANCHISE_TRIALS_ENEMY_CONFIG_STATS.stageToEnemyConfigs`) :
+`enemyLevel/Rarity/Stars` = 14 pièces `{expr:<val du stage>, random:{kind:NORMAL}, scope:{nodeNumber:<stage>}}` ; `enemyLineups` =
+1/sous-trial, chaque `{kind:MANUAL, units:[5× héros], scope:{subtrialNumber:<i+1>}}`, chaque unit =
+`{kind:RANDOM_HERO, categories:[{kind:FRANCHISE, franchises:[{franchise:<F>}]}], realGear:{kind:NORMAL}}` (WILDCARD → `categories:[]`).
+**Schéma EXACT découvert industriellement** (chaque erreur du parseur du jeu = clé suivante) : `TrialEventEnemyLineup` champ
+`manualHeroes` (clé JSON `units`) ; `TrialEventHeroFilter` FRANCHISE = `franchises:[{franchise:NAME}]` (tableau d'objets) ;
+`TrialEventEnemyHero` requiert `kind`(RANDOM_HERO/RANDOM_NPC/SPECIFIC_UNIT) + `categories`(tableau) + `realGear:{kind:NORMAL|DISABLE}` ;
+`scope`=`TrialEventScope` (SparseRange 1-based : `subtrialNumber`/`nodeNumber`/…). `FranchiseTrialContentTest` (régression 131) : event
+bien formé (parseur du jeu l'accepte), 14 enemyLevel/Rarity/Stars, 4 lineups × 5 units, enemyLevel[0]=niveau stage 1, runtime 4×14.
+**⚠ La GÉNÉRATION effective des ennemis (createWaves/createEnemies) + le combat = CLIENT-AUTORITATIF → vérifiés EN JEU (§8)** (headless,
+`createEnemies` renvoie les vagues mais ne les peuple pas hors contexte combat client).
+
+## Statut : 4 DifficultyMode-trials ✅ EN JEU. EVENT/FRANCHISE : incr. 1a STRUCTURE ✅ + incr. 1b CONTENU ennemis ✅ (data-driven, schéma complet, régression 131). **Prochaine action = incr. 2 AUTORITÉ SERVEUR : `GetTrialEventData` → blob per-user serveur-autoritatif (chances/resets/subtrials) + persistance + handler `LoginServer` ; puis 3 `TrialEventAttack` record ; puis push event (`AdminEvents --open-trial`) + vérif EN JEU (rendu vitrine + combat + Patch Essence).**
