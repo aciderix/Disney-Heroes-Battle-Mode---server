@@ -16,8 +16,15 @@ public final class PortAttackTest {
     ServerUser su = ServerUser.newPlayer(8700L, 1);
     su.bootData().userInfo.basicInfo.teamLevel = 200;
     GameMode mode = GameMode.PORT_DOCKS;
-    com.perblue.heroes.game.specialevent.SpecialEventSnapshot NONE = com.perblue.heroes.game.specialevent.SpecialEventSnapshot.NONE;
-    check(DifficultyModeHelper.isOpen(mode, su.gameUser(), NONE), "PORT_DOCKS ouvert (jour serveur)");
+    // Ouverture DÉTERMINISTE (indépendante du jour serveur) : override opérateur MODES_OPEN (chemin AdminEvents), réinstallé
+    // par installBootDefaults à chaque bind (y compris le bind interne de recordDifficultyModeAttack). ⚠️ FAIT §8 : isOpen
+    // calcule le jour depuis snapshot.snapshotTime — donc SpecialEventSnapshot.NONE (snapshotTime≈epoch) donne un jour SANS
+    // rapport avec le jour serveur (faux positif) ; on assert avec ServerEvents.snapshot() (temps réel), le MÊME que recordOutcome.
+    ServerEvents.setOperatorEvents(Collections.singletonList(
+        ServerEvents.buildModesOpenEvent(920_001L, Collections.singletonList(mode),
+            ServerEvents.defaultStart(), ServerEvents.defaultEnd())));
+    ServerEvents.installBootDefaults();
+    check(DifficultyModeHelper.isOpen(mode, su.gameUser(), ServerEvents.snapshot()), "PORT_DOCKS ouvert (override opérateur, déterministe)");
     CooldownType cd = DifficultyModeHelper.getCooldownType(mode);
     check(su.gameUser().getCooldownEnd(cd) <= com.perblue.heroes.util.TimeUtil.serverTimeNow(), "pas de cooldown au départ");
 

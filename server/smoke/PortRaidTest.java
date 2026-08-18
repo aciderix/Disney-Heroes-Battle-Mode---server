@@ -41,14 +41,15 @@ public final class PortRaidTest {
     su.bootData().userInfo.basicInfo.teamLevel = 200;
     // Le raid AUTO est une fonctionnalité VIP (gate réel du jeu §7) : getRaidFeature(PORT_*)=RAID_PORT, débloqué au VIP 4.
     su.bootData().userInfo.basicInfo.vIPLevel = 4;
-    var NONE = com.perblue.heroes.game.specialevent.SpecialEventSnapshot.NONE;
-
-    // Choisir le mode PORT ouvert AUJOURD'HUI (indépendant du jour serveur).
-    GameMode mode = null;
-    for (GameMode c : new GameMode[]{GameMode.PORT_DOCKS, GameMode.PORT_WAREHOUSE}) {
-      if (DifficultyModeHelper.isOpen(c, su.gameUser(), NONE)) { mode = c; break; }
-    }
-    check(mode != null, "au moins un mode PORT ouvert le jour serveur");
+    // Ouverture DÉTERMINISTE (indépendante du jour serveur) : override opérateur MODES_OPEN (chemin AdminEvents), réinstallé
+    // par installBootDefaults à chaque bind. ⚠️ FAIT §8 : isOpen calcule le jour depuis snapshot.snapshotTime — NONE (epoch)
+    // donnerait un jour sans rapport avec le jour serveur ; recordRaidOutcome utilise ServerEvents.snapshot() (temps réel).
+    GameMode mode = GameMode.PORT_DOCKS;
+    ServerEvents.setOperatorEvents(Collections.singletonList(
+        ServerEvents.buildModesOpenEvent(920_002L, Collections.singletonList(mode),
+            ServerEvents.defaultStart(), ServerEvents.defaultEnd())));
+    ServerEvents.installBootDefaults();
+    check(DifficultyModeHelper.isOpen(mode, su.gameUser(), ServerEvents.snapshot()), "PORT_DOCKS ouvert (override opérateur, déterministe)");
     ModeDifficulty diff = ModeDifficulty.ONE;
     int diffIdx = diff.getIndex();
     System.out.println("[portraid] mode ouvert = " + mode + " (diff index " + diffIdx + ")");

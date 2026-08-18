@@ -36,13 +36,15 @@ public final class PortDoubleRewardTest {
     su.bootData().userInfo.basicInfo.teamLevel = 200;
     // VIP 0 : PAS de DOUBLE_PORT_REWARDS (VIP 4) → giveLoot crédite ×1 + pose le container (sinon auto-doublé, pas de claim).
     su.bootData().userInfo.basicInfo.vIPLevel = 0;
-    var NONE = com.perblue.heroes.game.specialevent.SpecialEventSnapshot.NONE;
-
-    GameMode mode = null;
-    for (GameMode c : new GameMode[]{GameMode.PORT_DOCKS, GameMode.PORT_WAREHOUSE}) {
-      if (DifficultyModeHelper.isOpen(c, su.gameUser(), NONE)) { mode = c; break; }
-    }
-    check(mode != null, "au moins un mode PORT ouvert le jour serveur");
+    // Ouverture DÉTERMINISTE (indépendante du jour serveur) : override opérateur MODES_OPEN (chemin AdminEvents), réinstallé
+    // par installBootDefaults à chaque bind. ⚠️ FAIT §8 : isOpen calcule le jour depuis snapshot.snapshotTime — NONE (epoch)
+    // donnerait un jour sans rapport avec le jour serveur ; recordDifficultyModeAttack utilise ServerEvents.snapshot() (réel).
+    GameMode mode = GameMode.PORT_DOCKS;
+    ServerEvents.setOperatorEvents(java.util.Collections.singletonList(
+        ServerEvents.buildModesOpenEvent(920_003L, java.util.Collections.singletonList(mode),
+            ServerEvents.defaultStart(), ServerEvents.defaultEnd())));
+    ServerEvents.installBootDefaults();
+    check(DifficultyModeHelper.isOpen(mode, su.gameUser(), ServerEvents.snapshot()), "PORT_DOCKS ouvert (override opérateur, déterministe)");
     System.out.println("[portdbl] mode ouvert = " + mode);
 
     long gold0 = su.gameUser().getResource(ResourceType.GOLD);
