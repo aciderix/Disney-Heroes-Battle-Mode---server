@@ -498,6 +498,27 @@ public final class LoginServer {
                 c.send(resp);
                 System.out.println("[login] <== START " + at + " attaque défenseur=" + defID
                     + " → ==> Start*AttackResponse (héros du défenseur envoyés)");
+              } else if (act.command == com.perblue.heroes.network.messages.CommandType.RESET_TRIAL_EVENT_PAID) {
+                // FRANCHISE_TRIALS (EVENT/FRANCHISE) incr. 4 — RESET PAYANT d'un trial (Command). Le client envoie
+                // Action{command=RESET_TRIAL_EVENT_PAID, extra={ID:eventID, COST:cost}}. Le serveur EXÉCUTE la logique DU JEU
+                // (TrialsHelper.resetTrialEvent) : anti-triche (quota resets payants / chances encore dispo → lève) + débit
+                // (chargeUser) + doPaidReset (paidChancesRemaining). Anti-triche = ClientErrorCodeException → rien accordé.
+                long evID = -1;
+                try {
+                  Object ido = act.extra == null ? null
+                      : act.extra.get(com.perblue.heroes.network.messages.ActionExtraType.ID);
+                  if (ido != null) evID = Long.parseLong(ido.toString());
+                } catch (Throwable t) { /* ID absent/illisible → -1 */ }
+                try {
+                  user.resetTrialEventPaid(evID);
+                  try { store.save(user); } catch (Exception e) {
+                    System.out.println("[login]     ! persistance échouée: " + e); }
+                  System.out.println("[login] <== RESET_TRIAL_EVENT_PAID : event=" + evID + " → resetTrialEvent appliqué [persisté]");
+                } catch (Throwable t) {
+                  if (t instanceof com.perblue.heroes.ClientErrorCodeException) {
+                    System.out.println("[login]     ⛔ RESET_TRIAL_EVENT_PAID REFUSÉ (anti-triche) : " + t.getMessage());
+                  } else { System.out.println("[login]     ! resetTrialEventPaid échec: " + t); t.printStackTrace(); }
+                }
               } else if (act.command == com.perblue.heroes.network.messages.CommandType.GET_GUILD_CHECK_IN_INFO) {
                 // GUILD CHECK-IN — état d'émargement du jour (écran CHECK IN attend un GuildCheckInInfo, sinon LOADING).
                 ServerGuild g = currentGuild(user);
@@ -1992,7 +2013,8 @@ public final class LoginServer {
               // jar client (état backend PerBlue) → construit+persisté serveur-autoritativement (ServerTrials, patron ArenaInfo).
               com.perblue.heroes.network.messages.GetTrialEventData req =
                   (com.perblue.heroes.network.messages.GetTrialEventData) m;
-              com.perblue.heroes.network.messages.TrialEventData td = ServerTrials.getData(user, req.eventID);
+              // incr. 4 : applique le reset quotidien GRATUIT (auto, checkForDailyReset) → chances rafraîchies chaque jour (autorité).
+              com.perblue.heroes.network.messages.TrialEventData td = user.refreshTrialDailyReset(req.eventID);
               try { store.save(user); } catch (Exception e) { System.out.println("[login]     ! persist trial: " + e); }
               td.setAsReplyTo(m);
               c.send(td);

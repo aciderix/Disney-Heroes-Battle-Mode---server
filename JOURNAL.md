@@ -5717,3 +5717,43 @@ franchise) → 6 complétion `PatchedHeroesHelper.handleFranchiseTrialCompletion
 Régression 133/133. Fichiers : `server/java/dhserver/ServerUser.java` (recordTrialEventAttack), `LoginServer.java` (handler
 TrialEventAttack), `ServerEvents.java` (snapshotAt), `server/smoke/TrialEventRecordTest.java` (nouveau),
 `server/smoke/SpecialEventsRotationTest.java` (déterministe), `server/smoke/regression.sh`, `docs/FRANCHISE_TRIALS.md` §17, `MEMORY.md`.
+
+## 2026-08-23 (g143) — FRANCHISE_TRIALS EVENT/FRANCHISE incr. 4 : RESETS de chances (headless)
+
+Après le record de combat (incr. 3), les RESETS de chances. Deux mécanismes, exécutés par la logique DU JEU (§3), 0 règle réécrite.
+
+**Reconnaissance (bytecode)** : pas de message wire de reset dédié. Le reset quotidien est AUTOMATIQUE
+(`BaseEventTrial.checkForDailyReset(long)` → `doDailyReset` : `chancesUsed=0`, `dailyResetsUsed++`, `lastChancesResetTime=`
+borne de reset du compte). Le reset PAYANT passe par un `Action{command=CommandType.RESET_TRIAL_EVENT_PAID,
+extra={ID:eventID, COST:cost}}` (construit par `ClientActionHelper.resetTrialEvent` via `ActionExtraBuilder.withID(eventID)`)
+→ logique serveur `TrialsHelper.resetTrialEvent(user, trial)` : valide (`canUseResetItems`/`getResetCost>0`/`paidResetsRemaining>0`/
+`paidDailyResetsRemaining>0`/`paidChancesRemaining<=0` sinon `ERROR`), débite (`UserHelper.chargeUser`), `doPaidReset`
+(`paidChancesRemaining=getChancesPerReset`, `paidResetsUsed++`).
+
+**Probe (`TrialResetProbe`, DEV)** — valeurs LUES du jeu pour un franchise trial construit : `chancesPerReset=2`,
+`maxDailyResets=60`, `dailyResetsRemaining=60` ; MAIS `maxPaidResets=0`, `paidResetsRemaining=0`, `getResetCost=-1`,
+`canUseResetItems=false`, `resourceCostType=DEFAULT`. ⇒ **les FRANCHISE trials DÉSACTIVENT le reset payant** (donnée du jeu, §4)
+→ `TrialsHelper.resetTrialEvent` lève `ClientErrorCodeException` (anti-triche du JEU, fidèle §4bis).
+
+**Implémentation** :
+- `ServerUser.boundTrial(user, eventID, blob, now)` (helper privé factorisé) : reconstruit `ClientEventTrial`
+  (`buildFranchiseTrialEvent` + `setUserData(blob)`) — utilisé par record/reset/refresh.
+- `ServerUser.refreshTrialDailyReset(eventID)` : `checkForDailyReset(now)` + persiste ; branché sur le handler
+  `GetTrialEventData` (les chances se rafraîchissent chaque jour, autorité serveur). Idem `checkForDailyReset(now)` ajouté au
+  début de `recordTrialEventAttack`.
+- `ServerUser.resetTrialEventPaid(eventID)` : exécute `TrialsHelper.resetTrialEvent(user, trial)` + resync (débit) + persiste.
+- Handler `LoginServer` : `act.command == RESET_TRIAL_EVENT_PAID` → lit `extra[ID]` (eventID) → `resetTrialEventPaid` →
+  `store.save` ; anti-triche = `ClientErrorCodeException` (log ⛔, rien accordé). Patron `START_FIGHT_PIT_ATTACK` (lecture `extra`).
+
+**Test** `server/smoke/TrialResetTest.java` (régression 134) : (1) victoire → `chancesUsed`=1 ; (2) recule
+`lastChancesResetTime` de 3 j ; (3) `refreshTrialDailyReset` → `chancesUsed`=0, `dailyResetsUsed` 0→1 ; (4) reset payant
+`resetTrialEventPaid` → `ClientErrorCodeException` (franchise sans reset payant) ; (5) persistance wire + DB.
+
+**RESTE** : incr. 5 gating franchise (`getGatingCriteria` = seuls héros de la franchise autorisés à l'attaque) → 6 complétion
+`PatchedHeroesHelper.handleFranchiseTrialCompletion` (Patch Essence) → 7 `AdminEvents --open-trial <FRANCHISE|saison>` (push event)
+→ 8 vérif EN JEU (vitrine `TrialEventSubTrialChooserScreen` → combat franchise → Patch Essence).
+
+Régression 134/134. Fichiers : `server/java/dhserver/ServerUser.java` (boundTrial + refreshTrialDailyReset + resetTrialEventPaid +
+checkForDailyReset dans record), `LoginServer.java` (handler RESET_TRIAL_EVENT_PAID + daily reset sur GetTrialEventData),
+`server/smoke/TrialResetTest.java` (nouveau), `server/smoke/TrialResetProbe.java` (probe DEV), `server/smoke/regression.sh`,
+`docs/FRANCHISE_TRIALS.md` §17, `MEMORY.md`.

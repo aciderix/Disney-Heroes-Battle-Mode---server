@@ -432,4 +432,25 @@ via nouveau helper `ServerEvents.snapshotAt(long)` (constructeur DU JEU `Special
 → 6 complétion `PatchedHeroesHelper.handleFranchiseTrialCompletion` (Patch Essence) → 7 `AdminEvents --open-trial <FRANCHISE|saison>`
 (push event) → 8 vérif EN JEU (vitrine `TrialEventSubTrialChooserScreen` → combat franchise → Patch Essence).
 
+### ✅ incr. 4 LIVRÉ (g143) — RESETS de chances (quotidien gratuit + payant, fidèlement gatés)
+Deux mécanismes, exécutés par la logique DU JEU (§3, 0 règle réécrite) :
+- **Reset quotidien GRATUIT (auto)** : `ClientEventTrial.checkForDailyReset(now)` → si un nouveau jour est franchi (et
+  `dailyResetsRemaining>0`), `doDailyReset` remet `chancesUsed=0`, incrémente `dailyResetsUsed`, réancre `lastChancesResetTime`.
+  Appliqué serveur-autoritativement sur le chemin `GetTrialEventData` (`ServerUser.refreshTrialDailyReset` — les chances se
+  rafraîchissent chaque jour) ET avant chaque `recordTrialEventAttack`. Franchise trial : `chancesPerReset=2`, `maxDailyResets=60`.
+- **Reset PAYANT (`Command RESET_TRIAL_EVENT_PAID`)** : le client envoie `Action{command=RESET_TRIAL_EVENT_PAID,
+  extra={ID:eventID, COST:cost}}`. `ServerUser.resetTrialEventPaid(eventID)` exécute `TrialsHelper.resetTrialEvent(user, trial)`
+  (§3) — anti-triche (peut reset ? quota resets payants restant ? chances encore dispo → lève) + débit (`UserHelper.chargeUser`,
+  coût `getResetCost`) + `doPaidReset` (`paidChancesRemaining=chancesPerReset`, `paidResetsUsed++`). Handler `LoginServer`
+  (dispatch `act.command`, lit `extra[ID]`). **⚠ FAIT §4/§8** : pour un FRANCHISE trial les données du jeu DÉSACTIVENT le reset
+  payant (`canUseResetItems=false`, `maxPaidResets=0`, `resetCost=-1`, `resourceCostType=DEFAULT`) → `resetTrialEvent` lève
+  `ClientErrorCodeException` (anti-triche du JEU, fidèle) ; le serveur n'accorde rien. Le chemin est implémenté+branché (pour
+  les modes trials qui l'activent), franchise = refusé fidèlement. `TrialResetTest` (régression 134) : reset quotidien
+  (chancesUsed 1→0, dailyResetsUsed 0→1) + persistance wire+DB + reset payant refusé. Helper privé `boundTrial` factorisé
+  (record/reset/refresh). Probe DEV `TrialResetProbe` (hors régression) : valeurs de reset lues du jeu.
+
+**RESTE** : 5 gating franchise (`getGatingCriteria` = seuls héros de la franchise) → 6 complétion
+`PatchedHeroesHelper.handleFranchiseTrialCompletion` (Patch Essence) → 7 `AdminEvents --open-trial <FRANCHISE|saison>` (push event)
+→ 8 vérif EN JEU (vitrine `TrialEventSubTrialChooserScreen` → combat franchise → Patch Essence).
+
 ## Statut : 4 DifficultyMode-trials ✅ EN JEU. EVENT/FRANCHISE : 1a STRUCTURE ✅ + 1b CONTENU ✅ + 2 AUTORITÉ SERVEUR (`GetTrialEventData` blob) ✅ (régression 132). **Prochaine action = incr. 3 `TrialEventAttack` → record (`BaseEventTrialNode.recordOutcome` : avance nœud + conso chance + loot) sur le blob per-user ; puis push event (`AdminEvents --open-trial`) + vérif EN JEU.**

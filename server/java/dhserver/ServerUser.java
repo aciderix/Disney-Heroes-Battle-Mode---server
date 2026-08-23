@@ -3623,12 +3623,11 @@ public final class ServerUser {
         individualUserExtra, userID, userInfo.diamonds, "trial");
     ServerContext.bind(user, iu);
     long now = com.perblue.heroes.util.TimeUtil.serverTimeNow();
-    com.perblue.common.specialevent.SpecialEventInfo info =
-        ServerEvents.buildFranchiseTrialEvent(m.eventID, now - 1000L, now + 30L * 86400000L);
     com.perblue.heroes.network.messages.TrialEventData blob = ServerTrials.getData(this, m.eventID);
-    com.perblue.heroes.game.objects.trials.ClientEventTrial trial =
-        new com.perblue.heroes.game.objects.trials.ClientEventTrial(user, info);
-    trial.setUserData(blob);
+    com.perblue.heroes.game.objects.trials.ClientEventTrial trial = boundTrial(user, m.eventID, blob, now);
+    // Reset quotidien GRATUIT (auto, le jeu) : rafraîchit les chances si un nouveau jour est franchi (checkForDailyReset →
+    // doDailyReset : chancesUsed=0, dailyResetsUsed++). Fidèle au client (qui l'applique aussi à l'ouverture de l'écran). §3.
+    trial.checkForDailyReset(now);
 
     com.perblue.heroes.game.objects.trials.GenericSubtrial sub = null;
     for (Object o : trial.getSubtrials()) {
@@ -3679,6 +3678,67 @@ public final class ServerUser {
     resyncHeroes(user);
     resyncDiamonds(user);
     resyncCounts(user);
+  }
+
+  /**
+   * FRANCHISE_TRIALS (EVENT/FRANCHISE) — construit l'objet runtime {@code ClientEventTrial} du jeu branché sur l'état per-user
+   * persisté : reconstruit l'event trial DÉTERMINISTE ({@code buildFranchiseTrialEvent}, depuis les `.tab`) puis
+   * {@code setUserData(blob)}. Ctor pur (feasibility g137), aucune règle réécrite — le serveur exécute la logique du jeu (§3).
+   */
+  private com.perblue.heroes.game.objects.trials.ClientEventTrial boundTrial(
+      User user, long eventID, com.perblue.heroes.network.messages.TrialEventData blob, long now) {
+    com.perblue.common.specialevent.SpecialEventInfo info =
+        ServerEvents.buildFranchiseTrialEvent(eventID, now - 1000L, now + 30L * 86400000L);
+    com.perblue.heroes.game.objects.trials.ClientEventTrial trial =
+        new com.perblue.heroes.game.objects.trials.ClientEventTrial(user, info);
+    trial.setUserData(blob);
+    return trial;
+  }
+
+  /**
+   * FRANCHISE_TRIALS (EVENT/FRANCHISE) incr. 4 — RESET PAYANT ({@code Command RESET_TRIAL_EVENT_PAID}). Le joueur paie
+   * (STAMINA/diamants) pour repartir avec un lot de chances ({@code getChancesPerReset}). Le serveur EXÉCUTE la logique DU JEU
+   * (§3) {@code TrialsHelper.resetTrialEvent(user, trial)} qui fait TOUT : anti-triche (peut reset ? quota resets payants restant ?
+   * chances encore dispo → lève {@code ClientErrorCodeException}), <b>débit</b> ({@code UserHelper.chargeUser}, coût lu du jeu
+   * {@code getResetCost}), puis {@code doPaidReset} ({@code paidChancesRemaining=chancesPerReset}, {@code paidResetsUsed++}). Le
+   * blob {@code TrialEventData} est muté en place (doPaidReset écrit dans userData) → on le re-persiste. Débit reflété par resync.
+   */
+  public synchronized void resetTrialEventPaid(long eventID)
+      throws com.perblue.heroes.ClientErrorCodeException {
+    ServerContext.init();
+    User user = ClientNetworkStateConverter.getUser(userInfo, userExtra, "trial");
+    IndividualUser iu = ClientNetworkStateConverter.getIndividualUser(
+        individualUserExtra, userID, userInfo.diamonds, "trial");
+    ServerContext.bind(user, iu);
+    long now = com.perblue.heroes.util.TimeUtil.serverTimeNow();
+    com.perblue.heroes.network.messages.TrialEventData blob = ServerTrials.getData(this, eventID);
+    com.perblue.heroes.game.objects.trials.ClientEventTrial trial = boundTrial(user, eventID, blob, now);
+    trial.checkForDailyReset(now);   // aligne l'état (reset gratuit du jour) avant d'évaluer le reset payant
+    com.perblue.heroes.game.logic.TrialsHelper.resetTrialEvent(user, trial);
+    setTrialEventData(blob);
+    resyncHeroes(user);
+    resyncDiamonds(user);
+    resyncCounts(user);
+  }
+
+  /**
+   * FRANCHISE_TRIALS (EVENT/FRANCHISE) incr. 4 — applique le RESET QUOTIDIEN GRATUIT (auto) à l'état per-user et le persiste si
+   * un nouveau jour a été franchi. Appelé sur le chemin {@code GetTrialEventData} pour que les chances se rafraîchissent chaque
+   * jour côté serveur (autorité). {@code checkForDailyReset} = logique DU JEU (§3, ne fait rien si pas de nouveau jour).
+   * Retourne le blob (muté en place) pour la réponse.
+   */
+  public synchronized com.perblue.heroes.network.messages.TrialEventData refreshTrialDailyReset(long eventID) {
+    ServerContext.init();
+    User user = ClientNetworkStateConverter.getUser(userInfo, userExtra, "trial");
+    IndividualUser iu = ClientNetworkStateConverter.getIndividualUser(
+        individualUserExtra, userID, userInfo.diamonds, "trial");
+    ServerContext.bind(user, iu);
+    long now = com.perblue.heroes.util.TimeUtil.serverTimeNow();
+    com.perblue.heroes.network.messages.TrialEventData blob = ServerTrials.getData(this, eventID);
+    com.perblue.heroes.game.objects.trials.ClientEventTrial trial = boundTrial(user, eventID, blob, now);
+    trial.checkForDailyReset(now);
+    setTrialEventData(blob);
+    return blob;
   }
 
   /**

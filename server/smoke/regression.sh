@@ -59,6 +59,7 @@ TESTS=(
   FranchiseTrialContentTest
   ServerTrialsDataTest
   TrialEventRecordTest
+  TrialResetTest
 )
 
 echo "[reg] compilation (serveur + ${#TESTS[@]} tests) ..."
