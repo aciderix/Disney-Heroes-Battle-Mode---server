@@ -6068,3 +6068,46 @@ inchangés) et `seasonTimeNow == serverTimeNow + ancre` (dérive murale < 1 min)
 Régression **139/139** (`SeasonAnchorTest` nouveau). Fichiers : `server/java/dhserver/ServerContext.java` (ancre de saison + seasonTimeNow),
 `server/java/dhserver/ServerEvents.java` (seasonTrialConfigs → seasonTimeNow), `server/java/dhserver/LoginServer.java` (application boot),
 `server/smoke/AdminSeason.java` (nouveau), `server/smoke/SeasonAnchorTest.java` (nouveau), `server/smoke/regression.sh`, `MEMORY.md`.
+
+## 2026-08-23 (g152) — SPECIAL_EVENTS live-ops : composant CHEST_DISCOUNT (remise coût coffre) ✅ headless + ✅ EN JEU
+
+Objectif utilisateur : implémenter TOUS les composants live-ops restants (ChestDiscount/ExtraChest/IncreasedChances/Contest/TeamLevel/
+MerchantDiscount/MerchantRefreshDiscount/MiscBonus/MiscDiscount/FlagUserOnLogin), chacun basé sur le code du jeu + `.tab`, **admin-
+paramétrable**, et **vérifié EN JEU**. Décision de scope : les composants Store/IAP (`Purchase`/`DiamondBundle`/`LadderDeal`/
+`NonStackingPurchase`/`AmazonMoment`) = achats en argent réel → HORS SCOPE (le jeu reste gratuit) : on n'en construit AUCUN, ils n'apparaissent
+donc jamais. La tâche distincte « ouvrir les écrans store ne doit pas crasher » (catalogue vide propre) = audit ultérieur. Suivi par 8 tâches
+(TaskCreate). Composants d'INFRASTRUCTURE (EventCardDisplay/EventVisibility/EventRewards/…) déjà utilisés en interne.
+
+**Mesure (industrialisation)** : énumération jar `common/specialevent/components/*` + grep des builders `ServerEvents` → builders existants =
+ModesOpen/DropBonus/Trial(Franchise) ; restants = les 10 ci-dessus.
+
+**CHEST_DISCOUNT (1er composant fait).**
+- `ServerEvents.buildChestDiscountEvent(id, chests, percentOff, start, end)` : composant du jeu `ChestDiscount` (ctor `(ISpecialEventType,
+  ChestType.class)`, PAS de provider → construction directe comme ModesOpen). Contrat relevé au bytecode `ChestDiscount.load` : lit
+  `chestFilter` (EnumFilter sur clé `chestType`) + `percentOff` (int) sur le nœud COMPLET (param2). `BaseEventSnapshot.getChestPrice(chestType,
+  base) = floor(base × multiplier)`, multiplier peuplé par `ChestDiscount.refresh` (`MultiplierDouble.applyAll(map, chestFilter.getFilterArray())`).
+- **Branchement `openChest`** : passait `SpecialEventSnapshot.NONE` → remplacé par le SNAPSHOT opérateur (`ServerEvents.snapshot()`, capturé UNE
+  fois dans `chestSnap`) pour `validateChestPurchase` (anti-tamper : recalcule le coût serveur et le compare à `m.cost` déclaré client — sans
+  le snapshot, le prix REMISÉ légitime du client serait REFUSÉ), `getMultiBuyCount`, `getPurchaseCurrency`, `getPurchaseCost` (débit). Sans event,
+  snapshot vide → getChestPrice == base → identique à NONE (défaut sûr).
+- **⚠ Piège découvert (§8, debug méthodique)** : `getChestPrice` appelle `snapshot.dirtyType(...)` → **effet de bord** : après un getChestPrice,
+  un `ServerEvents.snapshot()` REFRAÎCHI perd la remise (multipliers vidé). Mais RÉUTILISER la MÊME instance de snapshot reste stable (144 à
+  chaque appel — prouvé). `openChest` capture `chestSnap` une fois et le réutilise (validate + débit) → correct. Le test doit capturer le
+  snapshot une fois (pas rappeler snapshot() par mesure). (Diagnostic : sondes CDProbe/CDDbg/CDI/CDT/CDV/CDS — captured-var 144 vs inline-call 288.)
+- Spec persistée `CHEST_DISCOUNT{chests[],percentOff}` + `eventFromSpec` (parse `chests`/`percentOff`) + `specJsonChestDiscount`. AdminEvents :
+  `--chest-discount [id] --chest <TYPE> (répétable) --percent N` / `--close-chest-discount`.
+- `ChestDiscountTest` (régression) : base GOLD 288, SILVER 10000 ; event GOLD −50 % → GOLD **288→144**, SILVER (non visé) **inchangé** ;
+  round-trip de la spec → event reconstruit applique la même remise.
+
+**✅ VÉRIFIÉ EN JEU** (`AdminEvents --chest-discount --chest GOLD --percent 50` sur la DB serveur → `run-online.sh` → `nav CHESTS`) : l'écran
+CRATES affiche le badge **« SALE! »** sur EXACTEMENT le **DIAMOND CRATE** (le coffre acheté en 💎 = `ChestType.GOLD` ; dump `tut=GOLD_CHEST_CARD`,
+label `SALE!` @stage(705,200)), et PAS sur GOLD CRATE (=`SILVER_CHEST_CARD`, `ChestType.SILVER`, non remisé) ni GUILD CRATE. Le client reçoit
+l'event live-ops (`REFRESH_SPECIAL_EVENTS`) et cible le BON coffre. Serveur : ouverture « coffre GOLD » persistée. Le prix exact remisé (144) et
+le débit sont prouvés HEADLESS (le compte de test a 0💎 → un achat payant en diamants n'est pas complétable proprement en jeu — limite du compte,
+pas du code ; le chemin `openChest` débite via le même `getPurchaseCost` remisé). Captures `chest_view.png` (SALE badge) + `chest3/4.png`.
+Event de test retiré de la DB après vérif (`--close-chest-discount`). `[fire]` utilise les coords ÉCRAN (top-left), pas bottom-left.
+
+Régression **140/140** (`ChestDiscountTest` nouveau). Fichiers : `server/java/dhserver/ServerEvents.java` (buildChestDiscountEvent + import +
+eventFromSpec CHEST_DISCOUNT + specJsonChestDiscount), `server/java/dhserver/ServerUser.java` (openChest → snapshot opérateur), `server/smoke/
+AdminEvents.java` (--chest-discount/--chest/--percent/--close-chest-discount), `server/smoke/ChestDiscountTest.java` (nouveau), `server/smoke/
+regression.sh`, `MEMORY.md`. **PROCHAIN = IncreasedChances (AdditionalChances)**, puis Merchant discounts / ExtraChest / Misc / TeamLevel / Contest / FlagUserOnLogin.
