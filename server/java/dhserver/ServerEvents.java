@@ -402,7 +402,9 @@ public final class ServerEvents {
       Field sf = Class.forName("com.perblue.heroes.game.data.patchedheroes.PatchStats").getDeclaredField("FRANCHISE_SEASON_MAPPING_STATS");
       sf.setAccessible(true);
       Object stats = sf.get(null);
-      long now = com.perblue.heroes.util.TimeUtil.serverTimeNow();
+      // SÉLECTION DE SAISON = seasonTimeNow() (serverTimeNow + ancre de saison ADMIN), DÉCOUPLÉE des timers joueur
+      // (qui gardent serverTimeNow). Ancre 0 par défaut → suit la date réelle (comportement historique). Cf. ServerContext.
+      long now = ServerContext.seasonTimeNow();
       java.lang.reflect.Method gc = stats.getClass().getDeclaredMethod("getColumn", long.class); gc.setAccessible(true);
       Object col = gc.invoke(stats, now);
       java.util.Map<?, ?> tc = (java.util.Map<?, ?>) instanceField(col, "trialCollection");

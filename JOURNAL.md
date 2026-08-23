@@ -6013,3 +6013,58 @@ combat modifiers (conforme aux captures de référence). `ModProbe` : build 14 +
 Régression 138/138. Fichiers : `server/java/dhserver/ServerEvents.java` (buildFranchiseTrialEvent + modifiersPerNode + combatModifiers
 [kind:RANDOM du pool] + specJsonTrialFranchise modifiers), `server/smoke/AdminEvents.java` (--modifiers), `server/smoke/TrialAdminPushTest.java`
 (signature), `docs/FRANCHISE_TRIALS.md` §17, `MEMORY.md`.
+
+## 2026-08-23 (g151) — SÉPARATION HORLOGE ↔ CONFIG ADMIN : ancre de saison découplée des timers joueur
+
+Demande utilisateur : « voir tout ce qui touche à l'horloge serveur pour bien définir ce qui doit être séparé (resets quotidiens,
+sélection de saison…) — en gros séparer db joueurs de config admin, si c'est la bonne chose selon toi ». Survey complet + implémentation
+du découplage (choix « plomber l'ancre maintenant »).
+
+**SURVEY — une seule horloge, deux préoccupations couplées.** `TimeUtil.CLOCK_OFFSET` → `serverTimeNow() = wall − OFFSET`. TOUT le
+serveur lit cet accesseur (grep exhaustif de `serverTimeNow` sur `server/java/dhserver`). Deux catégories très différentes :
+- **(A) TIMERS JOUEUR** (doivent suivre le temps RÉEL ; état par-joueur, table `users`) : resets quotidiens (`DailyActivityHelper`
+  → chances trials/arène/check-in guilde/missions), régén ressources (stamina/énergie, coffres gratuits `lastResourceGenerationTime`),
+  cooldowns (coffre 24 h, nom, gift, WAR_TOKENS, reward mercenaire hebdo), horodatages (courrier, `guildJoinTime`, chat, `creationTime`,
+  tiebreaker arène, `lastWinTime`), resets hebdo (expédition, social bucks), ordonnanceur guerre (`ServerWarScheduler` : phases/matchmaking/saison).
+- **(B) CONFIG CONTENU/SAISON** (choix éditorial admin ; global, PAS un timer) : ère de contenu (`ContentStats.getServerColumn` →
+  R1..R102, cap TL, rosters, échelle puissance), sélection saison trials (`FRANCHISE_SEASON_MAPPING.getColumn`), héros sign-in mensuel,
+  fenêtres release-gated (invasion/battle pass/surge).
+- **Problème** : A doit suivre le mur, B est éditorial ; les deux lisaient `serverTimeNow` → `AdminClock` (reculer la date pour choisir
+  une ère/saison) décalait AUSSI tous les timers A. C'était la réponse « non séparés » à la question de l'utilisateur.
+
+**DÉCOUVERTE (bytecode)** : le jeu modélise DÉJÀ un offset de contenu PAR JOUEUR — `ContentStats.getServerColumn(user) =
+getColumn(serverTimeNow() + getUserOffset(user.id))`, `setUserOffset(user, offset)`. Instance atteignable via `ContentHelper.getRawStats()`.
+Le jeu sépare donc « temps d'ère de contenu » = mur + offset éditorial, ≠ horloge des timers. On avait court-circuité ce primitif
+(`seasonTrialConfigs` lisait `serverTimeNow` brut, `userOffset`=0 jamais posé).
+
+**DÉCISION DE FIDÉLITÉ (§4bis)** : l'ÈRE DE CONTENU (R) reste couplée à `serverTimeNow` À DESSEIN. Le client synchronise SON horloge sur
+`BootData.serverTime`/`Ping.serverTime` et résout SON contenu daté par cette date (cf. SHIMS « 39,96 M » stamina) → découpler l'ère
+donnerait un affichage client incohérent. Seule la **SÉLECTION DE SAISON** des franchise trials est découplée : elle est poussée par NOUS
+(blob serveur-autoritatif + `REFRESH_SPECIAL_EVENTS`), le client ne résout PAS « quelle saison » par sa date → aucune incohérence à la
+découpler. C'est exactement l'ancre annoncée en g150.
+
+**IMPLÉMENTATION.**
+- `ServerContext` : champ `SEASON_ANCHOR_OFFSET_MS` (défaut 0) + `seasonAnchorOffsetMillis()`/`setSeasonAnchorOffsetMillis(long)` +
+  **`seasonTimeNow() = serverTimeNow() + SEASON_ANCHOR_OFFSET_MS`**. Ancre 0 → `seasonTimeNow()==serverTimeNow()` (comportement historique,
+  zéro changement). Commentaire long expliquant A vs B et pourquoi l'ère reste couplée.
+- `ServerEvents.seasonTrialConfigs()` : lit `ServerContext.seasonTimeNow()` (au lieu de `serverTimeNow()`) → la sélection de saison suit
+  l'ancre, PAS les timers.
+- `LoginServer.main` : après l'ancre d'horloge, applique l'ancre de saison PERSISTÉE (méta `season_anchor_offset_ms`) au boot (comme
+  `clock_offset_ms`).
+- **`server/smoke/AdminSeason.java`** (nouvel outil admin, mirroir d'`AdminClock`) : `--set-date <yyyy-MM-dd>` / `--offset-hours <h>` /
+  `--reset` / `--status`. `--set-date` : `ancre = target − serverTimeNow()` → `seasonTimeNow()=target`. `--status` affiche la date de
+  référence saison + les TRIALS sélectionnés (franchises/questType). Persiste `season_anchor_offset_ms`. **Deux outils = deux
+  préoccupations** : `AdminClock` bouge l'horloge (mur + ère + saison + timers = monde cohérent, utile pour la vérif §8) ; `AdminSeason`
+  bouge SEULEMENT la saison (timers joueur intacts).
+
+**PREUVE — `server/smoke/SeasonAnchorTest`** (assertif, régression) : ancre 0 → saison t0=[WILDCARD] ; ancre −2 ans → t0=[INSIDE_OUT]
+(saison CHANGÉE) MAIS `DailyActivityHelper.getLastDailyResetTime`/`getNextDailyResetTime` **IDENTIQUES** (1787461200000 → 1787547600000,
+inchangés) et `seasonTimeNow == serverTimeNow + ancre` (dérive murale < 1 min) ; retour ancre 0 → saison courante rétablie. Sonde
+`SeasonProbe` (empirique) : 2026→WILDCARD, 2025→[RAYA,PRINCESS_AND_THE_FROG], 2024→INSIDE_OUT, 2022→ALADDIN.
+
+**FUTUR (dashboard admin, reporté « quand tout sera finalisé »)** : « définir la saison en cours / le roulement » = écrire
+`season_anchor_offset_ms` (via `AdminSeason` ou l'UI). Le couplage est CASSÉ dès maintenant ; le dashboard n'aura qu'à poser une valeur.
+
+Régression **139/139** (`SeasonAnchorTest` nouveau). Fichiers : `server/java/dhserver/ServerContext.java` (ancre de saison + seasonTimeNow),
+`server/java/dhserver/ServerEvents.java` (seasonTrialConfigs → seasonTimeNow), `server/java/dhserver/LoginServer.java` (application boot),
+`server/smoke/AdminSeason.java` (nouveau), `server/smoke/SeasonAnchorTest.java` (nouveau), `server/smoke/regression.sh`, `MEMORY.md`.

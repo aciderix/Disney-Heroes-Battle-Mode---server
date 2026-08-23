@@ -223,6 +223,37 @@ public final class ServerContext {
     } catch (Throwable t) { return 0L; }
   }
 
+  // ─── ANCRE DE SAISON (config ADMIN), DÉCOUPLÉE des timers joueur ──────────────────────────────────────
+  // L'HORLOGE (serverTimeNow, CLOCK_OFFSET) pilote deux préoccupations distinctes qu'il faut SÉPARER :
+  //   • TIMERS JOUEUR (resets quotidiens, cooldowns, régén, horodatages…) → doivent suivre le temps RÉEL ;
+  //   • SÉLECTION DE SAISON live-ops (quels FRANCHISE_TRIALS de saison sont actifs) → choix ÉDITORIAL admin.
+  // Aujourd'hui les deux lisent serverTimeNow → couplés : reculer la date pour changer de saison décalerait
+  // aussi tous les timers joueur. On introduit une ANCRE DE SAISON = un OFFSET ADDITIONNEL, appliqué UNIQUEMENT
+  // à la sélection de saison (ServerEvents.seasonTrialConfigs via seasonTimeNow()), JAMAIS aux timers joueur.
+  // Défaut 0 → seasonTimeNow() == serverTimeNow() (comportement historique, aucun changement). L'admin le règle
+  // (outil AdminSeason), il est persisté en méta `season_anchor_offset_ms` et ré-appliqué au boot par LoginServer.
+  // NB (choix de fidélité) : l'ÈRE DE CONTENU (R1…R102, ContentStats.getServerColumn) reste couplée à serverTimeNow
+  // À DESSEIN — le client synchronise son horloge sur BootData.serverTime et résout SON contenu daté par cette date ;
+  // découpler l'ère provoquerait un affichage incohérent côté client. Seule la saison (poussée par NOUS, invisible
+  // au calendrier client) est découplée ici. (Le jeu modélise d'ailleurs un offset de contenu PAR JOUEUR via
+  // ContentStats.setUserOffset/getServerColumn(IUser) — non requis pour ce découplage-ci.)
+  private static volatile long SEASON_ANCHOR_OFFSET_MS = 0L;
+
+  /** Offset d'ancre de saison courant (ms), ADDITIONNÉ à {@code serverTimeNow()} pour la sélection de saison. 0 = suit la date réelle. */
+  public static long seasonAnchorOffsetMillis() { return SEASON_ANCHOR_OFFSET_MS; }
+
+  /** Règle l'ancre de saison (ms). Découplée de l'horloge : n'affecte QUE {@code seasonTimeNow()} (sélection de saison), pas les timers joueur. */
+  public static void setSeasonAnchorOffsetMillis(long offsetMs) {
+    SEASON_ANCHOR_OFFSET_MS = offsetMs;
+    System.out.println("[ctx] ⏱ ancre de saison : offset " + offsetMs + " ms → saison résolue à "
+        + new java.util.Date(seasonTimeNow()));
+  }
+
+  /** Heure de RÉFÉRENCE POUR LA SAISON = {@code serverTimeNow() + ancre de saison}. Découplée des timers joueur (qui gardent serverTimeNow). */
+  public static long seasonTimeNow() {
+    return com.perblue.heroes.util.TimeUtil.serverTimeNow() + SEASON_ANCHOR_OFFSET_MS;
+  }
+
   /** Lie le joueur courant au shim {@code DH.app} (getYourUser/getYourIndividualUser). */
   public static synchronized void bind(User user, IndividualUser individualUser) {
     init();

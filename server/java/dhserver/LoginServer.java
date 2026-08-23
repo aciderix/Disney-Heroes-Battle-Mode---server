@@ -2930,6 +2930,16 @@ public final class LoginServer {
             + ServerContext.clockOffsetMillis() + " ms)");
       }
     } catch (Exception e) { System.out.println("[login] ! ancre d'horloge : " + e); }
+    // ANCRE DE SAISON PERSISTÉE (config ADMIN) — DÉCOUPLÉE de l'horloge : n'affecte QUE la sélection de saison des
+    // FRANCHISE_TRIALS (ServerEvents.seasonTrialConfigs → ServerContext.seasonTimeNow), PAS les timers joueur. Défaut
+    // (absente/0) → la saison suit la date réelle. Réglée par l'opérateur via AdminSeason. Cf. ServerContext.setSeasonAnchorOffsetMillis.
+    try {
+      Long seasonAnchor = store.getMetaLong("season_anchor_offset_ms");
+      if (seasonAnchor != null && seasonAnchor != 0L) {
+        ServerContext.setSeasonAnchorOffsetMillis(seasonAnchor);
+        System.out.println("[login] ⏱ ancre de saison PERSISTÉE appliquée (offset " + seasonAnchor + " ms)");
+      }
+    } catch (Exception e) { System.out.println("[login] ! ancre de saison : " + e); }
     // ÉVÉNEMENTS OPÉRATEUR (live-ops) — chargés depuis shard_state (clé "operator_events") dans le holder statique de
     // ServerEvents. Défaut = VIDE → aucune ouverture forcée → le jeu applique sa ROTATION par défaut (getOpenDays). Un
     // opérateur AJOUTE des overrides (MODES_OPEN/DropBonus) via l'outil AdminEvents ; ils survivent aux redémarrages.
