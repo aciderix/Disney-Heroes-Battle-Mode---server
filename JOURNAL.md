@@ -6182,3 +6182,28 @@ Régression **142/142** (`MerchantDiscountTest`). Fichiers : `ServerEvents.java`
 Régression **143/143** (`MiscMultipliersTest`). Fichiers : `ServerEvents.java` (buildMisc* + buildMiscEvent + eventFromSpec + specJsonMisc),
 `ServerUser.java` (buyGold → snapshot opérateur), `AdminEvents.java` (flags), `MiscMultipliersTest.java` (nouveau), `regression.sh`, `MEMORY.md`.
 **PROCHAIN = FlagUserOnLogin (léger), TeamLevel, puis les 2 lourds ExtraChest + Contest.**
+
+## 2026-08-23 (g156) — SPECIAL_EVENTS live-ops : composant FLAG_USER_ON_LOGIN (flags joueur au login) ✅ headless + ✅ EN JEU
+
+7ᵉ composant. `FlagUserOnLogin<U extends IUserFlag>` = pose/retire des flags joueur au login (marketing/onboarding).
+- **Schéma (bytecode)** : `flags` = tableau d'objets `{flag:<UserFlag>, kind:set|clear}`. Ctor `(ISpecialEventType, UserFlag.class)` SANS provider
+  → construction DIRECTE (la fabrique `createComponent("flagUserOnLogin")` n'est PAS enregistrée). `UserFlag` = `com.perblue.heroes.game.objects.UserFlag`.
+- **Action SERVEUR-autoritative** : AUCUNE classe du jar CLIENT ne consomme `FlagUserOnLoginSnapshot` (c'était une action backend PerBlue) →
+  on l'applique nous-mêmes. `ServerEvents.applyLoginFlags(Map wire)` : le snapshot `getEvents()` renvoie une liste de **`SpecialEventInfo`**
+  (bytecode `refresh` : `getEvents().add(info)`) → pour chacun `getComponent(FlagUserOnLogin.class)` → lit `flagsToSet`/`flagsToClear` (champs
+  privés, réflexion) → écrit dans la map WIRE. **Représentation wire découverte (2 essais)** : `userExtra.flags` = **`Map<String,Boolean>`** —
+  clé = **NOM** du flag (String, PAS l'enum → `ClassCastException UserFlag→String` sinon), valeur = **Boolean** (PAS Integer → `ClassCastException
+  Integer→Boolean` sinon). set → `put(name, TRUE)`, clear → `put(name, FALSE)`. Relue par `User.setFlags` → `hasFlag`. Branché dans
+  `ServerUser.bootData()` (au login, après install). Défaut (aucun event) = no-op.
+- `ServerEvents.buildFlagUserOnLoginEvent(id, set, clear, start, end)` + spec `FLAG_USER_ON_LOGIN{set[],clear[]}` + `eventFromSpec` +
+  `specJsonFlagUserOnLogin`. `AdminEvents --flag-login [id] --set-flag <F> (répétable) --clear-flag <F> / --close-flag-login`.
+- `FlagUserOnLoginTest` (régression) : applyLoginFlags pose SET (TRUE) + retire CLR (FALSE, pré-posé) ; round-trip WIRE (`User.setFlags(map)` →
+  `hasFlag(SET)=true`, `hasFlag(CLR)=false`) ; round-trip spec.
+- **✅ CONFIRMÉ EN JEU** (`--flag-login --set-flag BATTLE_PASS_V2_SHOW_UPSELL` → `run-online.sh`) : le login du VRAI client déclenche
+  `ServerUser.bootData()` → serveur log **`[boot] FLAG_USER_ON_LOGIN : 1 flag(s) appliqué(s) [persisté]`** ; le client atteint le hub
+  NORMALEMENT (159 msgs — le changement du chemin critique `bootData` ne casse PAS le login). Pas de capture d'un effet visuel distinct
+  (les flags sont des gates internes), mais l'action serveur est confirmée bout-en-bout (login réel → application → persistance). Event retiré après.
+
+Régression **144/144** (`FlagUserOnLoginTest`). Fichiers : `ServerEvents.java` (buildFlagUserOnLoginEvent + applyLoginFlags + eventFromSpec +
+specJsonFlagUserOnLogin), `ServerUser.java` (bootData → applyLoginFlags), `AdminEvents.java` (flags), `FlagUserOnLoginTest.java` (nouveau),
+`regression.sh`, `MEMORY.md`. **PROCHAIN = TeamLevel, puis les 2 lourds ExtraChest + Contest.**
