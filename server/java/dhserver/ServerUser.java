@@ -3046,8 +3046,9 @@ public final class ServerUser {
         int buyIdx = cO == null ? 0 : Integer.parseInt(cO.toString());
         long diamondsBefore = user.getResource(com.perblue.heroes.network.messages.ResourceType.DIAMONDS);
         long goldBefore = user.getResource(com.perblue.heroes.network.messages.ResourceType.GOLD);
-        com.perblue.heroes.game.logic.UserHelper.buyGold(buyIdx, user,
-            com.perblue.heroes.game.specialevent.SpecialEventSnapshot.NONE);
+        // SNAPSHOT opérateur (live-ops) : un event MISC_DISCOUNT(DISCOUNT_ALCHEMY) réduit getAlchemyPrice (achat d'or
+        // moins cher) et MISC_BONUS(BONUS_ALCHEMY) augmente getAlchemyAmount (plus d'or). Sans event = NONE.
+        com.perblue.heroes.game.logic.UserHelper.buyGold(buyIdx, user, ServerEvents.snapshot());
         long dSpent = diamondsBefore - user.getResource(com.perblue.heroes.network.messages.ResourceType.DIAMONDS);
         long gGain = user.getResource(com.perblue.heroes.network.messages.ResourceType.GOLD) - goldBefore;
         System.out.println("[action] BUY_GOLD tier=" + buyIdx + " → −" + dSpent + " DIAMONDS, +" + gGain

@@ -46,6 +46,9 @@ public final class AdminEvents {
     String merchantEvent = null; boolean closeMerchant = false;               // "TRADER_DISCOUNT"/"TRADER_REFRESH_DISCOUNT"
     long merchantID = 900_004L; int merchantPercent = 50;                     // params admin
     java.util.List<com.perblue.heroes.network.messages.MerchantType> merchantTargets = new java.util.ArrayList<>();  // --merchant (répétable)
+    String miscEvent = null; boolean closeMisc = false;                       // "MISC_BONUS"/"MISC_DISCOUNT"
+    long miscID = 900_005L; int miscValue = 50;                               // params admin
+    java.util.List<com.perblue.heroes.game.specialevent.MultiplierType> miscTargets = new java.util.ArrayList<>();   // --mult (répétable)
     int days = 30, bonus = 1;
     for (int i = 0; i < a.length; i++) {
       switch (a[i]) {
@@ -74,6 +77,13 @@ public final class AdminEvents {
         case "--close-merchant-discount":   closeMerchant = true; break;
         case "--merchant":   merchantTargets.add(com.perblue.heroes.network.messages.MerchantType.valueOf(a[++i].toUpperCase())); break;
         case "--merchant-percent": merchantPercent = Integer.parseInt(a[++i]); break;
+        case "--misc-bonus":   miscEvent = "MISC_BONUS";
+          if (i + 1 < a.length && a[i + 1].matches("\\d+")) miscID = Long.parseLong(a[++i]); break;
+        case "--misc-discount": miscEvent = "MISC_DISCOUNT";
+          if (i + 1 < a.length && a[i + 1].matches("\\d+")) miscID = Long.parseLong(a[++i]); break;
+        case "--close-misc":   closeMisc = true; break;
+        case "--mult":         miscTargets.add(com.perblue.heroes.game.specialevent.MultiplierType.valueOf(a[++i].toUpperCase())); break;
+        case "--misc-value":   miscValue = Integer.parseInt(a[++i]); break;
         case "--open-trial":  openTrial = true;
           if (i + 1 < a.length && a[i + 1].matches("\\d+")) trialID = Long.parseLong(a[++i]); break;
         case "--close-trial": closeTrial = true; break;
@@ -175,6 +185,24 @@ public final class AdminEvents {
           changed = true;
           System.out.println("[events] event " + merchantEvent + " ajouté : eventID=" + merchantID + " marchands=" + merchantTargets
               + " remise=" + merchantPercent + "% (" + days + " j). Prix remisés via REFRESH_SPECIAL_EVENTS.");
+        }
+      }
+
+      if (closeMisc) {
+        int before = specs.size();
+        specs.removeIf(js -> js.contains("MISC_BONUS") || js.contains("MISC_DISCOUNT"));
+        changed = changed || specs.size() != before;
+        System.out.println("[events] events MISC_BONUS/MISC_DISCOUNT retirés (" + (before - specs.size()) + ").");
+      }
+      if (miscEvent != null) {
+        if (miscTargets.isEmpty()) { System.out.println("[events] --misc-bonus/--misc-discount requiert au moins un --mult <TYPE> (ex. BONUS_ALCHEMY). Ignoré."); }
+        else {
+          final String me = miscEvent;
+          specs.removeIf(js -> js.contains("\"" + me + "\""));
+          specs.add(ServerEvents.specJsonMisc(miscEvent, miscID, miscTargets, miscValue, start, end));
+          changed = true;
+          System.out.println("[events] event " + miscEvent + " ajouté : eventID=" + miscID + " mults=" + miscTargets
+              + " valeur=" + miscValue + "% (" + days + " j).");
         }
       }
 

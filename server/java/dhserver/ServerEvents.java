@@ -254,6 +254,65 @@ public final class ServerEvents {
     return buildMerchantEvent(id, "TRADER_REFRESH_DISCOUNT", SpecialEventType.TRADER_REFRESH_DISCOUNT, "merchantRefreshDiscount", merchants, percentOff, false, startMs, endMs);
   }
 
+  /**
+   * Construit un événement <b>MISC_BONUS</b> (composant {@code MiscBonus}) : multiplie CERTAINES valeurs « diverses » ({@code MultiplierType} :
+   * BONUS_ALCHEMY [+or par achat], BONUS_STAMINA, BONUS_INVASION_STAMINA, BONUS_PREMIUM_STAMINA) par {@code bonus}% de PLUS sur {@code [start,end]}.
+   * Contrat (bytecode {@code MiscBonus.load}) : {@code miscBonusFilter} (EnumFilter clé {@code miscBonus}) + {@code bonus} (int) sur le nœud complet.
+   * FABRIQUE {@code createComponent("miscBonus")}. Effet ex. : {@code SpecialEventSnapshot.getAlchemyAmount(base)} augmenté → {@code UserHelper.buyGold}
+   * rend plus d'or. Params ADMIN (types + %).
+   */
+  public static SpecialEventInfo buildMiscBonusEvent(long id, Collection<com.perblue.heroes.game.specialevent.MultiplierType> mults, int bonus, long startMs, long endMs) {
+    return buildMiscEvent(id, "MISC_BONUS", SpecialEventType.MISC_BONUS, "miscBonus", "miscBonusFilter", "miscBonus", "bonus", mults, bonus, startMs, endMs);
+  }
+
+  /**
+   * Construit un événement <b>MISC_DISCOUNT</b> (composant {@code MiscDiscount}) : réduit CERTAINES valeurs ({@code MultiplierType} :
+   * DISCOUNT_ALCHEMY [prix d'achat d'or], DISCOUNT_STAMINA, DISCOUNT_INVASION_STAMINA) de {@code percentOff}%. Clés {@code miscDiscountFilter}/
+   * {@code percentOff}. FABRIQUE {@code createComponent("miscDiscount")}. Effet ex. : {@code getAlchemyPrice(base)} remisé → {@code buyGold} coûte moins.
+   */
+  public static SpecialEventInfo buildMiscDiscountEvent(long id, Collection<com.perblue.heroes.game.specialevent.MultiplierType> mults, int percentOff, long startMs, long endMs) {
+    return buildMiscEvent(id, "MISC_DISCOUNT", SpecialEventType.MISC_DISCOUNT, "miscDiscount", "miscDiscountFilter", "miscDiscount", "percentOff", mults, percentOff, startMs, endMs);
+  }
+
+  /** Fabrique commune aux deux events « misc multipliers » (bonus / discount) — schéma {@code <filterKey>{include:[{<itemKey>:TYPE}]}}/{@code <valueKey>}. */
+  private static SpecialEventInfo buildMiscEvent(long id, String kind, SpecialEventType type, String componentKey, String filterKey,
+      String itemKey, String valueKey, Collection<com.perblue.heroes.game.specialevent.MultiplierType> mults, int value, long startMs, long endMs) {
+    try {
+      StringBuilder inc = new StringBuilder();
+      for (com.perblue.heroes.game.specialevent.MultiplierType mt : mults) {
+        if (inc.length() > 0) inc.append(','); inc.append("{\"").append(itemKey).append("\":\"").append(mt.name()).append("\"}");
+      }
+      String full =
+          "{\"kind\":\"" + kind + "\",\"id\":" + id + ",\"formatVersion\":0,"
+        + "\"timeRange\":[{\"serverFilter\":\"1-999999\",\"start\":" + startMs
+        +   ",\"end\":{\"kind\":\"TIME\",\"endTime\":" + endMs + "}}],"
+        + "\"" + filterKey + "\":{\"include\":[" + inc + "]},\"" + valueKey + "\":" + value + "}";
+      JsonValue root = JSON.parse(full);
+
+      SpecialEventInfo info = new SpecialEventInfo(SpecialEventType.class);
+      setField(info, "id", id);
+      setField(info, "type", type);
+      setField(info, "formatVersion", 0);
+
+      EventVisibility vis = new EventVisibility(new int[0]);
+      vis.load(info, root, root.get("timeRange"));
+      addComponent(info, vis);
+
+      IEventComponent mc = SpecialEventBuilder.createComponent(componentKey);
+      Method load = findMethod(mc.getClass(), "load", SpecialEventInfo.class, JsonValue.class, JsonValue.class);
+      load.setAccessible(true);
+      load.invoke(mc, info, root, root);
+      addComponent(info, mc);
+
+      addComponent(info, buildMinimalCard(info));
+      return info;
+    } catch (RuntimeException e) {
+      throw e;
+    } catch (Exception e) {
+      throw new RuntimeException("buildMiscEvent(" + kind + ")", e);
+    }
+  }
+
   /** Fabrique commune aux deux events marchands (discount d'objet / discount de refresh) — même schéma {@code traderFilter}/{@code percentOff}. */
   private static SpecialEventInfo buildMerchantEvent(long id, String kind, SpecialEventType type, String componentKey,
       Collection<com.perblue.heroes.network.messages.MerchantType> merchants, int percentOff, boolean withStuffFilter, long startMs, long endMs) {
@@ -826,6 +885,16 @@ public final class ServerEvents {
           ? buildMerchantDiscountEvent(id, mrch, pct, start, end)
           : buildMerchantRefreshDiscountEvent(id, mrch, pct, start, end);
     }
+    if ("MISC_BONUS".equals(kind) || "MISC_DISCOUNT".equals(kind)) {
+      List<com.perblue.heroes.game.specialevent.MultiplierType> mults = new ArrayList<>();
+      JsonValue tn = spec.get("mults");
+      if (tn != null) for (JsonValue t = tn.child; t != null; t = t.next)
+        mults.add(com.perblue.heroes.game.specialevent.MultiplierType.valueOf(t.asString()));
+      int val = spec.getInt("value", 50);
+      return "MISC_BONUS".equals(kind)
+          ? buildMiscBonusEvent(id, mults, val, start, end)
+          : buildMiscDiscountEvent(id, mults, val, start, end);
+    }
     return buildModesOpenEvent(id, modes, start, end);
   }
 
@@ -898,6 +967,15 @@ public final class ServerEvents {
     for (com.perblue.heroes.network.messages.MerchantType mt : merchants) { if (m.length() > 0) m.append(','); m.append('"').append(mt.name()).append('"'); }
     return "{\"kind\":\"" + kind + "\",\"modes\":[],\"bonus\":0,\"id\":" + id
         + ",\"merchants\":[" + m + "],\"percentOff\":" + percentOff + ",\"start\":" + start + ",\"end\":" + end + "}";
+  }
+
+  /** Construit la chaîne JSON d'UNE spec MISC_BONUS/MISC_DISCOUNT (MultiplierType visés + valeur % = params ADMIN). */
+  public static String specJsonMisc(String kind, long id, Collection<com.perblue.heroes.game.specialevent.MultiplierType> mults,
+      int value, long start, long end) {
+    StringBuilder m = new StringBuilder();
+    for (com.perblue.heroes.game.specialevent.MultiplierType mt : mults) { if (m.length() > 0) m.append(','); m.append('"').append(mt.name()).append('"'); }
+    return "{\"kind\":\"" + kind + "\",\"modes\":[],\"bonus\":0,\"id\":" + id
+        + ",\"mults\":[" + m + "],\"value\":" + value + ",\"start\":" + start + ",\"end\":" + end + "}";
   }
 
   /** Construit la chaîne JSON d'UNE spec d'override opérateur. */
