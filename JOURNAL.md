@@ -6234,3 +6234,22 @@ specJsonFlagUserOnLogin), `ServerUser.java` (bootData → applyLoginFlags), `Adm
 Régression **145/145** (`TeamLevelTest`). Fichiers : `ServerEvents.java` (buildTeamLevelEvent + teamLevelRewardDrops + eventFromSpec +
 specJsonTeamLevel), `ServerUser.java` (recordCampaignAttack → deliverMail au level-up), `AdminEvents.java` (flags), `TeamLevelTest.java`
 (nouveau), `regression.sh`, `MEMORY.md`. **PROCHAIN = Contest (dernier, le plus lourd) + ExtraChest.**
+
+## 2026-08-23 (g158) — SPECIAL_EVENTS live-ops : RECON + FEASIBILITY des 2 composants LOURDS (ExtraChest, Contest)
+
+Après 6/8 composants livrés & vérifiés en jeu, les 2 restants (ExtraChest, Contest) se révèlent être du CONTENU lourd (pas « un builder
+de plus »). Décision utilisateur : documenter recon + feasibility + plan d'incréments (comme pour les trials avant de les attaquer),
+sans implémenter maintenant. Détail complet dans `docs/SPECIAL_EVENTS.md` §RECON. Résumé :
+- **ExtraChest (EXTRA_CHEST)** = coffre bonus sur CRATES. Voie objet PROUVÉE (`createComponent("eventChestData")` + carte `EventCardDisplay`
+  requise + `eventChestData{content=drops[{kind:ITEM,…}], cost, currency, freeBuys, maxBuys, maxPurchases, buyXNumber, featured, title/heading/
+  text, + sous-écrans detailsScreen/infoScreen/selectionCard}`). POINT DUR = le **`preset`** de chaque sous-écran (EventPresets.properties, même
+  point dur que la carte de trial). Parseur-oracle démarré (content/cost/currency passent ; bloqué sur `preset` d'un sous-écran). Consommation
+  `snapshot.getEventChests()`/`getSingleEventChest()`. Plan : (1) presets, (2) builder+spec+admin, (3) snapshot→CRATES, (4) achat/ouverture, (5) en jeu.
+- **Contest (CONTEST)** = LEADERBOARD serveur-autoritatif (mode, pas builder). `new Contest(type, ContestTaskType.class)` + `tasks`/`progressRewards`/
+  `rankRewards`. Tâches `ContestTaskType` (BATTLE_WON/ENEMY_DEFEATED/ITEM_BURN/HERO_*/EXPEDITION_FINISHED…) → points → paliers + classement.
+  `ContestHelper.onItemEarn` DÉJÀ appelé dans openChest. POINT DUR = blob progression par-joueur + classement par-shard + réclamation (progress+rank)
+  + wiring des déclencheurs = effort niveau ARÈNE/SURGE. Plan : (1) builder+spec+admin, (2) ServerContest (blob progression, patron expeditionRun),
+  (3) wiring tâches→addProgress, (4) classement+réclamation, (5) en jeu. NB `ServerUser.deliverContestSeasonReward` existe déjà (guild contest).
+
+Régression 145/145 (inchangée). Fichiers : `docs/SPECIAL_EVENTS.md` (§RECON ExtraChest/Contest + bilan live-ops), `MEMORY.md`.
+**PROCHAINE ACTION = décision user sur l'implémentation d'ExtraChest (presets) puis Contest (mode), OU passage à la Phase 2.**

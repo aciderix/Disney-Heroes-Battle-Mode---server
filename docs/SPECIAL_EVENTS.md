@@ -185,5 +185,48 @@ isOpen(mode, user, snap) =
    (`AdminEvents` : ouvrir/fermer un mode, planifier une fenêtre) + **persistance shard** (`shard_state`, survit aux redémarrages).
    Vérif EN JEU : sans override, WAREHOUSE fermé les jours hors [7,5,3,1] (« OPENS TOMORROW ») et ouvert ses jours ; override →
    forcé ouvert. **Décision utilisateur** : basculer le défaut vers la rotation fidèle (WAREHOUSE non-jouable hors planning) ?
-4. ⬜ discounts marchands/coffres (`ChestDiscount`/merchant). 5. ⬜ `AdditionalChances`, `Contest`/`TeamLevel`. (Un builder par
-   composant, même patron.)
+4. ✅ **Composants live-ops légers LIVRÉS & vérifiés EN JEU** (g152-157) : `ChestDiscount` (remise coffre), `IncreasedChances`
+   (chances quotidiennes), `MerchantDiscount`+`MerchantRefreshDiscount` (remise marchand/refresh), `MiscBonus`+`MiscDiscount`
+   (multiplicateurs ALCHEMY/STAMINA), `FlagUserOnLogin` (flags au login), `FREE_STUFF_AT/EVERY_X_TEAM_LEVEL` (récompenses au palier).
+   Tous : builder `ServerEvents` (objet du jeu + fabrique/ctor direct) + spec persistée + flags `AdminEvents` + snapshot opérateur
+   branché sur le chemin serveur réel + test régression. **Schéma reward-content CRACKÉ** : `EventRewards` → `rewards:[{kind:ITEM,
+   itemType:X,quantity:N}]` (drop via `RewardDropProvider`, kinds ITEM/UNIT/MOD/AVATAR/BORDER/COSMETIC/UNIT_SKILL).
+
+## RECON + FEASIBILITY des 2 composants LOURDS restants (ExtraChest, Contest) — à implémenter en incréments dédiés
+
+Décision utilisateur (g158) : **recon + feasibility documentées** (comme pour les trials avant de les attaquer), pas d'implémentation
+immédiate — ce sont des composants de CONTENU, pas « un builder de plus ».
+
+### A. ExtraChest (EXTRA_CHEST) — coffre BONUS temporaire sur l'écran CRATES
+- **Structure** : `EventVisibility` + `EventCardDisplay` (carte, REQUISE) + `ExtraChest` (via `SpecialEventBuilder.createComponent("eventChestData")`
+  — la fabrique câble `IEventChestStatsFactory` ; ctor direct impossible, arg = classe anonyme). Le sous-objet `eventChestData` = `EventChestData`.
+- **Schéma `eventChestData` (clés relevées au bytecode)** : `content` (= drops `[{kind:ITEM,itemType,quantity}]`, réutilise le schéma reward
+  cracké), `cost`, `currency` (ResourceType), `freeBuys`, `maxBuys`, `maxPurchases`, `buyXNumber`, `featured`, `title`/`heading`/`text`, + sous-écrans
+  UI `detailsScreen`/`detailsScreenInfo`/`infoScreenContent`/`selectionCard`/`selectionCardInfo` avec un **`preset`** chacun.
+- **POINT DUR = `preset`** (RÉCURRENT) : chaque écran référence un preset de `assets/strings/EventPresets.properties` (comme la carte de trial,
+  §incr.8 — `preset` refuse ""/NONE/DEFAULT). Feasibility de la voie objet PROUVÉE : la carte + `createComponent` + le parsing content/cost/currency
+  passent ; il reste à fournir des presets valides (ou wildcards « none.* ») pour les 3 écrans imbriqués. Parseur-oracle = la méthode (chaque
+  `Named value not found: <clé>` = clé suivante), déjà démarré (bloqué sur `preset` d'un sous-écran).
+- **Consommation** : `BaseEventSnapshot.getEventChests()`/`getSingleEventChest()` → l'écran CRATES affiche le coffre bonus ; l'achat passe par
+  `ChestHelper` (type de coffre event, `getPurchaseCost`/`openChest`).
+- **Plan d'incréments** : (1) résoudre les presets des 3 sous-écrans (trouver les noms réels ou un wildcard, comme MATCH_DISPLAY pour la carte) ;
+  (2) `buildExtraChestEvent(id, drops, cost, currency, freeBuys, maxBuys, …)` + spec + AdminEvents ; (3) snapshot → CRATES (getSingleEventChest) ;
+  (4) chemin d'achat/ouverture du coffre event (`openChest`) + crédit des drops ; (5) vérif EN JEU (CRATES montre le coffre bonus, achat/ouverture).
+
+### B. Contest (CONTEST) — LEADERBOARD de tâches (solo ou guilde) = mode SERVEUR-AUTORITATIF complet
+- **Structure** : `new Contest(SpecialEventType.CONTEST, ContestTaskType.class)` (ctor direct) + `load` lit `tasks` (contestTask), `progressRewards`,
+  `rankRewards` (réutilisent le schéma reward cracké), `contestInformation`, `aggregate`/`guild` (booléens solo/guilde/agrégé).
+- **`ContestTaskType` (tâches)** : BATTLE_WON, ENEMY_DEFEATED, BATTLE_POWER_DEFEATED, ITEM_BURN, HERO_PROMOTED/EVOLVED/LEVELS_GAINED,
+  EXPEDITION_FINISHED, FRIENDSHIP/HERO_MISSION_COMPLETE… = les actions qui font gagner des POINTS de concours.
+- **Consommation** : `ContestHelper.onItemEarn(user, item, …)` (DÉJÀ appelé dans `openChest` via `giveChestRewards`) + `getActiveContestsWithTask` ;
+  `ContestSnapshot.getTaskTypeMap()`. La PROGRESSION par-joueur + le CLASSEMENT + la RÉCLAMATION (progressRewards par palier, rankRewards par rang)
+  sont **serveur-autoritatifs** (état persistant par-joueur/guilde, comme le ladder d'arène / Surge).
+- **POINT DUR = c'est un MODE, pas un builder** : il faut (a) un BLOB serveur-autoritatif par-joueur (progression) + par-shard (classement), (b) le
+  WIRING des déclencheurs de tâches (BATTLE_WON → combat, ITEM_BURN → burn, etc.) vers `ContestHelper.addProgress`, (c) la RÉCLAMATION
+  (progressRewards + rankRewards). Feasibility du COMPOSANT : builds via ctor direct + schéma reward cracké ; mais l'effort = niveau ARÈNE/SURGE.
+- **Plan d'incréments** : (1) `buildContestEvent` (tasks + progress/rank rewards) + spec + AdminEvents ; (2) blob progression par-joueur
+  (`ServerContest`, patron `expeditionRun`/`arena_ladder`) + `GetContestData` ; (3) wiring des tâches (au moins BATTLE_WON via recordOutcome +
+  ITEM_BURN, déjà partiel via onItemEarn) → addProgress ; (4) classement serveur-autoritatif + réclamation progress/rank ; (5) vérif EN JEU
+  (écran CONTESTS : progression, paliers, classement, réclamation). NB : un `deliverContestSeasonReward` existe déjà côté `ServerUser` (guild contest).
+
+**Ordre suggéré** : ExtraChest d'abord (plus court, effet visible CRATES, débloqué dès les presets résolus), puis Contest (chantier mode-sized).
