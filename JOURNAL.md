@@ -6161,3 +6161,24 @@ mais les kinds `SpecialEventType` sont **TRADER_DISCOUNT**/**TRADER_REFRESH_DISC
 Régression **142/142** (`MerchantDiscountTest`). Fichiers : `ServerEvents.java` (buildMerchant* + buildMerchantEvent + eventFromSpec + specJsonMerchant),
 `ServerUser.java` (applyPurchaseMerchantItem + applyRefreshMerchant → snapshot opérateur), `AdminEvents.java` (flags), `MerchantDiscountTest.java`
 (nouveau), `regression.sh`, `MEMORY.md`. **PROCHAIN = ExtraChest.**
+
+## 2026-08-23 (g155) — SPECIAL_EVENTS live-ops : MISC_BONUS + MISC_DISCOUNT (multiplicateurs divers) ✅ headless + ✅ EN JEU
+
+5ᵉ (et 6ᵉ) composant : multiplicateurs « divers » (`MultiplierType`) — ALCHIMIE (achat d'or), STAMINA, INVASION_STAMINA, PREMIUM_STAMINA.
+- **Schéma (bytecode)** : `MiscBonus.load` = `miscBonusFilter` (EnumFilter clé `miscBonus`) + `bonus` (int) ; `MiscDiscount.load` =
+  `miscDiscountFilter` (clé `miscDiscount`) + `percentOff`. Fabriques `createComponent("miscBonus")`/`("miscDiscount")`.
+  `MultiplierType` : BONUS_ALCHEMY/BONUS_STAMINA/BONUS_INVASION_STAMINA/BONUS_PREMIUM_STAMINA ; DISCOUNT_ALCHEMY/DISCOUNT_STAMINA/DISCOUNT_INVASION_STAMINA.
+- **Effet (consommation)** : `UserHelper.buyGold(idx, user, snapshot)` lit `snapshot.getAlchemyPrice(base)` (coût d'or, DISCOUNT_ALCHEMY) et
+  `getAlchemyAmount(base)` (or reçu, BONUS_ALCHEMY) — via `getMiscMultipliedValue`. **Branchement serveur** : `ServerUser` BUY_GOLD passe désormais
+  `ServerEvents.snapshot()` au lieu de NONE.
+- `ServerEvents.buildMiscBonusEvent`/`buildMiscDiscountEvent` (fabrique commune `buildMiscEvent(kind, type, componentKey, filterKey, itemKey,
+  valueKey, mults, value, …)`). Specs `MISC_BONUS`/`MISC_DISCOUNT{mults[],value}` + `eventFromSpec` + `specJsonMisc`. `AdminEvents --misc-bonus/
+  --misc-discount [id] --mult <TYPE> (répétable) --misc-value N / --close-misc`.
+- `MiscMultipliersTest` (régression) : DISCOUNT_ALCHEMY −50 % → `getAlchemyPrice(100)=50` ; BONUS_ALCHEMY +100 % → `getAlchemyAmount(1000)=2000` ; round-trip.
+- **✅ VÉRIFIÉ EN JEU** (`--misc-discount --mult DISCOUNT_ALCHEMY --misc-value 50` + `--misc-bonus --mult BONUS_ALCHEMY --misc-value 100` →
+  `nav ALCHEMY`) : l'écran BUY GOLD affiche coût **10 → 5 💎** (−50 %) ET or reçu **3,63 M → 7,26 M** (×2), les deux valeurs barrées + badge SALE!.
+  Les deux multiplicateurs s'appliquent au chemin réel `buyGold`. Capture `alch1.png`. Events retirés après.
+
+Régression **143/143** (`MiscMultipliersTest`). Fichiers : `ServerEvents.java` (buildMisc* + buildMiscEvent + eventFromSpec + specJsonMisc),
+`ServerUser.java` (buyGold → snapshot opérateur), `AdminEvents.java` (flags), `MiscMultipliersTest.java` (nouveau), `regression.sh`, `MEMORY.md`.
+**PROCHAIN = FlagUserOnLogin (léger), TeamLevel, puis les 2 lourds ExtraChest + Contest.**
