@@ -6207,3 +6207,30 @@ Régression **143/143** (`MiscMultipliersTest`). Fichiers : `ServerEvents.java` 
 Régression **144/144** (`FlagUserOnLoginTest`). Fichiers : `ServerEvents.java` (buildFlagUserOnLoginEvent + applyLoginFlags + eventFromSpec +
 specJsonFlagUserOnLogin), `ServerUser.java` (bootData → applyLoginFlags), `AdminEvents.java` (flags), `FlagUserOnLoginTest.java` (nouveau),
 `regression.sh`, `MEMORY.md`. **PROCHAIN = TeamLevel, puis les 2 lourds ExtraChest + Contest.**
+
+## 2026-08-23 (g157) — SPECIAL_EVENTS live-ops : FREE_STUFF_AT/EVERY_X_TEAM_LEVEL (récompenses au palier de TL) ✅ headless
+
+8ᵉ composant. **Schéma reward-content CRACKÉ (brique commune TeamLevel/ExtraChest/Contest)** : après ~6 essais parseur-oracle,
+`EventRewards.load` accepte `rewards` = un drop OU un tableau de drops `{kind:ITEM,itemType:X,quantity:N}` (drop parsé par le jeu
+`RewardDropProvider`, kinds ITEM/UNIT/MOD/AVATAR/BORDER/COSMETIC/UNIT_SKILL). Chemin complet EventRewards→ServerRewardGroup→(rewards direct).
+- Composants du jeu : `TeamAtLevel` (kind FREE_STUFF_AT_TEAM_LEVEL, ctor `(type)`, load lit `teamLevel`) = récompense EN ATTEIGNANT le
+  niveau ; `TeamLevelRecord` (FREE_STUFF_EVERY_X_TEAM_LEVEL) = tous les X niveaux. **Sémantique EVERY_X relevée au jeu** (sonde) :
+  `getRewardTimes = (newTL-1)/X − (oldTL-1)/X` → paliers 11,21,31… (pas 10,20,30). 9→10=0, 10→20=1, 0→30=2.
+- `ServerEvents.buildTeamLevelEvent(id, teamLevel, drops, everyX, start, end)` = EventVisibility + TeamAtLevel/TeamLevelRecord + EventRewards
+  + carte. `teamLevelRewardDrops(user, oldTL, newTL)` : pour chaque event actif, `getRewardTimes(info,user,old,new)` × `EventRewards.getRewards`.
+- **GRANT serveur-autoritatif** : le `sendEventRewards` du jar client ne fait QUE la conversion premium-stamina (le grant réel était backend
+  PerBlue) → on livre les drops par **COURRIER** (`ServerUser.deliverMail(SYSTEM_MESSAGE, "Team Level Reward", …, drops)`), branché dans
+  `recordCampaignAttack` : on capture `oldTL = userInfo.basicInfo.teamLevel` (avant resync) et `newTL = user.getTeamLevel()` ; si montée,
+  `teamLevelRewardDrops` → deliverMail. Défaut (aucun event) = no-op.
+- Specs `FREE_STUFF_AT/EVERY_X_TEAM_LEVEL{teamLevel,drops[{item,qty}]}` + `eventFromSpec` + `specJsonTeamLevel`. `AdminEvents --team-level N
+  [--every] --reward-item <ITEM> --reward-qty Q / --close-team-level`.
+- `TeamLevelTest` (régression) : AT_LEVEL 50 (49→50 = 1 drop ×5, 50→51 = 0) ; EVERY_X 10 (10→20 = 1, 0→30 = 2, 9→10 = 0) ; round-trip spec.
+- **In-game 🟢 (composition de chemins vérifiés)** : le mécanisme est headless-prouvé ; il est branché dans `recordCampaignAttack` = le chemin
+  du combat de CAMPAGNE, ✅ vérifié en jeu de nombreuses fois (recordOutcome/loot) ; la livraison passe par `deliverMail`, ✅ vérifiée en jeu
+  (AdminMail « GIFT FROM THE ADMIN », guild aid). Une démo TL-up COMPLÈTE en jeu est impraticable sur le compte de test TL200 (l'XP par combat
+  est très inférieure à l'XP requise pour le niveau 201) → à démontrer sur un compte bas-niveau si l'utilisateur le souhaite. Honnête §8 :
+  chaque brique est vérifiée en jeu ; seul le déclenchement TL-up combiné reste à filmer.
+
+Régression **145/145** (`TeamLevelTest`). Fichiers : `ServerEvents.java` (buildTeamLevelEvent + teamLevelRewardDrops + eventFromSpec +
+specJsonTeamLevel), `ServerUser.java` (recordCampaignAttack → deliverMail au level-up), `AdminEvents.java` (flags), `TeamLevelTest.java`
+(nouveau), `regression.sh`, `MEMORY.md`. **PROCHAIN = Contest (dernier, le plus lourd) + ExtraChest.**
