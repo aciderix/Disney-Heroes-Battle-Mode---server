@@ -260,14 +260,18 @@ public final class ServerEvents {
       setField(trial, "enemyStars", enemyStars);
       // Lineup = liste `units` de héros ennemis (TrialEventEnemyHero) : ici 5 RANDOM_HERO tirés de la FRANCHISE du sous-trial
       // (schéma du jeu, découvert via son parseur : units / kind RANDOM_HERO / categories:[{FRANCHISE, franchises:[{franchise:X}]}]
-      // / realGear:{kind:NORMAL}). scope subtrialNumber 1-based. WILDCARD = joker → pas de filtre franchise (tous héros).
+      // / realGear:{kind:<RealGearMode>}). scope subtrialNumber 1-based. WILDCARD = joker → pas de filtre franchise (tous héros).
+      // ⚠ CORRECTIF §8 : RealGearMode ∈ {FIRST, NONE, RANDOM, SECOND} — PAS "NORMAL" (tryValueOf lenient → null silencieux
+      // → NPE à toJson lors du PUSH client). On pose NONE (valeur VALIDE, neutre : aucun real gear FORCÉ, non inventé §4).
+      // L'ASSIGNATION effective du real gear (ASSIGN_REAL_GEAR par stage, `assignRealGear` au niveau lineup) est un raffinement
+      // à calibrer EN JEU (§8) : granularité par-stage (enemy_config) vs lineup par-sous-trial ; combat client-autoritatif.
       java.util.List lineups = new java.util.ArrayList();
       for (int i = 0; i < frNames.size(); i++) {
         String fr = frNames.get(i);
         // categories OBLIGATOIRE (tableau) : filtre FRANCHISE ; WILDCARD (joker) → tableau vide = aucun filtre (tous héros).
         String cat = "WILDCARD".equals(fr) ? "\"categories\":[]," :
           "\"categories\":[{\"kind\":\"FRANCHISE\",\"franchises\":[{\"franchise\":\"" + fr + "\"}]}],";
-        String unit = "{\"kind\":\"RANDOM_HERO\"," + cat + "\"realGear\":{\"kind\":\"NORMAL\"}}";
+        String unit = "{\"kind\":\"RANDOM_HERO\"," + cat + "\"realGear\":{\"kind\":\"NONE\"}}";
         StringBuilder units = new StringBuilder();
         for (int k = 0; k < 5; k++) { if (k > 0) units.append(","); units.append(unit); }
         lineups.add(mkTrialPiece("TrialEventEnemyLineup",
@@ -461,6 +465,9 @@ public final class ServerEvents {
     JsonValue ms = spec.get("modes");
     if (ms != null) for (JsonValue m = ms.child; m != null; m = m.next) modes.add(GameMode.valueOf(m.asString()));
     if ("DROP_BONUS".equals(kind)) return buildDropBonusEvent(id, modes, spec.getInt("bonus", 1), start, end);
+    // FRANCHISE_TRIALS incr. 7 : un event TRIAL FRANCHISE (SpecialEventInfo TRIAL) — reconstruit data-driven depuis les `.tab`
+    // (buildFranchiseTrialEvent). L'`id` de la spec = l'eventID que le client renverra (GetTrialEventData/TrialEventAttack).
+    if ("TRIAL_FRANCHISE".equals(kind)) return buildFranchiseTrialEvent(id, start, end);
     return buildModesOpenEvent(id, modes, start, end);
   }
 
@@ -480,6 +487,12 @@ public final class ServerEvents {
     for (int i = 0; i < specJsons.size(); i++) { if (i > 0) sb.append(','); sb.append(specJsons.get(i)); }
     sb.append("]}");
     return sb.toString().getBytes(java.nio.charset.StandardCharsets.UTF_8);
+  }
+
+  /** Construit la chaîne JSON d'UNE spec d'event TRIAL FRANCHISE (id = eventID stable renvoyé par le client). */
+  public static String specJsonTrialFranchise(long id, long start, long end) {
+    return "{\"kind\":\"TRIAL_FRANCHISE\",\"modes\":[],\"bonus\":0,\"id\":" + id
+        + ",\"start\":" + start + ",\"end\":" + end + "}";
   }
 
   /** Construit la chaîne JSON d'UNE spec d'override opérateur. */

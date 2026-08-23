@@ -5827,3 +5827,37 @@ franchise → Patch Essence.
 
 Régression 136/136. Fichiers : `server/java/dhserver/ServerUser.java` (correctif étoiles `base.stars` + hook complétion),
 `server/smoke/TrialCompletionTest.java` (nouveau), `server/smoke/regression.sh`, `docs/FRANCHISE_TRIALS.md` §17, `MEMORY.md`.
+
+## 2026-08-23 (g146) — FRANCHISE_TRIALS EVENT/FRANCHISE incr. 7 : PUSH ADMIN de l'event trial + correctif §8 realGear (headless)
+
+Dernière brique avant la vérif EN JEU : permettre à un opérateur de POUSSER le franchise trial (patron SPECIAL_EVENTS `AdminEvents`).
+
+**Implémentation** :
+- `ServerEvents.specJsonTrialFranchise(id,start,end)` : spec `{kind:"TRIAL_FRANCHISE", id, start, end}` (l'`id` = eventID stable
+  renvoyé par le client dans `GetTrialEventData`/`TrialEventAttack`).
+- `eventsFromConfig` : nouvelle branche `TRIAL_FRANCHISE` → `buildFranchiseTrialEvent(id, start, end)` (data-driven, `.tab`).
+- `AdminEvents --open-trial [eventID]` (défaut 900001) / `--close-trial` : persiste/retire la spec en `operator_events` (shard_state)
+  ; un seul trial actif (remplace l'existant). Chargé au boot par `LoginServer` (déjà en place) → poussé au client via
+  `REFRESH_SPECIAL_EVENTS` (`toRaw(bootDefaultEvents())`).
+
+**⚠ CORRECTIF §8 (fidélité — corrige g140)** : `TrialEventEnemyHero$RealGearMode` ∈ {FIRST, NONE, RANDOM, SECOND} — **il n'existe
+PAS de "NORMAL"**. Le schéma noté g140 (`realGear:{kind:NORMAL|DISABLE}`) était FAUX : `EnumHelper.tryValueOf` est LENIENT →
+`tryValueOf(RealGearMode,"NORMAL")` = `null` posé SILENCIEUSEMENT dans `rg` (le parse passait, `FranchiseTrialContentTest` vert),
+mais `TrialEventEnemyHero.toJson` fait `rg.name()` → **NPE au PUSH client** (`toRaw`→`toJson`). Découvert en implémentant le push
+(incr. 7), invisible en headless jusque-là (on ne sérialisait jamais l'event). Corrigé : per-hero `realGear:{kind:NONE}` (valeur
+VALIDE, neutre, non inventée §4). L'ASSIGNATION effective du real gear (`ASSIGN_REAL_GEAR` par stage de l'enemy_config ;
+`assignRealGear` booléen au niveau `TrialEventEnemyLineup`) est un raffinement à calibrer EN JEU (§8 : granularité par-stage vs
+lineup par-sous-trial ; combat client-autoritatif). Leçon §8 : un parseur lenient masque une valeur d'enum invalide — un test
+qui ne sérialise pas (toJson) ne l'attrape pas ; le round-trip complet (parse + toJson) est nécessaire.
+
+**Test** `server/smoke/TrialAdminPushTest.java` (régression 137) : spec → `writeConfig` → `configSpecs` (round-trip, kind/id
+préservés) → `eventsFromConfig` (1 event TRIAL, `info.getID()==eventID`, `ClientEventTrial` subtrials>0) → `toRaw` (push client) OK.
+
+**⇒ HEADLESS EVENT/FRANCHISE COMPLET (incr. 1a→7)** : structure + contenu + autorité serveur + record combat + resets + gating +
+complétion/récompense + push admin. **RESTE incr. 8 (§8 OBLIGATOIRE) = VÉRIF EN JEU** : `AdminEvents --open-trial` sur la DB du
+serveur + restart → le client voit le franchise trial (vitrine `TrialEventSubTrialChooserScreen`) → combat franchise → Patch
+Essence + persistance.
+
+Régression 137/137. Fichiers : `server/java/dhserver/ServerEvents.java` (specJsonTrialFranchise + branche TRIAL_FRANCHISE +
+correctif realGear NONE), `server/smoke/AdminEvents.java` (--open-trial/--close-trial), `server/smoke/TrialAdminPushTest.java`
+(nouveau), `server/smoke/regression.sh`, `docs/FRANCHISE_TRIALS.md` §17, `MEMORY.md`.

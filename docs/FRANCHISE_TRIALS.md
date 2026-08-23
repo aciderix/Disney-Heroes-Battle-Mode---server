@@ -488,4 +488,21 @@ alimenter le jour où une vérité terrain (event JSON) est disponible — sera 
 (vitrine `TrialEventSubTrialChooserScreen` → combat franchise → Patch Essence). Le headless du sous-système EVENT/FRANCHISE est complet
 (structure + contenu + autorité + record + resets + gating + complétion) ; reste le push admin + la vérif en jeu (§8, obligatoire).
 
+### ✅ incr. 7 LIVRÉ (g146) — PUSH ADMIN de l'event trial (`AdminEvents --open-trial`) + correctif §8 realGear
+Un opérateur active le franchise trial (patron SPECIAL_EVENTS) : spec `TRIAL_FRANCHISE{id,start,end}` persistée en config
+`operator_events` (`ServerEvents.specJsonTrialFranchise`) → reconstruite au boot par `LoginServer` (`eventsFromConfig` →
+nouvelle branche `TRIAL_FRANCHISE` → `buildFranchiseTrialEvent(id,…)`) → poussée au client via `REFRESH_SPECIAL_EVENTS`
+(`toRaw(bootDefaultEvents())`). `id` de la spec = l'eventID stable que le client renvoie (`GetTrialEventData`/`TrialEventAttack`).
+`AdminEvents --open-trial [eventID]` (défaut 900001) / `--close-trial`. `TrialAdminPushTest` (régression 137) : round-trip config
+→ event data-driven (subtrials>0, eventID préservé) → `toRaw` (push client).
+**⚠ CORRECTIF §8 (fidélité g140)** : `RealGearMode` ∈ {FIRST, NONE, RANDOM, SECOND} — **il n'existe PAS de "NORMAL"** (le schéma
+noté g140 était FAUX). `EnumHelper.tryValueOf(RealGearMode,"NORMAL")` est LENIENT → renvoyait `null` SILENCIEUSEMENT (le parse
+passait, `FranchiseTrialContentTest` vert) mais `TrialEventEnemyHero.toJson` faisait NPE (`rg.name()`) au PUSH client. Corrigé :
+per-hero `realGear:{kind:NONE}` (valeur VALIDE, neutre, non inventée §4). L'ASSIGNATION réelle du real gear (`ASSIGN_REAL_GEAR`
+par stage ; `assignRealGear` au niveau lineup) est un raffinement à calibrer EN JEU (§8 ; granularité par-stage vs lineup par-sous-trial).
+
+**RESTE** : 8 **VÉRIF EN JEU (§8 obligatoire)** — `AdminEvents --open-trial` sur la DB du serveur + restart → le client voit le
+franchise trial (vitrine `TrialEventSubTrialChooserScreen`) → combat franchise → Patch Essence + persistance. Tout le HEADLESS
+EVENT/FRANCHISE est livré (incr. 1a→7).
+
 ## Statut : 4 DifficultyMode-trials ✅ EN JEU. EVENT/FRANCHISE : 1a STRUCTURE ✅ + 1b CONTENU ✅ + 2 AUTORITÉ SERVEUR (`GetTrialEventData` blob) ✅ (régression 132). **Prochaine action = incr. 3 `TrialEventAttack` → record (`BaseEventTrialNode.recordOutcome` : avance nœud + conso chance + loot) sur le blob per-user ; puis push event (`AdminEvents --open-trial`) + vérif EN JEU.**
