@@ -354,6 +354,89 @@ public final class ServerEvents {
   }
 
   /**
+   * Construit un événement <b>FLAG_USER_ON_LOGIN</b> (composant {@code FlagUserOnLogin}) : au login, POSE les flags {@code flagsToSet}
+   * et RETIRE les flags {@code flagsToClear} du joueur (marketing/onboarding : marquer « a vu X », activer une bannière). Contrat
+   * (bytecode {@code FlagUserOnLogin.load}) : {@code flags} = tableau d'objets {@code {flag:<UserFlag>, kind:set|clear}}. Composant sans
+   * provider → construction directe {@code new FlagUserOnLogin(type, UserFlag.class)}. AUCUNE classe du jar client ne consomme le snapshot
+   * (c'était une action SERVEUR PerBlue) → on l'APPLIQUE serveur-autoritativement via {@link #applyLoginFlags}. Params ADMIN.
+   */
+  public static SpecialEventInfo buildFlagUserOnLoginEvent(long id, Collection<com.perblue.heroes.game.objects.UserFlag> flagsToSet,
+      Collection<com.perblue.heroes.game.objects.UserFlag> flagsToClear, long startMs, long endMs) {
+    try {
+      StringBuilder flags = new StringBuilder();
+      for (com.perblue.heroes.game.objects.UserFlag f : flagsToSet) {
+        if (flags.length() > 0) flags.append(','); flags.append("{\"flag\":\"").append(f.name()).append("\",\"kind\":\"set\"}");
+      }
+      for (com.perblue.heroes.game.objects.UserFlag f : flagsToClear) {
+        if (flags.length() > 0) flags.append(','); flags.append("{\"flag\":\"").append(f.name()).append("\",\"kind\":\"clear\"}");
+      }
+      String full =
+          "{\"kind\":\"FLAG_USER_ON_LOGIN\",\"id\":" + id + ",\"formatVersion\":0,"
+        + "\"timeRange\":[{\"serverFilter\":\"1-999999\",\"start\":" + startMs
+        +   ",\"end\":{\"kind\":\"TIME\",\"endTime\":" + endMs + "}}],"
+        + "\"flags\":[" + flags + "]}";
+      JsonValue root = JSON.parse(full);
+
+      SpecialEventInfo info = new SpecialEventInfo(SpecialEventType.class);
+      setField(info, "id", id);
+      setField(info, "type", SpecialEventType.FLAG_USER_ON_LOGIN);
+      setField(info, "formatVersion", 0);
+
+      EventVisibility vis = new EventVisibility(new int[0]);
+      vis.load(info, root, root.get("timeRange"));
+      addComponent(info, vis);
+
+      com.perblue.common.specialevent.components.FlagUserOnLogin fl =
+          new com.perblue.common.specialevent.components.FlagUserOnLogin(SpecialEventType.FLAG_USER_ON_LOGIN, com.perblue.heroes.game.objects.UserFlag.class);
+      fl.load(info, root, root);
+      addComponent(info, fl);
+
+      addComponent(info, buildMinimalCard(info));
+      return info;
+    } catch (RuntimeException e) {
+      throw e;
+    } catch (Exception e) {
+      throw new RuntimeException("buildFlagUserOnLoginEvent", e);
+    }
+  }
+
+  /**
+   * SERVEUR-AUTORITATIF : applique les events FLAG_USER_ON_LOGIN actifs — POSE {@code flagsToSet} (valeur {@code TRUE}) et RETIRE
+   * {@code flagsToClear} ({@code FALSE}) dans la MAP WIRE {@code userExtra.flags} ({@code Map<UserFlag,Boolean>}, relue par
+   * {@code User.setFlags} → {@code hasFlag} ; auto-persistée). Le jar client ne consomme PAS le snapshot (action backend PerBlue) →
+   * glue serveur (§3 : on lit les champs du composant DU JEU, on n'invente rien). À appeler au login ({@code bootData}, après
+   * {@code install}). Renvoie le nombre de flags modifiés.
+   */
+  @SuppressWarnings("unchecked")
+  public static int applyLoginFlags(java.util.Map<Object, Object> flagsWire) {
+    int changed = 0;
+    if (flagsWire == null) return 0;
+    try {
+      com.perblue.heroes.game.specialevent.SpecialEventSnapshot snap = snapshot();
+      Object state = instanceField(snap, "state");
+      Class<?> snapCls = Class.forName("com.perblue.common.specialevent.components.snapshot.FlagUserOnLoginSnapshot");
+      Object cs = state.getClass().getMethod("getComponentSnapshot", Class.class).invoke(state, snapCls);
+      if (cs == null) return 0;
+      java.util.List<?> events = (java.util.List<?>) cs.getClass().getMethod("getEvents").invoke(cs);
+      Class<?> flCls = Class.forName("com.perblue.common.specialevent.components.FlagUserOnLogin");
+      for (Object info : events) {   // chaque élément = un SpecialEventInfo → on en tire le composant FlagUserOnLogin
+        Object comp = ((SpecialEventInfo) info).getComponent((Class) flCls);
+        if (comp == null) continue;
+        // Clé de la map WIRE = NOM du flag (String), valeur = Boolean (relu par User.setFlags).
+        for (Object fl : (java.util.List<?>) instanceField(comp, "flagsToSet")) {
+          String k = ((Enum<?>) fl).name();
+          if (!Boolean.TRUE.equals(flagsWire.get(k))) { flagsWire.put(k, Boolean.TRUE); changed++; }
+        }
+        for (Object fl : (java.util.List<?>) instanceField(comp, "flagsToClear")) {
+          String k = ((Enum<?>) fl).name();
+          if (Boolean.TRUE.equals(flagsWire.get(k))) { flagsWire.put(k, Boolean.FALSE); changed++; }
+        }
+      }
+    } catch (Exception e) { System.out.println("[events] applyLoginFlags: " + e); }
+    return changed;
+  }
+
+  /**
    * Construit un événement <b>TRIAL</b> (composant {@code TrialEventInfo}, clé "trial") — le PRÉREQUIS de FRANCHISE_TRIALS
    * (tout trial est un événement spécial). <b>Object-path INDUSTRIEL</b> (décision utilisateur, patron {@code buildMinimalCard}) :
    * on construit le composant via la FABRIQUE du jeu ({@code createComponent("trial")}) puis on remplit ses champs par un
@@ -885,6 +968,14 @@ public final class ServerEvents {
           ? buildMerchantDiscountEvent(id, mrch, pct, start, end)
           : buildMerchantRefreshDiscountEvent(id, mrch, pct, start, end);
     }
+    if ("FLAG_USER_ON_LOGIN".equals(kind)) {
+      List<com.perblue.heroes.game.objects.UserFlag> setF = new ArrayList<>(), clearF = new ArrayList<>();
+      JsonValue sn = spec.get("set");
+      if (sn != null) for (JsonValue f = sn.child; f != null; f = f.next) setF.add(com.perblue.heroes.game.objects.UserFlag.valueOf(f.asString()));
+      JsonValue cn = spec.get("clear");
+      if (cn != null) for (JsonValue f = cn.child; f != null; f = f.next) clearF.add(com.perblue.heroes.game.objects.UserFlag.valueOf(f.asString()));
+      return buildFlagUserOnLoginEvent(id, setF, clearF, start, end);
+    }
     if ("MISC_BONUS".equals(kind) || "MISC_DISCOUNT".equals(kind)) {
       List<com.perblue.heroes.game.specialevent.MultiplierType> mults = new ArrayList<>();
       JsonValue tn = spec.get("mults");
@@ -976,6 +1067,16 @@ public final class ServerEvents {
     for (com.perblue.heroes.game.specialevent.MultiplierType mt : mults) { if (m.length() > 0) m.append(','); m.append('"').append(mt.name()).append('"'); }
     return "{\"kind\":\"" + kind + "\",\"modes\":[],\"bonus\":0,\"id\":" + id
         + ",\"mults\":[" + m + "],\"value\":" + value + ",\"start\":" + start + ",\"end\":" + end + "}";
+  }
+
+  /** Construit la chaîne JSON d'UNE spec FLAG_USER_ON_LOGIN (flags à poser/retirer au login = params ADMIN). */
+  public static String specJsonFlagUserOnLogin(long id, Collection<com.perblue.heroes.game.objects.UserFlag> setF,
+      Collection<com.perblue.heroes.game.objects.UserFlag> clearF, long start, long end) {
+    StringBuilder s = new StringBuilder(), c = new StringBuilder();
+    for (com.perblue.heroes.game.objects.UserFlag f : setF) { if (s.length() > 0) s.append(','); s.append('"').append(f.name()).append('"'); }
+    for (com.perblue.heroes.game.objects.UserFlag f : clearF) { if (c.length() > 0) c.append(','); c.append('"').append(f.name()).append('"'); }
+    return "{\"kind\":\"FLAG_USER_ON_LOGIN\",\"modes\":[],\"bonus\":0,\"id\":" + id
+        + ",\"set\":[" + s + "],\"clear\":[" + c + "],\"start\":" + start + ",\"end\":" + end + "}";
   }
 
   /** Construit la chaîne JSON d'UNE spec d'override opérateur. */

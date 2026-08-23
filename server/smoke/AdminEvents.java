@@ -49,6 +49,9 @@ public final class AdminEvents {
     String miscEvent = null; boolean closeMisc = false;                       // "MISC_BONUS"/"MISC_DISCOUNT"
     long miscID = 900_005L; int miscValue = 50;                               // params admin
     java.util.List<com.perblue.heroes.game.specialevent.MultiplierType> miscTargets = new java.util.ArrayList<>();   // --mult (répétable)
+    boolean flagLogin = false, closeFlagLogin = false;                        // FLAG_USER_ON_LOGIN
+    long flagLoginID = 900_007L;
+    java.util.List<com.perblue.heroes.game.objects.UserFlag> flagsSet = new java.util.ArrayList<>(), flagsClear = new java.util.ArrayList<>();
     int days = 30, bonus = 1;
     for (int i = 0; i < a.length; i++) {
       switch (a[i]) {
@@ -84,6 +87,11 @@ public final class AdminEvents {
         case "--close-misc":   closeMisc = true; break;
         case "--mult":         miscTargets.add(com.perblue.heroes.game.specialevent.MultiplierType.valueOf(a[++i].toUpperCase())); break;
         case "--misc-value":   miscValue = Integer.parseInt(a[++i]); break;
+        case "--flag-login":   flagLogin = true;
+          if (i + 1 < a.length && a[i + 1].matches("\\d+")) flagLoginID = Long.parseLong(a[++i]); break;
+        case "--close-flag-login": closeFlagLogin = true; break;
+        case "--set-flag":     flagsSet.add(com.perblue.heroes.game.objects.UserFlag.valueOf(a[++i].toUpperCase())); break;
+        case "--clear-flag":   flagsClear.add(com.perblue.heroes.game.objects.UserFlag.valueOf(a[++i].toUpperCase())); break;
         case "--open-trial":  openTrial = true;
           if (i + 1 < a.length && a[i + 1].matches("\\d+")) trialID = Long.parseLong(a[++i]); break;
         case "--close-trial": closeTrial = true; break;
@@ -203,6 +211,23 @@ public final class AdminEvents {
           changed = true;
           System.out.println("[events] event " + miscEvent + " ajouté : eventID=" + miscID + " mults=" + miscTargets
               + " valeur=" + miscValue + "% (" + days + " j).");
+        }
+      }
+
+      if (closeFlagLogin) {
+        int before = specs.size();
+        specs.removeIf(js -> js.contains("FLAG_USER_ON_LOGIN"));
+        changed = changed || specs.size() != before;
+        System.out.println("[events] events FLAG_USER_ON_LOGIN retirés (" + (before - specs.size()) + ").");
+      }
+      if (flagLogin) {
+        if (flagsSet.isEmpty() && flagsClear.isEmpty()) { System.out.println("[events] --flag-login requiert au moins un --set-flag ou --clear-flag. Ignoré."); }
+        else {
+          specs.removeIf(js -> js.contains("FLAG_USER_ON_LOGIN"));
+          specs.add(ServerEvents.specJsonFlagUserOnLogin(flagLoginID, flagsSet, flagsClear, start, end));
+          changed = true;
+          System.out.println("[events] event FLAG_USER_ON_LOGIN ajouté : eventID=" + flagLoginID + " set=" + flagsSet
+              + " clear=" + flagsClear + " (" + days + " j).");
         }
       }
 

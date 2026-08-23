@@ -69,6 +69,7 @@ TESTS=(
   IncreasedChancesTest
   MerchantDiscountTest
   MiscMultipliersTest
+  FlagUserOnLoginTest
 )
 
 echo "[reg] compilation (serveur + ${#TESTS[@]} tests) ..."

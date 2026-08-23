@@ -218,6 +218,13 @@ public final class ServerUser {
     bd.userInfo = userInfo;
     bd.userExtra = userExtra;
     bd.individualUserExtra = individualUserExtra;
+    // FLAG_USER_ON_LOGIN (live-ops) — au login, l'opérateur peut poser/retirer des flags joueur (marketing/onboarding).
+    // Action SERVEUR-autoritative (le jar client ne consomme pas le snapshot) : on écrit dans la map wire userExtra.flags
+    // (Map<UserFlag,Boolean>, auto-persistée, relue par User.setFlags). Défaut (aucun event) = no-op.
+    if (userExtra.flags != null) {
+      int flg = ServerEvents.applyLoginFlags((java.util.Map) userExtra.flags);
+      if (flg > 0) System.out.println("[boot] FLAG_USER_ON_LOGIN : " + flg + " flag(s) appliqué(s) [persisté]");
+    }
     // CHALLENGES (#72) — l'écran « Sticker Challenges » (TL20) lit BootData.userChallengeDataExtra. On livre l'état
     // PAR JOUEUR : la progression PERSISTÉE (slots/défis en cours) si présente, sinon un état frais (userID correct).
     // historicWeeklyChallenges reste le défaut non-null (wire-sûr).
