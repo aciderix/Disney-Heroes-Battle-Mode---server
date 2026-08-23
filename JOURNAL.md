@@ -5794,3 +5794,36 @@ franchise → Patch Essence).
 Régression 135/135. Fichiers : `server/java/dhserver/ServerEvents.java` (franchiseNamesInOrder/franchiseForSubtrial),
 `ServerUser.java` (validateTrialFranchiseGating + appel dans recordTrialEventAttack), `server/smoke/TrialGatingTest.java` (nouveau),
 `server/smoke/regression.sh`, `docs/FRANCHISE_TRIALS.md` §17, `MEMORY.md`.
+
+## 2026-08-23 (g145) — FRANCHISE_TRIALS EVENT/FRANCHISE incr. 6 : COMPLÉTION (récompense + hook) + correctif §8 étoiles (headless)
+
+Dernière brique headless du sous-système EVENT/FRANCHISE : la complétion (récompense Patch Essence + suivi de progression).
+
+**Reconnaissance (bytecode)** : `BaseEventTrialNode.recordOutcome` crédite le `loot` (3ᵉ param) via `RewardHelper.giveRewards`
+(→ Badge Bits / Patch Essence). Le combat est client-autoritatif → le loot est rapporté par le client (`m.lootEarned`), crédité
+par le serveur (modèle §4bis, comme PORT/campagne). `TrialEventAttackScreen.handleBattleOutcome` appelle, APRÈS `recordOutcome`,
+`PatchedHeroesHelper.handleFranchiseTrialCompletion(user, trial, snap, node.getNodeNumber(), calculateStars())` →
+recordDailyUse(`unity/major_merge_trials_completed`) + `handleStageCompletion` (flag `FRANCHISE_TRIALS_STAGE_X_BEATEN` si
+nœud ≥ `getFranchiseTrialsStageNumber` ET étoiles ≥ 3).
+
+**⚠ CORRECTIF §8 (bug latent incr. 3)** : le 2ᵉ int de `recordOutcome` sont les ÉTOILES (bytecode : `calculateStars()` côté écran ;
+`recordOutcome` fait `setStars(iload_2)`), PAS `stagesCleared`. incr. 3 passait `m.stagesCleared` — masqué car les tests mettaient
+`stagesCleared==base.stars==3`. Corrigé en `int stars = m.base==null?0:m.base.stars`. `TrialCompletionTest` le prouve
+(`stagesCleared=0`, `base.stars=3` → nœud bien à 3★).
+
+**Implémentation** : dans `recordTrialEventAttack` — (a) `recordOutcome(outcome, stars=base.stars, loot=lootEarned, …)` (crédit loot) ;
+(b) après reflet du statut, `handleFranchiseTrialCompletion(user, trial, snap, m.nodeNumber, stars)` (gardé `getQuestCategory()!=null` ;
+le build data-driven donne `NONE` = enum valide → le suivi de quête est un no-op fidèle, le `questType` précis étant backend-authored,
+non inventé §4 ; la récompense principale passe par le loot de nœud).
+
+**Test** `server/smoke/TrialCompletionTest.java` (régression 136) : victoire WILDCARD nœud 5 avec `RewardDrop{PATCH_ESSENCE_1, ×7}`
+dans `lootEarned` → `getItemAmount(PATCH_ESSENCE_1)` 0→7 (crédit via giveRewards) ; nœud à 3★ malgré `stagesCleared=0` (correctif) ;
+hook complétion sans erreur ; persistance wire + DB (item + étoiles).
+
+**⇒ HEADLESS EVENT/FRANCHISE COMPLET** : structure (1a) + contenu ennemis (1b) + autorité serveur (2) + record combat (3) + resets
+(4) + gating franchise (5) + complétion/récompense (6). **RESTE** : incr. 7 `AdminEvents --open-trial <FRANCHISE|saison>` (push event,
+patron SPECIAL_EVENTS `AdminEvents`) → incr. 8 **VÉRIF EN JEU (§8 obligatoire)** : vitrine `TrialEventSubTrialChooserScreen` → combat
+franchise → Patch Essence.
+
+Régression 136/136. Fichiers : `server/java/dhserver/ServerUser.java` (correctif étoiles `base.stars` + hook complétion),
+`server/smoke/TrialCompletionTest.java` (nouveau), `server/smoke/regression.sh`, `docs/FRANCHISE_TRIALS.md` §17, `MEMORY.md`.

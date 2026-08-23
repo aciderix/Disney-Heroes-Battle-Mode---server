@@ -469,4 +469,23 @@ alimenter le jour où une vérité terrain (event JSON) est disponible — sera 
 **RESTE** : 6 complétion `PatchedHeroesHelper.handleFranchiseTrialCompletion` (Patch Essence) → 7 `AdminEvents --open-trial
 <FRANCHISE|saison>` (push event) → 8 vérif EN JEU (vitrine `TrialEventSubTrialChooserScreen` → combat franchise → Patch Essence).
 
+### ✅ incr. 6 LIVRÉ (g145) — COMPLÉTION : récompense (Patch Essence) créditée + hook + correctif étoiles (§8)
+- **Récompense créditée (modèle client-autoritatif §4bis)** : `BaseEventTrialNode.recordOutcome` passe le `loot` (3ᵉ param =
+  `m.lootEarned`, drops client-reportés) à `RewardHelper.giveRewards` → Badge Bits / **Patch Essence** crédités (comme PORT/campagne ;
+  le combat est joué côté client, le loot rapporté). Déjà en place depuis incr. 3 ; prouvé bout-en-bout ici (`RewardDrop{PATCH_ESSENCE_1}`
+  → `getItemAmount` +N, persiste DB).
+- **⚠ Correctif §8 (étoiles)** : le 2ᵉ param de `recordOutcome` sont les **ÉTOILES** (bytecode `TrialEventAttackScreen`:
+  `calculateStars()` ; `recordOutcome` fait `setStars`), PAS `stagesCleared`. incr. 3 passait `m.stagesCleared` (masqué car les tests
+  mettaient les deux à 3) → corrigé en `m.base.stars`. `TrialCompletionTest` le prouve (`stagesCleared=0`, `base.stars=3` → nœud 3★).
+- **Hook de complétion** : après `recordOutcome`, on appelle `PatchedHeroesHelper.handleFranchiseTrialCompletion(user, trial, snap,
+  nodeNumber, stars)` (parité avec `TrialEventAttackScreen`) — recordDailyUse (`unity/major_merge_trials_completed`) + `handleStageCompletion`
+  (flag `FRANCHISE_TRIALS_STAGE_X_BEATEN` si nœud≥`getFranchiseTrialsStageNumber` ET 3★). `getQuestCategory()` du build data-driven
+  = `NONE` (enum valide, pas de NPE ; le `questType` précis est backend-authored, non inventé §4) → le suivi de quête est un no-op
+  fidèle tant qu'une vérité terrain ne le définit pas ; la récompense principale (Patch Essence) passe par le loot de nœud. `TrialCompletionTest`
+  (régression 136).
+
+**RESTE** : 7 `AdminEvents --open-trial <FRANCHISE|saison>` (push event, patron SPECIAL_EVENTS `AdminEvents`) → 8 **vérif EN JEU**
+(vitrine `TrialEventSubTrialChooserScreen` → combat franchise → Patch Essence). Le headless du sous-système EVENT/FRANCHISE est complet
+(structure + contenu + autorité + record + resets + gating + complétion) ; reste le push admin + la vérif en jeu (§8, obligatoire).
+
 ## Statut : 4 DifficultyMode-trials ✅ EN JEU. EVENT/FRANCHISE : 1a STRUCTURE ✅ + 1b CONTENU ✅ + 2 AUTORITÉ SERVEUR (`GetTrialEventData` blob) ✅ (régression 132). **Prochaine action = incr. 3 `TrialEventAttack` → record (`BaseEventTrialNode.recordOutcome` : avance nœud + conso chance + loot) sur le blob per-user ; puis push event (`AdminEvents --open-trial`) + vérif EN JEU.**

@@ -3651,8 +3651,12 @@ public final class ServerUser {
     java.util.Collection<?> loot = m.lootEarned == null ? java.util.Collections.emptyList() : m.lootEarned;
     java.util.Collection<?> attackers = m.base == null ? java.util.Collections.emptyList() : m.base.attackers;
     java.util.Collection<?> defenders = m.base == null ? java.util.Collections.emptyList() : m.base.defenders;
+    // 2ᵉ param de recordOutcome = les ÉTOILES gagnées (bytecode `TrialEventAttackScreen.handleBattleOutcome` : passe
+    // `calculateStars()` ; `BaseEventTrialNode.recordOutcome` fait `setStars`), PAS `stagesCleared`. Combat client-autoritatif
+    // → étoiles rapportées par le client (`base.stars`). (Correctif §8 : incr. 3 passait `stagesCleared`, masqué par les tests.)
+    int stars = m.base == null ? 0 : m.base.stars;
     com.perblue.heroes.game.specialevent.SpecialEventSnapshot snap = ServerEvents.snapshot();
-    node.recordOutcome(outcome, m.stagesCleared, loot, attackers, defenders, m.attackEndTime, snap);
+    node.recordOutcome(outcome, stars, loot, attackers, defenders, m.attackEndTime, snap);
 
     // recordOutcome a : anti-triche + conso chance (recordChanceUsed → userData.chancesUsed déjà à jour) + récompenses créditées.
     // Il avance le STATUT du nœud sur l'objet runtime (ClientEventTrial, côté client), mais N'écrit PAS ce statut dans le blob
@@ -3675,6 +3679,15 @@ public final class ServerUser {
     cs.level = ls.getLevel();
     cs.totalAttempts = cs.totalAttempts + 1;
     if (outcome == com.perblue.heroes.network.messages.CombatOutcome.WIN) cs.lastWinTime = m.attackEndTime;
+
+    // incr. 6 — COMPLÉTION : suivi de progression franchise (§3, comme `TrialEventAttackScreen` après `recordOutcome`).
+    // `handleFranchiseTrialCompletion(user, trial, snap, nodeNumber, stars)` : recordDailyUse (unity/major_merge_trials_completed)
+    // + `handleStageCompletion` (flag `FRANCHISE_TRIALS_STAGE_X_BEATEN` si nœud≥getFranchiseTrialsStageNumber ET 3★). Les
+    // récompenses (Badge Bits→Patch Essence) sont déjà créditées par les rewards de nœud dans recordOutcome. QuestCategory null
+    // (non défini par le build data-driven) ⇒ on saute (le switch du jeu ferait NPE) — le suivi reste optionnel/cosmétique.
+    if (trial.getQuestCategory() != null) {
+      com.perblue.heroes.game.logic.PatchedHeroesHelper.handleFranchiseTrialCompletion(user, trial, snap, m.nodeNumber, stars);
+    }
 
     // Le blob est à jour (chances via recordOutcome + statut nœud reflété) → persiste.
     setTrialEventData(blob);
