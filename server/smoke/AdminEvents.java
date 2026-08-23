@@ -35,6 +35,10 @@ public final class AdminEvents {
     String trialTitle = ServerEvents.DEFAULT_TRIAL_TITLE;                      // param admin --title
     int trialIndex = 0;                                                        // param admin --trial (index du trial de saison)
     int trialModifiers = 0;                                                    // param admin --modifiers (nb de combat modifiers/nœud)
+    boolean chestDiscount = false, closeChestDiscount = false;                 // CHEST_DISCOUNT (live-ops)
+    long chestDiscountID = 900_002L;                                           // eventID stable par défaut
+    int chestPercent = 50;                                                     // param admin --percent (% de remise)
+    java.util.List<com.perblue.heroes.network.messages.ChestType> chestTargets = new java.util.ArrayList<>();  // --chest (répétable)
     int days = 30, bonus = 1;
     for (int i = 0; i < a.length; i++) {
       switch (a[i]) {
@@ -45,6 +49,11 @@ public final class AdminEvents {
         case "--open":       open = a[++i].toUpperCase(); break;
         case "--drop-bonus": dropBonus = a[++i].toUpperCase(); break;
         case "--close":      close = a[++i].toUpperCase(); break;
+        case "--chest-discount":  chestDiscount = true;
+          if (i + 1 < a.length && a[i + 1].matches("\\d+")) chestDiscountID = Long.parseLong(a[++i]); break;
+        case "--close-chest-discount": closeChestDiscount = true; break;
+        case "--chest":      chestTargets.add(com.perblue.heroes.network.messages.ChestType.valueOf(a[++i].toUpperCase())); break;
+        case "--percent":    chestPercent = Integer.parseInt(a[++i]); break;
         case "--open-trial":  openTrial = true;
           if (i + 1 < a.length && a[i + 1].matches("\\d+")) trialID = Long.parseLong(a[++i]); break;
         case "--close-trial": closeTrial = true; break;
@@ -95,6 +104,23 @@ public final class AdminEvents {
         System.out.println("[events] event TRIAL_FRANCHISE ajouté : eventID=" + trialID + " trial=" + trialIndex
             + " (franchises saison=" + ServerEvents.seasonTrialFranchises(trialIndex) + ") chances=" + trialChances
             + " title=\"" + trialTitle + "\" modifiers=" + trialModifiers + " (" + days + " j). Le client le verra via REFRESH_SPECIAL_EVENTS.");
+      }
+
+      if (closeChestDiscount) {
+        int before = specs.size();
+        specs.removeIf(js -> js.contains("CHEST_DISCOUNT"));
+        changed = changed || specs.size() != before;
+        System.out.println("[events] events CHEST_DISCOUNT retirés (" + (before - specs.size()) + ").");
+      }
+      if (chestDiscount) {
+        if (chestTargets.isEmpty()) { System.out.println("[events] --chest-discount requiert au moins un --chest <TYPE> (ex. GOLD). Ignoré."); }
+        else {
+          specs.removeIf(js -> js.contains("CHEST_DISCOUNT"));
+          specs.add(ServerEvents.specJsonChestDiscount(chestDiscountID, chestTargets, chestPercent, start, end));
+          changed = true;
+          System.out.println("[events] event CHEST_DISCOUNT ajouté : eventID=" + chestDiscountID + " coffres=" + chestTargets
+              + " remise=" + chestPercent + "% (" + days + " j). Le client verra les prix remisés via REFRESH_SPECIAL_EVENTS.");
+        }
       }
 
       if (changed) {

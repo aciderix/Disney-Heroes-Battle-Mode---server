@@ -7,6 +7,7 @@ import com.perblue.common.specialevent.SpecialEvents;
 import com.perblue.common.specialevent.SpecialEventBuilder;
 import com.perblue.common.specialevent.components.EventVisibility;
 import com.perblue.common.specialevent.components.ModesOpen;
+import com.perblue.common.specialevent.components.ChestDiscount;
 import com.perblue.common.specialevent.components.IEventComponent;
 import com.badlogic.gdx.utils.JsonReader;
 import com.badlogic.gdx.utils.JsonValue;
@@ -132,6 +133,52 @@ public final class ServerEvents {
       throw e;
     } catch (Exception e) {
       throw new RuntimeException("buildDropBonusEvent", e);
+    }
+  }
+
+  /**
+   * Construit un événement <b>CHEST_DISCOUNT</b> (composant {@code ChestDiscount}) : réduit de {@code percentOff}% le COÛT
+   * d'ouverture des coffres de {@code chests} sur {@code [startMs, endMs]}. Contrat relevé au bytecode ({@code ChestDiscount.load}) :
+   * lit {@code chestFilter} (EnumFilter sur clé {@code chestType}) et {@code percentOff} (int) sur le nœud COMPLET (param2). Le
+   * composant est du jeu (ctor {@code (ISpecialEventType, Class)}, PAS de provider → construction directe comme {@code ModesOpen}).
+   * Effet serveur : {@code BaseEventSnapshot.getChestPrice(chestType, base)} renvoie le prix remisé → {@code ChestHelper.getPurchaseCost}
+   * (utilisé par {@code openChest} + l'anti-tamper {@code validateChestPurchase}) débite/valide le prix REMISÉ. 100 % data/objet du jeu.
+   *
+   * @param chests coffres visés (EnumFilter include) ; {@code percentOff} = pourcentage de remise (param ADMIN, ex. 50 = −50 %).
+   */
+  public static SpecialEventInfo buildChestDiscountEvent(long id, Collection<com.perblue.heroes.network.messages.ChestType> chests,
+      int percentOff, long startMs, long endMs) {
+    try {
+      StringBuilder inc = new StringBuilder();
+      for (com.perblue.heroes.network.messages.ChestType c : chests) {
+        if (inc.length() > 0) inc.append(','); inc.append("{\"chestType\":\"").append(c.name()).append("\"}");
+      }
+      String full =
+          "{\"kind\":\"CHEST_DISCOUNT\",\"id\":" + id + ",\"formatVersion\":0,"
+        + "\"timeRange\":[{\"serverFilter\":\"1-999999\",\"start\":" + startMs
+        +   ",\"end\":{\"kind\":\"TIME\",\"endTime\":" + endMs + "}}],"
+        + "\"chestFilter\":{\"include\":[" + inc + "]},\"percentOff\":" + percentOff + "}";
+      JsonValue root = JSON.parse(full);
+
+      SpecialEventInfo info = new SpecialEventInfo(SpecialEventType.class);
+      setField(info, "id", id);
+      setField(info, "type", SpecialEventType.CHEST_DISCOUNT);
+      setField(info, "formatVersion", 0);
+
+      EventVisibility vis = new EventVisibility(new int[0]);
+      vis.load(info, root, root.get("timeRange"));
+      addComponent(info, vis);
+
+      ChestDiscount cd = new ChestDiscount(SpecialEventType.CHEST_DISCOUNT, com.perblue.heroes.network.messages.ChestType.class);
+      cd.load(info, root, root);   // lit chestFilter/percentOff sur le nœud complet (param2)
+      addComponent(info, cd);
+
+      addComponent(info, buildMinimalCard(info));
+      return info;
+    } catch (RuntimeException e) {
+      throw e;
+    } catch (Exception e) {
+      throw new RuntimeException("buildChestDiscountEvent", e);
     }
   }
 
@@ -644,6 +691,13 @@ public final class ServerEvents {
     if ("TRIAL_FRANCHISE".equals(kind)) return buildFranchiseTrialEvent(id, start, end,
         spec.getInt("chances", DEFAULT_TRIAL_CHANCES), spec.getString("title", DEFAULT_TRIAL_TITLE),
         spec.getInt("trial", 0), spec.getInt("modifiers", 0));
+    if ("CHEST_DISCOUNT".equals(kind)) {
+      List<com.perblue.heroes.network.messages.ChestType> chests = new ArrayList<>();
+      JsonValue cs = spec.get("chests");
+      if (cs != null) for (JsonValue c = cs.child; c != null; c = c.next)
+        chests.add(com.perblue.heroes.network.messages.ChestType.valueOf(c.asString()));
+      return buildChestDiscountEvent(id, chests, spec.getInt("percentOff", 50), start, end);
+    }
     return buildModesOpenEvent(id, modes, start, end);
   }
 
@@ -686,6 +740,16 @@ public final class ServerEvents {
     return "{\"kind\":\"TRIAL_FRANCHISE\",\"modes\":[],\"bonus\":0,\"id\":" + id
         + ",\"chances\":" + chances + ",\"title\":\"" + t + "\",\"trial\":" + trialIndex
         + ",\"modifiers\":" + modifiersPerNode + ",\"start\":" + start + ",\"end\":" + end + "}";
+  }
+
+  /** Construit la chaîne JSON d'UNE spec CHEST_DISCOUNT (coffres visés + pourcentage de remise = params ADMIN). */
+  public static String specJsonChestDiscount(long id, Collection<com.perblue.heroes.network.messages.ChestType> chests,
+      int percentOff, long start, long end) {
+    StringBuilder c = new StringBuilder();
+    for (com.perblue.heroes.network.messages.ChestType ct : chests) { if (c.length() > 0) c.append(','); c.append('"').append(ct.name()).append('"'); }
+    return "{\"kind\":\"CHEST_DISCOUNT\",\"modes\":[],\"bonus\":0,\"id\":" + id
+        + ",\"chests\":[" + c + "],\"percentOff\":" + percentOff
+        + ",\"start\":" + start + ",\"end\":" + end + "}";
   }
 
   /** Construit la chaîne JSON d'UNE spec d'override opérateur. */

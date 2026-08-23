@@ -1586,6 +1586,13 @@ public final class ServerUser {
     ChestType type = m.chestType;
     int count = Math.max(1, m.count);
 
+    // SNAPSHOT ÉVÉNEMENTS OPÉRATEUR (live-ops) — au lieu de NONE : un event CHEST_DISCOUNT (composant du jeu
+    // ChestDiscount) rend BaseEventSnapshot.getChestPrice(chestType, base) < base → getPurchaseCost renvoie le prix
+    // REMISÉ. Il FAUT le passer à validateChestPurchase (anti-tamper : recalcule le coût serveur et le compare à
+    // m.cost déclaré client — sans le snapshot, le prix remisé légitime du client serait REFUSÉ) ET au débit. Sans
+    // event, le snapshot est vide → getChestPrice == base → comportement identique à NONE (défaut sûr).
+    SpecialEventSnapshot chestSnap = ServerEvents.snapshot();
+
     // ANTI-TRICHE (serveur autoritatif) : VALIDER l'achat AVANT d'accorder, avec la logique du jeu
     // ChestHelper.validateChestPurchase (headless-safe : Unlockables + getResource). Elle LÈVE une
     // ClientErrorCodeException si l'ouverture est illégitime : coffre gratuit HORS cooldown ET pas assez de
@@ -1607,7 +1614,7 @@ public final class ServerUser {
     // payant → coût → « coût==coût » faux → OK), et RENFORCE l'anti-triche (compare au coût déclaré).
     com.perblue.heroes.network.messages.ItemType usedItem =
         (m.usedItem == null || m.usedItem == com.perblue.heroes.network.messages.ItemType.DEFAULT) ? null : m.usedItem;
-    ChestHelper.validateChestPurchase(user, type, count, m.cost, usedItem, SpecialEventSnapshot.NONE);
+    ChestHelper.validateChestPurchase(user, type, count, m.cost, usedItem, chestSnap);
 
     LootResults lr = new LootResults();
     List<?> drops;
@@ -1643,7 +1650,7 @@ public final class ServerUser {
       // Persistance via le CODE DU JEU ChestHelper.updateWishingWellWeights (write-through). ⇒ la pity monte
       // réellement au fil des tirages malchanceux et se réinitialise au jackpot, comme le jeu. Détail docs/WISHING_WELL.md.
       float jw = oldJ, hcw = oldHC;
-      int multiBuy = com.perblue.heroes.game.logic.ChestHelper.getMultiBuyCount(user, type, SpecialEventSnapshot.NONE);
+      int multiBuy = com.perblue.heroes.game.logic.ChestHelper.getMultiBuyCount(user, type, chestSnap);
       boolean bulkBonus = m.hasBulkBonus;
       int row = 0;
       for (Object o : lr.lootDrops) {                                  // les RewardDrop convertis (flags + itemType)
@@ -1699,8 +1706,8 @@ public final class ServerUser {
       // perdue au reload, et le serveur autoritatif ne faisait pas payer). GOLD est dans this.extra (auto),
       // DIAMONDS via resyncDiamonds (champ dédié). Valeurs du jeu, non inventées.
       com.perblue.heroes.network.messages.ResourceType cur =
-          ChestHelper.getPurchaseCurrency(type, SpecialEventSnapshot.NONE);
-      int cost = ChestHelper.getPurchaseCost(user, type, count, SpecialEventSnapshot.NONE);
+          ChestHelper.getPurchaseCurrency(type, chestSnap);
+      int cost = ChestHelper.getPurchaseCost(user, type, count, chestSnap);
       if (cur != null && cur != com.perblue.heroes.network.messages.ResourceType.DEFAULT && cost > 0) {
         user.setResource(cur, Math.max(0, user.getResource(cur) - cost), "chest purchase");
         System.out.println("[chest] coffre PAYANT " + type + " x" + count + " : -" + cost + " " + cur);
