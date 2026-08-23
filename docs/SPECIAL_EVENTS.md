@@ -197,7 +197,16 @@ isOpen(mode, user, snap) =
 Décision utilisateur (g158) : **recon + feasibility documentées** (comme pour les trials avant de les attaquer), pas d'implémentation
 immédiate — ce sont des composants de CONTENU, pas « un builder de plus ».
 
+> **APPROFONDISSEMENT (g159, demande user « regarde bien ce que c'est » + `.tab`/code/outils)** — findings ci-dessous intégrés.
+
 ### A. ExtraChest (EXTRA_CHEST) — coffre BONUS temporaire sur l'écran CRATES
+**Ce que C'EST vraiment (g159)** : un COFFRE bonus complet (comme GOLD/DIAMOND CRATE) affiché temporairement sur l'écran CRATES, acheté
+avec une monnaie (DIAMONDS par défaut), avec des free-buys/max-buys, et sa PROPRE table de drops. **Le contenu N'EST PAS une simple liste
+de récompenses** : `EventChestStats extends DHDropTableStats` (ctor `EventChestStats(String)`) → le champ `content` de `eventChestData` est une
+**TABLE DE DROPS pondérée au format `chests.tab`** (`NODE / WEIGHT / QUANTITY / RESULT / BEHAVIOR`, ex. `gold_chest_drops.tab`), pas
+`[{kind:ITEM}]`. `EventChestDataDH.getStats()` renvoie cet `EventChestStats` ; `rollNode*` tire le loot. **Conséquence §4** : le drop-table du
+coffre event est backend-authored (inline dans le JSON de l'event), au format table du jeu — le modéliser sur un coffre existant (`chests.tab`),
+jamais inventer les poids/loot.
 - **Structure** : `EventVisibility` + `EventCardDisplay` (carte, REQUISE) + `ExtraChest` (via `SpecialEventBuilder.createComponent("eventChestData")`
   — la fabrique câble `IEventChestStatsFactory` ; ctor direct impossible, arg = classe anonyme). Le sous-objet `eventChestData` = `EventChestData`.
 - **Schéma `eventChestData` (clés relevées au bytecode)** : `content` (= drops `[{kind:ITEM,itemType,quantity}]`, réutilise le schéma reward
@@ -214,6 +223,22 @@ immédiate — ce sont des composants de CONTENU, pas « un builder de plus ».
   (4) chemin d'achat/ouverture du coffre event (`openChest`) + crédit des drops ; (5) vérif EN JEU (CRATES montre le coffre bonus, achat/ouverture).
 
 ### B. Contest (CONTEST) — LEADERBOARD de tâches (solo ou guilde) = mode SERVEUR-AUTORITATIF complet
+**Mécanique RÉELLE (g159, helpshift PerBlue + communauté ; wiki fandom bloqué 402)** — cf. `perblue.helpshift.com/.../178-what-are-progress-and-rank-rewards`.
+Un contest = event à durée limitée où le joueur gagne des POINTS en accomplissant un `ContestTaskType` (dépenser/gagner Gold/Diamonds/Mémoires/
+Disk Power, gagner des combats Arena/Coliseum/Surge/City Watch, brûler des ressources…). **34 `ContestTaskType`** relevés : BATTLE_WON,
+ENEMY_DEFEATED, BATTLE_POWER_DEFEATED(_ABOVE_OWN), BATTLE_WON_WITH_HERO_ROLE, BATTLE_HEROES_LEFT, OPEN_CHEST, ITEM_BURN/CRAFTED/EARN_*/ENCHANT_*/
+GEAR_EQUIP, RARITY_*, RESOURCE_BURN/EARN, HERO_PROMOTED/EVOLVED/LEVELS_GAINED/SKILLS_LEVELED/MISSION_COMPLETE, FRIENDSHIP_MISSION_COMPLETE,
+EXPEDITION_FINISHED, REAL_GEAR_*, REINFECTIONS_CLEANSED, WAR_ATTACK/SABOTAGE. **Deux familles de récompenses** :
+- **progressRewards** = **5 paliers** (~375 000 / 430 000 / 500 000 / 750 000 / 1 000 000 points) → livrés IMMÉDIATEMENT par COURRIER dès le palier atteint.
+- **rankRewards** = à la FIN du contest, selon le RANG (percentiles Top 1 % / 5 % / 10 % / 25 % / 50 %, + bonus rangs 1-10).
+**1 contest sur 3 = GUILDE** (guildes vs guildes du shard ; membre >24 h pour toucher ; tous les membres = même reward). Rarement server-wide
+(milestones collectifs). ⇒ colle au composant : `progressRewards`/`rankRewards` (schéma reward cracké), `guild`/`aggregate` booléens, `tasks`
+(ContestTaskType). `ServerUser.deliverContestSeasonReward(seasonName, guildRank, tier)` existe DÉJÀ (courrier de fin, guild contest).
+**Calendrier + featured hero (copie wiki fournie par l'user, g159)** : contest **HEBDOMADAIRE, du VENDREDI au JEUDI**. Le scoring tourne
+souvent autour de dépenser/gagner des ressources (Gold/Disk Power/Memories/Diamonds) + jouer 3-5 héros SÉLECTIONNÉS en Arena/Coliseum/Surge/
+City Watch. **⭐ Les RANK REWARDS sont la PREMIÈRE SORTIE d'un NOUVEAU HÉROS** (ex. Franny Robinson, Professor Ratigan, Penny Proud, Anne Boonchuy,
+Chernabog) → le lot ultime du classement = des chips/le héros vedette exclusif (drop `kind:UNIT`). C'est un levier live-ops MAJEUR (sortie de héros
+gatée par le rang de contest) → à modéliser fidèlement (le rankRewards top = `UNIT`/chips du héros vedette, calendrier hebdo Ven→Jeu).
 - **Structure** : `new Contest(SpecialEventType.CONTEST, ContestTaskType.class)` (ctor direct) + `load` lit `tasks` (contestTask), `progressRewards`,
   `rankRewards` (réutilisent le schéma reward cracké), `contestInformation`, `aggregate`/`guild` (booléens solo/guilde/agrégé).
 - **`ContestTaskType` (tâches)** : BATTLE_WON, ENEMY_DEFEATED, BATTLE_POWER_DEFEATED, ITEM_BURN, HERO_PROMOTED/EVOLVED/LEVELS_GAINED,

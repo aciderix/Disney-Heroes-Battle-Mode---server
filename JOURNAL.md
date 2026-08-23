@@ -6253,3 +6253,27 @@ sans implémenter maintenant. Détail complet dans `docs/SPECIAL_EVENTS.md` §RE
 
 Régression 145/145 (inchangée). Fichiers : `docs/SPECIAL_EVENTS.md` (§RECON ExtraChest/Contest + bilan live-ops), `MEMORY.md`.
 **PROCHAINE ACTION = décision user sur l'implémentation d'ExtraChest (presets) puis Contest (mode), OU passage à la Phase 2.**
+
+## 2026-08-23 (g159) — RECON APPROFONDIE ExtraChest + Contest (.tab/code/outils + wiki)
+
+Demande user : « regarde bien ce que c'est » (ExtraChest) + wiki Contest (https://disneyheroesbattlemode.fandom.com/wiki/Contests), en pensant
+`.tab` + code + outils d'industrialisation. Findings intégrés à `docs/SPECIAL_EVENTS.md §RECON` :
+- **ExtraChest** : c'est un COFFRE bonus complet (comme GOLD/DIAMOND CRATE), affiché temporairement sur CRATES. **Découverte code** :
+  `EventChestStats extends DHDropTableStats` (ctor `(String)`) → le `content` de `eventChestData` est une **TABLE DE DROPS pondérée au format
+  `chests.tab`** (colonnes `NODE / WEIGHT / QUANTITY / RESULT / BEHAVIOR`, cf. `gold_chest_drops.tab`), PAS une simple liste `[{kind:ITEM}]`.
+  `EventChestDataDH.getStats()` renvoie l'`EventChestStats`, `rollNode*` tire le loot. **§4** : drop-table backend-authored inline → le modéliser
+  sur un coffre existant, jamais inventer poids/loot. Pas de `event_chest.tab` (la table est dans le JSON de l'event). Point dur inchangé =
+  presets des sous-écrans UI.
+- **Contest** (wiki fandom bloqué 402 → helpshift PerBlue + COPIE de la page fournie par l'user) : contest **HEBDOMADAIRE, Vendredi→Jeudi**.
+  Points via un `ContestTaskType` (34 valeurs relevées au jar : BATTLE_WON/ENEMY_DEFEATED/OPEN_CHEST/ITEM_BURN/RESOURCE_BURN/EARN/WAR_ATTACK/
+  SABOTAGE/HERO_*/EXPEDITION_FINISHED…), scoring = dépenser/gagner ressources + jouer 3-5 héros sélectionnés (Arena/Coliseum/Surge/City Watch).
+  **progressRewards = 5 paliers** (~375 000 / 430 000 / 500 000 / 750 000 / 1 000 000 pts) → COURRIER immédiat au palier. **rankRewards** = FIN de
+  contest par PERCENTILE (Top 1/5/10/25/50 % + rangs 1-10). **1 contest sur 3 = GUILDE** (membre >24 h ; tous même reward), rarement server-wide.
+  **⭐ RANK REWARDS = PREMIÈRE SORTIE d'un NOUVEAU HÉROS** (Franny Robinson, Ratigan, Penny Proud, Anne Boonchuy, Chernabog… = lot ultime, chips/
+  héros vedette exclusif, drop `kind:UNIT`) → levier live-ops majeur (sortie de héros gatée par le rang de contest), à modéliser fidèlement.
+  `ServerUser.deliverContestSeasonReward(seasonName, guildRank, tier)` existe déjà (courrier de fin, guild contest).
+  Sources : `perblue.helpshift.com/.../178-what-are-progress-and-rank-rewards`, copie wiki fandom Contests (fournie par l'user).
+
+Rien de code changé (recon pure). Régression 145/145 (inchangée). Fichiers : `docs/SPECIAL_EVENTS.md` (§RECON approfondi), `MEMORY.md`
+(pointeur « mode en cours » corrigé → SPECIAL_EVENTS ; g159). **La CONSIGNE DE HANDOFF (successeur : rituel de reprise EN ENTIER avant toute
+reprise) est en tête de MEMORY + imposée par le hook SessionStart — rappelée explicitement à chaque compression.**
