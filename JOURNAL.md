@@ -6111,3 +6111,24 @@ Régression **140/140** (`ChestDiscountTest` nouveau). Fichiers : `server/java/d
 eventFromSpec CHEST_DISCOUNT + specJsonChestDiscount), `server/java/dhserver/ServerUser.java` (openChest → snapshot opérateur), `server/smoke/
 AdminEvents.java` (--chest-discount/--chest/--percent/--close-chest-discount), `server/smoke/ChestDiscountTest.java` (nouveau), `server/smoke/
 regression.sh`, `MEMORY.md`. **PROCHAIN = IncreasedChances (AdditionalChances)**, puis Merchant discounts / ExtraChest / Misc / TeamLevel / Contest / FlagUserOnLogin.
+
+## 2026-08-23 (g153) — SPECIAL_EVENTS live-ops : composant INCREASED_CHANCES (chances quotidiennes en +) ✅ headless + ✅ EN JEU
+
+2ᵉ composant live-ops. `IncreasedChances<G extends IGameMode>` = ajoute des chances de combat quotidiennes supplémentaires à des modes.
+- **Schéma (bytecode)** : `load` lit `chanceModifierList` (tableau) sur le nœud COMPLET (param2), chaque item `{chanceType:String, additional:int}`
+  (`loadChanceModifierItem`). Le composant a un CONVERTER (`IChanceGameModeConverter`, interface seule dans le jar) → construit par la FABRIQUE
+  `SpecialEventBuilder.createComponent("increasedChances")` (converter câblé §4 ; clé confirmée par sonde).
+- **Effet (consommation)** : `DailyActivityHelper.getMaxDailyUses(user, chanceType, snapshot)` appelle `BaseEventSnapshot.getChances(chanceType,
+  base)` = base + `getAdditionalChances(chanceType)`. `DifficultyModeHelper` (PORT/trials) forme la clé et appelle getMaxDailyUses. `chanceType`
+  valides relevés au bytecode : `codebase_use`, `spotlightTrial_use`, `teamTrialsBlue_use`, `teamTrialsYellow_use`, `teamTrialsRed_use`,
+  `portWarehouse_use`, `portDocks_use`.
+- `ServerEvents.buildIncreasedChancesEvent(id, Map<chanceType,additional>, start, end)` (patron ChestDiscount, mais fabrique). Spec
+  `INCREASED_CHANCES{chances:{type:n}}` + `eventFromSpec` + `specJsonIncreasedChances`. `AdminEvents --chances-boost --chance-type <TYPE>
+  --additional N` (répétable) / `--close-chances-boost`.
+- `IncreasedChancesTest` (régression) : base portDocks_use=2 → event +3 → **5** ; portWarehouse_use (non visé) **inchangé** ; round-trip spec.
+- **✅ VÉRIFIÉ EN JEU** (`AdminEvents --chances-boost --chance-type portDocks_use --additional 3` + `--open PORT_DOCKS` → `run-online.sh` →
+  `nav PORT`) : l'écran THE PORT affiche **THE DOCKS « CHANCES LEFT 5 / 5 »** (base 2 + boost +3) et **THE WAREHOUSE « CHANCES LEFT 2 / 2 »**
+  (non visé, défaut) — le client reçoit l'event et applique le boost au SEUL mode ciblé. Capture `port1.png`. Events de test retirés après.
+
+Régression **141/141** (`IncreasedChancesTest`). Fichiers : `ServerEvents.java` (buildIncreasedChancesEvent + eventFromSpec + specJsonIncreasedChances),
+`AdminEvents.java` (flags), `IncreasedChancesTest.java` (nouveau), `regression.sh`, `MEMORY.md`. **PROCHAIN = MerchantDiscount + MerchantRefreshDiscount.**
