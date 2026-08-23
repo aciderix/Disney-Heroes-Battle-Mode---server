@@ -534,4 +534,28 @@ la persistance ne dépend pas du dismiss client).
 **⇒ MODE « TRIALS » COMPLET & VÉRIFIÉ EN JEU** : les 4 DifficultyMode-trials (TEAM_TRIALS_{BLUE,RED,YELLOW}+SPOTLIGHT, g134-g136)
 **+ EVENT/FRANCHISE trials** (incr. 1a→8). Reste (hors trials) : finir les composants SPECIAL_EVENTS restants, puis Phase 2.
 
+### ✅ incr. 9 LIVRÉ (g148) — COMBLE LES MANQUES relevés en jeu par l'utilisateur (titres, chances, RÉCOMPENSES) — data-driven + params admin
+Les captures incr. 8 montraient un mode PARTIEL : « NONE.TITLE » partout, CHANCES 2/2 (hardcodé !), Rules/Rewards VIDES (vitrine, stage,
+victoire). Diagnostic RIGOUREUX (bytecode + `.tab`) :
+- **Récompenses (le gros manque)** : ELLES SONT DATA-DRIVEN dans `franchise_trials_enemy_config.tab` (colonnes **REWARDS/BONUSES** par
+  stage, ex. `RANDOM_BADGE 7-11 8,RANDOM_BADGE 7-11 8` / `PATCH_ESSENCE_1 36`) — jamais lues. Ajout : `rewardTypes` peuplé (14 stages)
+  via `parseRewardList` (convertit le format `.tab` → pièces `TrialEventReward` du jeu : RANDOM_BADGE → `{kind, quantity, minRarity,
+  maxRarity}` [expressions] ; PATCH_ESSENCE_n → `{kind:ITEM, itemType, quantity}`). Le client génère alors le loot + l'affiche, le
+  serveur le crédite (recordOutcome→giveRewards). **§4, 0 invention.**
+- **Chances** : j'avais un **HARDCODE `chancesPerReset=2`** dans `fillTrialFields` (**violation §4**) — SUPPRIMÉ. La valeur n'est dans
+  AUCUN `.tab` (ni base_trial_config ni event_trial_constants) → **backend-authored → paramètre ADMIN** (`AdminEvents --open-trial
+  --chances N`, défaut `DEFAULT_TRIAL_CHANCES=10` = vérité terrain « CHANCES LEFT: 10/10 »). **Consommation PROUVÉE** : DB `chancesUsed`
+  1 après victoire → `getChancesRemaining` 10→9, persisté (`TrialRewardsTest` + DB en jeu).
+- **Titres** : `EventString.unlocalized(info, texte)` (libellé littéral, plus « NONE.TITLE ») : titre principal = param admin
+  `--title` (défaut « FRANCHISE TRIALS ») ; **titres sous-trials = nom de franchise** (data-driven : WILDCARD/THE JUNGLE BOOK/…).
+- **Cohérence serveur** : `ServerEvents.activeTrialEvent(eventID)` — `ServerUser` rejoue le combat sur l'event INSTALLÉ (mêmes
+  chances/rewards admin que le client), pas une reconstruction aux params par défaut.
+
+**✅ RE-VÉRIFIÉ EN JEU (captures `trial_vitrine2 / trial_stage_rewards / trial_after_win`)** : vitrine = **« FRANCHISE TRIALS » +
+CHANCES 10/10 + WILDCARD/THE JUNGLE BOOK/THE LITTLE MERMAID + Final Stage Rewards (Patch Essence 46/25/16/13/10 = stage 14 du `.tab`)** ;
+écran de stage = **Rules (gating 5:) + Enemies 1/3 + Rewards (badges 8/8 + BONUS 6 = stage 1 du `.tab`)** ; écran de victoire =
+**REWARDS/ITEMS (8/8 + BONUS 6)**. Combat WILDCARD → serveur `recordOutcome appliqué [persisté]`, DB `chancesUsed=1`, nœud 1 à 3★.
+`AdminEvents --open-trial [--chances N] [--title "…"]`. Régression 138 (`TrialRewardsTest`). **Honnête (§8)** : les couleurs/icônes exactes
+de Rules (combat modifiers) et les libellés localisés fins restent un raffinement d'affichage ; le mode est FONCTIONNEL et data-driven.
+
 ## Statut : 4 DifficultyMode-trials ✅ EN JEU. EVENT/FRANCHISE : 1a STRUCTURE ✅ + 1b CONTENU ✅ + 2 AUTORITÉ SERVEUR (`GetTrialEventData` blob) ✅ (régression 132). **Prochaine action = incr. 3 `TrialEventAttack` → record (`BaseEventTrialNode.recordOutcome` : avance nœud + conso chance + loot) sur le blob per-user ; puis push event (`AdminEvents --open-trial`) + vérif EN JEU.**

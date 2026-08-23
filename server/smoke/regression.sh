@@ -63,6 +63,7 @@ TESTS=(
   TrialGatingTest
   TrialCompletionTest
   TrialAdminPushTest
+  TrialRewardsTest
 )
 
 echo "[reg] compilation (serveur + ${#TESTS[@]} tests) ..."

@@ -188,7 +188,25 @@ public final class ServerEvents {
    * incrément suivant : ennemis = héros de la franchise + stages de {@code franchise_trials_enemy_config.tab}.)
    */
   @SuppressWarnings({"rawtypes", "unchecked"})
+  /**
+   * Nombre de chances par reset d'un franchise trial. **PAS dans les `.tab`** (ni base_trial_config ni event_trial_constants) :
+   * c'est une valeur BACKEND-AUTHORED du JSON d'event PerBlue → **paramètre ADMIN** (règle utilisateur : « défini par le serveur →
+   * à l'admin de le définir »). Défaut = 10 (vérité terrain, captures en jeu « CHANCES LEFT: 10/10 »), surchargeable
+   * (`AdminEvents --open-trial --chances N`). NON inventé : valeur observée, exposée comme paramètre.
+   */
+  public static final int DEFAULT_TRIAL_CHANCES = 10;
+  /** Titre par défaut (param admin `--title` surchargeable). Libellé littéral, pas une clé de localisation. */
+  public static final String DEFAULT_TRIAL_TITLE = "FRANCHISE TRIALS";
+
   public static SpecialEventInfo buildFranchiseTrialEvent(long id, long startMs, long endMs) {
+    return buildFranchiseTrialEvent(id, startMs, endMs, DEFAULT_TRIAL_CHANCES, DEFAULT_TRIAL_TITLE);
+  }
+
+  public static SpecialEventInfo buildFranchiseTrialEvent(long id, long startMs, long endMs, int chances) {
+    return buildFranchiseTrialEvent(id, startMs, endMs, chances, DEFAULT_TRIAL_TITLE);
+  }
+
+  public static SpecialEventInfo buildFranchiseTrialEvent(long id, long startMs, long endMs, int chances, String title) {
     try {
       SpecialEventInfo info = buildTrialEvent(id, com.perblue.heroes.network.messages.GenericTrialType.CAMPAIGN, startMs, endMs);
       Object trial = info.getComponent((Class) Class.forName("com.perblue.heroes.game.specialevent.TrialEventInfo"));
@@ -217,10 +235,12 @@ public final class ServerEvents {
         Object franchise = Enum.valueOf(franchiseCls, fr);
         franchises.add(franchise);
         frNames.add(fr);
-        // 1 sous-trial par franchise (title/preset = simple ossature de schéma ; le contenu vient des .tab).
+        // 1 sous-trial par franchise. TITRE du sous-trial = nom de la franchise (DATA-DRIVEN §4) via EventString.unlocalized
+        // (libellé littéral, pas une clé de localisation → plus de « NONE.TITLE »). WILDCARD garde son libellé (joker).
         Object sub = Class.forName("com.perblue.heroes.game.specialevent.trial.TrialEventSubtrialInfo")
             .getConstructor(SpecialEventInfo.class, JsonValue.class)
             .newInstance(info, JSON.parse("{\"title\":{},\"preset\":\"none\"}"));
+        setField(sub, "title", com.perblue.common.specialevent.EventString.unlocalized(info, prettyName(fr)));
         subtrials.add(sub);
       }
       // nodeCount : NODE_COUNT nœuds appliqués à TOUS les sous-trials (scope ALL). Clés EXACTES nodeCount/scope (schéma du jeu).
@@ -253,6 +273,7 @@ public final class ServerEvents {
       Object ecStats = ecf.get(null);
       java.util.Map stages = (java.util.Map) ecStats.getClass().getSuperclass().getField("stageToEnemyConfigs").get(ecStats);
       java.util.List enemyLevel = new java.util.ArrayList(), enemyRarity = new java.util.ArrayList(), enemyStars = new java.util.ArrayList();
+      java.util.List rewardTypes = new java.util.ArrayList();
       for (Object key : new java.util.TreeSet(stages.keySet())) {
         int stage = ((Number) key).intValue();
         Object ec = stages.get(key);
@@ -262,10 +283,25 @@ public final class ServerEvents {
         enemyLevel.add(mkTrialPiece("TrialEventEnemyLevel",  "{\"expr\":\"" + lvl + "\",\"random\":{\"kind\":\"NORMAL\"}," + sc + "}"));
         enemyRarity.add(mkTrialPiece("TrialEventEnemyRarity", "{\"expr\":\"" + rar + "\",\"random\":{\"kind\":\"NORMAL\"}," + sc + "}"));
         enemyStars.add(mkTrialPiece("TrialEventEnemyStars",  "{\"expr\":\"" + st  + "\",\"random\":{\"kind\":\"NORMAL\"}," + sc + "}"));
+        // RÉCOMPENSES du stage — DATA-DRIVEN (§4) depuis les colonnes REWARDS/BONUSES de franchise_trials_enemy_config
+        // (ex. "RANDOM_BADGE 7-11 8,RANDOM_BADGE 7-11 8" / "PATCH_ESSENCE_1 36"). On convertit le format .tab en pièces
+        // TrialEventReward (schéma du jeu) : le PARSEUR du jeu valide. scope nodeNumber=stage (récompenses par nœud).
+        String rewardsStr = String.valueOf(readField(ec, "rewards"));
+        String bonusesStr = String.valueOf(readField(ec, "bonuses"));
+        String rewardsJson = parseRewardList(rewardsStr);
+        String bonusJson   = parseRewardList(bonusesStr);
+        rewardTypes.add(mkTrialPiece("TrialEventRewardTypes",
+            "{\"rewards\":[" + rewardsJson + "],\"bonusRewards\":[" + bonusJson + "],\"random\":{\"kind\":\"NORMAL\"}," + sc + "}"));
       }
       setField(trial, "enemyLevel", enemyLevel);
       setField(trial, "enemyRarity", enemyRarity);
       setField(trial, "enemyStars", enemyStars);
+      setField(trial, "rewardTypes", rewardTypes);
+      // chancesPerReset : paramètre ADMIN (non dans les .tab) — voir DEFAULT_TRIAL_CHANCES.
+      setField(trial, "chancesPerReset", chances);
+      // TITRE principal = param admin (libellé littéral, plus de « NONE.TITLE »).
+      if (title != null && !title.isEmpty())
+        setField(trial, "trialTitle", com.perblue.common.specialevent.EventString.unlocalized(info, title));
       // Lineup = liste `units` de héros ennemis (TrialEventEnemyHero) : ici 5 RANDOM_HERO tirés de la FRANCHISE du sous-trial
       // (schéma du jeu, découvert via son parseur : units / kind RANDOM_HERO / categories:[{FRANCHISE, franchises:[{franchise:X}]}]
       // / realGear:{kind:<RealGearMode>}). scope subtrialNumber 1-based. WILDCARD = joker → pas de filtre franchise (tous héros).
@@ -343,6 +379,45 @@ public final class ServerEvents {
     return (subtrialNumber >= 1 && subtrialNumber <= fr.size()) ? fr.get(subtrialNumber - 1) : null;
   }
 
+  /**
+   * Convertit une liste de récompenses au FORMAT `.tab` (colonnes REWARDS/BONUSES de franchise_trials_enemy_config, ex.
+   * {@code "RANDOM_BADGE 7-11 8,RANDOM_BADGE 7-11 8"} ou {@code "PATCH_ESSENCE_1 36"}) en fragments JSON {@code TrialEventReward}
+   * (schéma du jeu), séparés par des virgules. DATA-DRIVEN (§4) : on ne fait que RE-EXPRIMER les valeurs du `.tab` dans le schéma
+   * du jeu (le parseur du jeu valide). Deux cas : (a) 1ᵉʳ token = {@code RewardSelectionMode} (RANDOM_BADGE…) → {@code kind}
+   * + {@code minTier}-{@code maxTier} (si plage) + {@code quantity} ; (b) 1ᵉʳ token = {@code ItemType} (PATCH_ESSENCE_n…) →
+   * {@code kind:ITEM} + {@code itemType} + {@code quantity}.
+   */
+  /** Nom de franchise lisible pour l'UI (data-driven : l'enum du `.tab`, underscores → espaces). Ex. THE_JUNGLE_BOOK → "THE JUNGLE BOOK". */
+  private static String prettyName(String enumName) {
+    return enumName == null ? "" : enumName.replace('_', ' ');
+  }
+
+  private static String parseRewardList(String tabList) {
+    if (tabList == null) return "";
+    StringBuilder out = new StringBuilder();
+    for (String tok : tabList.split(",")) {
+      tok = tok.trim(); if (tok.isEmpty()) continue;
+      String[] p = tok.split("\\s+");
+      String frag;
+      boolean isSelMode;
+      try { Enum.valueOf((Class) Class.forName("com.perblue.heroes.game.specialevent.trial.TrialEventReward$RewardSelectionMode"), p[0]); isSelMode = true; }
+      catch (Exception e) { isSelMode = false; }
+      if (isSelMode) {
+        if (p.length >= 3 && p[1].contains("-")) {           // ex. RANDOM_BADGE 7-11 8 → plage de RARETÉ de badge
+          String[] rr = p[1].split("-");                     // minRarity/maxRarity = expressions (bycep), pas minTier/maxTier (=mods)
+          frag = "{\"kind\":\"" + p[0] + "\",\"quantity\":\"" + p[2] + "\",\"minRarity\":\"" + rr[0] + "\",\"maxRarity\":\"" + rr[1] + "\"}";
+        } else {                                             // ex. RANDOM 8
+          frag = "{\"kind\":\"" + p[0] + "\",\"quantity\":\"" + (p.length > 1 ? p[1] : "1") + "\"}";
+        }
+      } else {                                               // ex. PATCH_ESSENCE_1 36 → item
+        frag = "{\"kind\":\"ITEM\",\"itemType\":\"" + p[0] + "\",\"quantity\":\"" + (p.length > 1 ? p[1] : "1") + "\"}";
+      }
+      if (out.length() > 0) out.append(',');
+      out.append(frag);
+    }
+    return out.toString();
+  }
+
   /** Construit une pièce de config de trial (`game.specialevent.trial.*`) via son ctor {@code (JsonValue, Map)} — le fragment
    *  JSON ne porte que du CONTENU lu des `.tab` (§4) ; le PARSEUR du jeu valide/construit (schéma du jeu, pas deviné). */
   @SuppressWarnings({"rawtypes", "unchecked"})
@@ -390,7 +465,7 @@ public final class ServerEvents {
         } else if (t == java.util.Map.class) {
           f.set(trial, new java.util.HashMap());
         } else if (t == int.class) {
-          f.setInt(trial, "chancesPerReset".equals(name) ? 2 : 0);
+          f.setInt(trial, 0);   // pas de valeur inventée ici ; chancesPerReset est posé explicitement (param admin) par l'appelant
         } else if (t == boolean.class) {
           f.setBoolean(trial, false);
         } else if (t == String.class) {
@@ -500,8 +575,24 @@ public final class ServerEvents {
     if ("DROP_BONUS".equals(kind)) return buildDropBonusEvent(id, modes, spec.getInt("bonus", 1), start, end);
     // FRANCHISE_TRIALS incr. 7 : un event TRIAL FRANCHISE (SpecialEventInfo TRIAL) — reconstruit data-driven depuis les `.tab`
     // (buildFranchiseTrialEvent). L'`id` de la spec = l'eventID que le client renverra (GetTrialEventData/TrialEventAttack).
-    if ("TRIAL_FRANCHISE".equals(kind)) return buildFranchiseTrialEvent(id, start, end);
+    if ("TRIAL_FRANCHISE".equals(kind)) return buildFranchiseTrialEvent(id, start, end,
+        spec.getInt("chances", DEFAULT_TRIAL_CHANCES), spec.getString("title", DEFAULT_TRIAL_TITLE));
     return buildModesOpenEvent(id, modes, start, end);
+  }
+
+  /**
+   * Retourne l'event TRIAL FRANCHISE actif (installé dans {@code OPERATOR_EVENTS}) d'`eventID` donné, ou {@code null}. Sert à
+   * ce que le SERVEUR rejoue le combat sur EXACTEMENT le même event que le client (mêmes chances/rewards admin) — cohérence
+   * serveur-autoritative (évite un reconstruction avec des params par défaut divergents).
+   */
+  public static SpecialEventInfo activeTrialEvent(long eventID) {
+    for (SpecialEventInfo e : OPERATOR_EVENTS) {
+      try {
+        if (e.getID() == eventID
+            && e.getComponent((Class) Class.forName("com.perblue.heroes.game.specialevent.TrialEventInfo")) != null) return e;
+      } catch (Exception ignore) {}
+    }
+    return null;
   }
 
   /** Liste des specs (JsonValue) d'une config persistée (vide si null). */
@@ -522,10 +613,11 @@ public final class ServerEvents {
     return sb.toString().getBytes(java.nio.charset.StandardCharsets.UTF_8);
   }
 
-  /** Construit la chaîne JSON d'UNE spec d'event TRIAL FRANCHISE (id = eventID stable renvoyé par le client). */
-  public static String specJsonTrialFranchise(long id, long start, long end) {
+  /** Construit la chaîne JSON d'UNE spec d'event TRIAL FRANCHISE (id = eventID renvoyé par le client ; chances + title = params admin). */
+  public static String specJsonTrialFranchise(long id, long start, long end, int chances, String title) {
+    String t = (title == null ? DEFAULT_TRIAL_TITLE : title).replace("\\", "\\\\").replace("\"", "\\\"");
     return "{\"kind\":\"TRIAL_FRANCHISE\",\"modes\":[],\"bonus\":0,\"id\":" + id
-        + ",\"start\":" + start + ",\"end\":" + end + "}";
+        + ",\"chances\":" + chances + ",\"title\":\"" + t + "\",\"start\":" + start + ",\"end\":" + end + "}";
   }
 
   /** Construit la chaîne JSON d'UNE spec d'override opérateur. */

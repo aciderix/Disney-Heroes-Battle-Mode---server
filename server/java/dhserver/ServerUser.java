@@ -3703,8 +3703,10 @@ public final class ServerUser {
    */
   private com.perblue.heroes.game.objects.trials.ClientEventTrial boundTrial(
       User user, long eventID, com.perblue.heroes.network.messages.TrialEventData blob, long now) {
-    com.perblue.common.specialevent.SpecialEventInfo info =
-        ServerEvents.buildFranchiseTrialEvent(eventID, now - 1000L, now + 30L * 86400000L);
+    // Cohérence serveur-autoritative : on rejoue sur l'event INSTALLÉ (mêmes chances/rewards admin que le client) s'il existe,
+    // sinon on reconstruit déterministe depuis les `.tab` (chances par défaut). Évite un écart d'anti-triche (chancesRemaining).
+    com.perblue.common.specialevent.SpecialEventInfo info = ServerEvents.activeTrialEvent(eventID);
+    if (info == null) info = ServerEvents.buildFranchiseTrialEvent(eventID, now - 1000L, now + 30L * 86400000L);
     com.perblue.heroes.game.objects.trials.ClientEventTrial trial =
         new com.perblue.heroes.game.objects.trials.ClientEventTrial(user, info);
     trial.setUserData(blob);

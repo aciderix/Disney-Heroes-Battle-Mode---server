@@ -5899,3 +5899,45 @@ EVENT/FRANCHISE trials (incr. 1a→8, g137-g147). Reste (hors trials) : composan
 Régression 137/137. Fichiers : `server/java/dhserver/ServerEvents.java` (buildFranchiseTrialEvent : waveCount + gatingCriteria +
 carte MATCH_DISPLAY), `desktop-port/src/main/java/dhdesktop/TutorialDriver.java` + `DesktopLauncher.java` (pilotes trialscreen/
 trialsub/trialattack/trialteam), `docs/FRANCHISE_TRIALS.md` §17, `MEMORY.md`.
+
+## 2026-08-23 (g148) — FRANCHISE_TRIALS incr. 9 : comble les manques relevés EN JEU (titres/chances/RÉCOMPENSES)
+
+Retour utilisateur sur les captures incr. 8 : mode PARTIEL — « NONE.TITLE » partout, CHANCES 2/2 (au lieu de 10/10 vérité terrain,
+et **hardcodé** chez moi), Rules VIDES, **Rewards VIDES** (vitrine, écran de stage, écran de victoire). Critique juste : mon « confirmé
+end-to-end » était prématuré, et j'avais une violation §4 (hardcode). Diagnostic rigoureux (bytecode + `.tab`) et correctifs :
+
+**(1) RÉCOMPENSES — DATA-DRIVEN (§4), le gros manque.** Elles SONT dans `patched_heroes_franchise_trials_enemy_config.tab` (colonnes
+**REWARDS** et **BONUSES** par stage) : stages 1-4 = `RANDOM_BADGE <minRarity>-<maxRarity> <qty>` (×2 rewards + 1 bonus), stages 5-14 =
+`PATCH_ESSENCE_n <qty>`. Jamais lues → rewardTypes vide → rien affiché/crédité. Ajout `parseRewardList` : convertit le format `.tab`
+en pièces `TrialEventReward` du jeu (RANDOM_BADGE → `{kind, quantity, minRarity, maxRarity}` [minRarity/maxRarity = Expressions, PAS
+minTier/maxTier=mods] ; item → `{kind:ITEM, itemType, quantity}`). `rewardTypes` = 14 `TrialEventRewardTypes{rewards[], bonusRewards[],
+random, scope:nodeNumber}`. Le client génère alors le loot depuis rewardTypes + l'affiche (vitrine/stage/victoire), le serveur le
+crédite via `recordOutcome`→`RewardHelper.giveRewards` (loot client-reporté, §4bis, comme PORT).
+
+**(2) CHANCES — hardcode SUPPRIMÉ (§4) → paramètre ADMIN.** `fillTrialFields` posait `chancesPerReset=2` en dur (invention). La valeur
+n'est dans AUCUN `.tab` (ni base_trial_config ni event_trial_constants) → BACKEND-AUTHORED → **param admin** `AdminEvents --open-trial
+--chances N` (défaut `DEFAULT_TRIAL_CHANCES=10` = vérité terrain des captures « CHANCES LEFT: 10/10 »). **Consommation PROUVÉE** (réponse
+à « les chances sont-elles consommées ? » = OUI) : `TrialRewardsTest` (getChancesRemaining 10→9) + EN JEU (DB `chancesUsed=1` après une
+victoire, persisté).
+
+**(3) TITRES — `EventString.unlocalized(info, texte)`** (libellé LITTÉRAL, plus « NONE.TITLE ») : titre principal = param admin
+`--title` (défaut « FRANCHISE TRIALS ») ; titres des sous-trials = **nom de la franchise** (DATA-DRIVEN : WILDCARD / THE JUNGLE BOOK /
+THE LITTLE MERMAID / MOANA, via `prettyName` underscores→espaces).
+
+**(4) COHÉRENCE SERVEUR.** `ServerEvents.activeTrialEvent(eventID)` → `ServerUser.boundTrial` rejoue le combat sur l'event INSTALLÉ
+(`OPERATOR_EVENTS`, mêmes chances/rewards admin que le client) au lieu d'une reconstruction aux params par défaut (évite un écart
+d'anti-triche sur `chancesRemaining`). Spec `TRIAL_FRANCHISE{id, chances, title, start, end}` (persistée, boot).
+
+**✅ RE-VÉRIFIÉ EN JEU** (captures `trial_vitrine2 / trial_stage_rewards / trial_after_win`) : vitrine = « FRANCHISE TRIALS » +
+CHANCES 10/10 + WILDCARD/THE JUNGLE BOOK/THE LITTLE MERMAID + **Final Stage Rewards Patch Essence 46/25/16/13/10** (= stage 14 du `.tab`) ;
+écran de stage = **Rules (gating « 5: ») + Enemies 1/3 + Rewards (badges 8/8 + BONUS 6** = stage 1 du `.tab`) ; écran de VICTOIRE =
+**REWARDS / ITEMS (8/8 + BONUS 6)**. Combat WILDCARD → serveur `recordOutcome appliqué [persisté]`, DB `chancesUsed=1`, nœud 1 à 3★.
+
+**Honnête (§8, non bloquant)** : les icônes exactes des combat modifiers dans « Rules » et certains libellés localisés fins restent un
+raffinement d'AFFICHAGE (backend-authored) ; le mode est FONCTIONNEL et data-driven. Le crédit du loot suit le modèle client-autoritatif
+du projet (§4bis, comme PORT/campagne).
+
+Régression 138/138 (`TrialRewardsTest` nouveau). Fichiers : `server/java/dhserver/ServerEvents.java` (parseRewardList + rewardTypes +
+chances param + titres unlocalized + activeTrialEvent + specJsonTrialFranchise chances/title ; hardcode supprimé), `ServerUser.java`
+(boundTrial → activeTrialEvent), `server/smoke/AdminEvents.java` (--chances/--title), `server/smoke/TrialRewardsTest.java` (nouveau),
+`server/smoke/TrialAdminPushTest.java` (signature), `server/smoke/regression.sh`, `docs/FRANCHISE_TRIALS.md` §17, `MEMORY.md`.
