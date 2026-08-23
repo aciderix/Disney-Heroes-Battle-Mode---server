@@ -43,6 +43,9 @@ public final class AdminEvents {
     long chancesBoostID = 900_003L;                                           // eventID stable par défaut
     java.util.Map<String, Integer> chanceMods = new java.util.LinkedHashMap<>();  // --chance-type X --additional N
     String pendingChanceType = null;                                          // dernier --chance-type en attente d'un --additional
+    String merchantEvent = null; boolean closeMerchant = false;               // "TRADER_DISCOUNT"/"TRADER_REFRESH_DISCOUNT"
+    long merchantID = 900_004L; int merchantPercent = 50;                     // params admin
+    java.util.List<com.perblue.heroes.network.messages.MerchantType> merchantTargets = new java.util.ArrayList<>();  // --merchant (répétable)
     int days = 30, bonus = 1;
     for (int i = 0; i < a.length; i++) {
       switch (a[i]) {
@@ -64,6 +67,13 @@ public final class AdminEvents {
         case "--chance-type": pendingChanceType = a[++i]; chanceMods.putIfAbsent(pendingChanceType, 1); break;  // défaut +1
         case "--additional": if (pendingChanceType != null) chanceMods.put(pendingChanceType, Integer.parseInt(a[++i]));
                              else System.out.println("[events] --additional sans --chance-type préalable, ignoré"); break;
+        case "--merchant-discount":         merchantEvent = "TRADER_DISCOUNT";
+          if (i + 1 < a.length && a[i + 1].matches("\\d+")) merchantID = Long.parseLong(a[++i]); break;
+        case "--merchant-refresh-discount": merchantEvent = "TRADER_REFRESH_DISCOUNT";
+          if (i + 1 < a.length && a[i + 1].matches("\\d+")) merchantID = Long.parseLong(a[++i]); break;
+        case "--close-merchant-discount":   closeMerchant = true; break;
+        case "--merchant":   merchantTargets.add(com.perblue.heroes.network.messages.MerchantType.valueOf(a[++i].toUpperCase())); break;
+        case "--merchant-percent": merchantPercent = Integer.parseInt(a[++i]); break;
         case "--open-trial":  openTrial = true;
           if (i + 1 < a.length && a[i + 1].matches("\\d+")) trialID = Long.parseLong(a[++i]); break;
         case "--close-trial": closeTrial = true; break;
@@ -147,6 +157,24 @@ public final class AdminEvents {
           changed = true;
           System.out.println("[events] event INCREASED_CHANCES ajouté : eventID=" + chancesBoostID + " chances=" + chanceMods
               + " (" + days + " j). Le client verra les chances quotidiennes augmentées via REFRESH_SPECIAL_EVENTS.");
+        }
+      }
+
+      if (closeMerchant) {
+        int before = specs.size();
+        specs.removeIf(js -> js.contains("TRADER_DISCOUNT") || js.contains("TRADER_REFRESH_DISCOUNT"));
+        changed = changed || specs.size() != before;
+        System.out.println("[events] events TRADER_DISCOUNT/TRADER_REFRESH_DISCOUNT retirés (" + (before - specs.size()) + ").");
+      }
+      if (merchantEvent != null) {
+        if (merchantTargets.isEmpty()) { System.out.println("[events] --merchant-discount/-refresh-discount requiert au moins un --merchant <TYPE>. Ignoré."); }
+        else {
+          final String me = merchantEvent;
+          specs.removeIf(js -> js.contains("\"" + me + "\""));
+          specs.add(ServerEvents.specJsonMerchant(merchantEvent, merchantID, merchantTargets, merchantPercent, start, end));
+          changed = true;
+          System.out.println("[events] event " + merchantEvent + " ajouté : eventID=" + merchantID + " marchands=" + merchantTargets
+              + " remise=" + merchantPercent + "% (" + days + " j). Prix remisés via REFRESH_SPECIAL_EVENTS.");
         }
       }
 

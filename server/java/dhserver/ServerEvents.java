@@ -231,6 +231,70 @@ public final class ServerEvents {
   }
 
   /**
+   * Construit un événement <b>TRADER_DISCOUNT</b> (composant {@code MerchantDiscount}) : réduit de {@code percentOff}% le PRIX
+   * des objets des marchands {@code merchants} sur {@code [startMs, endMs]}. Contrat (bytecode {@code MerchantDiscount.load}) :
+   * lit {@code traderFilter} (EnumFilter sur clé {@code merchantType}), {@code percentOff} (int), {@code stuffFilter} (objets visés,
+   * vide = tous) sur le nœud COMPLET (param2). Composant avec provider → FABRIQUE {@code createComponent("merchantDiscount")}. Effet :
+   * {@code MerchantHelper.getItemCost(user, type, item, snapshot)} renvoie le prix remisé → {@code applyPurchaseMerchantItem} débite/valide
+   * le prix REMISÉ. {@code MerchantType} : BLACK_MARKET/MEGA_MART/GEAR/MEMORY/CHALLENGE/CRYPT/… Params ADMIN.
+   */
+  public static SpecialEventInfo buildMerchantDiscountEvent(long id, Collection<com.perblue.heroes.network.messages.MerchantType> merchants,
+      int percentOff, long startMs, long endMs) {
+    return buildMerchantEvent(id, "TRADER_DISCOUNT", SpecialEventType.TRADER_DISCOUNT, "merchantDiscount", merchants, percentOff, true, startMs, endMs);
+  }
+
+  /**
+   * Construit un événement <b>TRADER_REFRESH_DISCOUNT</b> (composant {@code MerchantRefreshDiscount}) : réduit de {@code percentOff}%
+   * le COÛT DE REFRESH (rafraîchir le stock) des marchands {@code merchants}. Mêmes clés {@code traderFilter}/{@code percentOff} (pas de
+   * {@code stuffFilter}). FABRIQUE {@code createComponent("merchantRefreshDiscount")}. Effet : {@code MerchantHelper.refresh(type, refreshType,
+   * user, snapshot)} applique la remise au coût de refresh payant. Params ADMIN.
+   */
+  public static SpecialEventInfo buildMerchantRefreshDiscountEvent(long id, Collection<com.perblue.heroes.network.messages.MerchantType> merchants,
+      int percentOff, long startMs, long endMs) {
+    return buildMerchantEvent(id, "TRADER_REFRESH_DISCOUNT", SpecialEventType.TRADER_REFRESH_DISCOUNT, "merchantRefreshDiscount", merchants, percentOff, false, startMs, endMs);
+  }
+
+  /** Fabrique commune aux deux events marchands (discount d'objet / discount de refresh) — même schéma {@code traderFilter}/{@code percentOff}. */
+  private static SpecialEventInfo buildMerchantEvent(long id, String kind, SpecialEventType type, String componentKey,
+      Collection<com.perblue.heroes.network.messages.MerchantType> merchants, int percentOff, boolean withStuffFilter, long startMs, long endMs) {
+    try {
+      StringBuilder inc = new StringBuilder();
+      for (com.perblue.heroes.network.messages.MerchantType mt : merchants) {
+        if (inc.length() > 0) inc.append(','); inc.append("{\"merchantType\":\"").append(mt.name()).append("\"}");
+      }
+      String full =
+          "{\"kind\":\"" + kind + "\",\"id\":" + id + ",\"formatVersion\":0,"
+        + "\"timeRange\":[{\"serverFilter\":\"1-999999\",\"start\":" + startMs
+        +   ",\"end\":{\"kind\":\"TIME\",\"endTime\":" + endMs + "}}],"
+        + "\"traderFilter\":{\"include\":[" + inc + "]},\"percentOff\":" + percentOff
+        + (withStuffFilter ? ",\"stuffFilter\":[{\"kind\":\"ALL_ITEMS\"},{\"kind\":\"ALL_RESOURCES\"}]" : "") + "}";   // remise sur TOUS objets+monnaies du marchand
+      JsonValue root = JSON.parse(full);
+
+      SpecialEventInfo info = new SpecialEventInfo(SpecialEventType.class);
+      setField(info, "id", id);
+      setField(info, "type", type);
+      setField(info, "formatVersion", 0);
+
+      EventVisibility vis = new EventVisibility(new int[0]);
+      vis.load(info, root, root.get("timeRange"));
+      addComponent(info, vis);
+
+      IEventComponent mc = SpecialEventBuilder.createComponent(componentKey);
+      Method load = findMethod(mc.getClass(), "load", SpecialEventInfo.class, JsonValue.class, JsonValue.class);
+      load.setAccessible(true);
+      load.invoke(mc, info, root, root);   // lit traderFilter/percentOff(/stuffFilter) sur le nœud complet (param2)
+      addComponent(info, mc);
+
+      addComponent(info, buildMinimalCard(info));
+      return info;
+    } catch (RuntimeException e) {
+      throw e;
+    } catch (Exception e) {
+      throw new RuntimeException("buildMerchantEvent(" + kind + ")", e);
+    }
+  }
+
+  /**
    * Construit un événement <b>TRIAL</b> (composant {@code TrialEventInfo}, clé "trial") — le PRÉREQUIS de FRANCHISE_TRIALS
    * (tout trial est un événement spécial). <b>Object-path INDUSTRIEL</b> (décision utilisateur, patron {@code buildMinimalCard}) :
    * on construit le composant via la FABRIQUE du jeu ({@code createComponent("trial")}) puis on remplit ses champs par un
@@ -752,6 +816,16 @@ public final class ServerEvents {
       if (cn != null) for (JsonValue c = cn.child; c != null; c = c.next) ch.put(c.name(), c.asInt());
       return buildIncreasedChancesEvent(id, ch, start, end);
     }
+    if ("TRADER_DISCOUNT".equals(kind) || "TRADER_REFRESH_DISCOUNT".equals(kind)) {
+      List<com.perblue.heroes.network.messages.MerchantType> mrch = new ArrayList<>();
+      JsonValue mn = spec.get("merchants");
+      if (mn != null) for (JsonValue mm = mn.child; mm != null; mm = mm.next)
+        mrch.add(com.perblue.heroes.network.messages.MerchantType.valueOf(mm.asString()));
+      int pct = spec.getInt("percentOff", 50);
+      return "TRADER_DISCOUNT".equals(kind)
+          ? buildMerchantDiscountEvent(id, mrch, pct, start, end)
+          : buildMerchantRefreshDiscountEvent(id, mrch, pct, start, end);
+    }
     return buildModesOpenEvent(id, modes, start, end);
   }
 
@@ -815,6 +889,15 @@ public final class ServerEvents {
     }
     return "{\"kind\":\"INCREASED_CHANCES\",\"modes\":[],\"bonus\":0,\"id\":" + id
         + ",\"chances\":{" + c + "},\"start\":" + start + ",\"end\":" + end + "}";
+  }
+
+  /** Construit la chaîne JSON d'UNE spec TRADER_DISCOUNT/TRADER_REFRESH_DISCOUNT (marchands visés + % = params ADMIN). */
+  public static String specJsonMerchant(String kind, long id, Collection<com.perblue.heroes.network.messages.MerchantType> merchants,
+      int percentOff, long start, long end) {
+    StringBuilder m = new StringBuilder();
+    for (com.perblue.heroes.network.messages.MerchantType mt : merchants) { if (m.length() > 0) m.append(','); m.append('"').append(mt.name()).append('"'); }
+    return "{\"kind\":\"" + kind + "\",\"modes\":[],\"bonus\":0,\"id\":" + id
+        + ",\"merchants\":[" + m + "],\"percentOff\":" + percentOff + ",\"start\":" + start + ",\"end\":" + end + "}";
   }
 
   /** Construit la chaîne JSON d'UNE spec d'override opérateur. */

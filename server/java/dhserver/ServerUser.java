@@ -3888,8 +3888,10 @@ public final class ServerUser {
     // Charge le blob dans le runtime → findUnpurchasedItem (getMerchantItems) voit le stock.
     iu.initMerchantData(type, blob);
     // ACHAT autoritatif (recalc coût, ignore expectedCost ; débit + don + marque). Lève si illégitime.
+    // SNAPSHOT opérateur (live-ops) : un event TRADER_DISCOUNT (composant du jeu MerchantDiscount) réduit
+    // MerchantHelper.getItemCost → le prix REMISÉ est validé (anti-tamper) ET débité. Sans event, snapshot vide = NONE.
     com.perblue.heroes.game.logic.MerchantHelper.purchaseItem(type, m.itemToPurchase, user, m.typeIndex,
-        m.expectedCost, m.expectedQuantity, SpecialEventSnapshot.NONE);
+        m.expectedCost, m.expectedQuantity, ServerEvents.snapshot());
     // Répercute le flag purchased dans le blob wire (miroir findUnpurchasedItem : compareDrops + typeIndex).
     int match = 0;
     for (Object o : blob.inventory) {
@@ -3926,8 +3928,9 @@ public final class ServerUser {
     // Charge l'état marchand courant dans le runtime (le gating peut lire cooldown/état).
     com.perblue.heroes.network.messages.MerchantData cur = merchantDataPersisted(type);
     if (cur != null) iu.initMerchantData(type, cur);
-    // GATE + FACTURE (code du jeu). Lève si illégitime (quota/monnaie).
-    com.perblue.heroes.game.logic.MerchantHelper.refresh(type, refreshType, user, SpecialEventSnapshot.NONE);
+    // GATE + FACTURE (code du jeu). Lève si illégitime (quota/monnaie). SNAPSHOT opérateur : un event
+    // TRADER_REFRESH_DISCOUNT (composant MerchantRefreshDiscount) réduit le coût du refresh payant. Sans event = NONE.
+    com.perblue.heroes.game.logic.MerchantHelper.refresh(type, refreshType, user, ServerEvents.snapshot());
     // RE-GÉNÈRE le stock (refresh ne le fait pas) — nouveau roll, write-through blob.
     com.perblue.heroes.network.messages.MerchantData data = generateMerchant(type);
     // Persistance des débits/compteurs hors this.extra (refresh payant → diamants ; quota → compteurs).
