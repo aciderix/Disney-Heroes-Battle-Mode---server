@@ -183,6 +183,54 @@ public final class ServerEvents {
   }
 
   /**
+   * Construit un événement <b>INCREASED_CHANCES</b> (composant {@code IncreasedChances}) : ajoute des chances de combat quotidiennes
+   * SUPPLÉMENTAIRES aux modes {@code chances} (clé = {@code chanceType} du jeu, valeur = nombre en plus) sur {@code [startMs, endMs]}.
+   * Contrat relevé au bytecode ({@code IncreasedChances.load}) : lit {@code chanceModifierList} (tableau d'objets {@code {chanceType,
+   * additional}}) sur le nœud COMPLET (param2). Le composant a un CONVERTER ({@code IChanceGameModeConverter}) → construit par la FABRIQUE
+   * du jeu ({@code createComponent("increasedChances")}, converter câblé §4). Effet serveur : {@code DailyActivityHelper.getMaxDailyUses(user,
+   * chanceType, snapshot)} = {@code BaseEventSnapshot.getChances(chanceType, base)} = base + additional (ex. {@code DifficultyModeHelper}
+   * PORT/trials). {@code chanceType} valides (bytecode) : {@code portDocks_use}, {@code portWarehouse_use}, {@code spotlightTrial_use},
+   * {@code teamTrialsBlue_use}/{@code teamTrialsYellow_use}/{@code teamTrialsRed_use}, {@code codebase_use}. Params ADMIN (type + nombre).
+   */
+  public static SpecialEventInfo buildIncreasedChancesEvent(long id, java.util.Map<String, Integer> chances, long startMs, long endMs) {
+    try {
+      StringBuilder list = new StringBuilder();
+      for (java.util.Map.Entry<String, Integer> e : chances.entrySet()) {
+        if (list.length() > 0) list.append(',');
+        list.append("{\"chanceType\":\"").append(e.getKey()).append("\",\"additional\":").append(e.getValue()).append("}");
+      }
+      String full =
+          "{\"kind\":\"INCREASED_CHANCES\",\"id\":" + id + ",\"formatVersion\":0,"
+        + "\"timeRange\":[{\"serverFilter\":\"1-999999\",\"start\":" + startMs
+        +   ",\"end\":{\"kind\":\"TIME\",\"endTime\":" + endMs + "}}],"
+        + "\"chanceModifierList\":[" + list + "]}";
+      JsonValue root = JSON.parse(full);
+
+      SpecialEventInfo info = new SpecialEventInfo(SpecialEventType.class);
+      setField(info, "id", id);
+      setField(info, "type", SpecialEventType.INCREASED_CHANCES);
+      setField(info, "formatVersion", 0);
+
+      EventVisibility vis = new EventVisibility(new int[0]);
+      vis.load(info, root, root.get("timeRange"));
+      addComponent(info, vis);
+
+      IEventComponent ic = SpecialEventBuilder.createComponent("increasedChances");
+      Method load = findMethod(ic.getClass(), "load", SpecialEventInfo.class, JsonValue.class, JsonValue.class);
+      load.setAccessible(true);
+      load.invoke(ic, info, root, root);   // lit chanceModifierList sur le nœud complet (param2)
+      addComponent(info, ic);
+
+      addComponent(info, buildMinimalCard(info));
+      return info;
+    } catch (RuntimeException e) {
+      throw e;
+    } catch (Exception e) {
+      throw new RuntimeException("buildIncreasedChancesEvent", e);
+    }
+  }
+
+  /**
    * Construit un événement <b>TRIAL</b> (composant {@code TrialEventInfo}, clé "trial") — le PRÉREQUIS de FRANCHISE_TRIALS
    * (tout trial est un événement spécial). <b>Object-path INDUSTRIEL</b> (décision utilisateur, patron {@code buildMinimalCard}) :
    * on construit le composant via la FABRIQUE du jeu ({@code createComponent("trial")}) puis on remplit ses champs par un
@@ -698,6 +746,12 @@ public final class ServerEvents {
         chests.add(com.perblue.heroes.network.messages.ChestType.valueOf(c.asString()));
       return buildChestDiscountEvent(id, chests, spec.getInt("percentOff", 50), start, end);
     }
+    if ("INCREASED_CHANCES".equals(kind)) {
+      java.util.Map<String, Integer> ch = new java.util.LinkedHashMap<>();
+      JsonValue cn = spec.get("chances");
+      if (cn != null) for (JsonValue c = cn.child; c != null; c = c.next) ch.put(c.name(), c.asInt());
+      return buildIncreasedChancesEvent(id, ch, start, end);
+    }
     return buildModesOpenEvent(id, modes, start, end);
   }
 
@@ -750,6 +804,17 @@ public final class ServerEvents {
     return "{\"kind\":\"CHEST_DISCOUNT\",\"modes\":[],\"bonus\":0,\"id\":" + id
         + ",\"chests\":[" + c + "],\"percentOff\":" + percentOff
         + ",\"start\":" + start + ",\"end\":" + end + "}";
+  }
+
+  /** Construit la chaîne JSON d'UNE spec INCREASED_CHANCES (chanceType → nombre de chances en plus = params ADMIN). */
+  public static String specJsonIncreasedChances(long id, java.util.Map<String, Integer> chances, long start, long end) {
+    StringBuilder c = new StringBuilder();
+    for (java.util.Map.Entry<String, Integer> e : chances.entrySet()) {
+      if (c.length() > 0) c.append(',');
+      c.append('"').append(e.getKey()).append("\":").append(e.getValue());
+    }
+    return "{\"kind\":\"INCREASED_CHANCES\",\"modes\":[],\"bonus\":0,\"id\":" + id
+        + ",\"chances\":{" + c + "},\"start\":" + start + ",\"end\":" + end + "}";
   }
 
   /** Construit la chaîne JSON d'UNE spec d'override opérateur. */

@@ -39,6 +39,10 @@ public final class AdminEvents {
     long chestDiscountID = 900_002L;                                           // eventID stable par défaut
     int chestPercent = 50;                                                     // param admin --percent (% de remise)
     java.util.List<com.perblue.heroes.network.messages.ChestType> chestTargets = new java.util.ArrayList<>();  // --chest (répétable)
+    boolean chancesBoost = false, closeChancesBoost = false;                  // INCREASED_CHANCES (live-ops)
+    long chancesBoostID = 900_003L;                                           // eventID stable par défaut
+    java.util.Map<String, Integer> chanceMods = new java.util.LinkedHashMap<>();  // --chance-type X --additional N
+    String pendingChanceType = null;                                          // dernier --chance-type en attente d'un --additional
     int days = 30, bonus = 1;
     for (int i = 0; i < a.length; i++) {
       switch (a[i]) {
@@ -54,6 +58,12 @@ public final class AdminEvents {
         case "--close-chest-discount": closeChestDiscount = true; break;
         case "--chest":      chestTargets.add(com.perblue.heroes.network.messages.ChestType.valueOf(a[++i].toUpperCase())); break;
         case "--percent":    chestPercent = Integer.parseInt(a[++i]); break;
+        case "--chances-boost":  chancesBoost = true;
+          if (i + 1 < a.length && a[i + 1].matches("\\d+")) chancesBoostID = Long.parseLong(a[++i]); break;
+        case "--close-chances-boost": closeChancesBoost = true; break;
+        case "--chance-type": pendingChanceType = a[++i]; chanceMods.putIfAbsent(pendingChanceType, 1); break;  // défaut +1
+        case "--additional": if (pendingChanceType != null) chanceMods.put(pendingChanceType, Integer.parseInt(a[++i]));
+                             else System.out.println("[events] --additional sans --chance-type préalable, ignoré"); break;
         case "--open-trial":  openTrial = true;
           if (i + 1 < a.length && a[i + 1].matches("\\d+")) trialID = Long.parseLong(a[++i]); break;
         case "--close-trial": closeTrial = true; break;
@@ -120,6 +130,23 @@ public final class AdminEvents {
           changed = true;
           System.out.println("[events] event CHEST_DISCOUNT ajouté : eventID=" + chestDiscountID + " coffres=" + chestTargets
               + " remise=" + chestPercent + "% (" + days + " j). Le client verra les prix remisés via REFRESH_SPECIAL_EVENTS.");
+        }
+      }
+
+      if (closeChancesBoost) {
+        int before = specs.size();
+        specs.removeIf(js -> js.contains("INCREASED_CHANCES"));
+        changed = changed || specs.size() != before;
+        System.out.println("[events] events INCREASED_CHANCES retirés (" + (before - specs.size()) + ").");
+      }
+      if (chancesBoost) {
+        if (chanceMods.isEmpty()) { System.out.println("[events] --chances-boost requiert au moins un --chance-type <TYPE> [--additional N]. Ignoré."); }
+        else {
+          specs.removeIf(js -> js.contains("INCREASED_CHANCES"));
+          specs.add(ServerEvents.specJsonIncreasedChances(chancesBoostID, chanceMods, start, end));
+          changed = true;
+          System.out.println("[events] event INCREASED_CHANCES ajouté : eventID=" + chancesBoostID + " chances=" + chanceMods
+              + " (" + days + " j). Le client verra les chances quotidiennes augmentées via REFRESH_SPECIAL_EVENTS.");
         }
       }
 
