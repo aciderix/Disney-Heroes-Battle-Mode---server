@@ -199,6 +199,7 @@ public final class ServerEvents {
       Object dhcs = bf.get(null);
       Object cst = dhcs.getClass().getMethod("getStats").invoke(dhcs);   // BaseTrialConfigConstants
       int nodeCount        = readInt(cst, "NODE_COUNT");
+      int waveCount        = readInt(cst, "WAVE_COUNT");
       int maxDailyResets   = readInt(cst, "MAX_DAILY_RESETS");
       boolean allowRaiding = readBool(cst, "ENABLE_RAIDING");
       boolean statSlots    = readBool(cst, "ENABLE_STAT_SLOTS");
@@ -227,8 +228,15 @@ public final class ServerEvents {
           .getConstructor(JsonValue.class, java.util.Map.class)
           .newInstance(JSON.parse("{\"nodeCount\":" + nodeCount + ",\"scope\":{}}"), new java.util.HashMap());
 
+      // waveCount : WAVE_COUNT vagues par nœud (scope ALL). Requis : la vue du sous-trial (getCampaignEnemiesViewV2) divise
+      // par le nombre de vagues → sans lui, / by zero au rendu client (§8, découvert EN JEU). Clés waveCount/scope (schéma du jeu).
+      Object twc = Class.forName("com.perblue.heroes.game.specialevent.trial.TrialEventWaveCount")
+          .getConstructor(JsonValue.class, java.util.Map.class)
+          .newInstance(JSON.parse("{\"waveCount\":" + waveCount + ",\"scope\":{}}"), new java.util.HashMap());
+
       setField(trial, "subtrials", subtrials);
       setField(trial, "nodeCount", new java.util.ArrayList(java.util.List.of(tnc)));
+      setField(trial, "waveCount", new java.util.ArrayList(java.util.List.of(twc)));
       setField(trial, "franchises", franchises);
       setField(trial, "maxDailyResets", maxDailyResets);
       setField(trial, "allowRaiding", allowRaiding);
@@ -278,6 +286,31 @@ public final class ServerEvents {
           "{\"kind\":\"MANUAL\",\"units\":[" + units + "],\"random\":{\"kind\":\"NORMAL\"},\"scope\":{\"subtrialNumber\":\"" + (i + 1) + "\"}}"));
       }
       setField(trial, "enemyLineups", lineups);
+
+      // GATING (§4 data-driven) : 1 critère par sous-trial de franchise → n'autorise QUE les héros de la franchise. Le client
+      // FILTRE le sélecteur via ce critère ET `TrialEventInfo.franchises` est DÉRIVÉ (au `load`) du `specificFranchise` de ce
+      // filtre (offset 1599 : sans gatingCriteria, getFranchises()=null en jeu). heroCount = WAVE... non : = taille d'équipe (5)
+      // = « toute l'équipe doit être de la franchise » (règle des franchise trials). WILDCARD (joker) → pas de critère.
+      java.util.List gating = new java.util.ArrayList();
+      for (int i = 0; i < frNames.size(); i++) {
+        String fr = frNames.get(i);
+        if ("WILDCARD".equals(fr)) continue;
+        String crit = "{\"scope\":{\"subtrialNumber\":\"" + (i + 1) + "\"},\"random\":{\"kind\":\"NORMAL\"},\"criteria\":[{"
+            + "\"style\":{\"kind\":\"INCLUSIVE\",\"heroCount\":5},"
+            + "\"criterion\":{\"kind\":\"CATEGORIES\",\"categories\":[{\"kind\":\"FRANCHISE\",\"franchises\":[{\"franchise\":\""
+            + fr + "\"}]}]}}]}";
+        gating.add(mkTrialPiece("TrialEventGatingCriteria", crit));
+      }
+      setField(trial, "gatingCriteria", gating);
+
+      // Carte UI (`image` de TrialEventInfo) — le client RE-PARSE l'event reçu (`SpecialEventBuilder.buildEvent`) et `load`
+      // EXIGE un objet `image` valide. ⚠ ASYMÉTRIE DU JEU : pour un card kind=UNIT, `toJson` écrit la clé `image` mais `load`
+      // relit `unitType` → un card UNIT (via cardUnitType, laissé DEFAULT par fillTrialFields) NE ROUND-TRIP PAS ("Named value
+      // not found: unitType" → event rejeté côté client). On met donc les deux champs de carte à null : `toJson` émet alors
+      // `{kind:MATCH_DISPLAY}` (carte « matchup »), que `load` round-trip proprement, SANS asset. (§8 : découvert EN JEU.)
+      setField(trial, "cardUnitType", null);
+      setField(trial, "cardImage", null);
+
       return info;
     } catch (RuntimeException e) {
       throw e;

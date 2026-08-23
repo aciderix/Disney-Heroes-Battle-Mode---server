@@ -501,8 +501,37 @@ passait, `FranchiseTrialContentTest` vert) mais `TrialEventEnemyHero.toJson` fai
 per-hero `realGear:{kind:NONE}` (valeur VALIDE, neutre, non inventée §4). L'ASSIGNATION réelle du real gear (`ASSIGN_REAL_GEAR`
 par stage ; `assignRealGear` au niveau lineup) est un raffinement à calibrer EN JEU (§8 ; granularité par-stage vs lineup par-sous-trial).
 
-**RESTE** : 8 **VÉRIF EN JEU (§8 obligatoire)** — `AdminEvents --open-trial` sur la DB du serveur + restart → le client voit le
-franchise trial (vitrine `TrialEventSubTrialChooserScreen`) → combat franchise → Patch Essence + persistance. Tout le HEADLESS
-EVENT/FRANCHISE est livré (incr. 1a→7).
+### ✅ incr. 8 LIVRÉ (g147) — VÉRIFIÉ EN JEU (§8) : franchise trial joué de bout en bout (client réel → serveur → persistance)
+`AdminEvents --open-trial` (eventID 900001) sur la DB serveur + `run-online.sh` → **VÉRIFIÉ EN JEU (id=1, TL200)** :
+1. **Vitrine** `TrialEventSubTrialChooserScreen` : **4 sous-trials** (WILDCARD/JUNGLE_BOOK/LITTLE_MERMAID/MOANA) + **CHANCES 2/2**
+   (= `chancesPerReset`) + bouton ENTER (captures `trial_vitrine.png`).
+2. **Sous-trial** `TrialEventSubTrialScreen` : **STAGE 1/14** (nodeCount), **Enemies 1/3** (waveCount), **5 ennemis niv 55 à 2★**
+   (= stage 1 de `franchise_trials_enemy_config`, DATA-DRIVEN), chemin 1→14 (`trial_subtrial.png`).
+3. **Sélecteur** `TrialEventHeroChooserScreen` (CHOOSE YOUR HEROES, 0/5, FIGHT) → **combat** `TrialEventAttackScreen` rendu
+   (3/3 vagues, équipes qui combattent, `trial_combat.png`) → **VICTOIRE** (`trial_victory.png`).
+4. **Serveur** : `<== GetTrialEventData(900001)` + `HeroLineupUpdate(EVENT_TRIAL)` + `<== TrialEventAttack : event=900001
+   sous-trial=1 nœud=1 outcome=WIN → recordOutcome appliqué [persisté]`. **DB** : `trialEventData` eventID=900001, `chancesUsed`=1,
+   sous-trial 1 → **nœud 1 à 3★** (tentatives=1) — server-autoritatif, persisté.
+5. **Gating serveur PROUVÉ EN JEU** : sur le sous-trial 2 (THE_JUNGLE_BOOK) avec un lineup NON-franchise → `⛔ TrialEventAttack
+   REFUSÉ (anti-triche) : ERROR` (le serveur rejette, rien accordé). NB nœud 1 = stage 1 → **Badge Bits** (Patch Essence dès stage 5).
+
+**⚠ 3 correctifs §8 découverts EN JEU (invisibles en headless jusqu'au push/rendu réel)** :
+- **`waveCount`** manquant → `TrialEventSubTrialScreen.getCampaignEnemiesViewV2` : **/ by zero** (divise par le nb de vagues).
+  Ajout `WAVE_COUNT` (base_trial_config, data-driven) → `{waveCount:N, scope:{}}`.
+- **Carte `image`** : `toJson` d'un card kind=UNIT écrit la clé `image` mais `load` relit `unitType` (ASYMÉTRIE du jeu) → event
+  rejeté au re-parse client (`Named value not found: unitType`). `fillTrialFields` laissait `cardUnitType`=DEFAULT (branche UNIT).
+  Fix : `cardUnitType`=null + `cardImage`=null → `toJson` émet `{kind:MATCH_DISPLAY}` (round-trip propre, sans asset).
+- **`gatingCriteria`** : sans lui, `TrialEventInfo.franchises`=null au `load` (dérivé du `specificFranchise` du filtre de gating) et
+  le client ne connaît pas la franchise. Ajout d'1 critère/sous-trial (`{scope:{subtrialNumber}, random:{kind:NORMAL},
+  criteria:[{style:{kind:INCLUSIVE, heroCount:5}, criterion:{kind:CATEGORIES, categories:[{kind:FRANCHISE, franchises:[{franchise:F}]}]}}]}`).
+  (`heroCount` est DANS `style` ; `random` requis car ScopedConfigurable.)
+
+**Pilotes EN JEU (B-bis, API réelle)** : `trialscreen` (vitrine via `createTrial`+`TrialEventSubTrialChooserScreen`), `trialsub <n>`,
+`trialattack <sub> <node>` (`TrialEventHeroChooserScreen`), `trialteam` (sélection + `startBattleInner`). **Leçon** : l'overlay
+RESULTS (victoire) bloque la consommation du clickfile → pour un 2ᵉ combat, redémarrer frais (le serveur enregistre dès réception,
+la persistance ne dépend pas du dismiss client).
+
+**⇒ MODE « TRIALS » COMPLET & VÉRIFIÉ EN JEU** : les 4 DifficultyMode-trials (TEAM_TRIALS_{BLUE,RED,YELLOW}+SPOTLIGHT, g134-g136)
+**+ EVENT/FRANCHISE trials** (incr. 1a→8). Reste (hors trials) : finir les composants SPECIAL_EVENTS restants, puis Phase 2.
 
 ## Statut : 4 DifficultyMode-trials ✅ EN JEU. EVENT/FRANCHISE : 1a STRUCTURE ✅ + 1b CONTENU ✅ + 2 AUTORITÉ SERVEUR (`GetTrialEventData` blob) ✅ (régression 132). **Prochaine action = incr. 3 `TrialEventAttack` → record (`BaseEventTrialNode.recordOutcome` : avance nœud + conso chance + loot) sur le blob per-user ; puis push event (`AdminEvents --open-trial`) + vérif EN JEU.**

@@ -5861,3 +5861,41 @@ Essence + persistance.
 Régression 137/137. Fichiers : `server/java/dhserver/ServerEvents.java` (specJsonTrialFranchise + branche TRIAL_FRANCHISE +
 correctif realGear NONE), `server/smoke/AdminEvents.java` (--open-trial/--close-trial), `server/smoke/TrialAdminPushTest.java`
 (nouveau), `server/smoke/regression.sh`, `docs/FRANCHISE_TRIALS.md` §17, `MEMORY.md`.
+
+## 2026-08-23 (g147) — FRANCHISE_TRIALS EVENT/FRANCHISE incr. 8 : ✅ VÉRIFIÉ EN JEU (§8) — franchise trial joué de bout en bout
+
+Dernier maillon (§8 obligatoire) : jouer le franchise trial dans le VRAI client. `AdminEvents --open-trial` (eventID 900001) sur
+la DB serveur + `run-online.sh` (id=1, TL200). Pilotes B-bis ajoutés (API réelle du client) : `trialscreen` (vitrine via
+`ClientTrialEventHelper.createTrial` + `TrialEventSubTrialChooserScreen`), `trialsub <n>` (`TrialEventSubTrialScreen`),
+`trialattack <sub> <node>` (`TrialEventHeroChooserScreen`), `trialteam` (sélection franchise-gatée + `startBattleInner`).
+
+**✅ VÉRIFIÉ EN JEU (captures `desktop-port/build` → scratchpad `trial_*.png`)** :
+1. Vitrine `TrialEventSubTrialChooserScreen` : 4 sous-trials (WILDCARD/JUNGLE_BOOK/LITTLE_MERMAID/MOANA) + CHANCES 2/2 + ENTER.
+2. Sous-trial `TrialEventSubTrialScreen` : STAGE 1/14 (nodeCount), Enemies 1/3 (waveCount), 5 ennemis niv 55 à 2★ (stage 1 de
+   `franchise_trials_enemy_config`, data-driven), chemin de nœuds 1→14.
+3. `TrialEventHeroChooserScreen` (CHOOSE YOUR HEROES, 0/5, FIGHT) → combat `TrialEventAttackScreen` rendu (3/3 vagues) → VICTOIRE.
+4. Serveur : `<== GetTrialEventData(900001)` + `HeroLineupUpdate(EVENT_TRIAL)` + `<== TrialEventAttack : event=900001 sous-trial=1
+   nœud=1 outcome=WIN → recordOutcome appliqué [persisté]`. DB (`DbVerify`) : `trialEventData` eventID=900001, chancesUsed=1,
+   sous-trial 1 → nœud 1 à **3★** (tentatives=1). Server-autoritatif, persisté. (Patch Essence=0 : nœud 1=stage 1 → Badge Bits ;
+   Patch Essence dès stage 5.)
+5. **Gating serveur PROUVÉ EN JEU** : sur le sous-trial 2 (THE_JUNGLE_BOOK) avec un lineup NON-franchise → le CLIENT joue+gagne mais
+   le SERVEUR rejette : `⛔ TrialEventAttack REFUSÉ (anti-triche) : ERROR` (rien accordé). Anti-triche end-to-end confirmée.
+
+**⚠ 3 correctifs §8 découverts EN JEU** (invisibles en headless jusqu'au PUSH/rendu réel — leçon : le round-trip complet
+parse+toJson ET le rendu client sont nécessaires) :
+- `waveCount` non peuplé → `TrialEventSubTrialScreen.getCampaignEnemiesViewV2` : `ArithmeticException: / by zero` (divise par le
+  nb de vagues). Ajout `WAVE_COUNT` (base_trial_config) → pièce `{waveCount:N, scope:{}}`.
+- Carte `image` : `toJson` d'un card kind=UNIT écrit la clé `image` mais `load` (client re-parse) relit `unitType` (asymétrie du
+  jeu) → `Named value not found: unitType` → event rejeté. `fillTrialFields` laissait `cardUnitType`=DEFAULT (→ branche UNIT).
+  Fix : `cardUnitType`=null + `cardImage`=null → `toJson` émet `{kind:MATCH_DISPLAY}` (round-trip propre, sans asset).
+- `gatingCriteria` absent → au `load`, `TrialEventInfo.franchises` (dérivé du `specificFranchise` du filtre de gating) = null. Ajout
+  d'1 critère/sous-trial de franchise : `{scope:{subtrialNumber:i}, random:{kind:NORMAL}, criteria:[{style:{kind:INCLUSIVE,
+  heroCount:5}, criterion:{kind:CATEGORIES, categories:[{kind:FRANCHISE, franchises:[{franchise:F}]}]}}]}` (heroCount DANS `style` ;
+  `random` requis par ScopedConfigurable). WILDCARD → aucun critère.
+
+**⇒ MODE « TRIALS » COMPLET & VÉRIFIÉ EN JEU** : 4 DifficultyMode-trials (TEAM_TRIALS_{BLUE,RED,YELLOW}+SPOTLIGHT, g134-g136) +
+EVENT/FRANCHISE trials (incr. 1a→8, g137-g147). Reste (hors trials) : composants SPECIAL_EVENTS restants, puis Phase 2.
+
+Régression 137/137. Fichiers : `server/java/dhserver/ServerEvents.java` (buildFranchiseTrialEvent : waveCount + gatingCriteria +
+carte MATCH_DISPLAY), `desktop-port/src/main/java/dhdesktop/TutorialDriver.java` + `DesktopLauncher.java` (pilotes trialscreen/
+trialsub/trialattack/trialteam), `docs/FRANCHISE_TRIALS.md` §17, `MEMORY.md`.

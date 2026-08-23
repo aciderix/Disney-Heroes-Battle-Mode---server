@@ -1302,6 +1302,114 @@ public final class TutorialDriver {
         } catch (Throwable e) { System.out.println("[teamtrialsscreen] échec: " + e); e.printStackTrace(); }
     }
 
+    /** FRANCHISE_TRIALS (EVENT/FRANCHISE) — trouve l'event TRIAL FRANCHISE dans le snapshot CLIENT (poussé par le serveur via
+     *  REFRESH_SPECIAL_EVENTS), le construit avec l'API RÉELLE du jeu et pousse la VRAIE vitrine
+     *  {@code TrialEventSubTrialChooserScreen(trial, snapshot)} — EXACTEMENT ce que fait {@code TrialEventBox.createTrialView}
+     *  (patron §B-bis : API réelle, pas de coordonnée devinée). Prouve EN JEU que le franchise trial poussé s'affiche
+     *  (sous-trials par franchise, nœuds). Invoqué via "trialscreen". */
+    public static com.perblue.heroes.game.objects.trials.GenericTrial findTrial(GameMain game) {
+        var snap = com.perblue.heroes.game.logic.SpecialEventsHelper.snapshot();
+        boolean cardVisible = com.perblue.heroes.ui.trials.ClientTrialEventHelper.isTrialEventCardVisible(snap);
+        System.out.println("[trialscreen] isTrialEventCardVisible(snapClient)=" + cardVisible);
+        for (Object o : snap.getActiveEvents()) {
+            com.perblue.common.specialevent.SpecialEventInfo info = (com.perblue.common.specialevent.SpecialEventInfo) o;
+            Object comp = info.getComponent(com.perblue.heroes.game.specialevent.TrialEventInfo.class);
+            if (comp != null) {
+                System.out.println("[trialscreen] event TRIAL trouvé : id=" + info.getID());
+                return com.perblue.heroes.ui.trials.ClientTrialEventHelper.createTrial(info);
+            }
+        }
+        System.out.println("[trialscreen] AUCUN event TRIAL dans le snapshot client (getActiveEvents=" + snap.getActiveEvents().size() + ")");
+        return null;
+    }
+
+    public static void trialScreen(GameMain game) {
+        try {
+            var snap = com.perblue.heroes.game.logic.SpecialEventsHelper.snapshot();
+            com.perblue.heroes.game.objects.trials.GenericTrial trial = findTrial(game);
+            if (trial == null) return;
+            System.out.println("[trialscreen] trial construit : type=" + trial.getType()
+                + " franchises=" + com.perblue.heroes.ui.trials.ClientTrialEventHelper.getTrialFranchises(trial));
+            game.getScreenManager().pushScreen(new com.perblue.heroes.ui.trials.TrialEventSubTrialChooserScreen(trial, snap));
+            Object cur = game.getScreenManager().getScreen();
+            System.out.println("[trialscreen] vitrine poussée : écran=" + (cur == null ? "null" : cur.getClass().getSimpleName()));
+        } catch (Throwable e) { System.out.println("[trialscreen] échec: " + e); e.printStackTrace(); }
+    }
+
+    /** FRANCHISE_TRIALS — pousse la VRAIE page d'un SOUS-TRIAL {@code TrialEventSubTrialScreen(trial, subtrial, snapshot)}
+     *  (les nœuds de la franchise). subtrialNumber 1-based. Invoqué via "trialsub &lt;n&gt;". */
+    public static void trialSub(GameMain game, int subtrialNumber) {
+        try {
+            var snap = com.perblue.heroes.game.logic.SpecialEventsHelper.snapshot();
+            com.perblue.heroes.game.objects.trials.GenericTrial trial = findTrial(game);
+            if (trial == null) return;
+            com.perblue.heroes.game.objects.trials.GenericSubtrial sub = null;
+            for (Object o : trial.getSubtrials()) {
+                com.perblue.heroes.game.objects.trials.GenericSubtrial s = (com.perblue.heroes.game.objects.trials.GenericSubtrial) o;
+                if (s.getSubtrialNumber() == subtrialNumber) { sub = s; break; }
+            }
+            if (sub == null) { System.out.println("[trialsub] sous-trial " + subtrialNumber + " introuvable"); return; }
+            System.out.println("[trialsub] sous-trial " + subtrialNumber + " : " + sub.getNodes().size() + " nœuds → TrialEventSubTrialScreen");
+            game.getScreenManager().pushScreen(new com.perblue.heroes.ui.trials.TrialEventSubTrialScreen(trial, sub, snap));
+            Object cur = game.getScreenManager().getScreen();
+            System.out.println("[trialsub] écran=" + (cur == null ? "null" : cur.getClass().getSimpleName()));
+        } catch (Throwable e) { System.out.println("[trialsub] échec: " + e); e.printStackTrace(); }
+    }
+
+    /** FRANCHISE_TRIALS — pousse le VRAI sélecteur de héros d'un NŒUD {@code TrialEventHeroChooserScreen(trial, sub, node, snap)}
+     *  (le chooser filtre aux héros de la franchise via le gating). Invoqué via "trialattack &lt;sub&gt; &lt;node&gt;". */
+    public static void trialAttack(GameMain game, int subN, int nodeN) {
+        try {
+            var snap = com.perblue.heroes.game.logic.SpecialEventsHelper.snapshot();
+            com.perblue.heroes.game.objects.trials.GenericTrial trial = findTrial(game);
+            if (trial == null) return;
+            com.perblue.heroes.game.objects.trials.GenericSubtrial sub = null;
+            for (Object o : trial.getSubtrials()) {
+                com.perblue.heroes.game.objects.trials.GenericSubtrial s = (com.perblue.heroes.game.objects.trials.GenericSubtrial) o;
+                if (s.getSubtrialNumber() == subN) { sub = s; break; }
+            }
+            if (sub == null) { System.out.println("[trialattack] sous-trial " + subN + " introuvable"); return; }
+            com.perblue.heroes.game.objects.trials.GenericTrialNode node = null;
+            for (Object o : sub.getNodes()) {
+                com.perblue.heroes.game.objects.trials.GenericTrialNode n = (com.perblue.heroes.game.objects.trials.GenericTrialNode) o;
+                if (n.getNodeNumber() == nodeN) { node = n; break; }
+            }
+            if (node == null) { System.out.println("[trialattack] nœud " + nodeN + " introuvable"); return; }
+            game.getScreenManager().pushScreen(new com.perblue.heroes.ui.trials.TrialEventHeroChooserScreen(trial, sub, node, snap));
+            Object cur = game.getScreenManager().getScreen();
+            System.out.println("[trialattack] sous-trial " + subN + " nœud " + nodeN + " → écran=" + (cur == null ? "null" : cur.getClass().getSimpleName()));
+        } catch (Throwable e) { System.out.println("[trialattack] échec: " + e); e.printStackTrace(); }
+    }
+
+    /** FRANCHISE_TRIALS — sur le {@code TrialEventHeroChooserScreen} : sélectionne jusqu'à 5 héros SÉLECTIONNABLES (le gating
+     *  filtre aux héros de la franchise) puis lance le combat ({@code startBattleInner}, AUTO). Le client jouera le combat puis
+     *  enverra {@code TrialEventAttack} → serveur {@code recordTrialEventAttack}. Invoqué via "trialteam". */
+    public static void trialTeam(GameMain game) {
+        try {
+            Object screen = game.getScreenManager().getScreen();
+            if (screen == null || !screen.getClass().getSimpleName().contains("TrialEventHeroChooser")) {
+                System.out.println("[trialteam] écran courant = " + (screen == null ? "null" : screen.getClass().getSimpleName())
+                    + " (pas TrialEventHeroChooserScreen)"); return;
+            }
+            com.perblue.heroes.ui.herochooser.HeroChooserScreen s = (com.perblue.heroes.ui.herochooser.HeroChooserScreen) screen;
+            var provider = com.perblue.heroes.game.logic.CollectionHelper.fromUser(game.getYourUser());
+            int selectable = 0;
+            for (Object ho : game.getYourUser().getHeroes()) {
+                if (s.getSelectedHeroes().size >= 5) break;
+                com.perblue.heroes.game.objects.IHero h = (com.perblue.heroes.game.objects.IHero) ho;
+                var hero = game.getYourUser().getHero(h.getType());
+                if (!(hero instanceof com.perblue.heroes.game.objects.UnitData)) continue;
+                com.perblue.heroes.game.objects.UnitData ud = (com.perblue.heroes.game.objects.UnitData) hero;
+                if (s.canSelectUnit(ud)) { s.unitSelected(ud, provider, 0f, 0f); selectable++; }
+            }
+            System.out.println("[trialteam] héros franchise sélectionnables retenus=" + s.getSelectedHeroes().size
+                + " (le gating a filtré le roster) → startBattleInner()");
+            java.lang.reflect.Method sbi = com.perblue.heroes.ui.herochooser.HeroChooserScreen.class.getDeclaredMethod("startBattleInner");
+            sbi.setAccessible(true); sbi.invoke(s);   // protected dans la base → réflexion (même chemin exact)
+            System.out.println("[trialteam] combat lancé (AUTO) → à la victoire : TrialEventAttack [chemin réel]");
+        } catch (Throwable e) { System.out.println("[trialteam] échec: " + e); e.printStackTrace(); }
+    }
+
     public static void portScreen(GameMain game) {
         try {
             var NONE = com.perblue.heroes.game.specialevent.SpecialEventSnapshot.NONE;

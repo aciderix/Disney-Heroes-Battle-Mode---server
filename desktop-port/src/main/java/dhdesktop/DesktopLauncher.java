@@ -533,6 +533,25 @@ public final class DesktopLauncher {
                     TutorialDriver.teamTrialsScreen(game);
                     continue;
                 }
+                if (low.equals("trialscreen") || low.startsWith("trialscreen ")) {  // FRANCHISE_TRIALS → vitrine TrialEventSubTrialChooserScreen
+                    TutorialDriver.trialScreen(game);
+                    continue;
+                }
+                if (low.startsWith("trialsub")) {                 // trialsub <n> → page d'un sous-trial (nœuds de la franchise)
+                    String[] ts = ln.trim().split("[,;\\s]+");
+                    TutorialDriver.trialSub(game, ts.length >= 2 ? Integer.parseInt(ts[1]) : 1);
+                    continue;
+                }
+                if (low.startsWith("trialattack")) {              // trialattack <sub> <node> → sélecteur de héros du nœud
+                    String[] ta = ln.trim().split("[,;\\s]+");
+                    TutorialDriver.trialAttack(game, ta.length >= 2 ? Integer.parseInt(ta[1]) : 1,
+                                                     ta.length >= 3 ? Integer.parseInt(ta[2]) : 1);
+                    continue;
+                }
+                if (low.equals("trialteam") || low.startsWith("trialteam ")) {  // sélectionne l'équipe franchise + lance le combat
+                    TutorialDriver.trialTeam(game);
+                    continue;
+                }
                 if (low.startsWith("portenter ")) {              // portenter <MODE> → ENTER réel (ModePreviewScreen)
                     String[] pe = ln.trim().split("[,;\\s]+");
                     if (pe.length >= 2) TutorialDriver.portEnter(game, pe[1].toUpperCase());
