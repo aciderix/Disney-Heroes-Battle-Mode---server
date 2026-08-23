@@ -504,6 +504,17 @@ public final class ServerEvents {
     return com.perblue.heroes.game.logic.SpecialEventsHelper.snapshotWithoutRefresh();
   }
 
+  /**
+   * Snapshot de la couche événements ANCRÉ à une heure choisie (mêmes events installés, {@code snapshotTime}=time). Utilise
+   * l'état brut courant ({@code snapshotRaw}) + le constructeur DU JEU {@code SpecialEventSnapshot(state, time)} (§3). Sert aux
+   * tests DÉTERMINISTES de la rotation par jour : {@code DifficultyModeHelper.isOpen} calcule le jour depuis
+   * {@code snapshot.snapshotTime} (fait §8) — figer le temps rend le jour indépendant du calendrier réel.
+   */
+  public static com.perblue.heroes.game.specialevent.SpecialEventSnapshot snapshotAt(long time) {
+    return new com.perblue.heroes.game.specialevent.SpecialEventSnapshot(
+        com.perblue.heroes.game.logic.SpecialEventsHelper.snapshotRaw(), time);
+  }
+
   // --- réflexion (couche plateforme §3, comme l'alloc sans ctor de GameMain) ---
   private static void setField(Object o, String name, Object v) throws Exception {
     Field f = findField(o.getClass(), name); f.setAccessible(true); f.set(o, v);

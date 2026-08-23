@@ -363,6 +363,25 @@ public final class LoginServer {
                   System.out.println("[login]     ⛔ RaidDifficultyMode REFUSÉ (anti-triche) : " + t.getMessage());
                 } else { System.out.println("[login]     ! recordRaidDifficultyMode échec: " + t); t.printStackTrace(); }
               }
+            } else if (m instanceof com.perblue.heroes.network.messages.TrialEventAttack) {
+              // FRANCHISE_TRIALS (EVENT/FRANCHISE) incr. 3 — combat d'un nœud de trial. Le client a joué (client-autoritatif)
+              // et envoie l'issue (fire-and-forget). Le serveur ré-exécute BaseEventTrialNode.recordOutcome (anti-triche :
+              // chances/resets restants ; avance le statut du nœud [étoiles] ; consomme une chance ; crédite les récompenses),
+              // reflète le statut calculé dans le blob TrialEventData serveur-autoritatif et persiste. Anti-triche =
+              // ClientErrorCodeException (plus de chance / event fermé) → on n'accorde rien.
+              try {
+                com.perblue.heroes.network.messages.TrialEventAttack ta = (com.perblue.heroes.network.messages.TrialEventAttack) m;
+                user.recordTrialEventAttack(ta);
+                try { store.save(user); } catch (Exception e) {
+                  System.out.println("[login]     ! persistance échouée: " + e); }
+                System.out.println("[login] <== TrialEventAttack : event=" + ta.eventID + " sous-trial=" + ta.subtrialNumber
+                    + " nœud=" + ta.nodeNumber + " outcome=" + (ta.base == null ? "?" : ta.base.outcome)
+                    + " → recordOutcome appliqué [persisté]");
+              } catch (Throwable t) {
+                if (t instanceof com.perblue.heroes.ClientErrorCodeException) {
+                  System.out.println("[login]     ⛔ TrialEventAttack REFUSÉ (anti-triche) : " + t.getMessage());
+                } else { System.out.println("[login]     ! recordTrialEventAttack échec: " + t); t.printStackTrace(); }
+              }
             } else if (m instanceof com.perblue.heroes.network.messages.FriendshipCampaignAttack) {
               // FRIENDSHIPS #72 incr. 3b — combat de CAMPAGNE D'AMITIÉ (MISSIONS). Le client a joué le combat
               // (client-autoritatif) et envoie l'issue (fire-and-forget). Le serveur AUTORITATIF ré-exécute

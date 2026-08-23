@@ -3606,6 +3606,82 @@ public final class ServerUser {
   }
 
   /**
+   * FRANCHISE_TRIALS (EVENT/FRANCHISE) incr. 3 — RECORD d'un combat de trial (client-autoritatif) : le client joue le combat
+   * du nœud et envoie {@code TrialEventAttack{eventID, subtrialNumber, nodeNumber, stagesCleared, base, lootEarned}}. Le serveur
+   * REJOUE l'issue via la logique DU JEU (§3) : il reconstruit l'event trial (déterministe, depuis les `.tab`, {@code
+   * buildFranchiseTrialEvent}), y branche l'état per-user persisté ({@code setUserData(blob)}), retrouve le nœud, et exécute
+   * {@code BaseEventTrialNode.recordOutcome} — qui fait TOUT : anti-triche (chances/resets restants → lève), avance le statut
+   * du nœud (étoiles, façon campagne), CONSOMME une chance ({@code recordChanceUsed}) et CRÉDITE les récompenses du nœud
+   * ({@code RewardHelper.giveRewards} = Badge Bits → Patch Essence, tirées des `.tab`). Le blob {@code TrialEventData} est muté
+   * EN PLACE → on le re-persiste. Aucune règle réécrite (le serveur exécute le code du jeu).
+   */
+  public synchronized void recordTrialEventAttack(com.perblue.heroes.network.messages.TrialEventAttack m)
+      throws com.perblue.heroes.ClientErrorCodeException {
+    ServerContext.init();
+    User user = ClientNetworkStateConverter.getUser(userInfo, userExtra, "trial");
+    IndividualUser iu = ClientNetworkStateConverter.getIndividualUser(
+        individualUserExtra, userID, userInfo.diamonds, "trial");
+    ServerContext.bind(user, iu);
+    long now = com.perblue.heroes.util.TimeUtil.serverTimeNow();
+    com.perblue.common.specialevent.SpecialEventInfo info =
+        ServerEvents.buildFranchiseTrialEvent(m.eventID, now - 1000L, now + 30L * 86400000L);
+    com.perblue.heroes.network.messages.TrialEventData blob = ServerTrials.getData(this, m.eventID);
+    com.perblue.heroes.game.objects.trials.ClientEventTrial trial =
+        new com.perblue.heroes.game.objects.trials.ClientEventTrial(user, info);
+    trial.setUserData(blob);
+
+    com.perblue.heroes.game.objects.trials.GenericSubtrial sub = null;
+    for (Object o : trial.getSubtrials()) {
+      com.perblue.heroes.game.objects.trials.GenericSubtrial s = (com.perblue.heroes.game.objects.trials.GenericSubtrial) o;
+      if (s.getSubtrialNumber() == m.subtrialNumber) { sub = s; break; }
+    }
+    if (sub == null) throw new com.perblue.heroes.ClientErrorCodeException(
+        com.perblue.heroes.util.localization.ClientErrorCode.ERROR, new String[0]);
+    com.perblue.heroes.game.objects.trials.GenericTrialNode node = null;
+    for (Object o : sub.getNodes()) {
+      com.perblue.heroes.game.objects.trials.GenericTrialNode n = (com.perblue.heroes.game.objects.trials.GenericTrialNode) o;
+      if (n.getNodeNumber() == m.nodeNumber) { node = n; break; }
+    }
+    if (node == null) throw new com.perblue.heroes.ClientErrorCodeException(
+        com.perblue.heroes.util.localization.ClientErrorCode.ERROR, new String[0]);
+
+    com.perblue.heroes.network.messages.CombatOutcome outcome = m.base == null ? null : m.base.outcome;
+    java.util.Collection<?> loot = m.lootEarned == null ? java.util.Collections.emptyList() : m.lootEarned;
+    java.util.Collection<?> attackers = m.base == null ? java.util.Collections.emptyList() : m.base.attackers;
+    java.util.Collection<?> defenders = m.base == null ? java.util.Collections.emptyList() : m.base.defenders;
+    com.perblue.heroes.game.specialevent.SpecialEventSnapshot snap = ServerEvents.snapshot();
+    node.recordOutcome(outcome, m.stagesCleared, loot, attackers, defenders, m.attackEndTime, snap);
+
+    // recordOutcome a : anti-triche + conso chance (recordChanceUsed → userData.chancesUsed déjà à jour) + récompenses créditées.
+    // Il avance le STATUT du nœud sur l'objet runtime (ClientEventTrial, côté client), mais N'écrit PAS ce statut dans le blob
+    // wire (le client renvoie l'issue, le SERVEUR tient l'état). On REFLÈTE donc le statut calculé PAR LE JEU dans le blob
+    // serveur-autoritatif (glue §3, pas une règle : les étoiles/complétion viennent de node.getLevelStatus()).
+    com.perblue.heroes.game.objects.ICampaignLevelStatus ls =
+        ((com.perblue.heroes.game.objects.trials.BaseEventTrialNode) node).getLevelStatus();
+    com.perblue.heroes.network.messages.TrialEventSubtrialData sd =
+        (com.perblue.heroes.network.messages.TrialEventSubtrialData) blob.subtrials.get(Integer.valueOf(m.subtrialNumber));
+    if (sd == null) {
+      sd = new com.perblue.heroes.network.messages.TrialEventSubtrialData();
+      sd.nodeLevelStatuses = new java.util.HashMap<>();
+      blob.subtrials.put(Integer.valueOf(m.subtrialNumber), sd);
+    }
+    if (sd.nodeLevelStatuses == null) sd.nodeLevelStatuses = new java.util.HashMap<>();
+    com.perblue.heroes.network.messages.CampaignLevelStatus cs =
+        (com.perblue.heroes.network.messages.CampaignLevelStatus) sd.nodeLevelStatuses.get(Integer.valueOf(m.nodeNumber));
+    if (cs == null) { cs = new com.perblue.heroes.network.messages.CampaignLevelStatus(); sd.nodeLevelStatuses.put(Integer.valueOf(m.nodeNumber), cs); }
+    cs.stars = ls.getStars();
+    cs.level = ls.getLevel();
+    cs.totalAttempts = cs.totalAttempts + 1;
+    if (outcome == com.perblue.heroes.network.messages.CombatOutcome.WIN) cs.lastWinTime = m.attackEndTime;
+
+    // Le blob est à jour (chances via recordOutcome + statut nœud reflété) → persiste.
+    setTrialEventData(blob);
+    resyncHeroes(user);
+    resyncDiamonds(user);
+    resyncCounts(user);
+  }
+
+  /**
    * PORT (#72) incrément 2 — RAID d'un mode « difficulty » ({@code RaidDifficultyMode} → {@code recordRaidOutcome}).
    * Le raid SAUTE le combat et rejoue {@code raidCount} fois un étage déjà 3★ (auto-attaque). Client-autoritatif : le
    * client valide+charge en local ({@code useRaidTickets}), roule le butin par raid ({@code rollLoot}), crédite

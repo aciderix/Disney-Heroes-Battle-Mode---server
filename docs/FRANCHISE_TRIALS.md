@@ -408,4 +408,28 @@ bien formé (parseur du jeu l'accepte), 14 enemyLevel/Rarity/Stars, 4 lineups ×
 (builder ABSENT du jar client → serveur-autoritatif, patron `ArenaInfo`/`GetExpeditionResponse`). `ServerTrialsDataTest`
 (régression 132) : frais/persisté, round-trip wire + DB, changement d'eventID → frais.
 
+### ✅ incr. 3 LIVRÉ (g142) — RECORD d'un combat de trial : `TrialEventAttack` → `BaseEventTrialNode.recordOutcome`
+Le client joue le combat du nœud (client-autoritatif) et envoie `TrialEventAttack{eventID, subtrialNumber, nodeNumber,
+stagesCleared, base{outcome,stars,attackers,defenders}, lootEarned}` (fire-and-forget). `ServerUser.recordTrialEventAttack` :
+1. reconstruit l'event trial DÉTERMINISTE (`ServerEvents.buildFranchiseTrialEvent(eventID,…)`, depuis les `.tab`) + branche
+   l'état per-user persisté (`new ClientEventTrial(user, info).setUserData(blob)`, blob = `ServerTrials.getData`) ;
+2. retrouve le sous-trial (`getSubtrialNumber()`) puis le nœud (`getNodeNumber()`) — lève `ClientErrorCodeException` si absent ;
+3. exécute la logique DU JEU (§3) : **`node.recordOutcome(outcome, stagesCleared, loot, attackers, defenders, attackEndTime,
+   snapshot)`** — qui fait TOUT : anti-triche (chances/resets restants), avance le statut du nœud (étoiles, façon campagne),
+   **consomme une chance** (`recordChanceUsed` → `userData.chancesUsed`++), crédite les récompenses (`RewardHelper.giveRewards`) ;
+4. **reflète** le statut calculé PAR LE JEU (`((BaseEventTrialNode) node).getLevelStatus()` → étoiles/niveau) dans le blob
+   serveur-autoritatif `TrialEventData.subtrials[sub].nodeLevelStatuses[node]` (glue §3 : `recordOutcome` avance l'objet runtime
+   côté client mais N'écrit pas le statut dans le blob wire — le SERVEUR tient l'état) ; puis `setTrialEventData` + resync.
+`GenericTrialNode` est une INTERFACE (`getLevelStatus` déclaré sur `BaseEventTrialNode`, concret `ClientEventTrialNode`) → cast.
+**Handler** `LoginServer` : `TrialEventAttack` (fire-and-forget, patron `DifficultyModeAttack`) → `recordTrialEventAttack` →
+`store.save` ; anti-triche = `ClientErrorCodeException` (rien accordé). `TrialEventRecordTest` (régression 133) : victoire
+(sous-trial 1, nœud 1) → nœud dans `subtrials` avec étoiles=3, `chancesUsed` 0→1, persistance wire + DB (étoiles + chances).
+**⚠ Correctif déterminisme (§8, découvert en régression)** : `SpecialEventsRotationTest` dépendait du jour serveur réel (jour 1 =
+seul jour où DOCKS **et** WAREHOUSE ouverts → aucun mode fermé pour tester l'override) → **ancré** à un jour où DOCKS est fermé
+via nouveau helper `ServerEvents.snapshotAt(long)` (constructeur DU JEU `SpecialEventSnapshot(snapshotRaw(), time)`), déterministe.
+
+**RESTE** : 4 resets (`checkForDailyReset`/`doPaidReset`) → 5 gating franchise (`getGatingCriteria` = seuls héros de la franchise)
+→ 6 complétion `PatchedHeroesHelper.handleFranchiseTrialCompletion` (Patch Essence) → 7 `AdminEvents --open-trial <FRANCHISE|saison>`
+(push event) → 8 vérif EN JEU (vitrine `TrialEventSubTrialChooserScreen` → combat franchise → Patch Essence).
+
 ## Statut : 4 DifficultyMode-trials ✅ EN JEU. EVENT/FRANCHISE : 1a STRUCTURE ✅ + 1b CONTENU ✅ + 2 AUTORITÉ SERVEUR (`GetTrialEventData` blob) ✅ (régression 132). **Prochaine action = incr. 3 `TrialEventAttack` → record (`BaseEventTrialNode.recordOutcome` : avance nœud + conso chance + loot) sur le blob per-user ; puis push event (`AdminEvents --open-trial`) + vérif EN JEU.**

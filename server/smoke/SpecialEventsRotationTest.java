@@ -30,26 +30,37 @@ public final class SpecialEventsRotationTest {
     check(docksDays.size > 0 && whDays.size > 0, "getOpenDays non vides");
     System.out.println("[rotation] getOpenDays DU JEU : DOCKS=" + docksDays + " WAREHOUSE=" + whDays);
 
-    // (1) SANS aucun event : isOpen suit la table getOpenDays (rotation DÉFAUT du jeu).
-    ServerEvents.install(java.util.Collections.emptyList());
+    // ⚠️ DÉTERMINISME (fait §8) : isOpen calcule le jour depuis snapshot.snapshotTime — NON depuis serverTimeNow. Le jour
+    // serveur réel n'est pas fiable pour ce test : DOCKS [6,4,2,1] et WAREHOUSE [7,5,3,1] couvrent les 7 jours, mais le
+    // jour 1 (dimanche-équivalent) est le SEUL où LES DEUX sont ouverts → aucun mode « fermé » pour démontrer l'override.
+    // On ANCRE donc le temps à un jour où PORT_DOCKS est FERMÉ (existe toujours dans une fenêtre de 7 jours, jours {3,5,7}),
+    // via ServerEvents.snapshotAt(T) (mêmes events installés, snapshotTime figé). Le test devient indépendant du calendrier.
+    final long DAY = 24L * 3600_000L;
     long now = com.perblue.heroes.util.TimeUtil.serverTimeNow();
-    int dow = com.perblue.heroes.util.TimeUtil.getUserDailyActivityDayOfWeek(u, now);
-    boolean docksDefault = DifficultyModeHelper.isOpen(GameMode.PORT_DOCKS, u, ServerEvents.snapshot());
-    boolean whDefault     = DifficultyModeHelper.isOpen(GameMode.PORT_WAREHOUSE, u, ServerEvents.snapshot());
-    System.out.println("[rotation] SANS event, jour=" + dow + " : DOCKS=" + docksDefault + " (att " + docksDays.contains(dow)
+    long anchor = -1L; int dow = -1;
+    for (int k = 0; k < 7; k++) {
+      long t = now + k * DAY;
+      int d = com.perblue.heroes.util.TimeUtil.getUserDailyActivityDayOfWeek(u, t);
+      if (!docksDays.contains(d)) { anchor = t; dow = d; break; }
+    }
+    check(anchor >= 0, "un jour où PORT_DOCKS est fermé existe dans la fenêtre de 7 jours");
+    final GameMode closed = GameMode.PORT_DOCKS;   // fermé au jour ancré (déterministe)
+
+    // (1) SANS aucun event : isOpen suit la table getOpenDays (rotation DÉFAUT du jeu), au jour ancré.
+    ServerEvents.install(java.util.Collections.emptyList());
+    boolean docksDefault = DifficultyModeHelper.isOpen(GameMode.PORT_DOCKS, u, ServerEvents.snapshotAt(anchor));
+    boolean whDefault     = DifficultyModeHelper.isOpen(GameMode.PORT_WAREHOUSE, u, ServerEvents.snapshotAt(anchor));
+    System.out.println("[rotation] SANS event, jour ancré=" + dow + " : DOCKS=" + docksDefault + " (att " + docksDays.contains(dow)
         + "), WAREHOUSE=" + whDefault + " (att " + whDays.contains(dow) + ")");
     check(docksDefault == docksDays.contains(dow), "DOCKS défaut == getOpenDays.contains(jour)");
     check(whDefault    == whDays.contains(dow),    "WAREHOUSE défaut == getOpenDays.contains(jour)");
-
-    // On choisit un mode FERMÉ aujourd'hui (défaut) pour démontrer l'override. (Au moins un des deux l'est en pratique.)
-    GameMode closed = !docksDefault ? GameMode.PORT_DOCKS : (!whDefault ? GameMode.PORT_WAREHOUSE : null);
-    check(closed != null, "au moins un mode PORT fermé aujourd'hui pour tester l'override (jour=" + dow + ")");
+    check(!docksDefault, "PORT_DOCKS fermé au jour ancré (prémisse de l'override)");
 
     // (2a) OVERRIDE MODES_OPEN : ouvre le mode fermé.
     ServerEvents.install(java.util.Collections.singletonList(
         ServerEvents.buildModesOpenEvent(910_010L, java.util.Collections.singletonList(closed),
             ServerEvents.defaultStart(), ServerEvents.defaultEnd())));
-    check(DifficultyModeHelper.isOpen(closed, u, ServerEvents.snapshot()),
+    check(DifficultyModeHelper.isOpen(closed, u, ServerEvents.snapshotAt(anchor)),
         "MODES_OPEN override ouvre " + closed + " (fermé en défaut ce jour)");
     System.out.println("[rotation] override MODES_OPEN : " + closed + " ouvert (jour hors planning) ✔");
 
@@ -57,13 +68,13 @@ public final class SpecialEventsRotationTest {
     ServerEvents.install(java.util.Collections.singletonList(
         ServerEvents.buildDropBonusEvent(910_011L, java.util.Collections.singletonList(closed),
             1, ServerEvents.defaultStart(), ServerEvents.defaultEnd())));
-    check(DifficultyModeHelper.isOpen(closed, u, ServerEvents.snapshot()),
+    check(DifficultyModeHelper.isOpen(closed, u, ServerEvents.snapshotAt(anchor)),
         "DropBonus override ouvre " + closed + " (fermé en défaut ce jour)");
     System.out.println("[rotation] override DropBonus : " + closed + " ouvert (jour hors planning) ✔");
 
     // (3) Retrait de l'override → le mode se REFERME (retour au défaut getOpenDays).
     ServerEvents.install(java.util.Collections.emptyList());
-    check(!DifficultyModeHelper.isOpen(closed, u, ServerEvents.snapshot()),
+    check(!DifficultyModeHelper.isOpen(closed, u, ServerEvents.snapshotAt(anchor)),
         closed + " refermé après retrait de l'override (retour au défaut)");
     System.out.println("[rotation] retrait override : " + closed + " refermé (défaut) ✔");
 

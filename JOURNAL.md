@@ -5673,3 +5673,47 @@ conso chance] + crédit loot client-reporté → resérialiser le blob → persi
 Régression 132/132. Fichiers : `server/java/dhserver/ServerTrials.java` (nouveau), `ServerUser.java` (accesseurs blob trial),
 `UserStore.java` (colonne + save/load), `LoginServer.java` (handler GetTrialEventData), `server/smoke/ServerTrialsDataTest.java`
 (nouveau), `server/smoke/regression.sh`, `docs/FRANCHISE_TRIALS.md` §17, `MEMORY.md`.
+
+## 2026-08-23 (g142) — FRANCHISE_TRIALS EVENT/FRANCHISE incr. 3 : RECORD d'un combat de trial (headless)
+
+Après l'autorité serveur sur l'état (incr. 2), le RECORD d'un combat : le client joue le nœud (client-autoritatif) et envoie
+`TrialEventAttack{eventID, subtrialNumber, nodeNumber, stagesCleared, base{outcome,stars,attackers,defenders}, lootEarned}`
+(fire-and-forget). Le serveur REJOUE l'issue via la logique DU JEU (§3), 0 règle réécrite.
+
+**`ServerUser.recordTrialEventAttack(m)`** (nouveau, patron `recordDifficultyModeAttack`) :
+1. reconstruit l'event trial DÉTERMINISTE (`ServerEvents.buildFranchiseTrialEvent(m.eventID, …)`, depuis les `.tab`) et y branche
+   l'état per-user persisté : `new ClientEventTrial(user, info).setUserData(blob)` (blob = `ServerTrials.getData(this, m.eventID)`) ;
+2. retrouve le sous-trial (`getSubtrialNumber()==m.subtrialNumber`) puis le nœud (`getNodeNumber()==m.nodeNumber`) — lève
+   `ClientErrorCodeException` (ERROR) si absent ;
+3. exécute **`node.recordOutcome(outcome, m.stagesCleared, loot, attackers, defenders, m.attackEndTime, snap)`** — la logique DU JEU
+   fait TOUT : anti-triche (chances/resets restants), avance le statut du nœud (étoiles, façon campagne), **consomme une chance**
+   (`recordChanceUsed` → `userData.chancesUsed`++), crédite les récompenses (`RewardHelper.giveRewards` = Badge Bits → Patch Essence) ;
+4. **reflète** le statut calculé PAR LE JEU dans le blob serveur-autoritatif : `((BaseEventTrialNode) node).getLevelStatus()`
+   (`getStars`/`getLevel`) → `blob.subtrials[sub].nodeLevelStatuses[node]` (`CampaignLevelStatus`{stars, level, totalAttempts++,
+   lastWinTime si WIN}). Glue §3 : `recordOutcome` avance l'objet runtime (côté client) mais N'écrit PAS le statut dans le blob wire
+   (le client renvoie l'issue, le SERVEUR tient l'état) → on reflète le statut du jeu, on ne le recalcule pas. Puis `setTrialEventData`
+   + `resyncHeroes/Diamonds/Counts`.
+NB `GenericTrialNode` est une **interface** (`getLevelStatus` déclaré sur `BaseEventTrialNode`, concret `ClientEventTrialNode extends
+BaseEventTrialNode`) → cast nécessaire pour `getLevelStatus()`.
+
+**Handler `LoginServer`** : `TrialEventAttack` (fire-and-forget, patron `DifficultyModeAttack`/`RaidDifficultyMode`) →
+`user.recordTrialEventAttack(ta)` → `store.save(user)` ; anti-triche = `ClientErrorCodeException` (log ⛔, rien accordé).
+
+**Test** `server/smoke/TrialEventRecordTest.java` (régression 133) : victoire (sous-trial 1, nœud 1, WIN, stagesCleared=3) →
+le nœud apparaît dans `subtrials` avec étoiles=3 ; `chancesUsed` 0→1 ; persistance wire + DB (save/loadIfExists) : `chancesUsed` +
+étoiles du nœud persistés.
+
+**⚠ Correctif déterminisme (§8, révélé en régression)** : `SpecialEventsRotationTest` échouait au jour serveur réel = 1 (dimanche-
+équivalent) — le SEUL jour où DOCKS [6,4,2,1] ET WAREHOUSE [7,5,3,1] sont ouverts → aucun mode « fermé » pour démontrer l'override
+(même classe de bug latent que les 3 tests PORT corrigés à g134). **Fix** : nouveau helper `ServerEvents.snapshotAt(long time)`
+(constructeur DU JEU `new SpecialEventSnapshot(SpecialEventsHelper.snapshotRaw(), time)`) → le test balaie les 7 prochains jours,
+ancre le temps à un jour où PORT_DOCKS est fermé (jours {3,5,7}, existe toujours), et vérifie défaut/override/retrait à ce jour figé.
+`isOpen` calcule le jour depuis `snapshot.snapshotTime` (fait §8) → temps figé = jour indépendant du calendrier réel.
+
+**RESTE** : incr. 4 resets (`checkForDailyReset`/`doPaidReset`) → 5 gating franchise (`getGatingCriteria` = seuls héros de la
+franchise) → 6 complétion `PatchedHeroesHelper.handleFranchiseTrialCompletion` (Patch Essence) → 7 `AdminEvents --open-trial
+<FRANCHISE|saison>` (push event) → 8 vérif EN JEU (vitrine `TrialEventSubTrialChooserScreen` → combat franchise → Patch Essence).
+
+Régression 133/133. Fichiers : `server/java/dhserver/ServerUser.java` (recordTrialEventAttack), `LoginServer.java` (handler
+TrialEventAttack), `ServerEvents.java` (snapshotAt), `server/smoke/TrialEventRecordTest.java` (nouveau),
+`server/smoke/SpecialEventsRotationTest.java` (déterministe), `server/smoke/regression.sh`, `docs/FRANCHISE_TRIALS.md` §17, `MEMORY.md`.
