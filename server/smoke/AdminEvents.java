@@ -33,6 +33,7 @@ public final class AdminEvents {
     boolean openTrial = false, closeTrial = false; long trialID = 900_001L;   // eventID stable par défaut du franchise trial
     int trialChances = ServerEvents.DEFAULT_TRIAL_CHANCES;                     // param admin (défaut = vérité terrain 10)
     String trialTitle = ServerEvents.DEFAULT_TRIAL_TITLE;                      // param admin --title
+    int trialIndex = 0;                                                        // param admin --trial (index du trial de saison)
     int days = 30, bonus = 1;
     for (int i = 0; i < a.length; i++) {
       switch (a[i]) {
@@ -48,6 +49,7 @@ public final class AdminEvents {
         case "--close-trial": closeTrial = true; break;
         case "--chances":    trialChances = Integer.parseInt(a[++i]); break;
         case "--title":      trialTitle = a[++i]; break;
+        case "--trial":      trialIndex = Integer.parseInt(a[++i]); break;
         case "--days":       days = Integer.parseInt(a[++i]); break;
         case "--bonus":      bonus = Integer.parseInt(a[++i]); break;
         default: System.out.println("[events] arg ignoré: " + a[i]);
@@ -79,17 +81,18 @@ public final class AdminEvents {
       }
       if (closeTrial) {
         int before = specs.size();
-        specs.removeIf(js -> js.contains("\"TRIAL_FRANCHISE\""));
+        specs.removeIf(js -> js.contains("TRIAL_FRANCHISE"));
         changed = changed || specs.size() != before;
         System.out.println("[events] events TRIAL_FRANCHISE retirés (" + (before - specs.size()) + ").");
       }
       if (openTrial) {
         // Un seul franchise trial actif : on remplace tout TRIAL_FRANCHISE existant par le nouveau (id = eventID stable).
-        specs.removeIf(js -> js.contains("\"TRIAL_FRANCHISE\""));
-        specs.add(ServerEvents.specJsonTrialFranchise(trialID, start, end, trialChances, trialTitle));
+        specs.removeIf(js -> js.contains("TRIAL_FRANCHISE"));
+        specs.add(ServerEvents.specJsonTrialFranchise(trialID, start, end, trialChances, trialTitle, trialIndex));
         changed = true;
-        System.out.println("[events] event TRIAL_FRANCHISE ajouté : eventID=" + trialID + " chances=" + trialChances
-            + " title=\"" + trialTitle + "\" (franchises de la saison, " + days + " j). Le client le verra via REFRESH_SPECIAL_EVENTS.");
+        System.out.println("[events] event TRIAL_FRANCHISE ajouté : eventID=" + trialID + " trial=" + trialIndex
+            + " (franchises saison=" + ServerEvents.seasonTrialFranchises(trialIndex) + ") chances=" + trialChances
+            + " title=\"" + trialTitle + "\" (" + days + " j). Le client le verra via REFRESH_SPECIAL_EVENTS.");
       }
 
       if (changed) {

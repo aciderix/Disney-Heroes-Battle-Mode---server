@@ -5941,3 +5941,39 @@ Régression 138/138 (`TrialRewardsTest` nouveau). Fichiers : `server/java/dhserv
 chances param + titres unlocalized + activeTrialEvent + specJsonTrialFranchise chances/title ; hardcode supprimé), `ServerUser.java`
 (boundTrial → activeTrialEvent), `server/smoke/AdminEvents.java` (--chances/--title), `server/smoke/TrialRewardsTest.java` (nouveau),
 `server/smoke/TrialAdminPushTest.java` (signature), `server/smoke/regression.sh`, `docs/FRANCHISE_TRIALS.md` §17, `MEMORY.md`.
+
+## 2026-08-23 (g149) — FRANCHISE_TRIALS incr. 10 : sous-trials définis par la SAISON (franchise_season_mapping) + questType data-driven
+
+Question utilisateur : « comment sont définis les sous-trials disponibles ? est-ce l'admin ? ». Investigation (bytecode + `.tab` +
+wiki Patch — helpshift/fandom 402/bloqués, donc lecture directe des données) → réponse et correctif de fidélité.
+
+**MODÈLE (data-driven par saison)** : `patched_heroes_franchise_season_mapping.tab` = `TimeTable` (colonnes = dates de début de
+saison, ~toutes les 4 semaines). Pour la date courante, la colonne active définit jusqu'à 3 TRIALS (`TRIAL$0/1/2`), chacun un
+`PatchStats$FranchiseTrialConfig{franchises (= les sous-trials), questType, activeDays}` (+ `PATCHABLE_FRANCHISE$0..11` = franchises
+patchables de la saison, distinct). Saison courante (col 04/21/2026) : Trial 0 = [WILDCARD] MAJOR Lun/Jeu/Dim ; Trial 1 =
+[THE_JUNGLE_BOOK] MAJOR Mar/Ven/Dim ; Trial 2 = [THE_LITTLE_MERMAID, MOANA] MERGE Mer/Sam/Dim → un trial peut porter PLUSIEURS
+franchises = plusieurs sous-trials. **Auto-rotation par date, aucune intervention admin nécessaire dans le vrai jeu.** Sur NOTRE
+serveur, l'ADMIN choisit quel trial de saison ACTIVER (`AdminEvents --open-trial --trial N`) + surcharge les params non-data
+(chances/titre/dates).
+
+**CORRECTIF §4/§8** : j'utilisais `base_trial_config.FRANCHISES` (gabarit STATIQUE : WILDCARD/JUNGLE_BOOK/LITTLE_MERMAID/MOANA fusionnés,
+questType NONE) — FAUX (ne correspond à aucune saison, et NONE cassait la complétion). Remplacé par la SAISON, lue via la logique du
+jeu (§3) : `ServerEvents.seasonTrialConfigs()` (`FRANCHISE_SEASON_MAPPING_STATS.getColumn(now).trialCollection`),
+`seasonTrialFranchises(trialIndex)`, `seasonTrialQuestType(trialIndex)`. `buildFranchiseTrialEvent(…, int trialIndex)` : sous-trials =
+franchises du trial de saison, `questType` posé (MAJOR/MERGE → `handleFranchiseTrialCompletion` non-no-op). Gating par eventID
+(`TRIAL_FRANCHISES_BY_EVENT` rempli à la construction ; `franchiseForSubtrial(eventID, sub)`). `ServerUser.boundTrial` rejoue sur
+l'event installé (`activeTrialEvent`) → franchises cohérentes. `base_trial_config` reste pour NODE_COUNT/WAVE_COUNT/gating levels/
+MAX_DAILY_RESETS (qui y sont). Spec `TRIAL_FRANCHISE{…, trial:N}` ; `AdminEvents --trial N`. Fix bug : `removeIf(js.contains("TRIAL_FRANCHISE"))`
+(sans guillemets — `JsonValue.toString()` libGDX sort les clés sans guillemets → les specs s'accumulaient).
+
+**✅ VÉRIFIÉ EN JEU** (`trial2_vitrine.png`) : `--open-trial --trial 2` → vitrine « THE LITTLE MERMAID » + « MOANA » (2 sous-trials =
+saison trial 2), CHANCES 10/10, Final Stage Rewards. `--trial 0` → 1 sous-trial WILDCARD ; `--trial 1` → THE JUNGLE BOOK.
+
+**Combat modifiers (« Rules » icônes rouges)** : DÉFINITIONS dans `event_trial_arena_rules.tab` (ARMOR±, ONLY_SUPPORT_HEROES…) mais
+ASSIGNATION par nœud = backend-authored (pas dans les `.tab`) → **paramètre admin optionnel** (non inventé §4). La ligne « Rules »
+affiche déjà le gating franchise. Seul raffinement d'affichage restant, non bloquant.
+
+Tests mis à jour (season-driven) : FranchiseTrialStructTest/ContentTest (franchises = saison), TrialGatingTest (installe un trial
+non-WILDCARD via setOperatorEvents), TrialAdminPushTest/TrialRewardsTest (signatures). Régression 138/138. Fichiers :
+`server/java/dhserver/ServerEvents.java` (seasonTrial* + trialIndex + questType + TRIAL_FRANCHISES_BY_EVENT + franchiseForSubtrial(eventID,…)),
+`ServerUser.java` (franchiseForSubtrial(eventID,…)), `server/smoke/AdminEvents.java` (--trial + fix removeIf), tests, `docs/FRANCHISE_TRIALS.md` §17, `MEMORY.md`.

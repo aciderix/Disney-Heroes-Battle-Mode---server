@@ -35,10 +35,10 @@ public final class FranchiseTrialStructTest {
     bf.setAccessible(true);
     Object cst = bf.get(null).getClass().getMethod("getStats").invoke(bf.get(null));
     var ncF = cst.getClass().getDeclaredField("NODE_COUNT"); ncF.setAccessible(true); int expNodeCount = ncF.getInt(cst);
-    var frF = cst.getClass().getDeclaredField("FRANCHISES"); frF.setAccessible(true); String frStr = (String) frF.get(cst);
-    int expFranchises = 0; for (String s : frStr.split(",")) if (!s.trim().isEmpty()) expFranchises++;
-    System.out.println("[frtrial] base_trial_config : NODE_COUNT=" + expNodeCount + " FRANCHISES=" + frStr + " (" + expFranchises + ")");
-    check(expNodeCount > 0 && expFranchises > 0, "base_trial_config non vide");
+    // Franchises ATTENDUES = celles du trial 0 de la SAISON COURANTE (franchise_season_mapping), PAS base_trial_config (gabarit).
+    int expFranchises = ServerEvents.seasonTrialFranchises(0).size();
+    System.out.println("[frtrial] NODE_COUNT=" + expNodeCount + " ; saison trial 0 franchises=" + ServerEvents.seasonTrialFranchises(0));
+    check(expNodeCount > 0 && expFranchises > 0, "base_trial_config + saison non vides");
 
     // Construire l'event franchise trial + le runtime serveur.
     SpecialEventInfo info = ServerEvents.buildFranchiseTrialEvent(972001L, now - 1000, now + 30L * 86400000L);

@@ -29,35 +29,44 @@ public final class TrialGatingTest {
     ServerContext.init();
     long EV = 992501L;
 
-    // Sous-trial non-WILDCARD (franchises de la saison : subtrial i ↔ franchiseNamesInOrder().get(i-1)).
-    List<String> frOrder = ServerEvents.franchiseNamesInOrder();
-    int sub = -1; String frName = null;
-    for (int i = 0; i < frOrder.size(); i++) {
-      if (!"WILDCARD".equals(frOrder.get(i))) { sub = i + 1; frName = frOrder.get(i); break; }
+    long now = com.perblue.heroes.util.TimeUtil.serverTimeNow();
+
+    // Choisit un TRIAL de la saison courante dont le 1ᵉʳ sous-trial est NON-WILDCARD (data-driven, franchise_season_mapping).
+    int trialIdx = -1; String frName = null;
+    for (int t = 0; t < ServerEvents.seasonTrialCount(); t++) {
+      List<String> fs = ServerEvents.seasonTrialFranchises(t);
+      if (!fs.isEmpty() && !"WILDCARD".equals(fs.get(0))) { trialIdx = t; frName = fs.get(0); break; }
     }
-    check(sub > 0, "au moins un sous-trial de franchise (non-WILDCARD)");
+    check(trialIdx >= 0, "un trial de saison non-WILDCARD existe");
+    int sub = 1;   // 1ᵉʳ sous-trial de ce trial = frName
+
+    // Construit + INSTALLE l'event de CE trial (eventID EV) → activeTrialEvent(EV) le sert au record (franchises mémorisées).
+    com.perblue.common.specialevent.SpecialEventInfo info =
+        ServerEvents.buildFranchiseTrialEvent(EV, now - 1000L, now + 30L * 86400000L, 10, "GATING TEST", trialIdx);
+    ServerEvents.setOperatorEvents(java.util.Collections.singletonList(info));
+    ServerEvents.install(java.util.Collections.singletonList(info));
+
     Franchise franchise = Franchise.valueOf(frName);
     Set allowed = com.perblue.heroes.ui.trials.ClientTrialEventHelper
         .getAllHeroesInFranchise(java.util.Collections.singleton(franchise));
     check(!allowed.isEmpty(), "franchise " + frName + " a des héros");
     UnitType inFranchise = (UnitType) allowed.iterator().next();
 
-    // Un héros HORS franchise : premier UnitType absent de l'ensemble autorisé (autre franchise).
+    // Un héros HORS franchise : premier UnitType d'une AUTRE franchise absent de l'ensemble autorisé.
     UnitType outFranchise = null;
-    for (String other : frOrder) {
-      if (other.equals(frName) || "WILDCARD".equals(other)) continue;
+    for (Franchise other : Franchise.values()) {
+      if (other == franchise || "WILDCARD".equals(other.name())) continue;
       Set os = com.perblue.heroes.ui.trials.ClientTrialEventHelper
-          .getAllHeroesInFranchise(java.util.Collections.singleton(Franchise.valueOf(other)));
+          .getAllHeroesInFranchise(java.util.Collections.singleton(other));
       for (Object o : os) { if (!allowed.contains(o)) { outFranchise = (UnitType) o; break; } }
       if (outFranchise != null) break;
     }
     check(outFranchise != null, "un héros hors franchise " + frName + " existe");
-    System.out.println("[trialgating] sous-trial " + sub + " (" + frName + ") : inFranchise=" + inFranchise
+    System.out.println("[trialgating] trial " + trialIdx + " sous-trial " + sub + " (" + frName + ") : inFranchise=" + inFranchise
         + " outFranchise=" + outFranchise);
 
     ServerUser su = ServerUser.newPlayer(8831L, 1);
     su.bootData().userInfo.basicInfo.teamLevel = 200;
-    long now = com.perblue.heroes.util.TimeUtil.serverTimeNow();
 
     // (1) lineup 100% franchise → ACCEPTÉ (record se déroule, pas d'exception de gating).
     TrialEventAttack ok = new TrialEventAttack();

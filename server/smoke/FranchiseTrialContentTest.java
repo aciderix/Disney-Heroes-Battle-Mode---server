@@ -36,8 +36,9 @@ public final class FranchiseTrialContentTest {
     Map stages = (Map) ecStats.getClass().getSuperclass().getField("stageToEnemyConfigs").get(ecStats);
     Field bf = Class.forName("com.perblue.heroes.game.data.patchedheroes.PatchStats").getDeclaredField("BASE_TRIAL_CONFIG_STATS");
     bf.setAccessible(true); Object cst = bf.get(null).getClass().getMethod("getStats").invoke(bf.get(null));
-    Field frF = cst.getClass().getDeclaredField("FRANCHISES"); frF.setAccessible(true);
-    String[] frNames = ((String) frF.get(cst)).split(",");
+    // Franchises = trial 0 de la SAISON COURANTE (franchise_season_mapping), PAS base_trial_config (gabarit statique).
+    java.util.List<String> frList = ServerEvents.seasonTrialFranchises(0);
+    String[] frNames = frList.toArray(new String[0]);
     // niveau attendu du stage 1 (lu du jeu).
     Object stage1 = stages.get(1);
     Field lf = stage1.getClass().getDeclaredField("levels"); lf.setAccessible(true);

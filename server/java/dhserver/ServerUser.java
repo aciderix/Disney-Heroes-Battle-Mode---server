@@ -3723,7 +3723,7 @@ public final class ServerUser {
   @SuppressWarnings({"rawtypes", "unchecked"})
   private void validateTrialFranchiseGating(User user, com.perblue.heroes.network.messages.TrialEventAttack m)
       throws com.perblue.heroes.ClientErrorCodeException {
-    String fr = ServerEvents.franchiseForSubtrial(m.subtrialNumber);
+    String fr = ServerEvents.franchiseForSubtrial(m.eventID, m.subtrialNumber);
     if (fr == null || "WILDCARD".equals(fr)) return;   // joker / hors bornes → pas de restriction
     if (m.base == null || m.base.attackers == null) return;
     com.perblue.heroes.network.messages.Franchise franchise =

@@ -558,4 +558,30 @@ CHANCES 10/10 + WILDCARD/THE JUNGLE BOOK/THE LITTLE MERMAID + Final Stage Reward
 `AdminEvents --open-trial [--chances N] [--title "…"]`. Régression 138 (`TrialRewardsTest`). **Honnête (§8)** : les couleurs/icônes exactes
 de Rules (combat modifiers) et les libellés localisés fins restent un raffinement d'affichage ; le mode est FONCTIONNEL et data-driven.
 
+### ✅ incr. 10 LIVRÉ (g149) — SOUS-TRIALS DÉFINIS PAR LA SAISON (franchise_season_mapping) + questType data-driven
+**Question utilisateur : « comment sont définis les sous-trials disponibles ? est-ce l'admin ? ».** Réponse (modèle du jeu) :
+- **C'est DATA-DRIVEN par la SAISON**, pas l'admin. `patched_heroes_franchise_season_mapping.tab` est un `TimeTable` (colonnes = dates
+  de début de saison). Pour la date courante, la colonne active définit **jusqu'à 3 TRIALS** (`TRIAL$0/1/2`), chacun un
+  `FranchiseTrialConfig{franchises (= les sous-trials), questType, activeDays}`. **Auto-rotation par date** (nouvelle saison ≈ toutes
+  les 4 semaines). Ex. saison courante : Trial 0 = [WILDCARD] (Lun/Jeu/Dim, MAJOR) ; Trial 1 = [THE_JUNGLE_BOOK] (Mar/Ven/Dim, MAJOR) ;
+  Trial 2 = [THE_LITTLE_MERMAID, MOANA] (Mer/Sam/Dim, MERGE) → **un trial peut avoir plusieurs franchises = plusieurs sous-trials**.
+- **Rôle de l'ADMIN (sur NOTRE serveur)** = ACTIVER quel trial de saison pousser (`AdminEvents --open-trial --trial N`, N=index de
+  saison) + surcharger les params non-data (chances, titre, dates). Les franchises/sous-trials/questType/jours viennent de la SAISON.
+- **`PATCHABLE_FRANCHISE$0..11`** (même `.tab`) = les franchises dans lesquelles on peut *patcher* des héros cette saison (système Patch
+  au sens large, cf. wiki `Patch`) — distinct des sous-trials du trial.
+
+**Correctif de fidélité (§4/§8)** : j'utilisais `base_trial_config.FRANCHISES` (gabarit STATIQUE : WILDCARD/JUNGLE_BOOK/LITTLE_MERMAID/MOANA
+fusionnés, questType NONE) → FAUX. Remplacé par la **saison** (`ServerEvents.seasonTrialConfigs/seasonTrialFranchises/seasonTrialQuestType`,
+lus via `FRANCHISE_SEASON_MAPPING_STATS`, §3). `buildFranchiseTrialEvent(…, trialIndex)` : sous-trials = franchises du trial de saison,
+`questType` posé (MAJOR/MERGE → `handleFranchiseTrialCompletion` non-no-op). Gating par eventID (`TRIAL_FRANCHISES_BY_EVENT`,
+`franchiseForSubtrial(eventID, sub)`). `base_trial_config` reste pour NODE_COUNT/WAVE_COUNT/gating levels/maxDailyResets (ceux-ci y sont).
+Fix bug : `AdminEvents` accumulait les specs (JsonValue.toString() sans guillemets) → `removeIf(contains("TRIAL_FRANCHISE"))`.
+
+**✅ VÉRIFIÉ EN JEU** (`trial2_vitrine.png`) : `--open-trial --trial 2` → vitrine **« THE LITTLE MERMAID » + « MOANA »** (2 sous-trials =
+saison trial 2), CHANCES 10/10, Final Stage Rewards. `--trial 0` → 1 sous-trial (WILDCARD) ; `--trial 1` → THE JUNGLE BOOK. Régression 138.
+
+**Combat modifiers (« Rules » icônes rouges)** : les DÉFINITIONS existent (`event_trial_arena_rules.tab` : ARMOR±, etc.) mais leur
+ASSIGNATION par nœud est backend-authored (pas dans les `.tab`) → resterait un **paramètre admin optionnel** (non inventé §4). La ligne
+« Rules » affiche déjà le gating franchise (« 5: » + catégorie). Ce point est le seul raffinement d'affichage restant, non bloquant.
+
 ## Statut : 4 DifficultyMode-trials ✅ EN JEU. EVENT/FRANCHISE : 1a STRUCTURE ✅ + 1b CONTENU ✅ + 2 AUTORITÉ SERVEUR (`GetTrialEventData` blob) ✅ (régression 132). **Prochaine action = incr. 3 `TrialEventAttack` → record (`BaseEventTrialNode.recordOutcome` : avance nœud + conso chance + loot) sur le blob per-user ; puis push event (`AdminEvents --open-trial`) + vérif EN JEU.**

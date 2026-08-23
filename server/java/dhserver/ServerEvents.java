@@ -199,14 +199,22 @@ public final class ServerEvents {
   public static final String DEFAULT_TRIAL_TITLE = "FRANCHISE TRIALS";
 
   public static SpecialEventInfo buildFranchiseTrialEvent(long id, long startMs, long endMs) {
-    return buildFranchiseTrialEvent(id, startMs, endMs, DEFAULT_TRIAL_CHANCES, DEFAULT_TRIAL_TITLE);
+    return buildFranchiseTrialEvent(id, startMs, endMs, DEFAULT_TRIAL_CHANCES, DEFAULT_TRIAL_TITLE, 0);
   }
 
   public static SpecialEventInfo buildFranchiseTrialEvent(long id, long startMs, long endMs, int chances) {
-    return buildFranchiseTrialEvent(id, startMs, endMs, chances, DEFAULT_TRIAL_TITLE);
+    return buildFranchiseTrialEvent(id, startMs, endMs, chances, DEFAULT_TRIAL_TITLE, 0);
   }
 
   public static SpecialEventInfo buildFranchiseTrialEvent(long id, long startMs, long endMs, int chances, String title) {
+    return buildFranchiseTrialEvent(id, startMs, endMs, chances, title, 0);
+  }
+
+  /**
+   * @param trialIndex index du TRIAL de la saison courante (0,1,2…) — détermine les franchises (=sous-trials), le questType et
+   *   les jours actifs (data-driven, {@code seasonTrialConfigs}). L'admin choisit quel trial de saison activer (`AdminEvents --trial N`).
+   */
+  public static SpecialEventInfo buildFranchiseTrialEvent(long id, long startMs, long endMs, int chances, String title, int trialIndex) {
     try {
       SpecialEventInfo info = buildTrialEvent(id, com.perblue.heroes.network.messages.GenericTrialType.CAMPAIGN, startMs, endMs);
       Object trial = info.getComponent((Class) Class.forName("com.perblue.heroes.game.specialevent.TrialEventInfo"));
@@ -224,13 +232,17 @@ public final class ServerEvents {
       int primeBadge       = readInt(cst, "PRIME_BADGE_LEVEL_REQ");
       int enhancedPrime    = readInt(cst, "ENHANCED_PRIME_BADGE_LEVEL_REQ");
       int patchLevelReq    = readInt(cst, "PATCH_LEVEL_REQ");
-      String franchisesStr = (String) readField(cst, "FRANCHISES");
+      // Franchises (= sous-trials) : DATA-DRIVEN par la SAISON COURANTE (franchise_season_mapping), PAS base_trial_config
+      // (gabarit statique). Le trial de saison `trialIndex` donne ses franchises + questType (auto-rotation par date).
+      java.util.List<String> seasonFr = seasonTrialFranchises(trialIndex);
+      if (seasonFr.isEmpty()) seasonFr = seasonTrialFranchises(0);              // repli : 1ᵉʳ trial de la saison
+      TRIAL_FRANCHISES_BY_EVENT.put(id, new java.util.ArrayList<>(seasonFr));   // mémorise pour le gating serveur
 
       Class franchiseCls = (Class) Class.forName("com.perblue.heroes.network.messages.Franchise");
       java.util.Set franchises = new java.util.LinkedHashSet();
       java.util.List subtrials = new java.util.ArrayList();
       java.util.List<String> frNames = new java.util.ArrayList<>();
-      for (String fr : franchisesStr.split(",")) {
+      for (String fr : seasonFr) {
         fr = fr.trim(); if (fr.isEmpty()) continue;
         Object franchise = Enum.valueOf(franchiseCls, fr);
         franchises.add(franchise);
@@ -302,6 +314,10 @@ public final class ServerEvents {
       // TITRE principal = param admin (libellé littéral, plus de « NONE.TITLE »).
       if (title != null && !title.isEmpty())
         setField(trial, "trialTitle", com.perblue.common.specialevent.EventString.unlocalized(info, title));
+      // questType = celui du trial de saison (MAJOR/MERGE…) → alimente handleFranchiseTrialCompletion (avant : NONE = no-op). §4.
+      String qt = seasonTrialQuestType(trialIndex);
+      if (qt != null) setField(trial, "questType",
+          Enum.valueOf((Class) Class.forName("com.perblue.heroes.network.messages.TrialQuestType"), qt));
       // Lineup = liste `units` de héros ennemis (TrialEventEnemyHero) : ici 5 RANDOM_HERO tirés de la FRANCHISE du sous-trial
       // (schéma du jeu, découvert via son parseur : units / kind RANDOM_HERO / categories:[{FRANCHISE, franchises:[{franchise:X}]}]
       // / realGear:{kind:<RealGearMode>}). scope subtrialNumber 1-based. WILDCARD = joker → pas de filtre franchise (tous héros).
@@ -355,28 +371,59 @@ public final class ServerEvents {
     }
   }
 
+  // FRANCHISE_TRIALS — franchises (= sous-trials) de l'event actif, par eventID, mémorisées à la construction (pour le gating).
+  private static final java.util.Map<Long, java.util.List<String>> TRIAL_FRANCHISES_BY_EVENT = new java.util.concurrent.ConcurrentHashMap<>();
+
   /**
-   * FRANCHISE_TRIALS (EVENT/FRANCHISE) — franchises de la saison DANS L'ORDRE des sous-trials (1 sous-trial par franchise,
-   * même ordre que {@code buildFranchiseTrialEvent}). Lu de {@code base_trial_config.FRANCHISES} (§4, 0 en dur). Sert au gating
-   * serveur-autoritatif : le sous-trial n° {@code i} (1-based) restreint aux héros de {@code franchiseNamesInOrder().get(i-1)}.
+   * FRANCHISE_TRIALS (EVENT/FRANCHISE) — les TRIALS de la SAISON COURANTE (auto-rotation par date), lus de
+   * {@code patched_heroes_franchise_season_mapping.tab} via la logique du jeu (§3, {@code FRANCHISE_SEASON_MAPPING_STATS}). Chaque
+   * trial de saison = {@code FranchiseTrialConfig{franchises (=sous-trials), questType, activeDays}}. C'est la SOURCE des sous-trials
+   * disponibles (pas {@code base_trial_config.FRANCHISES}, qui est un gabarit statique). Retour ordonné par index de trial (0,1,2…).
    */
-  public static java.util.List<String> franchiseNamesInOrder() {
+  public static java.util.List<Object> seasonTrialConfigs() {
     try {
-      Field bf = Class.forName("com.perblue.heroes.game.data.patchedheroes.PatchStats").getDeclaredField("BASE_TRIAL_CONFIG_STATS");
-      bf.setAccessible(true);
-      Object dhcs = bf.get(null);
-      Object cst = dhcs.getClass().getMethod("getStats").invoke(dhcs);
-      String franchisesStr = (String) readField(cst, "FRANCHISES");
-      java.util.List<String> out = new java.util.ArrayList<>();
-      for (String fr : franchisesStr.split(",")) { fr = fr.trim(); if (!fr.isEmpty()) out.add(fr); }
+      Field sf = Class.forName("com.perblue.heroes.game.data.patchedheroes.PatchStats").getDeclaredField("FRANCHISE_SEASON_MAPPING_STATS");
+      sf.setAccessible(true);
+      Object stats = sf.get(null);
+      long now = com.perblue.heroes.util.TimeUtil.serverTimeNow();
+      java.lang.reflect.Method gc = stats.getClass().getDeclaredMethod("getColumn", long.class); gc.setAccessible(true);
+      Object col = gc.invoke(stats, now);
+      java.util.Map<?, ?> tc = (java.util.Map<?, ?>) instanceField(col, "trialCollection");
+      java.util.List<Object> out = new java.util.ArrayList<>();
+      for (Object k : new java.util.TreeSet<>(tc.keySet())) out.add(tc.get(k));   // ordonné par index de trial
       return out;
-    } catch (Exception e) { throw new RuntimeException("franchiseNamesInOrder", e); }
+    } catch (Exception e) { throw new RuntimeException("seasonTrialConfigs", e); }
   }
 
-  /** Franchise (nom) du sous-trial {@code subtrialNumber} (1-based), ou {@code null} hors bornes. {@code WILDCARD} = pas de restriction. */
-  public static String franchiseForSubtrial(int subtrialNumber) {
-    java.util.List<String> fr = franchiseNamesInOrder();
-    return (subtrialNumber >= 1 && subtrialNumber <= fr.size()) ? fr.get(subtrialNumber - 1) : null;
+  /** Franchises (noms) d'un trial de saison (= ses sous-trials, dans l'ordre). */
+  @SuppressWarnings("unchecked")
+  public static java.util.List<String> seasonTrialFranchises(int trialIndex) {
+    java.util.List<Object> cfgs = seasonTrialConfigs();
+    if (trialIndex < 0 || trialIndex >= cfgs.size()) return java.util.Collections.emptyList();
+    try {
+      java.util.List<?> fr = (java.util.List<?>) cfgs.get(trialIndex).getClass().getField("franchises").get(cfgs.get(trialIndex));
+      java.util.List<String> out = new java.util.ArrayList<>();
+      for (Object f : fr) out.add(((Enum<?>) f).name());
+      return out;
+    } catch (Exception e) { throw new RuntimeException("seasonTrialFranchises", e); }
+  }
+
+  /** questType (nom) d'un trial de saison (MAJOR/MERGE/…), ou {@code null}. Alimente la complétion (handleFranchiseTrialCompletion). */
+  public static String seasonTrialQuestType(int trialIndex) {
+    java.util.List<Object> cfgs = seasonTrialConfigs();
+    if (trialIndex < 0 || trialIndex >= cfgs.size()) return null;
+    try {
+      Object qt = cfgs.get(trialIndex).getClass().getField("questType").get(cfgs.get(trialIndex));
+      return qt == null ? null : ((Enum<?>) qt).name();
+    } catch (Exception e) { return null; }
+  }
+
+  public static int seasonTrialCount() { return seasonTrialConfigs().size(); }
+
+  /** Franchise (nom) du sous-trial {@code subtrialNumber} (1-based) de l'event {@code eventID}, ou {@code null}. WILDCARD = pas de restriction. */
+  public static String franchiseForSubtrial(long eventID, int subtrialNumber) {
+    java.util.List<String> fr = TRIAL_FRANCHISES_BY_EVENT.get(eventID);
+    return (fr != null && subtrialNumber >= 1 && subtrialNumber <= fr.size()) ? fr.get(subtrialNumber - 1) : null;
   }
 
   /**
@@ -576,7 +623,7 @@ public final class ServerEvents {
     // FRANCHISE_TRIALS incr. 7 : un event TRIAL FRANCHISE (SpecialEventInfo TRIAL) — reconstruit data-driven depuis les `.tab`
     // (buildFranchiseTrialEvent). L'`id` de la spec = l'eventID que le client renverra (GetTrialEventData/TrialEventAttack).
     if ("TRIAL_FRANCHISE".equals(kind)) return buildFranchiseTrialEvent(id, start, end,
-        spec.getInt("chances", DEFAULT_TRIAL_CHANCES), spec.getString("title", DEFAULT_TRIAL_TITLE));
+        spec.getInt("chances", DEFAULT_TRIAL_CHANCES), spec.getString("title", DEFAULT_TRIAL_TITLE), spec.getInt("trial", 0));
     return buildModesOpenEvent(id, modes, start, end);
   }
 
@@ -613,11 +660,12 @@ public final class ServerEvents {
     return sb.toString().getBytes(java.nio.charset.StandardCharsets.UTF_8);
   }
 
-  /** Construit la chaîne JSON d'UNE spec d'event TRIAL FRANCHISE (id = eventID renvoyé par le client ; chances + title = params admin). */
-  public static String specJsonTrialFranchise(long id, long start, long end, int chances, String title) {
+  /** Construit la chaîne JSON d'UNE spec d'event TRIAL FRANCHISE (id=eventID ; chances/title/trial = params admin ; trial = index du trial de saison). */
+  public static String specJsonTrialFranchise(long id, long start, long end, int chances, String title, int trialIndex) {
     String t = (title == null ? DEFAULT_TRIAL_TITLE : title).replace("\\", "\\\\").replace("\"", "\\\"");
     return "{\"kind\":\"TRIAL_FRANCHISE\",\"modes\":[],\"bonus\":0,\"id\":" + id
-        + ",\"chances\":" + chances + ",\"title\":\"" + t + "\",\"start\":" + start + ",\"end\":" + end + "}";
+        + ",\"chances\":" + chances + ",\"title\":\"" + t + "\",\"trial\":" + trialIndex
+        + ",\"start\":" + start + ",\"end\":" + end + "}";
   }
 
   /** Construit la chaîne JSON d'UNE spec d'override opérateur. */
