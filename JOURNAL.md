@@ -6132,3 +6132,32 @@ regression.sh`, `MEMORY.md`. **PROCHAIN = IncreasedChances (AdditionalChances)**
 
 Régression **141/141** (`IncreasedChancesTest`). Fichiers : `ServerEvents.java` (buildIncreasedChancesEvent + eventFromSpec + specJsonIncreasedChances),
 `AdminEvents.java` (flags), `IncreasedChancesTest.java` (nouveau), `regression.sh`, `MEMORY.md`. **PROCHAIN = MerchantDiscount + MerchantRefreshDiscount.**
+
+## 2026-08-23 (g154) — SPECIAL_EVENTS live-ops : TRADER_DISCOUNT + TRADER_REFRESH_DISCOUNT (marchands) ✅ headless + ✅ EN JEU
+
+3ᵉ (et 4ᵉ) composant : remise sur les marchands. **Point de nommage** : les composants s'appellent `MerchantDiscount`/`MerchantRefreshDiscount`
+mais les kinds `SpecialEventType` sont **TRADER_DISCOUNT**/**TRADER_REFRESH_DISCOUNT** (pas MERCHANT_*). Fabriques `createComponent(
+"merchantDiscount")`/`("merchantRefreshDiscount")`.
+- **Schéma (bytecode `MerchantDiscount.load`)** : `traderFilter` (EnumFilter clé `merchantType`) + `percentOff` (int) + `stuffFilter` sur le
+  nœud COMPLET (param2). `StuffFilter` = un TABLEAU d'entrées `{kind}` avec kinds ITEM_TYPE/ITEM_CATEGORY/ITEM_RARITY/CURRENCY_TYPE/
+  RESOURCE_TYPE/HERO_EXP/**ALL_ITEMS**/**ALL_RESOURCES** → pour remiser TOUT le marchand : `stuffFilter:[{kind:ALL_ITEMS},{kind:ALL_RESOURCES}]`
+  (un `{}` vide matche RIEN). `MerchantRefreshDiscount` : mêmes `traderFilter`/`percentOff`, pas de stuffFilter.
+- **Effet (consommation)** : `MerchantHelper.getItemCost(user, type, item, snapshot)` = `BaseEventSnapshot.getMerchantItemPrice(...)` remisé ;
+  `getMerchantRefreshPrice(base, type)` remisé. **Branchement serveur** : `ServerUser.applyPurchaseMerchantItem` (achat) et `applyRefreshMerchant`
+  (refresh) passent désormais `ServerEvents.snapshot()` au lieu de `SpecialEventSnapshot.NONE` → prix remisé VALIDÉ (anti-tamper) et débité.
+- `ServerEvents.buildMerchantDiscountEvent`/`buildMerchantRefreshDiscountEvent` (fabrique commune `buildMerchantEvent(kind, type, componentKey,
+  merchants, percentOff, withStuffFilter, …)`). Specs `TRADER_DISCOUNT`/`TRADER_REFRESH_DISCOUNT{merchants[],percentOff}` + `eventFromSpec` +
+  `specJsonMerchant`. `AdminEvents --merchant-discount / --merchant-refresh-discount [id] --merchant <TYPE> (répétable) --merchant-percent N /
+  --close-merchant-discount`.
+- `MerchantDiscountTest` (régression) : **vrai objet GEAR généré** (`generateMerchant`+`getMerchantItems`) coût 8280 → **4140** via `getItemCost`
+  (le chemin RÉEL d'`applyPurchaseMerchantItem`) ; **refresh BLACK_MARKET 1000 → 500** + GEAR (non visé) inchangé ; round-trip specs.
+- **✅ VÉRIFIÉ EN JEU** (`AdminEvents --merchant-discount --merchant BLACK_MARKET --merchant MEGA_MART --merchant-percent 50` → `nav BLACK_MARKET`) :
+  l'écran BLACK MARKET affiche TOUS les prix **barrés → remisés −50 %** — ENNUI 80→40, KRONK 300 000→150 000, ARIEL 100→50, AMITY 40→20,
+  PINEAPPLE CRATE 3 360→1 680, WILBUR 425→212 (💎 et 🪙). Affichage sale classique (ancien prix barré + remisé). Capture `bm1.png`.
+  **Observation (pré-existant, non lié)** : au boot, un refresh auto du marchand INVASION lève « table de marchand introuvable: INVASION »
+  (INVASION sans drops dans l'APK 12.1.0) — capturé/logué « ! refresh marchand échec », non-fatal, indépendant de ce changement. Events retirés après.
+  `nav MERCHANT` (GEAR/Badge Bazaar) reste verrouillé (unlockable) sur ce compte → vérif faite via BLACK_MARKET, directement navigable.
+
+Régression **142/142** (`MerchantDiscountTest`). Fichiers : `ServerEvents.java` (buildMerchant* + buildMerchantEvent + eventFromSpec + specJsonMerchant),
+`ServerUser.java` (applyPurchaseMerchantItem + applyRefreshMerchant → snapshot opérateur), `AdminEvents.java` (flags), `MerchantDiscountTest.java`
+(nouveau), `regression.sh`, `MEMORY.md`. **PROCHAIN = ExtraChest.**
