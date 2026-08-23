@@ -20,7 +20,7 @@ public final class TrialAdminPushTest {
     long start = now - 86_400_000L, end = now + 30L * 86_400_000L;
 
     // (1) spec → blob → specs (round-trip config persistée).
-    String spec = ServerEvents.specJsonTrialFranchise(EV, start, end, 10, "FRANCHISE TRIALS", 0);
+    String spec = ServerEvents.specJsonTrialFranchise(EV, start, end, 10, "FRANCHISE TRIALS", 0, 0);
     byte[] blob = ServerEvents.writeConfig(java.util.Collections.singletonList(spec));
     List<com.badlogic.gdx.utils.JsonValue> specs = ServerEvents.configSpecs(blob);
     check(specs.size() == 1, "1 spec persistée (" + specs.size() + ")");

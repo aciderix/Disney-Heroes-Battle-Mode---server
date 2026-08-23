@@ -5977,3 +5977,39 @@ Tests mis à jour (season-driven) : FranchiseTrialStructTest/ContentTest (franch
 non-WILDCARD via setOperatorEvents), TrialAdminPushTest/TrialRewardsTest (signatures). Régression 138/138. Fichiers :
 `server/java/dhserver/ServerEvents.java` (seasonTrial* + trialIndex + questType + TRIAL_FRANCHISES_BY_EVENT + franchiseForSubtrial(eventID,…)),
 `ServerUser.java` (franchiseForSubtrial(eventID,…)), `server/smoke/AdminEvents.java` (--trial + fix removeIf), tests, `docs/FRANCHISE_TRIALS.md` §17, `MEMORY.md`.
+
+## 2026-08-23 (g150) — FRANCHISE_TRIALS incr. 11 : combat modifiers data-driven (« Rules ») + réponses saison/horloge
+
+Suite aux questions utilisateur : (1) vérifier les combat modifiers, (2) expliquer comment la saison est définie (date par qui ?
+mécanisme admin ? couplage avec les timers joueurs ?).
+
+**COMBAT MODIFIERS — vérifiés, data-driven (correction de la réponse g149 « backend-only »).** Le POOL de règles EST dans les
+données : `event_trial_arena_rules.tab` (16 types : ARMOR±, BASIC_ATTACK_DISABLE, BEAR_TRAPS, DAMAGE_VS_DPS, ENERGY_GAIN,
+BLUE_SKILL_LEVEL…, avec EXTRA=ONLY_SUPPORT_HEROES/ONLY_YELLOW_HEROES, AFFECTS_ATTACKERS/ENEMIES), chargé en tirage pondéré
+(`EventTrialStats.getRandomArenaRules()` → `WeightedTreeSet`). `TrialEventCombatModifier.kind ∈ {ARENA_RULE, RANDOM, WARD}` : RANDOM
+pioche dans le pool. ⇒ constructible data-driven. Build (`buildFranchiseTrialEvent(…, modifiersPerNode)`) : `combatModifiers` = 1
+pièce `TrialEventCombatModifiers` par nœud `{modifiers:[{kind:RANDOM}×N], random:{kind:NORMAL}, scope:{nodeNumber:stage}}`. CONTENU =
+pool `.tab` (§4) ; N (nb/nœud) = param admin `AdminEvents --open-trial --modifiers N` (défaut 0 — le vrai event backend fixe N, absent
+des `.tab`). **✅ VÉRIFIÉ EN JEU** (`trial_modifiers.png`, `--modifiers 3`) : ligne Rules = « 5: [franchise] ✓ » + 3 icônes rouges de
+combat modifiers (conforme aux captures de référence). `ModProbe` : build 14 + re-parse client OK.
+
+**SAISON — comment elle est définie (réponses).**
+- Dates de saison = FIXES dans les données du jeu (`patched_heroes_franchise_season_mapping.tab`, TimeTable, colonnes = dates de début
+  de saison figées dans l'APK v12.1.0 ; 11/2022 → 04/2026, toutes passées). Elles viennent de PerBlue/APK, pas de nous.
+- Saison « courante » = choisie par l'HORLOGE SERVEUR : `getColumn(serverTimeNow)` retourne la colonne la plus récente ≤ now. Vérifié
+  empiriquement (SeasonDateProbe) : now(08/2026)→dernière saison ; 03/2026→[CARS,SNOW_WHITE]/… ; 09/2024→[TOY_STORY]/… ;
+  11/2022→[ALADDIN]/…. Notre horloge (08/2026) > dernière colonne (04/2026) → bloqué sur la dernière saison (pas de future dans l'APK).
+- Mécanisme admin EXISTANT = `AdminClock` (`--set-date`/`--offset-hours`, offset persisté `clock_offset_ms`) : règle l'horloge serveur,
+  qui pilote TOUT le contenu daté (ère/échelle de puissance, invasion, guerre, battle pass, saison des trials). Pas de sélecteur de
+  saison séparé (fidèle : la saison = fonction de la date).
+- ⚠ COUPLAGE HORLOGE↔TIMERS (fait vérifié au bytecode) : le reset quotidien des chances (`DailyActivityHelper.getLastDailyResetTime`
+  → `serverTimeNow`) ET la sélection de saison (`seasonTrialConfigs` → `serverTimeNow`) utilisent la MÊME horloge → couplés. Reculer la
+  date pour voir une vieille saison décalerait aussi les timers joueurs (reset quotidien, cooldowns, battle pass, invasion/guerre).
+- ➡ FUTUR (dashboard admin, demandé) : « définir la saison en cours / le roulement » DÉCOUPLÉ des timers. Design : une ANCRE DE SAISON
+  admin distincte (persistée en `shard_state`, ex. `season_anchor`), utilisée UNIQUEMENT par `seasonTrialConfigs()` (au lieu de
+  `serverTimeNow` en dur), SANS toucher l'horloge → aucun impact sur les timers joueurs. Les deux mécanismes SONT séparables proprement.
+  Non implémenté ce tour (noté prochaine évolution).
+
+Régression 138/138. Fichiers : `server/java/dhserver/ServerEvents.java` (buildFranchiseTrialEvent + modifiersPerNode + combatModifiers
+[kind:RANDOM du pool] + specJsonTrialFranchise modifiers), `server/smoke/AdminEvents.java` (--modifiers), `server/smoke/TrialAdminPushTest.java`
+(signature), `docs/FRANCHISE_TRIALS.md` §17, `MEMORY.md`.

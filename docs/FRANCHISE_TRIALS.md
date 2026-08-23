@@ -580,8 +580,35 @@ Fix bug : `AdminEvents` accumulait les specs (JsonValue.toString() sans guilleme
 **✅ VÉRIFIÉ EN JEU** (`trial2_vitrine.png`) : `--open-trial --trial 2` → vitrine **« THE LITTLE MERMAID » + « MOANA »** (2 sous-trials =
 saison trial 2), CHANCES 10/10, Final Stage Rewards. `--trial 0` → 1 sous-trial (WILDCARD) ; `--trial 1` → THE JUNGLE BOOK. Régression 138.
 
-**Combat modifiers (« Rules » icônes rouges)** : les DÉFINITIONS existent (`event_trial_arena_rules.tab` : ARMOR±, etc.) mais leur
-ASSIGNATION par nœud est backend-authored (pas dans les `.tab`) → resterait un **paramètre admin optionnel** (non inventé §4). La ligne
-« Rules » affiche déjà le gating franchise (« 5: » + catégorie). Ce point est le seul raffinement d'affichage restant, non bloquant.
+**Combat modifiers (« Rules » icônes rouges)** : voir incr. 11 — LIVRÉS (data-driven, pool `.tab` + tirage RANDOM du jeu).
+
+### ✅ incr. 11 LIVRÉ (g150) — COMBAT MODIFIERS (« Rules ») data-driven + réponse SAISON/HORLOGE
+**Vérification combat modifiers (correction de la réponse précédente)** : le POOL de règles EST dans `event_trial_arena_rules.tab`
+(16 types : `ARMOR±`, `BASIC_ATTACK_DISABLE`, `BEAR_TRAPS`, `DAMAGE_VS_DPS`, `ENERGY_GAIN`, `BLUE_SKILL_LEVEL`…, avec `EXTRA`
+`ONLY_SUPPORT_HEROES`/`ONLY_YELLOW_HEROES`, `AFFECTS_ATTACKERS/ENEMIES`), chargé en tirage pondéré (`EventTrialStats.getRandomArenaRules`
+→ `WeightedTreeSet`). Le jeu SAIT piocher dedans : `TrialEventCombatModifier.kind ∈ {ARENA_RULE, RANDOM, WARD}` — `RANDOM` pioche
+une règle du pool. ⇒ **les combat modifiers SONT constructibles data-driven** (§4). Build : `combatModifiers` = 1 pièce/nœud
+`{modifiers:[{kind:RANDOM}×N], random:{kind:NORMAL}, scope:{nodeNumber:stage}}`. Le **CONTENU** vient du pool `.tab` ; le **NOMBRE N**
+par nœud est un **param admin** (`AdminEvents --open-trial --modifiers N`, défaut 0 — le vrai event backend fixe N, pas dans les `.tab`).
+**✅ VÉRIFIÉ EN JEU** (`trial_modifiers.png`, `--modifiers 3`) : ligne Rules = « 5: [franchise] ✓ » + **3 icônes rouges de combat
+modifiers** (comme la vérité terrain). Régression 138.
+
+### Comment est définie la SAISON (réponse aux questions utilisateur)
+- **Dates de saison = FIXES dans les données** (`patched_heroes_franchise_season_mapping.tab`, `TimeTable`, colonnes = dates de début
+  de saison figées dans l'APK v12.1.0 ; 11/2022 → 04/2026, toutes PASSÉES). Personne ne les définit chez nous : elles viennent de l'APK.
+- **Saison « courante » = choisie par l'HORLOGE SERVEUR** : `getColumn(serverTimeNow)` → colonne la plus récente ≤ now. Vérifié :
+  now(08/2026)→dernière saison ; 03/2026→[CARS,SNOW_WHITE]/… ; 09/2024→[TOY_STORY]/… ; 11/2022→[ALADDIN]/…. Notre horloge (08/2026)
+  étant après la dernière colonne (04/2026), on est bloqué sur la dernière saison (pas de saison future dans l'APK).
+- **Mécanisme admin EXISTANT = `AdminClock`** (`--set-date`, `--offset-hours`, offset persisté `clock_offset_ms`) : il règle l'horloge
+  serveur, qui pilote TOUT le contenu daté (ère/échelle de puissance `ContentStats`, invasion, guerre, battle pass, ET la saison des
+  trials). Changer la saison = déplacer l'horloge. Pas de « sélecteur de saison » séparé (fidèle : la saison = fonction de la date).
+- **⚠ COUPLAGE HORLOGE↔TIMERS (fait vérifié)** : le reset quotidien des chances (`DailyActivityHelper.getLastDailyResetTime` →
+  `serverTimeNow`) ET la sélection de saison utilisent la MÊME horloge → **actuellement COUPLÉS**. Reculer la date pour voir une
+  vieille saison DÉCALERAIT aussi les timers joueurs (reset quotidien, cooldowns, battle pass, invasion/guerre).
+- **➡ FUTUR (dashboard admin, demandé par l'utilisateur) — À FAIRE** : « définir la saison en cours / le roulement » depuis un
+  dashboard, DÉCOUPLÉ des timers. Design propre : une **ANCRE DE SAISON** admin distincte (persistée en `shard_state`, ex.
+  `season_anchor`), utilisée UNIQUEMENT par `seasonTrialConfigs()` (à la place de `serverTimeNow`) — **sans toucher l'horloge**, donc
+  sans impact sur les timers joueurs. `seasonTrialConfigs()` prendrait un temps paramétrable au lieu de `serverTimeNow()` en dur.
+  (Non implémenté ce tour — noté comme prochaine évolution ; les deux mécanismes SONT séparables proprement.)
 
 ## Statut : 4 DifficultyMode-trials ✅ EN JEU. EVENT/FRANCHISE : 1a STRUCTURE ✅ + 1b CONTENU ✅ + 2 AUTORITÉ SERVEUR (`GetTrialEventData` blob) ✅ (régression 132). **Prochaine action = incr. 3 `TrialEventAttack` → record (`BaseEventTrialNode.recordOutcome` : avance nœud + conso chance + loot) sur le blob per-user ; puis push event (`AdminEvents --open-trial`) + vérif EN JEU.**

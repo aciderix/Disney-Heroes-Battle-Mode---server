@@ -34,6 +34,7 @@ public final class AdminEvents {
     int trialChances = ServerEvents.DEFAULT_TRIAL_CHANCES;                     // param admin (défaut = vérité terrain 10)
     String trialTitle = ServerEvents.DEFAULT_TRIAL_TITLE;                      // param admin --title
     int trialIndex = 0;                                                        // param admin --trial (index du trial de saison)
+    int trialModifiers = 0;                                                    // param admin --modifiers (nb de combat modifiers/nœud)
     int days = 30, bonus = 1;
     for (int i = 0; i < a.length; i++) {
       switch (a[i]) {
@@ -50,6 +51,7 @@ public final class AdminEvents {
         case "--chances":    trialChances = Integer.parseInt(a[++i]); break;
         case "--title":      trialTitle = a[++i]; break;
         case "--trial":      trialIndex = Integer.parseInt(a[++i]); break;
+        case "--modifiers":  trialModifiers = Integer.parseInt(a[++i]); break;
         case "--days":       days = Integer.parseInt(a[++i]); break;
         case "--bonus":      bonus = Integer.parseInt(a[++i]); break;
         default: System.out.println("[events] arg ignoré: " + a[i]);
@@ -88,11 +90,11 @@ public final class AdminEvents {
       if (openTrial) {
         // Un seul franchise trial actif : on remplace tout TRIAL_FRANCHISE existant par le nouveau (id = eventID stable).
         specs.removeIf(js -> js.contains("TRIAL_FRANCHISE"));
-        specs.add(ServerEvents.specJsonTrialFranchise(trialID, start, end, trialChances, trialTitle, trialIndex));
+        specs.add(ServerEvents.specJsonTrialFranchise(trialID, start, end, trialChances, trialTitle, trialIndex, trialModifiers));
         changed = true;
         System.out.println("[events] event TRIAL_FRANCHISE ajouté : eventID=" + trialID + " trial=" + trialIndex
             + " (franchises saison=" + ServerEvents.seasonTrialFranchises(trialIndex) + ") chances=" + trialChances
-            + " title=\"" + trialTitle + "\" (" + days + " j). Le client le verra via REFRESH_SPECIAL_EVENTS.");
+            + " title=\"" + trialTitle + "\" modifiers=" + trialModifiers + " (" + days + " j). Le client le verra via REFRESH_SPECIAL_EVENTS.");
       }
 
       if (changed) {

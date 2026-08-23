@@ -207,14 +207,21 @@ public final class ServerEvents {
   }
 
   public static SpecialEventInfo buildFranchiseTrialEvent(long id, long startMs, long endMs, int chances, String title) {
-    return buildFranchiseTrialEvent(id, startMs, endMs, chances, title, 0);
+    return buildFranchiseTrialEvent(id, startMs, endMs, chances, title, 0, 0);
+  }
+
+  public static SpecialEventInfo buildFranchiseTrialEvent(long id, long startMs, long endMs, int chances, String title, int trialIndex) {
+    return buildFranchiseTrialEvent(id, startMs, endMs, chances, title, trialIndex, 0);
   }
 
   /**
    * @param trialIndex index du TRIAL de la saison courante (0,1,2…) — détermine les franchises (=sous-trials), le questType et
    *   les jours actifs (data-driven, {@code seasonTrialConfigs}). L'admin choisit quel trial de saison activer (`AdminEvents --trial N`).
+   * @param modifiersPerNode nb de combat modifiers ALÉATOIRES par nœud, tirés du POOL `event_trial_arena_rules.tab`
+   *   ({@code TrialEventCombatModifier kind:RANDOM}). 0 = aucun (défaut). CONTENU = données du jeu (§4) ; le NOMBRE est un
+   *   paramètre admin (le vrai event backend le fixe). `AdminEvents --modifiers N`.
    */
-  public static SpecialEventInfo buildFranchiseTrialEvent(long id, long startMs, long endMs, int chances, String title, int trialIndex) {
+  public static SpecialEventInfo buildFranchiseTrialEvent(long id, long startMs, long endMs, int chances, String title, int trialIndex, int modifiersPerNode) {
     try {
       SpecialEventInfo info = buildTrialEvent(id, com.perblue.heroes.network.messages.GenericTrialType.CAMPAIGN, startMs, endMs);
       Object trial = info.getComponent((Class) Class.forName("com.perblue.heroes.game.specialevent.TrialEventInfo"));
@@ -286,6 +293,11 @@ public final class ServerEvents {
       java.util.Map stages = (java.util.Map) ecStats.getClass().getSuperclass().getField("stageToEnemyConfigs").get(ecStats);
       java.util.List enemyLevel = new java.util.ArrayList(), enemyRarity = new java.util.ArrayList(), enemyStars = new java.util.ArrayList();
       java.util.List rewardTypes = new java.util.ArrayList();
+      java.util.List combatModifiers = new java.util.ArrayList();
+      // Un fragment "modifiers" = N règles ALÉATOIRES tirées du pool event_trial_arena_rules.tab (kind:RANDOM → le jeu pioche
+      // dans EventTrialStats.getRandomArenaRules). CONTENU = données du jeu (§4) ; N = param admin (le vrai event le fixe).
+      StringBuilder mods = new StringBuilder();
+      for (int k = 0; k < modifiersPerNode; k++) { if (k > 0) mods.append(','); mods.append("{\"kind\":\"RANDOM\"}"); }
       for (Object key : new java.util.TreeSet(stages.keySet())) {
         int stage = ((Number) key).intValue();
         Object ec = stages.get(key);
@@ -304,11 +316,16 @@ public final class ServerEvents {
         String bonusJson   = parseRewardList(bonusesStr);
         rewardTypes.add(mkTrialPiece("TrialEventRewardTypes",
             "{\"rewards\":[" + rewardsJson + "],\"bonusRewards\":[" + bonusJson + "],\"random\":{\"kind\":\"NORMAL\"}," + sc + "}"));
+        // COMBAT MODIFIERS (« Rules ») — N règles aléatoires du pool `.tab` par nœud (si demandé par l'admin).
+        if (modifiersPerNode > 0)
+          combatModifiers.add(mkTrialPiece("TrialEventCombatModifiers",
+              "{\"modifiers\":[" + mods + "],\"random\":{\"kind\":\"NORMAL\"}," + sc + "}"));
       }
       setField(trial, "enemyLevel", enemyLevel);
       setField(trial, "enemyRarity", enemyRarity);
       setField(trial, "enemyStars", enemyStars);
       setField(trial, "rewardTypes", rewardTypes);
+      if (!combatModifiers.isEmpty()) setField(trial, "combatModifiers", combatModifiers);
       // chancesPerReset : paramètre ADMIN (non dans les .tab) — voir DEFAULT_TRIAL_CHANCES.
       setField(trial, "chancesPerReset", chances);
       // TITRE principal = param admin (libellé littéral, plus de « NONE.TITLE »).
@@ -623,7 +640,8 @@ public final class ServerEvents {
     // FRANCHISE_TRIALS incr. 7 : un event TRIAL FRANCHISE (SpecialEventInfo TRIAL) — reconstruit data-driven depuis les `.tab`
     // (buildFranchiseTrialEvent). L'`id` de la spec = l'eventID que le client renverra (GetTrialEventData/TrialEventAttack).
     if ("TRIAL_FRANCHISE".equals(kind)) return buildFranchiseTrialEvent(id, start, end,
-        spec.getInt("chances", DEFAULT_TRIAL_CHANCES), spec.getString("title", DEFAULT_TRIAL_TITLE), spec.getInt("trial", 0));
+        spec.getInt("chances", DEFAULT_TRIAL_CHANCES), spec.getString("title", DEFAULT_TRIAL_TITLE),
+        spec.getInt("trial", 0), spec.getInt("modifiers", 0));
     return buildModesOpenEvent(id, modes, start, end);
   }
 
@@ -661,11 +679,11 @@ public final class ServerEvents {
   }
 
   /** Construit la chaîne JSON d'UNE spec d'event TRIAL FRANCHISE (id=eventID ; chances/title/trial = params admin ; trial = index du trial de saison). */
-  public static String specJsonTrialFranchise(long id, long start, long end, int chances, String title, int trialIndex) {
+  public static String specJsonTrialFranchise(long id, long start, long end, int chances, String title, int trialIndex, int modifiersPerNode) {
     String t = (title == null ? DEFAULT_TRIAL_TITLE : title).replace("\\", "\\\\").replace("\"", "\\\"");
     return "{\"kind\":\"TRIAL_FRANCHISE\",\"modes\":[],\"bonus\":0,\"id\":" + id
         + ",\"chances\":" + chances + ",\"title\":\"" + t + "\",\"trial\":" + trialIndex
-        + ",\"start\":" + start + ",\"end\":" + end + "}";
+        + ",\"modifiers\":" + modifiersPerNode + ",\"start\":" + start + ",\"end\":" + end + "}";
   }
 
   /** Construit la chaîne JSON d'UNE spec d'override opérateur. */
