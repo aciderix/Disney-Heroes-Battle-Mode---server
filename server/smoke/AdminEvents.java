@@ -52,6 +52,10 @@ public final class AdminEvents {
     boolean flagLogin = false, closeFlagLogin = false;                        // FLAG_USER_ON_LOGIN
     long flagLoginID = 900_007L;
     java.util.List<com.perblue.heroes.game.objects.UserFlag> flagsSet = new java.util.ArrayList<>(), flagsClear = new java.util.ArrayList<>();
+    boolean teamLevelEvent = false, closeTeamLevel = false, teamLevelEvery = false;  // FREE_STUFF_AT/EVERY_X_TEAM_LEVEL
+    long teamLevelID = 900_008L; int teamLevelValue = 50;
+    java.util.List<String> tlItems = new java.util.ArrayList<>(); java.util.List<Integer> tlQtys = new java.util.ArrayList<>();
+    String pendingTlItem = null;
     int days = 30, bonus = 1;
     for (int i = 0; i < a.length; i++) {
       switch (a[i]) {
@@ -92,6 +96,11 @@ public final class AdminEvents {
         case "--close-flag-login": closeFlagLogin = true; break;
         case "--set-flag":     flagsSet.add(com.perblue.heroes.game.objects.UserFlag.valueOf(a[++i].toUpperCase())); break;
         case "--clear-flag":   flagsClear.add(com.perblue.heroes.game.objects.UserFlag.valueOf(a[++i].toUpperCase())); break;
+        case "--team-level":   teamLevelEvent = true; teamLevelValue = Integer.parseInt(a[++i]); break;
+        case "--every":        teamLevelEvery = true; break;
+        case "--close-team-level": closeTeamLevel = true; break;
+        case "--reward-item":  pendingTlItem = a[++i].toUpperCase(); tlItems.add(pendingTlItem); tlQtys.add(1); break;
+        case "--reward-qty":   if (pendingTlItem != null) tlQtys.set(tlQtys.size() - 1, Integer.parseInt(a[++i])); break;
         case "--open-trial":  openTrial = true;
           if (i + 1 < a.length && a[i + 1].matches("\\d+")) trialID = Long.parseLong(a[++i]); break;
         case "--close-trial": closeTrial = true; break;
@@ -228,6 +237,23 @@ public final class AdminEvents {
           changed = true;
           System.out.println("[events] event FLAG_USER_ON_LOGIN ajouté : eventID=" + flagLoginID + " set=" + flagsSet
               + " clear=" + flagsClear + " (" + days + " j).");
+        }
+      }
+
+      if (closeTeamLevel) {
+        int before = specs.size();
+        specs.removeIf(js -> js.contains("FREE_STUFF_AT_TEAM_LEVEL") || js.contains("FREE_STUFF_EVERY_X_TEAM_LEVEL"));
+        changed = changed || specs.size() != before;
+        System.out.println("[events] events TEAM LEVEL retirés (" + (before - specs.size()) + ").");
+      }
+      if (teamLevelEvent) {
+        if (tlItems.isEmpty()) { System.out.println("[events] --team-level requiert au moins un --reward-item <ITEM> [--reward-qty N]. Ignoré."); }
+        else {
+          specs.removeIf(js -> js.contains("FREE_STUFF_AT_TEAM_LEVEL") || js.contains("FREE_STUFF_EVERY_X_TEAM_LEVEL"));
+          specs.add(ServerEvents.specJsonTeamLevel(teamLevelID, teamLevelValue, teamLevelEvery, tlItems, tlQtys, start, end));
+          changed = true;
+          System.out.println("[events] event TEAM LEVEL ajouté : eventID=" + teamLevelID + " niveau=" + teamLevelValue
+              + (teamLevelEvery ? " (tous les X)" : " (au palier)") + " récompenses=" + tlItems + "×" + tlQtys + " (" + days + " j).");
         }
       }
 

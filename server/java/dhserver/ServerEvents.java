@@ -437,6 +437,87 @@ public final class ServerEvents {
   }
 
   /**
+   * Construit un événement <b>TEAM LEVEL</b> (récompense au palier de niveau d'équipe). {@code everyX=false} → {@code TeamAtLevel}
+   * (FREE_STUFF_AT_TEAM_LEVEL, récompense EN ATTEIGNANT le niveau {@code teamLevel}) ; {@code everyX=true} → {@code TeamLevelRecord}
+   * (FREE_STUFF_EVERY_X_TEAM_LEVEL, récompense TOUS LES {@code teamLevel} niveaux). Composants : {@code TeamAtLevel}/{@code TeamLevelRecord}
+   * (lit {@code teamLevel}) + {@code EventRewards} (lit {@code rewards} = drops {@code {kind:ITEM,itemType:X,quantity:N}}). Effet serveur :
+   * {@code teamLevelRewardDrops(user, oldTL, newTL)} livre les drops par COURRIER au level-up (glue serveur — le jar client ne fait que
+   * la conversion premium-stamina). {@code dropJsons} = liste de drops JSON (params ADMIN : item + quantité).
+   */
+  public static SpecialEventInfo buildTeamLevelEvent(long id, int teamLevel, Collection<String> dropJsons, boolean everyX, long startMs, long endMs) {
+    try {
+      String kind = everyX ? "FREE_STUFF_EVERY_X_TEAM_LEVEL" : "FREE_STUFF_AT_TEAM_LEVEL";
+      SpecialEventType type = everyX ? SpecialEventType.FREE_STUFF_EVERY_X_TEAM_LEVEL : SpecialEventType.FREE_STUFF_AT_TEAM_LEVEL;
+      StringBuilder drops = new StringBuilder();
+      for (String d : dropJsons) { if (drops.length() > 0) drops.append(','); drops.append(d); }
+      String full =
+          "{\"kind\":\"" + kind + "\",\"id\":" + id + ",\"formatVersion\":0,"
+        + "\"timeRange\":[{\"serverFilter\":\"1-999999\",\"start\":" + startMs
+        +   ",\"end\":{\"kind\":\"TIME\",\"endTime\":" + endMs + "}}],"
+        + "\"teamLevel\":" + teamLevel + ",\"rewards\":[" + drops + "]}";
+      JsonValue root = JSON.parse(full);
+
+      SpecialEventInfo info = new SpecialEventInfo(SpecialEventType.class);
+      setField(info, "id", id);
+      setField(info, "type", type);
+      setField(info, "formatVersion", 0);
+
+      EventVisibility vis = new EventVisibility(new int[0]);
+      vis.load(info, root, root.get("timeRange"));
+      addComponent(info, vis);
+
+      IEventComponent tl = everyX
+          ? new com.perblue.common.specialevent.components.TeamLevelRecord(type)
+          : new com.perblue.common.specialevent.components.TeamAtLevel(type);
+      Method loadTl = findMethod(tl.getClass(), "load", SpecialEventInfo.class, JsonValue.class, JsonValue.class);
+      loadTl.setAccessible(true); loadTl.invoke(tl, info, root, root);
+      addComponent(info, tl);
+
+      com.perblue.common.specialevent.components.EventRewards er = new com.perblue.common.specialevent.components.EventRewards();
+      er.load(info, root, root);
+      addComponent(info, er);
+
+      addComponent(info, buildMinimalCard(info));
+      return info;
+    } catch (RuntimeException e) {
+      throw e;
+    } catch (Exception e) {
+      throw new RuntimeException("buildTeamLevelEvent", e);
+    }
+  }
+
+  /**
+   * SERVEUR-AUTORITATIF : drops à accorder au joueur quand son niveau d'équipe passe de {@code oldTL} à {@code newTL}, d'après les
+   * events TEAM LEVEL actifs. Pour chaque event : {@code TeamAtLevel/TeamLevelRecord.getRewardTimes(info, user, oldTL, newTL)} × les
+   * drops de son {@code EventRewards}. Le jar client ne GRANT pas (backend PerBlue) → l'appelant livre ces drops (par courrier). §3 :
+   * on lit {@code getRewardTimes}/{@code getRewards} du jeu, on n'invente rien.
+   */
+  public static java.util.List<com.perblue.heroes.network.messages.RewardDrop> teamLevelRewardDrops(
+      com.perblue.heroes.game.objects.User user, int oldTL, int newTL) {
+    java.util.List<com.perblue.heroes.network.messages.RewardDrop> out = new ArrayList<>();
+    if (newTL <= oldTL) return out;
+    try {
+      Class<?> talCls = Class.forName("com.perblue.common.specialevent.components.TeamAtLevel");
+      Class<?> tlrCls = Class.forName("com.perblue.common.specialevent.components.TeamLevelRecord");
+      Class<?> erCls = Class.forName("com.perblue.common.specialevent.components.EventRewards");
+      for (SpecialEventInfo info : OPERATOR_EVENTS) {
+        Object tl = info.getComponent((Class) talCls);
+        if (tl == null) tl = info.getComponent((Class) tlrCls);
+        Object er = info.getComponent((Class) erCls);
+        if (tl == null || er == null) continue;
+        int times = (Integer) tl.getClass().getMethod("getRewardTimes", SpecialEventInfo.class,
+            com.perblue.common.specialevent.game.IEventUser.class, int.class, int.class).invoke(tl, info, user, oldTL, newTL);
+        if (times <= 0) continue;
+        java.util.List<?> drops = (java.util.List<?>) er.getClass().getMethod("getRewards",
+            com.perblue.common.specialevent.game.IEventUser.class, int.class).invoke(er, user, 1);
+        for (int t = 0; t < times; t++)
+          for (Object d : drops) out.add((com.perblue.heroes.network.messages.RewardDrop) d);
+      }
+    } catch (Exception e) { System.out.println("[events] teamLevelRewardDrops: " + e); }
+    return out;
+  }
+
+  /**
    * Construit un événement <b>TRIAL</b> (composant {@code TrialEventInfo}, clé "trial") — le PRÉREQUIS de FRANCHISE_TRIALS
    * (tout trial est un événement spécial). <b>Object-path INDUSTRIEL</b> (décision utilisateur, patron {@code buildMinimalCard}) :
    * on construit le composant via la FABRIQUE du jeu ({@code createComponent("trial")}) puis on remplit ses champs par un
@@ -968,6 +1049,13 @@ public final class ServerEvents {
           ? buildMerchantDiscountEvent(id, mrch, pct, start, end)
           : buildMerchantRefreshDiscountEvent(id, mrch, pct, start, end);
     }
+    if ("FREE_STUFF_AT_TEAM_LEVEL".equals(kind) || "FREE_STUFF_EVERY_X_TEAM_LEVEL".equals(kind)) {
+      java.util.List<String> drops = new ArrayList<>();
+      JsonValue dn = spec.get("drops");
+      if (dn != null) for (JsonValue d = dn.child; d != null; d = d.next)
+        drops.add("{\"kind\":\"ITEM\",\"itemType\":\"" + d.getString("item") + "\",\"quantity\":" + d.getInt("qty", 1) + "}");
+      return buildTeamLevelEvent(id, spec.getInt("teamLevel", 50), drops, "FREE_STUFF_EVERY_X_TEAM_LEVEL".equals(kind), start, end);
+    }
     if ("FLAG_USER_ON_LOGIN".equals(kind)) {
       List<com.perblue.heroes.game.objects.UserFlag> setF = new ArrayList<>(), clearF = new ArrayList<>();
       JsonValue sn = spec.get("set");
@@ -1077,6 +1165,18 @@ public final class ServerEvents {
     for (com.perblue.heroes.game.objects.UserFlag f : clearF) { if (c.length() > 0) c.append(','); c.append('"').append(f.name()).append('"'); }
     return "{\"kind\":\"FLAG_USER_ON_LOGIN\",\"modes\":[],\"bonus\":0,\"id\":" + id
         + ",\"set\":[" + s + "],\"clear\":[" + c + "],\"start\":" + start + ",\"end\":" + end + "}";
+  }
+
+  /** Construit la chaîne JSON d'UNE spec TEAM LEVEL (niveau + drops item:qty = params ADMIN ; everyX → tous les X niveaux). */
+  public static String specJsonTeamLevel(long id, int teamLevel, boolean everyX,
+      java.util.List<String> itemTypes, java.util.List<Integer> quantities, long start, long end) {
+    StringBuilder d = new StringBuilder();
+    for (int i = 0; i < itemTypes.size(); i++) {
+      if (d.length() > 0) d.append(',');
+      d.append("{\"item\":\"").append(itemTypes.get(i)).append("\",\"qty\":").append(i < quantities.size() ? quantities.get(i) : 1).append('}');
+    }
+    return "{\"kind\":\"" + (everyX ? "FREE_STUFF_EVERY_X_TEAM_LEVEL" : "FREE_STUFF_AT_TEAM_LEVEL") + "\",\"modes\":[],\"bonus\":0,\"id\":" + id
+        + ",\"teamLevel\":" + teamLevel + ",\"drops\":[" + d + "],\"start\":" + start + ",\"end\":" + end + "}";
   }
 
   /** Construit la chaîne JSON d'UNE spec d'override opérateur. */

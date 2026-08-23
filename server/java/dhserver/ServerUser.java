@@ -1946,7 +1946,20 @@ public final class ServerUser {
     // l'objet User. Sans re-sync vers le wire, le niveau reste BLOQUÉ à 1 : l'équipe « remonte 1→2 » à chaque
     // palier d'XP (18) et ré-accorde STAMINA_GAIN_ON_LEVEL (+20) EN BOUCLE (au lieu de progresser vers le
     // palier suivant). Même schéma que resyncHeroes/resyncCampaign (§6 persistance complète).
-    userInfo.basicInfo.teamLevel = user.getTeamLevel();
+    int oldTL = userInfo.basicInfo.teamLevel;              // AVANT resync = ancien niveau (le wire n'avait pas changé)
+    int newTL = user.getTeamLevel();
+    userInfo.basicInfo.teamLevel = newTL;
+    // TEAM LEVEL live-ops (FREE_STUFF_AT/EVERY_X_TEAM_LEVEL) : à la montée de niveau, on livre les drops des events
+    // actifs par COURRIER (le jar client ne GRANT pas — action backend PerBlue ; §3 : on lit getRewardTimes/getRewards
+    // du jeu). Défaut (aucun event) = no-op.
+    if (newTL > oldTL) {
+      java.util.List<com.perblue.heroes.network.messages.RewardDrop> tlDrops = ServerEvents.teamLevelRewardDrops(user, oldTL, newTL);
+      if (!tlDrops.isEmpty()) {
+        deliverMail(com.perblue.heroes.network.messages.MailType.SYSTEM_MESSAGE, "Team Level Reward",
+            "Team Level " + newTL + " Reward", "Congratulations on reaching Team Level " + newTL + "!", tlDrops);
+        System.out.println("[teamlevel] TL " + oldTL + "→" + newTL + " → " + tlDrops.size() + " récompense(s) par courrier [persisté]");
+      }
+    }
   }
 
   /**
