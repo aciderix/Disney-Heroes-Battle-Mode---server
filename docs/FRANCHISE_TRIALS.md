@@ -453,4 +453,20 @@ Deux mécanismes, exécutés par la logique DU JEU (§3, 0 règle réécrite) :
 `PatchedHeroesHelper.handleFranchiseTrialCompletion` (Patch Essence) → 7 `AdminEvents --open-trial <FRANCHISE|saison>` (push event)
 → 8 vérif EN JEU (vitrine `TrialEventSubTrialChooserScreen` → combat franchise → Patch Essence).
 
+### ✅ incr. 5 LIVRÉ (g144) — GATING FRANCHISE serveur-autoritatif (seuls les héros de la franchise du sous-trial)
+Un sous-trial de franchise n'autorise QUE les héros de sa franchise. Le combat est client-autoritatif mais la **légitimité du
+lineup** est revalidée par le serveur (§3) : `ServerUser.validateTrialFranchiseGating` (appelé dans `recordTrialEventAttack` avant
+`recordOutcome`) lit la franchise du sous-trial (`ServerEvents.franchiseForSubtrial(subtrialNumber)` = `base_trial_config.FRANCHISES`,
+1 sous-trial/franchise dans l'ordre, §4) et l'ensemble des héros de la franchise (`ClientTrialEventHelper.getAllHeroesInFranchise`,
+données du jeu) ; chaque attaquant (`base.attackers` = `AttackLineupSummary.units[].type`) hors ensemble ⇒ `ClientErrorCodeException`
+(rien accordé). `WILDCARD` (joker) ⇒ aucune restriction. `TrialGatingTest` (régression 135) : sous-trial THE_JUNGLE_BOOK → BALOO
+accepté, URSULA (Little Mermaid) rejeté, refus = nœud non enregistré. Helpers `ServerEvents.franchiseNamesInOrder`/`franchiseForSubtrial`.
+**⚠ FAIT §4/§8** : le JSON de gating client (`TrialEventInfo.gatingCriteria` : style INCLUSIVE/EXCLUSIVE + `heroCount`) est
+BACKEND-AUTHORED (pas dans les `.tab`) → on ne l'INVENTE PAS (§4) ; le serveur applique la restriction franchise à partir des
+données du jeu (fidèle et anti-triche). Le FILTRE d'affichage du sélecteur côté client (qui lit `getGatingCriteria`) reste à
+alimenter le jour où une vérité terrain (event JSON) est disponible — sera vérifié/complété EN JEU (§8).
+
+**RESTE** : 6 complétion `PatchedHeroesHelper.handleFranchiseTrialCompletion` (Patch Essence) → 7 `AdminEvents --open-trial
+<FRANCHISE|saison>` (push event) → 8 vérif EN JEU (vitrine `TrialEventSubTrialChooserScreen` → combat franchise → Patch Essence).
+
 ## Statut : 4 DifficultyMode-trials ✅ EN JEU. EVENT/FRANCHISE : 1a STRUCTURE ✅ + 1b CONTENU ✅ + 2 AUTORITÉ SERVEUR (`GetTrialEventData` blob) ✅ (régression 132). **Prochaine action = incr. 3 `TrialEventAttack` → record (`BaseEventTrialNode.recordOutcome` : avance nœud + conso chance + loot) sur le blob per-user ; puis push event (`AdminEvents --open-trial`) + vérif EN JEU.**

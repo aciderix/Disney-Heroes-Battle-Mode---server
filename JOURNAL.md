@@ -5757,3 +5757,40 @@ Régression 134/134. Fichiers : `server/java/dhserver/ServerUser.java` (boundTri
 checkForDailyReset dans record), `LoginServer.java` (handler RESET_TRIAL_EVENT_PAID + daily reset sur GetTrialEventData),
 `server/smoke/TrialResetTest.java` (nouveau), `server/smoke/TrialResetProbe.java` (probe DEV), `server/smoke/regression.sh`,
 `docs/FRANCHISE_TRIALS.md` §17, `MEMORY.md`.
+
+## 2026-08-23 (g144) — FRANCHISE_TRIALS EVENT/FRANCHISE incr. 5 : GATING FRANCHISE serveur-autoritatif (headless)
+
+Un sous-trial de franchise n'autorise QUE les héros de sa franchise. Le combat est client-autoritatif, mais la LÉGITIMITÉ du
+lineup est revalidée par le serveur (§3, anti-triche).
+
+**Reconnaissance (bytecode)** : `TrialEventInfo.gatingCriteria` (List) → runtime `node.getInclusiveHeroCriteria()`/
+`getExclusiveHeroCriteria()` ; validation primitive `ClientTrialEventHelper.getFirstUnfulfilledGatingCriterion(node, Collection<IHero>)`
++ `HeroGatingCriterion.matches(UnitType)` ; `InclusiveHeroGatingCriterion.isValidLineup` = `count(matches) >= requiredMatches`.
+Schéma JSON du gating : `gatingCriteria[n]` = `TrialEventGatingCriteria{scope, criteria:[...]}`, criterion =
+`{style:{kind:INCLUSIVE|EXCLUSIVE}, heroCount:N, criterion:{kind:CATEGORIES|HERO_RARITY, categories:[...]}}`.
+
+**⚠ Décision §4/§8** : le build actuel a `getGatingCriteria size=0` (probe) — le gating est BACKEND-AUTHORED (le `style`/`heroCount`
+n'est PAS dans les `.tab` lisibles). Plutôt que d'INVENTER un JSON de gating (heroCount/style), le serveur applique la restriction
+franchise directement depuis les données du jeu : le sous-trial i (1-based) correspond à `franchiseNamesInOrder().get(i-1)`
+(= `base_trial_config.FRANCHISES`, même ordre que la construction des sous-trials) et l'appartenance vient de
+`ClientTrialEventHelper.getAllHeroesInFranchise` (héros de la franchise). 0 invention, fidèle, anti-triche.
+
+**Implémentation** :
+- `ServerEvents.franchiseNamesInOrder()` / `franchiseForSubtrial(int)` : franchises de la saison dans l'ordre des sous-trials.
+- `ServerUser.validateTrialFranchiseGating(user, m)` (appelé dans `recordTrialEventAttack` avant `recordOutcome`) : si la franchise
+  du sous-trial n'est pas WILDCARD, chaque attaquant (`base.attackers` = `AttackLineupSummary.units[].type`, hors mercenaires) doit
+  appartenir à `getAllHeroesInFranchise(franchise)` sinon `ClientErrorCodeException` (rien accordé).
+
+**Test** `server/smoke/TrialGatingTest.java` (régression 135) : sous-trial THE_JUNGLE_BOOK → BALOO (Jungle Book) ACCEPTÉ ;
+un lineup contenant URSULA (Little Mermaid) REJETÉ ; le nœud refusé n'enregistre aucun statut (rien accordé).
+
+**Honnête (§8)** : le FILTRE d'affichage du sélecteur de héros côté client lit `getGatingCriteria` (vide ici) → à alimenter le jour
+où une vérité terrain (event JSON) est disponible ; la restriction est appliquée serveur-side dès maintenant. À vérifier EN JEU.
+
+**RESTE** : incr. 6 complétion `PatchedHeroesHelper.handleFranchiseTrialCompletion` (Badge Bits → Patch Essence, `getPatchEssenceTier`)
+→ 7 `AdminEvents --open-trial <FRANCHISE|saison>` (push event) → 8 vérif EN JEU (vitrine `TrialEventSubTrialChooserScreen` → combat
+franchise → Patch Essence).
+
+Régression 135/135. Fichiers : `server/java/dhserver/ServerEvents.java` (franchiseNamesInOrder/franchiseForSubtrial),
+`ServerUser.java` (validateTrialFranchiseGating + appel dans recordTrialEventAttack), `server/smoke/TrialGatingTest.java` (nouveau),
+`server/smoke/regression.sh`, `docs/FRANCHISE_TRIALS.md` §17, `MEMORY.md`.

@@ -282,6 +282,30 @@ public final class ServerEvents {
     }
   }
 
+  /**
+   * FRANCHISE_TRIALS (EVENT/FRANCHISE) — franchises de la saison DANS L'ORDRE des sous-trials (1 sous-trial par franchise,
+   * même ordre que {@code buildFranchiseTrialEvent}). Lu de {@code base_trial_config.FRANCHISES} (§4, 0 en dur). Sert au gating
+   * serveur-autoritatif : le sous-trial n° {@code i} (1-based) restreint aux héros de {@code franchiseNamesInOrder().get(i-1)}.
+   */
+  public static java.util.List<String> franchiseNamesInOrder() {
+    try {
+      Field bf = Class.forName("com.perblue.heroes.game.data.patchedheroes.PatchStats").getDeclaredField("BASE_TRIAL_CONFIG_STATS");
+      bf.setAccessible(true);
+      Object dhcs = bf.get(null);
+      Object cst = dhcs.getClass().getMethod("getStats").invoke(dhcs);
+      String franchisesStr = (String) readField(cst, "FRANCHISES");
+      java.util.List<String> out = new java.util.ArrayList<>();
+      for (String fr : franchisesStr.split(",")) { fr = fr.trim(); if (!fr.isEmpty()) out.add(fr); }
+      return out;
+    } catch (Exception e) { throw new RuntimeException("franchiseNamesInOrder", e); }
+  }
+
+  /** Franchise (nom) du sous-trial {@code subtrialNumber} (1-based), ou {@code null} hors bornes. {@code WILDCARD} = pas de restriction. */
+  public static String franchiseForSubtrial(int subtrialNumber) {
+    java.util.List<String> fr = franchiseNamesInOrder();
+    return (subtrialNumber >= 1 && subtrialNumber <= fr.size()) ? fr.get(subtrialNumber - 1) : null;
+  }
+
   /** Construit une pièce de config de trial (`game.specialevent.trial.*`) via son ctor {@code (JsonValue, Map)} — le fragment
    *  JSON ne porte que du CONTENU lu des `.tab` (§4) ; le PARSEUR du jeu valide/construit (schéma du jeu, pas deviné). */
   @SuppressWarnings({"rawtypes", "unchecked"})

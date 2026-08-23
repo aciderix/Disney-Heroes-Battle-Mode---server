@@ -3644,6 +3644,9 @@ public final class ServerUser {
     if (node == null) throw new com.perblue.heroes.ClientErrorCodeException(
         com.perblue.heroes.util.localization.ClientErrorCode.ERROR, new String[0]);
 
+    // incr. 5 — GATING FRANCHISE (anti-triche serveur-autoritatif §3) : le sous-trial restreint aux héros de SA franchise.
+    validateTrialFranchiseGating(user, m);
+
     com.perblue.heroes.network.messages.CombatOutcome outcome = m.base == null ? null : m.base.outcome;
     java.util.Collection<?> loot = m.lootEarned == null ? java.util.Collections.emptyList() : m.lootEarned;
     java.util.Collection<?> attackers = m.base == null ? java.util.Collections.emptyList() : m.base.attackers;
@@ -3693,6 +3696,38 @@ public final class ServerUser {
         new com.perblue.heroes.game.objects.trials.ClientEventTrial(user, info);
     trial.setUserData(blob);
     return trial;
+  }
+
+  /**
+   * FRANCHISE_TRIALS (EVENT/FRANCHISE) incr. 5 — GATING FRANCHISE (anti-triche serveur-autoritatif §3). Un sous-trial de franchise
+   * n'autorise QUE les héros de sa franchise (le client filtre le sélecteur ; le serveur REVALIDE — le client est autoritatif sur
+   * le combat mais pas sur la légitimité du lineup). Franchise du sous-trial = {@code ServerEvents.franchiseForSubtrial}
+   * (données du jeu, §4) ; membre = {@code ClientTrialEventHelper.getAllHeroesInFranchise} (héros de la franchise, données du jeu).
+   * {@code WILDCARD} (joker) ⇒ aucune restriction. Un attaquant hors franchise ⇒ {@code ClientErrorCodeException} (rien accordé).
+   */
+  @SuppressWarnings({"rawtypes", "unchecked"})
+  private void validateTrialFranchiseGating(User user, com.perblue.heroes.network.messages.TrialEventAttack m)
+      throws com.perblue.heroes.ClientErrorCodeException {
+    String fr = ServerEvents.franchiseForSubtrial(m.subtrialNumber);
+    if (fr == null || "WILDCARD".equals(fr)) return;   // joker / hors bornes → pas de restriction
+    if (m.base == null || m.base.attackers == null) return;
+    com.perblue.heroes.network.messages.Franchise franchise =
+        com.perblue.heroes.network.messages.Franchise.valueOf(fr);
+    java.util.Set allowed = com.perblue.heroes.ui.trials.ClientTrialEventHelper
+        .getAllHeroesInFranchise(java.util.Collections.singleton(franchise));
+    for (Object lo : m.base.attackers) {
+      com.perblue.heroes.network.messages.AttackLineupSummary ls = (com.perblue.heroes.network.messages.AttackLineupSummary) lo;
+      if (ls.units == null) continue;
+      for (Object uo : ls.units) {
+        com.perblue.heroes.network.messages.AttackUnitSummary u = (com.perblue.heroes.network.messages.AttackUnitSummary) uo;
+        if (u.isMercenary || u.type == null) continue;   // mercenaire/entrée vide : ignoré (comme reconstructHeroes)
+        if (!allowed.contains(u.type)) {
+          throw new com.perblue.heroes.ClientErrorCodeException(
+              com.perblue.heroes.util.localization.ClientErrorCode.ERROR,
+              new String[] { u.type.name(), fr });
+        }
+      }
+    }
   }
 
   /**
