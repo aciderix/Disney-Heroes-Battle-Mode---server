@@ -209,6 +209,9 @@ immédiate — ce sont des composants de CONTENU, pas « un builder de plus ».
 > inline → « CRATE REWARDS » 50 GEAR_TOKENS/20 DIAMONDS, `LootResults [persisté]`). Captures `manual/eventcrate/ec_after/ec_free.png`.
 > **CORRECTIF §8 trouvé en jeu** : `freeChest()` passait `null` à `hasFreeChest` → la branche EVENT (lit `getFreeBuys()` vs
 > `getEventCompletionCount(id)`) ne voyait pas les free buys → « FREE NOW » facturé à tort ; fix = passer le snapshot opérateur.
+> **CORRECTIF §4bis (grille de loot)** : l'aperçu « loot possible » de l'écran de détail vient du nœud **`DISPLAY`** de la table
+> (`getPossibleDrops`→`getPossibleLoot`), pas de `ROOT`. `extraChestDropTsv` génère les DEUX nœuds (DISPLAY=aperçu de tous les items,
+> ROOT=tirage pondéré), comme `expedition_chest_drops.tab`. Vérifié en jeu (grille GOLD/GEAR_TOKENS/DIAMONDS).
 >
 > **Schéma EXACT (bytecode `EventChestData.<init>`)** : le discriminant est `if (eventChestData.has("text")) …` — DEUX formats.
 > **Format A** (`text` présent) : `text.preset` (String REQUIS) → résout les libellés d'écran via `EventPresets.properties` (le

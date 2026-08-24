@@ -63,6 +63,13 @@ public final class ExtraChestTest {
     check(!rolled.isEmpty(), "la table ROOT roule au moins 1 drop (" + rolled.size() + ")");
     System.out.println("[extrachest] roll ROOT x1 = " + rolled.size() + " drop(s): " + rolled + " ✔");
 
+    // (2bis) APERÇU « loot possible » de l'écran de détail = nœud DISPLAY (ChestHelper.getPossibleDrops →
+    // EventChestStats.getPossibleLoot). Sans nœud DISPLAY, la grille de loot serait VIDE (fidélité §4bis).
+    java.util.List<?> preview = ChestHelper.getPossibleDrops(u, ChestType.EVENT, snap);
+    check(preview != null && preview.size() == drops.size(),
+        "aperçu DISPLAY = les " + drops.size() + " items possibles (" + (preview == null ? "null" : preview.size()) + ")");
+    System.out.println("[extrachest] aperçu DISPLAY (getPossibleDrops) = " + preview.size() + " item(s) : " + preview + " ✔");
+
     // (3) OUVERTURE end-to-end via openChest(EVENT) → loot crédité + DIAMONDS débités du coût.
     long diamBefore = bd.userInfo.diamonds;
     BuyChests buy = new BuyChests();

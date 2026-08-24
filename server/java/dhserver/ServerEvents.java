@@ -1025,14 +1025,31 @@ public final class ServerEvents {
 
   /**
    * Assemble une TABLE DE DROPS au FORMAT DU JEU ({@code DHDropTableStats}/{@code chests.tab} : colonnes
-   * {@code NODE/WEIGHT/QUANTITY/RESULT/BEHAVIOR}, 1ʳᵉ colonne = index de ligne). {@code ROOT} tire {@code draws} fois
-   * dans le pool pondéré {@code PICK} (chaque entrée = une ligne {@code PICK} de poids/quantité/résultat). C'est la donnée
-   * inline consommée par {@code EventChestStats(String)} (= {@code getStats().getTable()}), pas une règle réécrite (§3/§4).
+   * {@code NODE/WEIGHT/QUANTITY/RESULT/BEHAVIOR}, 1ʳᵉ colonne = index de ligne). Deux nœuds frères comme les vraies tables
+   * de coffre event (cf. {@code expedition_chest_drops.tab}) :
+   * <ul>
+   *   <li>{@code DISPLAY} = l'APERÇU (grille « loot possible » de l'écran de détail) : lu par
+   *       {@code EventChestStats.getPossibleLoot} (roll du nœud {@code DISPLAY}) → {@code ChestHelper.getPossibleDrops} →
+   *       {@code ChestDetailScreen}. On y liste UNE fois chaque entrée (item × quantité) via un sous-nœud {@code D<i>}.</li>
+   *   <li>{@code ROOT} = le TIRAGE réel : tire {@code draws} fois dans le pool pondéré {@code PICK}
+   *       (chaque entrée = une ligne {@code PICK} de poids/quantité/résultat).</li>
+   * </ul>
+   * Données inline consommées par {@code EventChestStats(String)} (DTCodes {@code ROOT}/{@code DISPLAY}), pas une règle
+   * réécrite (§3/§4) ; sans {@code DISPLAY}, l'écran de détail affiche une grille de loot VIDE (défaut de fidélité §4bis).
    */
   public static String extraChestDropTsv(List<ChestDrop> drops, int draws) {
     StringBuilder sb = new StringBuilder();
     sb.append('\t').append("NODE\tWEIGHT\tQUANTITY\tRESULT\tBEHAVIOR\n");
     int row = 1;
+    // DISPLAY (aperçu) : un sous-nœud D<i> par entrée + un nœud DISPLAY qui les liste TOUS (aperçu complet).
+    StringBuilder dispList = new StringBuilder();
+    for (int i = 0; i < drops.size(); i++) { if (i > 0) dispList.append(','); dispList.append("<D").append(i).append('>'); }
+    sb.append(row++).append("\tDISPLAY\t1\t1\t").append(dispList).append("\t\n");
+    for (int i = 0; i < drops.size(); i++) {
+      ChestDrop d = drops.get(i);
+      sb.append(row++).append("\tD").append(i).append("\t1\t").append(d.quantity).append('\t').append(d.result).append("\t\n");
+    }
+    // ROOT (tirage réel) : draws tirages dans le pool pondéré PICK.
     sb.append(row++).append("\tROOT\t1\t").append(Math.max(1, draws)).append("\t<PICK>\t\n");
     for (ChestDrop d : drops)
       sb.append(row++).append("\tPICK\t").append(d.weight).append('\t').append(d.quantity).append('\t').append(d.result).append("\t\n");

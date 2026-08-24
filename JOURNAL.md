@@ -6323,6 +6323,12 @@ poussé dans la DB serveur → `run-online.sh` (client réel, id=1 TL200) :
   count, snap)` passe le snapshot opérateur → « FREE NOW » honoré (chemin GRATUIT, aucun débit). Re-vérifié EN JEU (freeBuys=3 → open
   GRATUIT confirmé, 0 ligne `coffre PAYANT` serveur + 20 DIAMONDS crédités). `ExtraChestTest` renforcé (cas freeBuys=1 → wasFree=true, 0 débit).
   Coffres normaux inchangés (`FreeChest/ChestCharge/ChestPaidDebit/ChestValidate` verts).
+- **CORRECTIF FIDÉLITÉ §4bis (relevé par l'utilisateur sur capture)** : l'écran de détail n'affichait AUCUNE grille de « loot possible ».
+  Cause : ma table inline n'avait qu'un nœud `ROOT` (tirage) ; l'aperçu vient du nœud **`DISPLAY`** (`ChestHelper.getPossibleDrops` →
+  `EventChestStats.getPossibleLoot` = roll du nœud `DISPLAY`), absent de ma table. **Fix** : `extraChestDropTsv` génère désormais DEUX nœuds
+  frères comme les vraies tables (`expedition_chest_drops.tab`) — `DISPLAY` (liste tous les items possibles via sous-nœuds `D<i>`, = aperçu)
+  + `ROOT` (tirage pondéré). `ExtraChestTest` : `getPossibleDrops` = les N items. **✅ RE-VÉRIFIÉ EN JEU** : l'écran SUPPLY CRATE montre la
+  grille GOLD / GEAR_TOKENS / DIAMONDS (capture `ec_disp.png`).
 
 Régression **146/146** (`ExtraChestTest`). Fichiers : `ServerEvents.java` (buildExtraChestEvent + ChestDrop + extraChestDropTsv +
 specJsonExtraChest + eventFromSpec + esc), `ServerUser.java` (openChest branche EVENT + throws + giveChestRewards snapshot + **freeChest
