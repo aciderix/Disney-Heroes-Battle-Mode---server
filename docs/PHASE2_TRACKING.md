@@ -44,6 +44,7 @@ Périmètre mesuré au départ : **179 écrans** client (`*Screen`), ~37 package
 | **A2** | Câblage : messages envoyés par écran non routés par `LoginServer` | `audit.sh a2` (`ScreenContract` §C) | 📄 `docs/AUDIT_WIRING.md` | 🚧 14 manques → triés (voir notes) |
 | **A3** | Valeurs en dur serveur qui devraient venir de `.tab`/jeu/admin | `audit.sh a3` (heuristique) | 📄 `docs/AUDIT_HARDCODED.md` | ✅ **0 candidat** (§4 respecté) |
 | **A4** | Erreurs client : scan des logs en jeu (exceptions/NPE/GL) | `audit.sh a4` (parseur logs) | 📄 `docs/AUDIT_CLIENT_ERRORS.md` | ✅ **0 erreur non-bénigne** |
+| **A5** | Couverture des `.tab` : data d'un mode/feature non câblé + orphelines + carte `.tab`→classe | `audit.sh a5` (carte bytecode) | 📄 `docs/AUDIT_TABS.md` | 🚧 272 `.tab` mappées → triage (voir notes) |
 
 **Méthode par manque trouvé** : chaque entrée de rapport = `[GAP]` avec (écran/mode, message/valeur, gravité proposée,
 piste de correction). On tranche ensuite un par un (§8 : corriger + vérifier EN JEU, ou documenter PARTIEL/NO-OP avec risque
@@ -81,6 +82,43 @@ visibles (invasion rank, prizewall).
 **A1 (inventaire)** : 179 écrans listés dans `AUDIT_SCREENS.md`. La majorité des MODES est déjà ✅ en jeu (cf.
 `EXPLORATION.md`) ; le croisement fin « chaque écran individuel rejoué » se fait via le balayage en jeu (méthode §7.4 HUB_NAV).
 Aucun MODE oublié détecté ; le reste = sous-écrans/onglets d'un mode déjà couvert (à cocher au balayage).
+
+**A5 (couverture des `.tab`)** — `AUDIT_TABS.md` : **272 `.tab` sur disque, 265 référencées, 67 classes `Stats`**.
+- **Q : le code du jeu associe-t-il chaque `.tab` à une partie du jeu ? → OUI.** Chaque `.tab` est déclarée par une classe
+  `Stats` (le PACKAGE = le mode/feature). Carte complète auto-générée dans `AUDIT_TABS.md` (ex. `arena_*.tab`→`ArenaStats`,
+  `battle_pass_v2_*`→`BattlePassV2Stats`, `invasion_*`→`InvasionStats`…).
+- **Orphelines sur disque** : `content.{1,13,14,21,23,25,99}.tab` (⚠️ **PAS orphelines** — chargées par nom CONSTRUIT
+  `content.<shard>.tab` via `ContentStats`) + `invasion_boss_rewards.tab` (loot tiré CÔTÉ CLIENT, §SHIMS #25 — normal).
+- **Référencée par le code mais ABSENTE du disque** : **`unit_abilities.tab`** → notre `extract_game_data.sh` ne l'extrait
+  pas. **[À VÉRIFIER]** : le serveur en a-t-il besoin ? (le combat est client-autoritatif via unidbg → probablement non côté
+  serveur, mais à confirmer ; sinon = simple lacune d'extraction sans impact serveur).
+- **⚠️ « Nommée serveur » est APPROXIMATIF** : beaucoup de features à `—` sont en réalité UTILISÉES via la logique du jeu que
+  le serveur exécute (sans que notre glue nomme la classe) — **CONFIRMÉ implémentées** : `CampaignStats`, `FriendshipStats`/
+  `FriendshipCampaignStats`, `CollectionStats` (CollectionClaim/Mastery/Avatar ✅), `GuildCheckInStats` (GuildCheckInTest ✅),
+  `SpotlightTrialStats`/`TeamTrialsStats` (✅ en jeu), `EnchantingStats` (✅), `PrizeWallStats` (MEDALS ✅ via COMPLETE_QUEST),
+  `PortStats`, `RealGearStats`, `ModStats`, `CosmeticCollectionStats`… → **faux négatifs**, à NE PAS re-signaler.
+- **VRAIS candidats « data présente, mode/feature NON câblé »** (à trancher un par un — implémenter, ou documenter « hors
+  scope/retiré » avec justification) :
+  | Feature | Classe `Stats` (.tab) | Verdict / note |
+  |---|---|---|
+  | `heist` | `HeistStats` (4) | **[OK-connu]** mode RETIRÉ du jeu (EXPLORATION 💤) — data résiduelle, rien à câbler |
+  | `codebase` | `CodebaseStats` (4) + `codebase_use` | **[GAP mode]** « The Codebase » non implémenté (cohérent A2 `GetCodebaseAttackLogs`) |
+  | `campaign.reinfection` | `CampaignReinfectionStats` (4) | **[GAP feature]** variante campagne « reinfection » non câblée |
+  | `chest.upgrade` | `ChestUpgradeStats` (3) | **[GAP feature]** pistes d'amélioration de coffre (chest upgrade tracks) |
+  | `emerald` | `EmeraldStats` (4) | **[à vérifier]** gear/monnaie émeraude — les slots emerald sont déjà gérés en lineup ; la FEATURE dédiée ? |
+  | `airdrop` | `AirDropStats` (2) | **[GAP feature]** air drop (récompenses larguées) |
+  | `herospotlight` | `HeroSpotlightStats` (1) | **[à vérifier]** hero spotlight (distinct du spotlight trial ✅) |
+  | `marketing`/`misc.Offerwall`/`video`/`content.StarterDeal`/`DeepLink`/`misc.DisneyEmoji`/`misc.SupportLinks` | (1 ch.) | **[hors scope]** marketing/IAP/périphérique (store FERMÉ, cf. audit store §7.3) |
+
+  ⇒ **Vrais GAPS de mode/feature à décision** : `codebase`, `campaign reinfection`, `chest upgrade`, `airdrop`
+  (+ `emerald`/`herospotlight` à vérifier). Les autres = retirés (heist) ou hors scope (marketing/IAP).
+
+**`content.N.tab` — richesse pour l'admin (ta 2ᵉ question)** : c'est une **TimeTable d'ère** (colonnes = DATES de release
+R102→R1 ; lignes = clés de contenu). Contient par release : **Max Chapter, Max TL, Max GL, Max Rarity, Max Trials/Port
+Difficulty**, nœuds de chapitre (`CH_100_NODE_*`), exclusivités battle-pass, sorties de héros… Déjà UTILISÉE pour résoudre
+l'ère (`ContentStats.getServerColumn(date)` ; `AdminClock`/`AdminSeason` décalent la date → change l'ère servie). **Piste
+admin (chantier D)** : surfacer ces données pour **choisir l'ère/release** à servir (et donc le plafond de contenu — chapitres,
+TL, raretés, difficultés) via le panneau opérateur, plutôt que par décalage de date brut. À planifier en D (panneau opérateur).
 
 ---
 

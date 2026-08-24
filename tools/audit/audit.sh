@@ -178,9 +178,60 @@ a4() {
   echo "[A4] $OUT écrit ($n motif(s))"
 }
 
+# ---------- A5 : couverture des .tab (data sans mode câblé + orphelines) ----------------------------------------------
+a5() {
+  local OUT="$DOCS/AUDIT_TABS.md"
+  local WORK; WORK="$(mktemp -d)"
+  # 1) carte .tab → classe Stats (une passe sur les packages de données du jar)
+  ( cd "$WORK"; unzip -oq "$GAME" 'com/perblue/heroes/game/data/*' 'com/perblue/common/stats/*' 2>/dev/null )
+  local MAP; MAP="$(mktemp)"
+  grep -aroE '[a-z0-9_]+\.tab' "$WORK" --include='*.class' 2>/dev/null \
+    | sed -E "s#^${WORK}/##; s#\.class:# #" \
+    | awk '{cls=$1; tab=$2; sub(/\$.*/,"",cls); gsub("/",".",cls); print tab"\t"cls}' | sort -u > "$MAP"
+  # 2) .tab sur disque vs référencées
+  ls "$ROOT/game-data/stats"/*.tab 2>/dev/null | sed 's#.*/##' | sort -u > "$WORK/ondisk"
+  cut -f1 "$MAP" | sed -E 's/^0//' | sort -u > "$WORK/refd"   # (le '0' initial = artefact de concat strings)
+  # 3) classes Stats nommées dans server/java
+  local USED; USED="$(mktemp)"
+  cut -f2 "$MAP" | sort -u | while read -r cls; do
+    local s="${cls##*.}"; grep -rqE "\\b$s\\b" "$ROOT/server/java" --include='*.java' 2>/dev/null && echo "$cls"
+  done | sort -u > "$USED"
+  {
+    echo "# AUDIT A5 — couverture des \`.tab\` (données du jeu)"
+    echo
+    echo "> AUTO-GÉNÉRÉ par \`tools/audit/audit.sh a5\` — $STAMP. Carte \`.tab → classe Stats\` (le code du jeu associe CHAQUE"
+    echo "> \`.tab\` à une classe \`Stats\` = la « partie du jeu » concernée ; le PACKAGE = le mode/feature). \"Nommée serveur\" ="
+    echo "> la classe apparaît dans \`server/java\` (⚠️ approximation : une classe NON nommée peut être chargée par la LOGIQUE"
+    echo "> du jeu que le serveur exécute — ex. CampaignStats via CampaignHelper — donc « non nommée » ≠ « inutilisée »)."
+    echo
+    echo "**$(wc -l < "$WORK/ondisk" | tr -d ' ') \`.tab\` sur disque · $(cut -f1 "$MAP"|sort -u|wc -l|tr -d ' ') référencées par le code · $(cut -f2 "$MAP"|sort -u|wc -l|tr -d ' ') classes Stats ($(wc -l < "$USED"|tr -d ' ') nommées serveur).**"
+    echo
+    echo "## .tab SUR DISQUE mais NON référencées par une classe (orphelines / chargées par nom dynamique)"
+    comm -23 "$WORK/ondisk" "$WORK/refd" | sed 's/^/- `/; s/$/`/'
+    echo
+    echo "> NB : les \`content.N.tab\` sont chargées par nom CONSTRUIT (\`content.<shard>.tab\`, ContentStats) → non orphelines."
+    echo
+    echo "## .tab RÉFÉRENCÉES par le code mais ABSENTES du disque (à extraire ? gap d'extraction)"
+    comm -13 "$WORK/ondisk" "$WORK/refd" | grep -vE '^$' | sed 's/^/- `/; s/$/`/' || true
+    echo
+    echo "## Carte par FEATURE (package) — classe Stats + nb .tab + nommée serveur"
+    echo
+    echo "| Feature (package) | Classe Stats | .tab | Nommée serveur |"
+    echo "|---|---|---|---|"
+    cut -f2 "$MAP" | sort -u | while read -r cls; do
+      local pkg="${cls#com.perblue.heroes.game.data.}"; pkg="${pkg#com.perblue.common.stats.}"
+      local n; n=$(awk -F'\t' -v c="$cls" '$2==c{print}' "$MAP" | wc -l | tr -d ' ')
+      local named="—"; grep -qxF "$cls" "$USED" && named="✅"
+      echo "| \`${pkg%.*}\` | \`${cls##*.}\` | $n | $named |"
+    done
+  } > "$OUT"
+  rm -rf "$WORK" "$MAP" "$USED"
+  echo "[A5] $OUT écrit"
+}
+
 case "$WHICH" in
-  a1) a1 ;; a2) a2 ;; a3) a3 ;; a4) a4 ;;
-  all) a1; a2; a3; a4 ;;
-  *) echo "Usage: $0 [a1|a2|a3|a4|all]"; exit 1 ;;
+  a1) a1 ;; a2) a2 ;; a3) a3 ;; a4) a4 ;; a5) a5 ;;
+  all) a1; a2; a3; a4; a5 ;;
+  *) echo "Usage: $0 [a1|a2|a3|a4|a5|all]"; exit 1 ;;
 esac
 echo "[audit] terminé ($WHICH)."

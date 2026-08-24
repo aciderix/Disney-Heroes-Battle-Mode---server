@@ -6645,3 +6645,29 @@ d'industrialisation — (1) aucun écran oublié, (2) tout bien câblé, (3) pas
 Aucun code serveur modifié (outil + docs) → régression inchangée (155/155). Fichiers : `docs/PHASE2_TRACKING.md`,
 `tools/audit/audit.sh`, `docs/AUDIT_{SCREENS,WIRING,HARDCODED,CLIENT_ERRORS}.md` (nouveaux), `JOURNAL.md`, `MEMORY.md`.
 **SUITE = trancher les 7 GAPS A2 (réponses vides + vérif en jeu), puis chantiers B→G.**
+
+## 2026-08-24 (g171) — AUDIT A5 : couverture des `.tab` (carte .tab→classe + data sans mode câblé) + réponse content.tab
+
+Demande utilisateur : vérifier les `.tab` (272 !) — certaines inutilisées alors qu'elles devraient l'être pour leur mode ;
+regarder `content.tab` (releases/dates/stats/héros → utile admin/features) ; et « le code du jeu associe-t-il tel `.tab` à
+telle partie du jeu ? ».
+
+- **Nouvel axe A5** dans `tools/audit/audit.sh` → `docs/AUDIT_TABS.md`. Construit la **carte `.tab → classe Stats`** en une
+  passe sur les packages de données du jar (`grep -aroE '…\.tab' com/perblue/heroes/game/data/**`). **Réponse : OUI**, chaque
+  `.tab` est déclarée par une classe `Stats` (le package = le mode/feature). 272 sur disque / 265 référencées / 67 classes.
+- **Orphelines** : `content.{1,13,14,21,23,25,99}.tab` (chargées par nom CONSTRUIT `content.<shard>.tab` via ContentStats →
+  PAS orphelines) + `invasion_boss_rewards.tab` (loot client, §25). **`unit_abilities.tab` référencée mais non extraite**
+  → lacune d'`extract_game_data.sh` [à vérifier : le serveur en a-t-il besoin ? combat = client-autoritatif → probablement non].
+- **« Nommée serveur » approximatif** : bcp de features à `—` sont utilisées via la LOGIQUE du jeu (faux négatifs confirmés :
+  Campaign/Friendship/Collection/GuildCheckIn/SpotlightTrial/Enchanting/PrizeWall(MEDALS) — tous ✅ en jeu/tests).
+- **Vrais GAPS « data présente, mode non câblé »** (triés dans PHASE2_TRACKING) : `codebase` (CodebaseStats, cohérent A2
+  GetCodebaseAttackLogs), `campaign reinfection` (CampaignReinfectionStats), `chest upgrade` (ChestUpgradeStats), `airdrop`
+  (AirDropStats) ; à vérifier : `emerald`, `herospotlight` ; `heist` = retiré (💤) ; marketing/offerwall/video/deeplink/
+  starterdeal/emoji/supportlinks = hors scope (store fermé).
+- **`content.N.tab` = TimeTable d'ère** (colonnes = dates release R102→R1 ; lignes = Max Chapter/TL/GL/Rarity/Trials/Port
+  Difficulty, nœuds de chapitre, exclusivités BP, sorties héros). Déjà utilisée pour l'ère (`ContentStats.getServerColumn`) ;
+  **piste admin (chantier D)** : surfacer pour choisir l'ère/release servie (plafond de contenu) via le panneau opérateur.
+
+Aucun code serveur modifié (outil + docs) → régression 155/155 inchangée. Fichiers : `tools/audit/audit.sh` (axe a5),
+`docs/AUDIT_TABS.md` (nouveau), `docs/PHASE2_TRACKING.md` (triage A5), `JOURNAL.md`, `MEMORY.md`. **SUITE = décision util. sur
+les GAPS de feature A5 (implémenter codebase/reinfection/chest-upgrade/airdrop… ou documenter hors scope) + les 7 GAPS A2.**
