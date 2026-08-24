@@ -46,6 +46,9 @@
 > toute la doc ci-dessus, énumérer les règles §1-§8 + astuces/méthodologies/commandes, puis faire le point) AVANT
 > d'écrire du code ou de lancer un outil. Exigence explicite et répétée de l'utilisateur.
 
+Dernière mise à jour : **2026-08-24 (g175)** — **Triage Phase 2 ÉTAPE 4 : classification GAPS features A5 → 1 INVESTIGATE (codebase), 5 OUT OF SCOPE, 0 IMPLEMENT. Régression 156. TRIAGE (1→4) TERMINÉ.** Détail : `JOURNAL.md` g175.
+**codebase** = INVESTIGATE (vrai mode ÉVÉNEMENTIEL : UI+messages complets, entrée via Act scripté, pas de nav permanente ; restauration = gros effort, décision util.). **emerald** = OUT OF SCOPE (déjà utilisé serveur, lineups = faux négatif A5). **airdrop** = OUT OF SCOPE (stat-sync, pas d'UI). **reinfection/chest upgrade/herospotlight** = OUT OF SCOPE (sous-mécaniques/data-only, aucun message distinct). Aucune logique créée sur la seule présence d'une .tab (consigne respectée). **⇒ Triage Phase 2 (étapes 1→4) TERMINÉ. Reste = décisions util. (codebase ? release-picker chantier D ?) puis chantiers B→G.**
+
 Dernière mise à jour : **2026-08-24 (g174)** — **Triage Phase 2 ÉTAPE 3 : analyse content.N.tab / ère — DÉPENDANCE CACHÉE documentée (non implémenté). Régression 156.** Détail : `JOURNAL.md` g174.
 Ère = `ContentStats.getColumn(serverTimeNow + userOffset)` sur `content.<shard>.tab`. AdminClock bouge ère+saison+timers+BootData.serverTime cohéremment ; AdminSeason bouge SEULEMENT la saison trials. **Dépendance cachée** : `BootData.serverTime` pilote À LA FOIS le contenu daté ET l'affichage des timers côté client (pas de champ contenu distinct) → on ne peut PAS choisir l'ère sans décaler l'horloge perçue (donc l'affichage timers). ⇒ release-picker faisable seulement comme wrapper AdminClock (accepte ce décalage d'affichage) ; vrai découplage = modifs client (hors §1). **Décision utilisateur (chantier D) avant impl.** **SUITE = étape 4 (GAPS features A5).**
 

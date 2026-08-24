@@ -120,6 +120,26 @@ Aucun MODE oublié détecté ; le reste = sous-écrans/onglets d'un mode déjà 
   ⇒ **Vrais GAPS de mode/feature à décision** : `codebase`, `campaign reinfection`, `chest upgrade`, `airdrop`
   (+ `emerald`/`herospotlight` à vérifier). Les autres = retirés (heist) ou hors scope (marketing/IAP).
 
+#### ÉTAPE 4 — triage factuel des GAPS features A5 (2026-08-24, g175) — CLASSIFICATION (aucune impl)
+
+Pour chaque feature : data présente ? code client ? messages serveur ? exposée/jouable ? → verdict **IMPLEMENT / INVESTIGATE /
+OUT OF SCOPE**. (Preuves : écrans UI, destinations `nav`, messages réseau, points d'entrée, usage serveur existant.)
+
+| Feature | data (.tab) | code client | messages réseau | exposée / point d'entrée | verdict |
+|---|---|---|---|---|---|
+| **codebase** | ✅ 4 | ✅ **UI complète** (Attack/Detail/HeroChooser/AttackLog) | ✅ `CodebaseAttack`/`CodebaseWeakness`/`CodebaseAttackInfo`/`GetCodebaseAttackLogs`/`CodebaseMinorBuffType` | via **Act** (`CodebaseActV1`/`CodebaseIntroActV1` = séquence scriptée/événementielle) — **PAS** de destination nav permanente | **INVESTIGATE** — vrai mode (UI+messages complets) mais **événementiel** (limité) ; restauration = **gros effort** (mode serveur-autoritatif + déclencheur d'act, niveau Surge/Invasion). Pas un reliquat ; décision utilisateur. |
+| **emerald** | ✅ 4 | (stat de gear) | `EmeraldStatSlot`/`EmeraldStatTier` (enums) | **DÉJÀ UTILISÉ** côté serveur (`ServerUser.emeraldStatSlotChoices`, lineups) | **OUT OF SCOPE** — sous-système de STAT de gear **déjà intégré** (faux négatif A5 : chargé via la logique du jeu). Rien à faire. |
+| **airdrop** | ✅ 2 | `AirdropHelper` (+`StatsProvider`), **aucun écran** | `AirDropClaimStatus` (1) | piloté par **stat-sync** (`SyncStatDataClientHelper`), pas d'UI joueur | **OUT OF SCOPE** — feature de config/stat-sync sans mode joueur ; pas d'écran ni d'action de réclamation exposée. |
+| **campaign reinfection** | ✅ 4 | aucun écran | **aucun** | sous-mécanique de campagne (`REINFECTIONS_CLEANSED` = tâche contest) | **OUT OF SCOPE** — variante/modificateur de campagne ; passe par le chemin campagne existant (`recordCampaignAttack`), aucun travail serveur distinct. |
+| **chest upgrade** | ✅ 3 | aucun écran | `ChestUpgradeTrackType` (enum) | pas de message/écran distinct | **OUT OF SCOPE** — data alimentant la logique de coffres ; aucune feature/handler distinct à câbler. |
+| **herospotlight** | ✅ 1 | aucun écran | **aucun** | data-only (héros vedette) | **OUT OF SCOPE** — données seules (distinct du SPOTLIGHT_TRIAL, déjà ✅). |
+
+⇒ **Bilan étape 4** : **1 INVESTIGATE** (`codebase` = vrai mode événementiel, restauration = décision + gros effort) ; **5 OUT OF
+SCOPE** (`emerald` déjà intégré ; `airdrop` stat-sync sans UI ; `reinfection`/`chest upgrade` sous-mécaniques sans message ;
+`herospotlight` data-only). **0 IMPLEMENT immédiat.** Aucune logique serveur créée sur la seule existence d'une `.tab`/classe
+`Stats` (consigne respectée : on distingue les vraies features restaurables des reliquats/data-only).
+**Décision utilisateur** : veux-tu qu'on INVESTIGUE `codebase` plus loin (faisabilité complète d'une restauration event-mode) ?
+
 ### ÉTAPE 3 — analyse `content.N.tab` : détermination de l'ère + faisabilité « choix d'ère » (2026-08-24, g174) — ANALYSE, PAS d'implémentation
 
 **Comment l'ère est déterminée (faits, bytecode)** :

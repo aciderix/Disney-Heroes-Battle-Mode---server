@@ -6749,3 +6749,21 @@ des dépendances cachées apparaissent (les documenter d'abord).
 Aucun code modifié (analyse + doc). Régression 156/156 inchangée. Fichiers : `docs/PHASE2_TRACKING.md` (étape 3), `JOURNAL.md`,
 `MEMORY.md`. **SUITE = étape 4 (triage factuel des GAPS features A5 : codebase/reinfection/chest-upgrade/airdrop/emerald/herospotlight
 → IMPLEMENT / INVESTIGATE / OUT OF SCOPE).**
+
+## 2026-08-24 (g175) — Triage Phase 2, ÉTAPE 4 : classification des GAPS features A5 (IMPLEMENT/INVESTIGATE/OUT OF SCOPE)
+
+Triage factuel des 6 features candidates A5 (data / code client / messages serveur / exposée / point d'entrée / usage existant) :
+- **codebase** → **INVESTIGATE** : UI complète (CodebaseAttack/Detail/HeroChooser/AttackLog) + messages (CodebaseAttack/Weakness/
+  AttackInfo/GetCodebaseAttackLogs) + entrée via **Act** (`CodebaseActV1`/`CodebaseIntroActV1`, scripté/événementiel) ; PAS de nav
+  permanente → vrai mode ÉVÉNEMENTIEL, restauration = gros effort (mode serveur-autoritatif + act), pas un reliquat. Décision util.
+- **emerald** → **OUT OF SCOPE** : sous-système de STAT de gear DÉJÀ utilisé serveur (`emeraldStatSlotChoices`, lineups) = faux
+  négatif A5 (chargé via la logique du jeu).
+- **airdrop** → **OUT OF SCOPE** : `AirdropHelper`/`SyncStatDataClientHelper` (stat-sync), aucun écran/action joueur.
+- **campaign reinfection** → **OUT OF SCOPE** : sous-mécanique de campagne (aucun message distinct ; passe par recordCampaignAttack).
+- **chest upgrade** → **OUT OF SCOPE** : enum `ChestUpgradeTrackType` seul, pas de message/écran distinct.
+- **herospotlight** → **OUT OF SCOPE** : data-only (distinct du SPOTLIGHT_TRIAL déjà ✅).
+
+⇒ 1 INVESTIGATE (codebase), 5 OUT OF SCOPE, 0 IMPLEMENT immédiat. Aucune logique créée sur la seule présence d'une .tab/classe
+Stats (consigne respectée). Aucun code modifié (analyse + doc), régression 156/156. Fichiers : `docs/PHASE2_TRACKING.md` (étape 4),
+`JOURNAL.md`, `MEMORY.md`. **⇒ TRIAGE PHASE 2 (étapes 1→4) TERMINÉ.** Reste = décisions utilisateur (codebase INVESTIGATE ?
+release-picker chantier D ?) puis chantiers B→G.
