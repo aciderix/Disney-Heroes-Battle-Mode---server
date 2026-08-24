@@ -120,6 +120,43 @@ Aucun MODE oublié détecté ; le reste = sous-écrans/onglets d'un mode déjà 
   ⇒ **Vrais GAPS de mode/feature à décision** : `codebase`, `campaign reinfection`, `chest upgrade`, `airdrop`
   (+ `emerald`/`herospotlight` à vérifier). Les autres = retirés (heist) ou hors scope (marketing/IAP).
 
+### ÉTAPE 3 — analyse `content.N.tab` : détermination de l'ère + faisabilité « choix d'ère » (2026-08-24, g174) — ANALYSE, PAS d'implémentation
+
+**Comment l'ère est déterminée (faits, bytecode)** :
+- `ContentStats extends TimeTable<String, ContentColumn>` : `getColumn(date)` = la colonne (release Rn) dont la date ≤ `date`
+  (table = `content.<shard>.tab`, chargée par `ContentHelper.setShardID(shard, {})`).
+- `getServerColumn()` = `getColumn(serverTimeNow())` ; `getServerColumn(IUser)` = `getColumn(serverTimeNow() + getUserOffset(userID))`.
+  ⇒ **l'ère = résolution DATE→colonne** ; un offset de contenu PAR-USER existe nativement (`setUserOffset`/`getUserOffset`).
+- Le serveur envoie `BootData.serverTime = serverTimeNow()` (ServerUser ~l.212).
+
+**AdminClock vs AdminSeason (déjà en place)** :
+- `AdminClock` (`CLOCK_OFFSET`→`serverTimeNow`) : bouge ÈRE (getServerColumn) + SAISON + **TOUS les timers joueur** + `BootData.serverTime`
+  de façon COHÉRENTE (« le monde entier à la date X ») → client consistant. ✅ vérifié §8. *Effet* : impossible d'isoler l'ère des
+  timers (viser la date de R95 recule aussi resets/cooldowns).
+- `AdminSeason` (`SEASON_ANCHOR_OFFSET`→`seasonTimeNow`) : bouge UNIQUEMENT la sélection de saison des trials (interne serveur) ;
+  **ne touche PAS l'ère de contenu**.
+
+**Faisabilité + DÉPENDANCE CACHÉE** :
+- **Levier natif** : mapper une release → sa date (ligne « dates » de `content.N.tab`) et régler l'horloge dessus = **wrapper mince
+  au-dessus d'AdminClock** (release Rn → date → `CLOCK_OFFSET`). Aucun mécanisme nouveau requis.
+- **⚠️ DÉPENDANCE CACHÉE** : `BootData.serverTime` pilote À LA FOIS (a) la résolution du CONTENU DATÉ côté CLIENT et (b) l'AFFICHAGE
+  des timers (resets/cooldowns) côté client. Pas de champ « date de contenu » distinct de l'horloge dans `BootData`. ⇒ On ne peut PAS
+  décaler le CONTENU sans décaler l'HORLOGE PERÇUE par le client (donc l'affichage des timers). Le serveur, lui, ENFORCE les timers
+  sur son horloge réelle (g151) → gameplay non cassé, mais AFFICHAGE client des resets suivrait l'ère choisie.
+- `ContentStats.setUserOffset` NE règle PAS le problème : il décale le contenu CÔTÉ SERVEUR seulement ; le client résout par
+  `BootData.serverTime` (non décalé) → désynchro affichage (client R102 / serveur R95), sauf à décaler aussi `BootData.serverTime`
+  (ré-introduit le couplage timers).
+
+**VERDICT étape 3 (documenté, NON implémenté — consigne « documenter les dépendances d'abord »)** :
+- Release-picker admin = **faisable et sûr** UNIQUEMENT comme wrapper d'AdminClock (release→date→horloge), en ACCEPTANT que
+  l'affichage client des timers suive l'ère (même compromis qu'AdminClock, déjà vérifié). Le serveur garde l'enforcement réel.
+- « Choix d'ère SANS toucher les timers » = **PAS proprement réalisable** : le jeu couple contenu-daté ↔ horloge via l'unique
+  `BootData.serverTime` ; le forcer exigerait des modifs CLIENT (hors §1) ou désynchroniserait l'affichage de contenu.
+- ⇒ **DÉCISION UTILISATEUR (chantier D)** : (1) release-picker = wrapper AdminClock (accepte décalage affichage timers) ; ou
+  (2) rester sur AdminClock brut ; ou (3) vrai découplage (modifs client, hors §1). **Pas d'implémentation avant ce choix.**
+
+---
+
 **`content.N.tab` — richesse pour l'admin (ta 2ᵉ question)** : c'est une **TimeTable d'ère** (colonnes = DATES de release
 R102→R1 ; lignes = clés de contenu). Contient par release : **Max Chapter, Max TL, Max GL, Max Rarity, Max Trials/Port
 Difficulty**, nœuds de chapitre (`CH_100_NODE_*`), exclusivités battle-pass, sorties de héros… Déjà UTILISÉE pour résoudre

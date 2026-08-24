@@ -6724,3 +6724,28 @@ UNIQUEMENT du nécessaire/cohérent (pas de faux endpoint).
 Fichiers : `ServerInvasion.java` (guildMemberRanking), `LoginServer.java` (3 handlers), `WiringGapsTest.java` (nouveau),
 `regression.sh`, `docs/PHASE2_TRACKING.md` (triage A2), `docs/AUDIT_WIRING.md` (régénéré), `JOURNAL.md`, `MEMORY.md`.
 **SUITE = étape 3 (analyse content.N.tab : ContentStats/AdminClock/AdminSeason → exposer le choix d'ère).**
+
+## 2026-08-24 (g174) — Triage Phase 2, ÉTAPE 3 : analyse content.N.tab / ère (ContentStats/AdminClock/AdminSeason) — ANALYSE
+
+Consigne : analyser comment l'ère est déterminée + évaluer un « choix d'ère/release » en config serveur, SANS implémenter si
+des dépendances cachées apparaissent (les documenter d'abord).
+
+- **Ère (bytecode)** : `ContentStats.getServerColumn() = getColumn(serverTimeNow())` ; `getServerColumn(IUser) =
+  getColumn(serverTimeNow() + getUserOffset(userID))`. `getColumn(date)` = colonne (release Rn) dont la date ≤ date, sur
+  `content.<shard>.tab` (chargé par `ContentHelper.setShardID`). Offset de contenu PAR-USER natif (`setUserOffset`).
+- **BootData** : `bd.serverTime = serverTimeNow()` — envoyé au client.
+- **AdminClock** = `CLOCK_OFFSET`→`serverTimeNow` : bouge ère + saison + TOUS timers + BootData.serverTime cohéremment
+  (« monde à la date X »), client consistant (✅ §8). **AdminSeason** = `SEASON_ANCHOR_OFFSET`→`seasonTimeNow` : bouge SEULEMENT
+  la saison des trials (interne serveur, ne touche pas l'ère).
+- **DÉPENDANCE CACHÉE trouvée** : `BootData.serverTime` pilote À LA FOIS la résolution du CONTENU DATÉ côté client ET l'AFFICHAGE
+  des timers côté client (pas de champ « date de contenu » distinct). ⇒ impossible de décaler l'ère sans décaler l'horloge
+  perçue (donc l'affichage des timers). `setUserOffset` décale le contenu SERVEUR seulement → désynchro affichage client si
+  BootData.serverTime non décalé.
+- **VERDICT (documenté, non implémenté)** : un « release-picker » admin est faisable UNIQUEMENT comme wrapper mince d'AdminClock
+  (release→date→horloge), en acceptant que l'affichage client des timers suive l'ère (compromis d'AdminClock, déjà vérifié). Un
+  découplage contenu↔timers n'est pas proprement réalisable sans modifier le client (hors §1). Décision utilisateur requise
+  (chantier D) avant toute implémentation.
+
+Aucun code modifié (analyse + doc). Régression 156/156 inchangée. Fichiers : `docs/PHASE2_TRACKING.md` (étape 3), `JOURNAL.md`,
+`MEMORY.md`. **SUITE = étape 4 (triage factuel des GAPS features A5 : codebase/reinfection/chest-upgrade/airdrop/emerald/herospotlight
+→ IMPLEMENT / INVESTIGATE / OUT OF SCOPE).**
