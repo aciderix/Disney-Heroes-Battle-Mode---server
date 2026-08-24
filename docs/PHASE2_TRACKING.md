@@ -41,7 +41,7 @@ Périmètre mesuré au départ : **179 écrans** client (`*Screen`), ~37 package
 | Axe | Description | Outil | Rapport | Statut |
 |---|---|---|---|---|
 | **A1** | Inventaire exhaustif des écrans + couverture (aucun oublié) | `audit.sh a1` (unzip + `EXPLORATION.md`) | 📄 `docs/AUDIT_SCREENS.md` | 🚧 179 écrans listés, triage en cours |
-| **A2** | Câblage : messages envoyés par écran non routés par `LoginServer` | `audit.sh a2` (`ScreenContract` §C) | 📄 `docs/AUDIT_WIRING.md` | 🚧 14 manques → triés (voir notes) |
+| **A2** | Câblage : messages envoyés par écran non routés par `LoginServer` | `audit.sh a2` (`ScreenContract` §C) | 📄 `docs/AUDIT_WIRING.md` | ✅ 14 triés — 3 implémentés (invasion rank ✅ en jeu, blocked, save) ; reste = retiré/debug/étape4/différé/Phase2C/faible |
 | **A3** | Valeurs en dur serveur qui devraient venir de `.tab`/jeu/admin | `audit.sh a3` (heuristique) | 📄 `docs/AUDIT_HARDCODED.md` | ✅ **0 candidat** (§4 respecté) |
 | **A4** | Erreurs client : scan des logs en jeu (exceptions/NPE/GL) | `audit.sh a4` (parseur logs) | 📄 `docs/AUDIT_CLIENT_ERRORS.md` | ✅ **0 erreur non-bénigne** |
 | **A5** | Couverture des `.tab` : data d'un mode/feature non câblé + orphelines + carte `.tab`→classe | `audit.sh a5` (carte bytecode) | 📄 `docs/AUDIT_TABS.md` | 🚧 272 `.tab` mappées → triage (voir notes) |
@@ -60,24 +60,24 @@ dans `SHIMS.md`, ou décision utilisateur). Les faux positifs sont marqués `[OK
 auto weight → defaulting to 1"` (absorbé, BLACK_MARKET/MEGA_MART fonctionnels), trader INVASION, + env/layout/audio headless
 (`XDG_RUNTIME_DIR`, `auto weight`, `sound not loaded`).
 
-**A2 (câblage) — triage des 14 manques** (`AUDIT_WIRING.md`) :
-| Message | Verdict | Raison |
+**A2 (câblage) — triage + RÉSOLUTION des 14 manques** (`AUDIT_WIRING.md`) — ÉTAPE 2 (2026-08-24, g173) :
+| Message (émetteur) | Verdict | Détail |
 |---|---|---|
-| `GetHeist`, `StartHeist`, `KickHeistParticipant` (heist) | **[OK-connu]** | HEIST **retiré du jeu** (HUB_NAV §7.2 : désactivé 9999) — écran inatteignable, rien à câbler |
-| `GetServers` (windows) | **[Phase 2 C]** | liste de serveurs = front-end launcher multi-serveur (chantier C), pas un manque de mode |
-| `RequestResync` (powerpromote/pvp/windows) | **[à vérifier — faible]** | requête générique de resync, non routée ; probablement fire-and-forget (le client ne bloque pas). À confirmer en jeu qu'aucun écran ne hang. |
-| `GetGMemInvasionRankInfo` (invasion) | **[GAP réel]** | classement invasion par membre de guilde — onglet rankings potentiellement vide |
-| `GetPrizeWallData` (prizewall, screens) | **[GAP réel]** | Prize Wall (mur de lots d'event) — écran vide si atteint |
-| `GetChestConsumableHistory` (screens) | **[GAP réel — mineur]** | historique d'ouverture de coffres (écran journal) |
-| `GetCodebaseAttackLogs` (screens) | **[GAP réel — mineur]** | journaux d'attaque « codebase » |
-| `GetBlockedList` (windows) | **[GAP réel — mineur]** | liste des joueurs bloqués (social/chat) |
-| `GetUserSaveData` (windows) | **[GAP réel]** | données de sauvegarde/transfert de compte |
+| `GetGMemInvasionRankInfo` (InvasionRankingsScreen) | **✅ IMPLÉMENTÉ + EN JEU** | rang invasion par MEMBRE de guilde (données réelles `user_invasion`) ; `ServerInvasion.guildMemberRanking` + handler. Vérifié en jeu : onglet GUILD MEMBERS rend 2 membres (avant : LOADING). Les 2 autres onglets (User/Guild league) étaient déjà servis. |
+| `GetBlockedList` (BlockedPlayersWindow) | **✅ IMPLÉMENTÉ** (headless+wire) | `BlockedList` VIDE — le blocage n'est pas implémenté (communautaire) → 0 bloqué = réponse FIDÈLE (pas un faux endpoint). `WiringGapsTest` + round-trip wire. In-game : fenêtre sociale (sous-menu), non pilotée — bas risque. |
+| `GetUserSaveData` (SaveRestoreUserWindow) | **✅ IMPLÉMENTÉ** (headless+wire) | `UserSaveData{info,extra,individualUserExtra}` = sauvegarde du compte DU DEMANDEUR (= ce qu'on persiste, via `bootData()`), avec GARDE anti-fuite (userID doit être le sien). Données RÉELLES. `WiringGapsTest`. In-game : fenêtre settings, non pilotée — bas risque. |
+| `GetHeist`, `StartHeist`, `KickHeistParticipant` (heist) | **[OK-connu]** | HEIST **retiré du jeu** (💤) — écran inatteignable, rien à câbler. |
+| `GetChestConsumableHistory` (**Debug**ChestConsumablesScreen) | **[OUT OF SCOPE]** | écran **DEBUG dev-only**, non atteignable par le joueur. |
+| `GetCodebaseAttackLogs` (CodebaseAttackLogScreen) | **[→ étape 4]** | fait partie du mode **codebase** (GAP feature A5) — à trancher avec la feature codebase. |
+| `GetPrizeWallData` (PrizeWallScreen) | **[DIFFÉRÉ — feature event]** | Prize Wall = feature d'EVENT ; `PrizeWallState` n'a AUCUN état « inactif » (IN_PROGRESS/REWARD_PREVIEW/STAGE_COMPLETE) → **pas de réponse vide fidèle** ; renvoyer un faux mur violerait « pas de faux endpoint ». Nécessite un vrai builder d'event prize-wall (comme Contest/ExtraChest) → chantier live-ops ultérieur. `nav PRIZE_WALL` : à vérifier s'il hang ou est gaté. |
+| `GetServers` (windows) | **[Phase 2 C]** | liste de serveurs = launcher multi-serveur (chantier C). |
+| `RequestResync` (powerpromote/pvp/windows) | **[OK-faible]** | requête générique fire-and-forget (le serveur resync déjà après chaque mutation) ; pas de hang. Documenté, non implémenté. |
 
-⇒ **Bilan A2** : sur 14, **3 non-gaps** (HEIST retiré), **1 = Phase 2 C** (GetServers), **3 faibles** (RequestResync,
-fire-and-forget à confirmer), **7 GAPS réels** à trancher (handler vide/réponse minimale, comme les hall-of-fame du contest).
-La plupart = écrans secondaires (rankings/journaux/social) → correctif type « réponse vide » pour débloquer l'écran, à
-vérifier EN JEU un par un. Prochaine sous-étape : implémenter les réponses vides + vérif en jeu, en commençant par les plus
-visibles (invasion rank, prizewall).
+⇒ **Bilan A2 (étape 2)** : sur 14 — **3 IMPLÉMENTÉS** (invasion member rank ✅ en jeu ; blocked + save : réel/fidèle, headless+wire,
+`WiringGapsTest`, régression **156/156**) ; **3 non-gaps** (HEIST retiré) ; **1 debug-only** (ChestConsumableHistory) ; **1 →
+étape 4** (CodebaseAttackLogs) ; **1 différé** (PrizeWall = feature event, pas de faux endpoint) ; **1 Phase 2 C** (GetServers) ;
+**3 faibles** (RequestResync, fire-and-forget). **Aucun faux endpoint créé** — seules des réponses RÉELLES ou FIDÈLES (vide =
+état correct du serveur) ont été ajoutées. Re-run A2 : les 3 messages implémentés ont disparu des manques.
 
 **A1 (inventaire)** : 179 écrans listés dans `AUDIT_SCREENS.md`. La majorité des MODES est déjà ✅ en jeu (cf.
 `EXPLORATION.md`) ; le croisement fin « chaque écran individuel rejoué » se fait via le balayage en jeu (méthode §7.4 HUB_NAV).

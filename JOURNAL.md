@@ -6695,3 +6695,32 @@ Ordre de travail utilisateur (triage factuel avant toute implémentation). Étap
 Aucun code serveur modifié (correctif outil d'audit + docs) → régression 155/155 inchangée. Fichiers : `tools/audit/audit.sh`
 (fix `.tabb`), `docs/AUDIT_TABS.md` (régénéré), `docs/PHASE2_TRACKING.md` (résolution étape 1), `JOURNAL.md`. **SUITE = étape 2
 (boucler les 7 GAPS A2).**
+
+## 2026-08-24 (g173) — Triage Phase 2, ÉTAPE 2 : boucler les GAPS de câblage A2 (3 handlers réels/fidèles) ✅
+
+Investigation factuelle des 14 manques A2 (émetteur réel de chaque requête via scan du jar) → triage puis implémentation
+UNIQUEMENT du nécessaire/cohérent (pas de faux endpoint).
+
+- **Émetteurs identifiés** : `GetGMemInvasionRankInfo`→InvasionRankingsScreen ; `GetBlockedList`→BlockedPlayersWindow ;
+  `GetUserSaveData`→SaveRestoreUserWindow ; `GetChestConsumableHistory`→**Debug**ChestConsumablesScreen (dev-only) ;
+  `GetCodebaseAttackLogs`→CodebaseAttackLogScreen (mode codebase) ; `GetPrizeWallData`→PrizeWallScreen ; `GetServers`→windows ;
+  `RequestResync`→powerpromote/pvp/windows ; heist×3 (mode retiré).
+- **IMPLÉMENTÉS (réel/fidèle, 3)** :
+  - `GetGMemInvasionRankInfo` → `GuildMemberInvasionRankInfo` : `ServerInvasion.guildMemberRanking(store,shard,guildID,invID,50)`
+    classe les MEMBRES de la guilde par points d'invasion réels (source `user_invasion`, même que userRanking/guildRanking).
+    Handler LoginServer (les onglets User/Guild league étaient déjà servis). **✅ VÉRIFIÉ EN JEU** : INVASION RANKINGS → menu
+    déroulant « GUILD MEMBERS » → serveur `GetGMemInvasionRankInfo(guilde=1) → GuildMemberInvasionRankInfo (2 membre(s))` →
+    l'onglet rend 2 lignes de membres (avant : LOADING). Capture `wg_gmem.png`.
+  - `GetBlockedList` → `BlockedList` VIDE : le blocage n'est pas implémenté → 0 bloqué = réponse FIDÈLE (pas un faux endpoint).
+  - `GetUserSaveData` → `UserSaveData{info,extra,individualUserExtra}` = sauvegarde du compte DU DEMANDEUR (= `bootData()`,
+    ce qu'on persiste déjà), avec GARDE (userID ≠ le sien → refus, pas de fuite). Données RÉELLES.
+- **NON implémentés (justifiés, pas de faux)** : heist×3 (retiré) ; `GetChestConsumableHistory` (écran DEBUG dev-only) ;
+  `GetCodebaseAttackLogs` (→ étape 4, feature codebase) ; `GetPrizeWallData` (feature event ; `PrizeWallState` n'a pas d'état
+  « inactif » → aucune réponse vide fidèle → nécessite un vrai builder d'event, différé) ; `GetServers` (Phase 2 C) ;
+  `RequestResync`×3 (fire-and-forget, pas de hang).
+- `WiringGapsTest` (régression **156/156**) : `guildMemberRanking` (A 100/#1, B 50/#2) + round-trip wire des 3 réponses
+  (GuildMemberInvasionRankInfo / BlockedList vide / UserSaveData). Re-run A2 : les 3 messages implémentés ont disparu.
+
+Fichiers : `ServerInvasion.java` (guildMemberRanking), `LoginServer.java` (3 handlers), `WiringGapsTest.java` (nouveau),
+`regression.sh`, `docs/PHASE2_TRACKING.md` (triage A2), `docs/AUDIT_WIRING.md` (régénéré), `JOURNAL.md`, `MEMORY.md`.
+**SUITE = étape 3 (analyse content.N.tab : ContentStats/AdminClock/AdminSeason → exposer le choix d'ère).**

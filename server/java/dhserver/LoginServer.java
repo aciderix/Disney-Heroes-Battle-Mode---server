@@ -1904,6 +1904,50 @@ public final class LoginServer {
                 System.out.println("[login] <== GetUserInvasionLeagueInfo → ==> UserInvasionLeagueInfo ("
                     + ui.users.size() + " joueur(s))");
               }
+            } else if (m instanceof com.perblue.heroes.network.messages.GetGMemInvasionRankInfo) {
+              // INVASION #69 — onglet « rangs par MEMBRE de guilde » de InvasionRankingsScreen (les 2 autres onglets,
+              // GetUser/GuildInvasionLeagueInfo, sont déjà servis ci-dessus). Membres de la guilde triés par points
+              // d'invasion (même source user_invasion). Sans ce handler, l'onglet restait sur LOADING (gap A2).
+              com.perblue.heroes.network.messages.GetGMemInvasionRankInfo gm =
+                  (com.perblue.heroes.network.messages.GetGMemInvasionRankInfo) m;
+              long gmnow = com.perblue.heroes.util.TimeUtil.serverTimeNow();
+              long gminv = ServerInvasion.rotation(ServerInvasion.invasionStart(gmnow));
+              long gmGuild = gm.guildID > 0 ? gm.guildID : user.currentGuildID();
+              com.perblue.heroes.network.messages.GuildMemberInvasionRankInfo gmr =
+                  new com.perblue.heroes.network.messages.GuildMemberInvasionRankInfo();
+              gmr.guildID = gmGuild; gmr.invasionID = gminv;
+              gmr.users = new java.util.ArrayList<>(gmGuild <= 0 ? java.util.Collections.emptyList()
+                  : ServerInvasion.guildMemberRanking(store, user.shardID, gmGuild, gminv, 50));
+              gmr.setAsReplyTo(m);
+              c.send(gmr);
+              System.out.println("[login] <== GetGMemInvasionRankInfo(guilde=" + gmGuild + ") → ==> GuildMemberInvasionRankInfo ("
+                  + gmr.users.size() + " membre(s))");
+            } else if (m instanceof com.perblue.heroes.network.messages.GetBlockedList) {
+              // SOCIAL — liste des joueurs BLOQUÉS (BlockedPlayersWindow). Le blocage n'est pas implémenté côté serveur
+              // (communautaire) → réponse FIDÈLE = liste VIDE (aucun joueur bloqué). Débloque la fenêtre (gap A2).
+              com.perblue.heroes.network.messages.BlockedList bl =
+                  new com.perblue.heroes.network.messages.BlockedList();
+              bl.users = new java.util.ArrayList<>();
+              bl.setAsReplyTo(m);
+              c.send(bl);
+              System.out.println("[login] <== GetBlockedList → ==> BlockedList (0 — blocage non implémenté)");
+            } else if (m instanceof com.perblue.heroes.network.messages.GetUserSaveData) {
+              // SAUVEGARDE DE COMPTE (SaveRestoreUserWindow) — UserSaveData = {info, extra, individualUserExtra} = EXACTEMENT
+              // ce que le serveur persiste. On ne renvoie QUE les données du DEMANDEUR (garde : userID doit être le sien —
+              // ne jamais divulguer la sauvegarde d'autrui). Données réelles (bootData les construit déjà). Gap A2.
+              com.perblue.heroes.network.messages.GetUserSaveData gsd =
+                  (com.perblue.heroes.network.messages.GetUserSaveData) m;
+              if (gsd.userID != 0 && gsd.userID != user.userID) {
+                System.out.println("[login]     ⛔ GetUserSaveData REFUSÉ (userID " + gsd.userID + " ≠ " + user.userID + ")");
+              } else {
+                com.perblue.heroes.network.messages.BootData bd = user.bootData();
+                com.perblue.heroes.network.messages.UserSaveData sd =
+                    new com.perblue.heroes.network.messages.UserSaveData();
+                sd.info = bd.userInfo; sd.extra = bd.userExtra; sd.individualUserExtra = bd.individualUserExtra;
+                sd.setAsReplyTo(m);
+                c.send(sd);
+                System.out.println("[login] <== GetUserSaveData → ==> UserSaveData (compte " + user.userID + ")");
+              }
             } else if (m instanceof com.perblue.heroes.network.messages.ClaimInvasionBossRewards) {
               // INVASION #69 — réclamation des récompenses de boss. MODÈLE CLIENT-AUTORITATIF (comme campagne/
               // arène/breaker) établi au bytecode (2026-08-03) : le CLIENT tire lui-même le butin par rôle gagné

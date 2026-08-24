@@ -726,6 +726,40 @@ public final class ServerInvasion {
     return out;
   }
 
+  /** CLASSEMENT DES MEMBRES D'UNE GUILDE pour l'invasion courante : membres de {@code guildID} triés par points
+   *  d'invasion décroissants (réponse à {@code GetGMemInvasionRankInfo} = onglet « rangs par membre » de InvasionRankingsScreen).
+   *  Même source de données que {@link #userRanking} (table user_invasion), filtrée aux membres de la guilde. */
+  public static java.util.List<com.perblue.heroes.network.messages.InvasionGuildMemberRankRow> guildMemberRanking(
+      UserStore store, int shardID, long guildID, long invasionID, int limit) {
+    java.util.List<com.perblue.heroes.network.messages.InvasionGuildMemberRankRow> rows = new java.util.ArrayList<>();
+    try {
+      ServerGuild g = store.loadGuild(shardID, guildID);
+      if (g == null) return rows;
+      for (Long mid : g.memberIDs) {
+        try {
+          byte[] b = store.loadUserInvasion(shardID, mid);
+          com.perblue.heroes.network.messages.UserInvasionData ud = b == null ? null : readUserData(b);
+          long score = (ud != null && ud.invasionID == invasionID) ? ud.points : 0L;   // membre sans score = 0 (listé)
+          com.perblue.heroes.network.messages.InvasionGuildMemberRankRow r =
+              new com.perblue.heroes.network.messages.InvasionGuildMemberRankRow();
+          r.score = score;
+          r.league = com.perblue.heroes.network.messages.InvasionLeague.BRONZE;
+          ServerUser su = store.loadIfExists(mid, shardID);
+          if (su != null) r.user = su.basicInfo();
+          rows.add(r);
+        } catch (Exception ignore) {}
+      }
+    } catch (Exception ex) { System.out.println("[invasion] guildMemberRanking : " + ex); }
+    rows.sort((x, y) -> Long.compare(y.score, x.score));
+    int rank = 0;
+    java.util.List<com.perblue.heroes.network.messages.InvasionGuildMemberRankRow> out = new java.util.ArrayList<>();
+    for (com.perblue.heroes.network.messages.InvasionGuildMemberRankRow r : rows) {
+      r.rank = ++rank;
+      if (out.size() < limit) out.add(r);
+    }
+    return out;
+  }
+
   /** Résumé lisible (journal serveur / admin). */
   public static String describe(long now) {
     long s = invasionStart(now);
