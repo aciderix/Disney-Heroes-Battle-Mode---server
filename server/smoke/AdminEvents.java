@@ -68,6 +68,7 @@ public final class AdminEvents {
     java.util.List<ServerEvents.ContestProgress> contestProgress = new java.util.ArrayList<>(); // --contest-progress POINTS:ITEM:QTY
     java.util.List<ServerEvents.ContestRank> contestRanks = new java.util.ArrayList<>();        // --contest-rank / --contest-rank-unit KIND:RANK:ID:QTY
     boolean contestEnd = false; long contestEndID = 900_010L;                                   // --contest-end <id> (clôture : rankRewards)
+    String contestTitle = "Contest", contestSummary = "Complete tasks to earn points and rewards!";  // --contest-title/--contest-summary
     int days = 30, bonus = 1;
     for (int i = 0; i < a.length; i++) {
       switch (a[i]) {
@@ -119,6 +120,8 @@ public final class AdminEvents {
         case "--contest-end": contestEnd = true;
           if (i + 1 < a.length && a[i + 1].matches("\\d+")) contestEndID = Long.parseLong(a[++i]); break;
         case "--contest-guild": contestGuild = true; break;
+        case "--contest-title":   contestTitle = a[++i]; break;
+        case "--contest-summary": contestSummary = a[++i]; break;
         case "--contest-aggregate": contestAggregate = true; break;
         case "--contest-task": {          // TYPE:POINTS:COUNT[:MAXTIMES:MAXDAILY]
           String[] p = a[++i].split(":");
@@ -348,7 +351,7 @@ public final class AdminEvents {
         if (contestTasks.isEmpty()) { System.out.println("[events] --contest requiert au moins un --contest-task TYPE:POINTS:COUNT (ex. BATTLE_WON:10:1). Ignoré."); }
         else {
           specs.removeIf(js -> js.contains("CONTEST"));
-          specs.add(ServerEvents.specJsonContest(contestID, contestGuild, contestAggregate, contestTasks, contestProgress, contestRanks, start, end));
+          specs.add(ServerEvents.specJsonContest(contestID, contestGuild, contestAggregate, contestTitle, contestSummary, contestTasks, contestProgress, contestRanks, start, end));
           changed = true;
           System.out.println("[events] event CONTEST ajouté : eventID=" + contestID + (contestGuild ? " [GUILDE]" : " [solo]")
               + " tâches=" + contestTasks.size() + " paliers=" + contestProgress.size() + " rangs=" + contestRanks.size()

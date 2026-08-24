@@ -61,7 +61,7 @@ public final class ContestTest {
     List<ServerEvents.ContestTask> tasks = Arrays.asList(new ServerEvents.ContestTask("BATTLE_WON", 10, 1, -1, -1, "", ""));
     List<ServerEvents.ContestProgress> prog = Arrays.asList(new ServerEvents.ContestProgress(100L, Collections.singletonList(item("ACE_OF_SPADES", 5))));
     List<ServerEvents.ContestRank> ranks = Arrays.asList(new ServerEvents.ContestRank(true, 10, Collections.singletonList(item("ACE_OF_SPADES", 100))));
-    String spec = ServerEvents.specJsonContest(id, false, false, tasks, prog, ranks, now - 1000, now + 7L * 86_400_000L);
+    String spec = ServerEvents.specJsonContest(id, false, false, "Test Contest", "summary", tasks, prog, ranks, now - 1000, now + 7L * 86_400_000L);
     List<SpecialEventInfo> rebuilt = ServerEvents.eventsFromConfig(ServerEvents.writeConfig(Collections.singletonList(spec)));
     check(rebuilt.size() == 1 && rebuilt.get(0).getID() == id, "spec CONTEST round-trip (" + rebuilt.size() + ")");
     Contest rc = (Contest) rebuilt.get(0).getComponent(Contest.class);

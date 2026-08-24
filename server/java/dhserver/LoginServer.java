@@ -2029,6 +2029,24 @@ public final class LoginServer {
               acd.setAsReplyTo(m);
               c.send(acd);
               System.out.println("[login] <== GetAllContestData → ==> AllContestData (" + (acd.contests == null ? 0 : acd.contests.size()) + " contest(s))");
+            } else if (m instanceof com.perblue.heroes.network.messages.GetContestHallOfFame) {
+              // CONTEST incr. 5 — l'écran CONTESTS (onglet HALL OF FAME) requiert ces 3 réponses au chargement, sinon il
+              // reste bloqué sur « LOADING … ». Pas d'historique de vainqueurs sur ce serveur communautaire → réponses VIDES
+              // (affichage « pas encore de hall of fame »), ce qui débloque l'écran vers la vue du contest actif.
+              com.perblue.heroes.network.messages.ContestHallOfFames r = new com.perblue.heroes.network.messages.ContestHallOfFames();
+              r.contestHallOfFames = new java.util.ArrayList<>(); r.startIndex = 0;
+              r.setAsReplyTo(m); c.send(r);
+              System.out.println("[login] <== GetContestHallOfFame → ==> ContestHallOfFames (vide)");
+            } else if (m instanceof com.perblue.heroes.network.messages.GetLastContestWinners) {
+              com.perblue.heroes.network.messages.LastContestWinners r = new com.perblue.heroes.network.messages.LastContestWinners();
+              r.lastWinnerGuildInfo = new java.util.ArrayList<>(); r.lastWinnerUserInfo = new java.util.ArrayList<>();
+              r.setAsReplyTo(m); c.send(r);
+              System.out.println("[login] <== GetLastContestWinners → ==> LastContestWinners (vide)");
+            } else if (m instanceof com.perblue.heroes.network.messages.GetHallOfFameRanks) {
+              com.perblue.heroes.network.messages.HallOfFameRanks r = new com.perblue.heroes.network.messages.HallOfFameRanks();
+              r.ranks = new java.util.ArrayList<>();
+              r.setAsReplyTo(m); c.send(r);
+              System.out.println("[login] <== GetHallOfFameRanks → ==> HallOfFameRanks (vide)");
             } else if (m instanceof com.perblue.heroes.network.messages.GetExpedition) {
               // EXPEDITION #72 incr. 1 — rafraîchissement d'un run ACTIF : le client envoie GetExpedition, le serveur
               // répond GetExpeditionResponse (patron GetSurge) avec le run PERSISTÉ (ou vide → sélection de difficulté).

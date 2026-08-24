@@ -962,6 +962,16 @@ public final class ServerEvents {
     return card;
   }
 
+  /** Pose un texte (EventString non-localisé) sur un champ de la carte ({@code title}/{@code summary}/…) — params ADMIN. */
+  private static void setCardText(IEventComponent card, SpecialEventInfo info, String fieldName, String value) {
+    if (value == null) return;
+    try {
+      Field f = card.getClass().getDeclaredField(fieldName);
+      f.setAccessible(true);
+      f.set(card, com.perblue.common.specialevent.EventString.unlocalized(info, value));
+    } catch (Throwable ignore) { /* champ absent : on laisse tel quel */ }
+  }
+
   /**
    * Sérialise des événements en {@code SpecialEventsRaw} (via le sérialiseur DU JEU {@code SpecialEventInfo.toJson()}) —
    * à POUSSER au CLIENT pour qu'il AFFICHE les événements (le client re-parse ce JSON par {@code buildEvent}).
@@ -1176,6 +1186,12 @@ public final class ServerEvents {
    */
   public static SpecialEventInfo buildContestEvent(long id, boolean guild, boolean aggregate,
       List<ContestTask> tasks, List<ContestProgress> progress, List<ContestRank> ranks, long startMs, long endMs) {
+    return buildContestEvent(id, guild, aggregate, "Contest", "Complete tasks to earn points and rewards!", tasks, progress, ranks, startMs, endMs);
+  }
+
+  /** Variante avec TITRE + RÉSUMÉ (affichés par l'écran CONTESTS via {@code EventCardDisplay.getTitle/getSummary}) = params ADMIN. */
+  public static SpecialEventInfo buildContestEvent(long id, boolean guild, boolean aggregate, String title, String summary,
+      List<ContestTask> tasks, List<ContestProgress> progress, List<ContestRank> ranks, long startMs, long endMs) {
     try {
       StringBuilder tk = new StringBuilder();
       int idx = 0;
@@ -1215,7 +1231,11 @@ public final class ServerEvents {
       EventVisibility vis = new EventVisibility(new int[0]);
       vis.load(info, root, root.get("timeRange"));
       addComponent(info, vis);
-      addComponent(info, buildMinimalCard(info));
+      IEventComponent card = buildMinimalCard(info);
+      // TITRE + RÉSUMÉ affichés par l'écran CONTESTS (EventCardDisplay.getTitle/getSummary) — sinon « NONE.TITLE/none.summary ».
+      setCardText(card, info, "title", title);
+      setCardText(card, info, "summary", summary);
+      addComponent(info, card);
 
       Class<?> ctType = Class.forName("com.perblue.heroes.game.specialevent.ContestTaskType");
       @SuppressWarnings({"unchecked", "rawtypes"})
@@ -1308,7 +1328,9 @@ public final class ServerEvents {
       JsonValue rn = spec.get("ranks");
       if (rn != null) for (JsonValue r = rn.child; r != null; r = r.next)
         ranks.add(new ContestRank(r.getBoolean("percent", true), r.getInt("rank", 10), contestDropsFromSpec(r.get("drops"))));
-      return buildContestEvent(id, spec.getBoolean("guild", false), spec.getBoolean("aggregate", false), tasks, progress, ranks, start, end);
+      return buildContestEvent(id, spec.getBoolean("guild", false), spec.getBoolean("aggregate", false),
+          spec.getString("title", "Contest"), spec.getString("summary", "Complete tasks to earn points and rewards!"),
+          tasks, progress, ranks, start, end);
     }
     if ("EXTRA_CHEST".equals(kind)) {
       List<ChestDrop> drops = new ArrayList<>();
@@ -1414,7 +1436,7 @@ public final class ServerEvents {
    * Construit la chaîne JSON d'UNE spec CONTEST (params ADMIN : guild/aggregate + tâches + paliers de progression +
    * récompenses de rang). Symétrique de {@link #buildContestEvent} (round-trip via {@code eventFromSpec}).
    */
-  public static String specJsonContest(long id, boolean guild, boolean aggregate,
+  public static String specJsonContest(long id, boolean guild, boolean aggregate, String title, String summary,
       List<ContestTask> tasks, List<ContestProgress> progress, List<ContestRank> ranks, long start, long end) {
     StringBuilder tk = new StringBuilder();
     for (ContestTask t : tasks) {
@@ -1434,6 +1456,7 @@ public final class ServerEvents {
       rr.append("{\"percent\":").append(r.percent).append(",\"rank\":").append(r.rank).append(",\"drops\":").append(dropSpecFrom(r.rewardDrops)).append('}');
     }
     return "{\"kind\":\"CONTEST\",\"modes\":[],\"bonus\":0,\"id\":" + id + ",\"guild\":" + guild + ",\"aggregate\":" + aggregate
+        + ",\"title\":\"" + esc(title) + "\",\"summary\":\"" + esc(summary) + "\""
         + ",\"tasks\":[" + tk + "],\"progress\":[" + pr + "],\"ranks\":[" + rr + "],\"start\":" + start + ",\"end\":" + end + "}";
   }
 

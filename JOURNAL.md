@@ -6448,3 +6448,28 @@ Régression **152/152** (`ContestRewardTest`/`ContestRankTest`/`ContestEndTest`)
 ladder/recomputeRank/rankRewardFor/distributeRankRewards ; `response(su, store)`), `ServerUser.java` (openChest → deliverEarned),
 `LoginServer.java` (response passe le store), `AdminEvents.java` (--contest-end), 3 tests, `regression.sh`, docs. **SUITE = incr.5 vérif
 EN JEU (écran CONTESTS : progression, paliers, classement, réclamation).**
+
+## 2026-08-24 (g165) — CONTEST incrément 5 : ✅ VÉRIFIÉ EN JEU (écran CONTESTS) + finition titre/résumé
+
+Incr.5 = vérif EN JEU (§8) → **CONTEST COMPLET (dernier des 8 composants live-ops).**
+- **✅ EN JEU** : `AdminEvents --contest --contest-title "SUMMER SHOWDOWN" --contest-summary "…" --contest-task BATTLE_WON:10:1
+  --contest-task OPEN_CHEST:5:1 --contest-progress 10:ACE:5 --contest-progress 30:ACE:25 --contest-rank number:1:ACE:500
+  --contest-rank percent:50:ACE:50` → `run-online.sh` → `nav CONTESTS` → l'écran **CONTESTS** rend MON contest : barre de
+  progression avec mes 2 PALIERS (10/30), **TOP PROGRESS REWARDS** ACE×25 (palier 30), **TOP RANK REWARDS** ACE×500 (rang 1) +
+  ×50 (top 50 %), « Contest Ends In: 29d 23h », Score 0/Rank -, onglets OVERVIEW/SCORING/RANKINGS/PROGRESS/RANK. Captures
+  `contest2.png` (structure) / `contest3.png` (titre).
+- **CORRECTIF §8 (débloquer l'écran)** : l'onglet HALL OF FAME de l'écran CONTESTS envoie au chargement `GetContestHallOfFame`/
+  `GetLastContestWinners`/`GetHallOfFameRanks` et reste bloqué sur « LOADING … » sans réponse. Handlers `LoginServer` ajoutés :
+  réponses VIDES (`ContestHallOfFames`/`LastContestWinners`/`HallOfFameRanks` — pas d'historique sur ce serveur communautaire) →
+  débloque l'écran. NB : `GET_CONTEST_RANKINGS` (action) a DÉJÀ un handler (guild contest #67) qui répond `ContestRankings`
+  (« ton rang 1 »).
+- **CORRECTIF §8 (finition, relevé sur capture — même point que les trials)** : le titre affichait « NONE.TITLE / none.summary ».
+  Cause : `EventCardDisplay.getTitle()/getSummary()` = les EventStrings de la carte, mis à vide par `buildMinimalCard` (preset
+  none). **Fix** : `buildContestEvent(id, guild, aggregate, TITLE, SUMMARY, …)` pose `card.title/summary` =
+  `EventString.unlocalized(info, valeur)` (helper `setCardText`) ; params admin `--contest-title`/`--contest-summary` + spec.
+  Re-vérifié EN JEU : « SUMMER SHOWDOWN » + résumé affichés (`contest3.png`).
+
+Régression **152/152**. Fichiers : `LoginServer.java` (3 handlers hall-of-fame), `ServerEvents.java` (buildContestEvent titre/résumé
++ setCardText + specJsonContest + eventFromSpec), `AdminEvents.java` (--contest-title/--contest-summary), `ContestTest.java`,
+`regression.sh`, `JOURNAL.md`, `MEMORY.md`. **⇒ CONTEST COMPLET (structure+état+wiring+classement+réclamation+EN JEU). ⇒ LES 8
+COMPOSANTS LIVE-OPS SONT LIVRÉS. RESTE (hors live-ops) : audit « écrans store pas de crash », Phase 2.**

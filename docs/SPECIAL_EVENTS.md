@@ -250,7 +250,14 @@ jamais inventer les poids/loot.
   (2) `buildExtraChestEvent(id, drops, cost, currency, freeBuys, maxBuys, …)` + spec + AdminEvents ; (3) snapshot → CRATES (getSingleEventChest) ;
   (4) chemin d'achat/ouverture du coffre event (`openChest`) + crédit des drops ; (5) vérif EN JEU (CRATES montre le coffre bonus, achat/ouverture).
 
-### B. Contest (CONTEST) — LEADERBOARD de tâches (solo ou guilde) = mode SERVEUR-AUTORITATIF complet — 🚧 EN COURS (incr.1 ✅ headless, g161)
+### B. Contest (CONTEST) — LEADERBOARD de tâches (solo ou guilde) = mode SERVEUR-AUTORITATIF — ✅ COMPLET & VÉRIFIÉ EN JEU (g161→g165)
+> **✅ LIVRÉ & EN JEU (g165)** — les 5 incréments : (1) structure/builder ; (2) état per-user (`ServerContestData`, blob `AllContestData`,
+> `GetAllContestData`) ; (3) wiring (`ServerContestData.prepare/record` + `ContestHelper.on*` sur campagne/coffre) ; (4) classement (ladder
+> per-shard `contest_ladder`) + réclamation (progressRewards par courrier + rankRewards `--contest-end`) ; (5) EN JEU (écran CONTESTS rend
+> titre/résumé/paliers/récompenses/rang). Handlers hall-of-fame vides (débloquent l'écran). `AdminEvents --contest …` (title/summary/task/
+> progress/rank[-unit]/guild/end). 6 tests contest. **Autres hooks (surge/war/expedition/burn) = même patron `record` au besoin.**
+
+### B(archive recon). Contest (CONTEST) — LEADERBOARD de tâches (solo ou guilde) = mode SERVEUR-AUTORITATIF complet — 🚧 EN COURS (incr.1 ✅ headless, g161)
 > **Incr.1 LIVRÉ (g161, headless)** : schéma `Contest.load` cracké (formatVersion 0 → `contestInformation{guild,aggregate}` +
 > `contestTask[]` [`ContestTaskInfo`: maxTimes/maxDailyTimes/pointsEarned/taskIndex + taskItem{taskData,taskData2,countNeeded,type,hidden}]
 > + `contestProgressRewards[]` [`{pointsRequired, rewarditem}`] + `contestRankRewards[]` [`{kind:PERCENT|NUMBER, rank, rewarditem}`] ;
