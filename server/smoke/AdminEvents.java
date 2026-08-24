@@ -67,6 +67,7 @@ public final class AdminEvents {
     java.util.List<ServerEvents.ContestTask> contestTasks = new java.util.ArrayList<>();       // --contest-task TYPE:POINTS:COUNT[:MAXTIMES:MAXDAILY]
     java.util.List<ServerEvents.ContestProgress> contestProgress = new java.util.ArrayList<>(); // --contest-progress POINTS:ITEM:QTY
     java.util.List<ServerEvents.ContestRank> contestRanks = new java.util.ArrayList<>();        // --contest-rank / --contest-rank-unit KIND:RANK:ID:QTY
+    boolean contestEnd = false; long contestEndID = 900_010L;                                   // --contest-end <id> (clôture : rankRewards)
     int days = 30, bonus = 1;
     for (int i = 0; i < a.length; i++) {
       switch (a[i]) {
@@ -115,6 +116,8 @@ public final class AdminEvents {
         case "--contest": contest = true;
           if (i + 1 < a.length && a[i + 1].matches("\\d+")) contestID = Long.parseLong(a[++i]); break;
         case "--close-contest": closeContest = true; break;
+        case "--contest-end": contestEnd = true;
+          if (i + 1 < a.length && a[i + 1].matches("\\d+")) contestEndID = Long.parseLong(a[++i]); break;
         case "--contest-guild": contestGuild = true; break;
         case "--contest-aggregate": contestAggregate = true; break;
         case "--contest-task": {          // TYPE:POINTS:COUNT[:MAXTIMES:MAXDAILY]
@@ -350,6 +353,19 @@ public final class AdminEvents {
           System.out.println("[events] event CONTEST ajouté : eventID=" + contestID + (contestGuild ? " [GUILDE]" : " [solo]")
               + " tâches=" + contestTasks.size() + " paliers=" + contestProgress.size() + " rangs=" + contestRanks.size()
               + " (" + days + " j). Écran CONTESTS via REFRESH_SPECIAL_EVENTS.");
+        }
+      }
+
+      if (contestEnd) {
+        // CLÔTURE : distribue les rankRewards par rang final (ladder per-shard). ACTION (pas un changement de spec) →
+        // hors du bloc `changed`. On reconstruit l'event CONTEST depuis la config pour lire ses rankRewards.
+        com.perblue.common.specialevent.SpecialEventInfo target = null;
+        for (com.perblue.common.specialevent.SpecialEventInfo e : ServerEvents.eventsFromConfig(s.loadShardState(shard, "operator_events")))
+          if (e.getID() == contestEndID) { target = e; break; }
+        if (target == null) System.out.println("[events] --contest-end : aucun CONTEST id=" + contestEndID + " dans la config. Ignoré.");
+        else {
+          int n = ServerContestData.distributeRankRewards(s, shard, contestEndID, target);
+          System.out.println("[events] CONTEST " + contestEndID + " clôturé : " + n + " joueur(s) récompensé(s) par rang [courrier].");
         }
       }
 

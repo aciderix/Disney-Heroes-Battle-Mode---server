@@ -83,7 +83,7 @@ public final class ServerContestData {
    * ACTIF (composant {@code Contest} du snapshot opérateur). L'appelant persiste ({@code store.save}) et répond au client.
    */
   @SuppressWarnings("unchecked")
-  public static synchronized AllContestData response(ServerUser su) {
+  public static synchronized AllContestData response(ServerUser su, UserStore store) {
     // Bind pour que le snapshot filtre par éligibilité (shard) — su.gameUser() est déjà bindé dans le flux login, mais
     // on le refait pour être robuste (chemins de test).
     try { ServerContext.bind(su.gameUser(), su.gameUser().getIndividual()); } catch (Throwable ignore) {}
@@ -93,11 +93,110 @@ public final class ServerContestData {
       com.perblue.heroes.game.specialevent.SpecialEventSnapshot snap = ServerEvents.snapshot();
       for (Object o : snap.getActiveEvents()) {
         com.perblue.common.specialevent.SpecialEventInfo e = (com.perblue.common.specialevent.SpecialEventInfo) o;
-        if (e.getComponent(com.perblue.common.specialevent.components.Contest.class) != null)
-          resp.contests.put(e.getID(), getContestData(su, e.getID()));
+        if (e.getComponent(com.perblue.common.specialevent.components.Contest.class) != null) {
+          long id = e.getID();
+          ContestData cd = getContestData(su, id);
+          recomputeRank(store, su, id, cd);   // classement serveur-autoritatif (ladder per-shard)
+          resp.contests.put(id, cd);
+        }
       }
     } catch (Throwable t) { System.out.println("[contest] response: " + t); }
     return resp;
+  }
+
+  // --- CLASSEMENT (leaderboard) per-(shard, contestID) : Map<userID, rankPoints> dans shard_state ------------------------
+  private static String ladderKey(long contestID) { return "contest_ladder:" + contestID; }
+
+  /** Désérialise le ladder ({@code int n} puis n×{@code long userID,long points}). Vide si absent. */
+  static java.util.Map<Long, Long> loadLadder(UserStore store, int shardID, long contestID) {
+    java.util.Map<Long, Long> m = new java.util.LinkedHashMap<>();
+    try {
+      byte[] b = store.loadShardState(shardID, ladderKey(contestID));
+      if (b == null || b.length == 0) return m;
+      java.io.DataInputStream in = new java.io.DataInputStream(new java.io.ByteArrayInputStream(b));
+      int n = in.readInt();
+      for (int i = 0; i < n; i++) { long u = in.readLong(); long p = in.readLong(); m.put(u, p); }
+    } catch (Throwable t) { System.out.println("[contest] loadLadder: " + t); }
+    return m;
+  }
+
+  static void saveLadder(UserStore store, int shardID, long contestID, java.util.Map<Long, Long> m) {
+    try {
+      java.io.ByteArrayOutputStream bos = new java.io.ByteArrayOutputStream();
+      java.io.DataOutputStream o = new java.io.DataOutputStream(bos);
+      o.writeInt(m.size());
+      for (java.util.Map.Entry<Long, Long> e : m.entrySet()) { o.writeLong(e.getKey()); o.writeLong(e.getValue()); }
+      o.flush();
+      store.saveShardState(shardID, ladderKey(contestID), bos.toByteArray());
+    } catch (Throwable t) { System.out.println("[contest] saveLadder: " + t); }
+  }
+
+  /**
+   * Met à jour le ladder per-shard avec les points de {@code su} pour {@code contestID}, puis calcule et pose
+   * {@code cd.rank} (1 + nb de joueurs STRICTEMENT au-dessus) et {@code cd.totalParticipants} (taille du ladder).
+   * Classement SERVEUR-AUTORITATIF (état partagé, patron {@code arena_ladder}, §5).
+   */
+  public static synchronized void recomputeRank(UserStore store, ServerUser su, long contestID, ContestData cd) {
+    if (store == null) return;
+    java.util.Map<Long, Long> ladder = loadLadder(store, su.shardID, contestID);
+    ladder.put(su.userID, cd.rankPoints);
+    saveLadder(store, su.shardID, contestID, ladder);
+    int rank = 1;
+    for (long p : ladder.values()) if (p > cd.rankPoints) rank++;
+    cd.rank = rank;
+    cd.totalParticipants = ladder.size();
+  }
+
+  /**
+   * La récompense de RANG qui couvre le rang {@code rank} (sur {@code total} participants), ou {@code null}. On prend le
+   * PREMIER tier (dans l'ordre admin = du plus exclusif au moins) que le joueur satisfait : {@code isPercent} → percentile
+   * {@code 100·rank/total ≤ maxRank} ; sinon rang absolu {@code rank ≤ maxRank}. (Glue de sélection ; tiers+drops = data admin/jeu.)
+   */
+  public static com.perblue.common.specialevent.components.pieces.ContestRankRewardInfo rankRewardFor(
+      com.perblue.common.specialevent.components.Contest c, int rank, int total) {
+    if (c == null || total <= 0) return null;
+    for (Object o : c.getRankRewards()) {
+      com.perblue.common.specialevent.components.pieces.ContestRankRewardInfo ri =
+          (com.perblue.common.specialevent.components.pieces.ContestRankRewardInfo) o;
+      boolean ok = ri.isPercent() ? (100.0 * rank / total) <= ri.getMaxRank() : rank <= ri.getMaxRank();
+      if (ok) return ri;
+    }
+    return null;
+  }
+
+  /**
+   * CLÔTURE d'un contest : distribue les {@code rankRewards} par COURRIER selon le RANG FINAL de chaque joueur du ladder
+   * (classement par points décroissants). Renvoie le nombre de joueurs récompensés. Idempotence à la charge de l'appelant
+   * (admin {@code --contest-end}, une fois). §3/§4 : les drops viennent de {@code ContestRankRewardInfo.getRewards}.
+   */
+  public static synchronized int distributeRankRewards(UserStore store, int shardID, long contestID,
+      com.perblue.common.specialevent.SpecialEventInfo eventInfo) throws Exception {
+    com.perblue.common.specialevent.components.Contest c =
+        (com.perblue.common.specialevent.components.Contest) eventInfo.getComponent(com.perblue.common.specialevent.components.Contest.class);
+    if (c == null) return 0;
+    java.util.Map<Long, Long> ladder = loadLadder(store, shardID, contestID);
+    java.util.List<java.util.Map.Entry<Long, Long>> sorted = new java.util.ArrayList<>(ladder.entrySet());
+    sorted.sort((x, y) -> Long.compare(y.getValue(), x.getValue()));   // points décroissants
+    int total = sorted.size(), delivered = 0, rank = 0;
+    for (java.util.Map.Entry<Long, Long> e : sorted) {
+      rank++;
+      com.perblue.common.specialevent.components.pieces.ContestRankRewardInfo ri = rankRewardFor(c, rank, total);
+      if (ri == null) continue;
+      ServerUser su = store.loadIfExists(e.getKey(), shardID);
+      if (su == null) continue;
+      com.perblue.heroes.game.objects.User u = su.gameUser();
+      ServerContext.bind(u, u.getIndividual());
+      @SuppressWarnings("unchecked")
+      java.util.List<com.perblue.heroes.network.messages.RewardDrop> drops =
+          (java.util.List<com.perblue.heroes.network.messages.RewardDrop>) ri.getRewards(u, eventInfo.getFormatVersion());
+      if (drops != null && !drops.isEmpty()) {
+        su.deliverMail(com.perblue.heroes.network.messages.MailType.SYSTEM_MESSAGE, "Contest",
+            "Contest Rank Reward", "You finished #" + rank + " of " + total + "!", drops);
+        store.save(su);
+        delivered++;
+      }
+    }
+    return delivered;
   }
 
   /** IDs des contests ACTIFS (composant {@code Contest} du snapshot opérateur) pour {@code su} (user déjà bindé). */
@@ -140,9 +239,48 @@ public final class ServerContestData {
     } catch (Throwable t) { System.out.println("[contest] prepare: " + t); }
   }
 
-  /** {@link #prepare} + exécute le hook du jeu ({@code ContestHelper.on*}). L'appelant persiste. */
+  /** {@link #prepare} + exécute le hook du jeu ({@code ContestHelper.on*}) + livre les paliers franchis. L'appelant persiste. */
   public static synchronized void record(ServerUser su, com.perblue.heroes.game.objects.User user, ContestHook hook) {
     prepare(su, user);
     try { hook.run(user); } catch (Throwable t) { System.out.println("[contest] record: " + t); }
+    deliverEarnedProgressRewards(su, user);
+  }
+
+  /**
+   * RÉCLAMATION AUTOMATIQUE des récompenses de PALIER ({@code progressRewards}) : pour chaque contest actif, tout palier
+   * dont les points requis sont ATTEINTS et pas encore marqué gagné → livré par COURRIER (wiki : livraison immédiate au
+   * palier) + marqué dans {@code earnedProgressRewards} (idempotent). Les drops viennent de {@code ContestProgressRewardInfo.
+   * getRewards(user, formatVersion)} (données admin/jeu, §4). L'appelant persiste ({@code store.save}).
+   */
+  @SuppressWarnings("unchecked")
+  public static synchronized void deliverEarnedProgressRewards(ServerUser su, com.perblue.heroes.game.objects.User user) {
+    try {
+      com.perblue.heroes.game.specialevent.SpecialEventSnapshot snap = ServerEvents.snapshot();
+      for (Object o : snap.getActiveEvents()) {
+        com.perblue.common.specialevent.SpecialEventInfo e = (com.perblue.common.specialevent.SpecialEventInfo) o;
+        com.perblue.common.specialevent.components.Contest c =
+            (com.perblue.common.specialevent.components.Contest) e.getComponent(com.perblue.common.specialevent.components.Contest.class);
+        if (c == null) continue;
+        long id = e.getID();
+        ContestData cd = getContestData(su, id);
+        ClientContestData ccd = clientData(id, cd);
+        long pts = ccd.getProgressPoints();
+        if (cd.extraData.earnedProgressRewards == null) cd.extraData.earnedProgressRewards = new ArrayList<>();
+        for (Object po : c.getProgressRewards()) {
+          com.perblue.common.specialevent.components.pieces.ContestProgressRewardInfo pri =
+              (com.perblue.common.specialevent.components.pieces.ContestProgressRewardInfo) po;
+          int idx = pri.getProgressIndex();
+          if (pts >= pri.getRequiredPoints() && !ccd.hasEarnedProgressReward(idx)) {
+            java.util.List<com.perblue.heroes.network.messages.RewardDrop> drops =
+                (java.util.List<com.perblue.heroes.network.messages.RewardDrop>) pri.getRewards(user, e.getFormatVersion());
+            if (drops != null && !drops.isEmpty())
+              su.deliverMail(com.perblue.heroes.network.messages.MailType.SYSTEM_MESSAGE, "Contest",
+                  "Contest Reward", "You reached " + pri.getRequiredPoints() + " contest points!", drops);
+            cd.extraData.earnedProgressRewards.add(Integer.valueOf(idx));
+            System.out.println("[contest] palier " + idx + " (" + pri.getRequiredPoints() + " pts) livré par courrier [persisté]");
+          }
+        }
+      }
+    } catch (Throwable t) { System.out.println("[contest] deliverEarnedProgressRewards: " + t); }
   }
 }

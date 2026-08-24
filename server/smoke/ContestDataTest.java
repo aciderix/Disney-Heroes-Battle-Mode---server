@@ -61,7 +61,7 @@ public final class ContestDataTest {
     SpecialEventInfo ev = ServerEvents.buildContestEvent(cid, false, false, tasks, prog, ranks, now - 1000, now + 7L * 86_400_000L);
     ServerEvents.setOperatorEvents(Collections.singletonList(ev));
     ServerEvents.installBootDefaults();
-    AllContestData resp = ServerContestData.response(su);
+    AllContestData resp = ServerContestData.response(su, null);   // store null → pas de classement (test structure seule)
     check(resp.contests != null && resp.contests.containsKey(cid), "response expose le contest actif (id=" + cid + ")");
     System.out.println("[contestdata] response GetAllContestData → " + resp.contests.size() + " contest(s) actif(s) ✔");
 

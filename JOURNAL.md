@@ -6421,3 +6421,30 @@ du jeu, on n'invente pas le barème).
 Régression **149/149** (`ContestCreditTest`). Fichiers : `ServerContestData.java` (prepare/record/activeContestIDs/ContestHook),
 `ServerUser.java` (recordCampaignAttack → onCampaignAttack ; openChest → prepare + onChestOpen), `ContestCreditTest.java` (nouveau),
 `regression.sh`, `JOURNAL.md`, `MEMORY.md`. **SUITE = incr.4 classement + réclamation.**
+
+## 2026-08-24 (g164) — CONTEST incrément 4 (classement + réclamation : progressRewards paliers + rankRewards rang) ✅ headless
+
+Incr.4 = récompenses + leaderboard serveur-autoritatif.
+- **progressRewards (PALIERS)** — RÉCLAMATION AUTOMATIQUE : `ServerContestData.deliverEarnedProgressRewards(su, user)` — pour
+  chaque contest actif, tout palier dont `getRequiredPoints()` est atteint et pas déjà dans `earnedProgressRewards`
+  (`hasEarnedProgressReward(idx)` = `List<Integer>.contains`) → livré par COURRIER (wiki : immédiat au palier) via
+  `ContestProgressRewardInfo.getRewards(user, formatVersion)` + `deliverMail` (§3) + marqué gagné (idempotent). Appelé à la fin
+  de `record(...)` (campagne) ET après `onChestOpen` (coffre).
+- **CLASSEMENT (leaderboard)** — SERVEUR-AUTORITATIF : ladder per-(shard, contestID) = `Map<userID, rankPoints>` sérialisé dans
+  `shard_state` (clé `contest_ladder:<id>`, patron `arena_ladder`, §5). `recomputeRank(store, su, id, cd)` met à jour l'entrée du
+  joueur + calcule `cd.rank` (1 + nb strictement au-dessus) et `cd.totalParticipants`. Appelé dans `response(su, store)` (le handler
+  `GetAllContestData` passe le `store`).
+- **rankRewards (RANG, fin de contest)** : `distributeRankRewards(store, shard, id, eventInfo)` — trie le ladder par points
+  décroissants, attribue le rang, et pour chacun `rankRewardFor(contest, rank, total)` (1ᵉʳ tier satisfait : `isPercent` →
+  `100·rank/total ≤ maxRank`, sinon `rank ≤ maxRank` ; tiers ordonnés du + exclusif au - par l'admin) → livre `getRewards` par
+  COURRIER. **⚠️ `ContestHelper.getRankInfo(info, i)` renvoie le i-ᵉ tier par INDEX (pas par rang)** → j'écris la sélection de tier
+  (glue) moi-même. Exposé par `AdminEvents --contest-end <id>` (reconstruit l'event depuis la config → distribue).
+- Tests : `ContestRewardTest` (palier 20 pts → 1 courrier, idempotent) ; `ContestRankTest` (2 joueurs, rang 1/2 + participants,
+  ladder persistant) ; `ContestEndTest` (rankRewards : A rang 1 → ACE×100, B rang 2 top 100 % → ACE×10, par courrier).
+- **API `ClientContestData.hasEarnedProgressReward`** = `extraData.earnedProgressRewards.contains(Integer)`; on marque en ajoutant
+  l'`Integer` idx à cette liste wire.
+
+Régression **152/152** (`ContestRewardTest`/`ContestRankTest`/`ContestEndTest`). Fichiers : `ServerContestData.java` (deliverEarned/
+ladder/recomputeRank/rankRewardFor/distributeRankRewards ; `response(su, store)`), `ServerUser.java` (openChest → deliverEarned),
+`LoginServer.java` (response passe le store), `AdminEvents.java` (--contest-end), 3 tests, `regression.sh`, docs. **SUITE = incr.5 vérif
+EN JEU (écran CONTESTS : progression, paliers, classement, réclamation).**

@@ -75,6 +75,9 @@ TESTS=(
   ContestTest
   ContestDataTest
   ContestCreditTest
+  ContestRewardTest
+  ContestRankTest
+  ContestEndTest
 )
 
 echo "[reg] compilation (serveur + ${#TESTS[@]} tests) ..."

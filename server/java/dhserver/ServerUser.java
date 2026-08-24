@@ -1715,6 +1715,7 @@ public final class ServerUser {
     // Tâche OPEN_CHEST du contest (logique du jeu) — le blob a été pré-peuplé ci-dessus.
     try { com.perblue.heroes.game.logic.ContestHelper.onChestOpen(user, type, count); }
     catch (Throwable t) { System.out.println("[contest] onChestOpen: " + t); }
+    ServerContestData.deliverEarnedProgressRewards(this, user);   // paliers franchis (OPEN_CHEST/ITEM_EARN) → courrier
     ChestHelper.updateChestRollCounters(user, type, count, m.usedItem, lr.wasFree, m.hasBulkBonus);
     // Compteurs QUOTIDIENS d'ouverture (limites d'achat + tâches de contest sur don d'objet). Passe par
     // la couche évènements spéciaux (SpecialEventsHelper.helper) — initialisée dans ServerContext (comme

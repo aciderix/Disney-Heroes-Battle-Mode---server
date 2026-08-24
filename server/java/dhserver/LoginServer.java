@@ -2024,7 +2024,7 @@ public final class LoginServer {
               // CONTEST incr. 2 — le client envoie GetAllContestData et attend un AllContestData (Map<contestID, ContestData> :
               // points de progression/rang + compteurs de tâches) pour rendre l'écran CONTESTS. Builder ABSENT du jar client
               // (état backend PerBlue) → construit+persisté serveur-autoritativement (ServerContest, patron TrialEventData/ArenaInfo).
-              com.perblue.heroes.network.messages.AllContestData acd = ServerContestData.response(user);
+              com.perblue.heroes.network.messages.AllContestData acd = ServerContestData.response(user, store);
               try { store.save(user); } catch (Exception e) { System.out.println("[login]     ! persist contest: " + e); }
               acd.setAsReplyTo(m);
               c.send(acd);
