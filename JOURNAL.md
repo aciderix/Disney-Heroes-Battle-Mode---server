@@ -6473,3 +6473,39 @@ Régression **152/152**. Fichiers : `LoginServer.java` (3 handlers hall-of-fame)
 + setCardText + specJsonContest + eventFromSpec), `AdminEvents.java` (--contest-title/--contest-summary), `ContestTest.java`,
 `regression.sh`, `JOURNAL.md`, `MEMORY.md`. **⇒ CONTEST COMPLET (structure+état+wiring+classement+réclamation+EN JEU). ⇒ LES 8
 COMPOSANTS LIVE-OPS SONT LIVRÉS. RESTE (hors live-ops) : audit « écrans store pas de crash », Phase 2.**
+
+## 2026-08-24 (g166) — CONTEST gap B : score/rang de l'overview solo (GET_CONTEST_RANKINGS) ✅ VÉRIFIÉ EN JEU
+
+Gap B = « le Score de l'écran CONTESTS doit monter en jouant » (0→10). Le crédit serveur des tâches était DÉJÀ prouvé
+en jeu (incr.5 : ouvrir des coffres → palier livré par courrier), mais l'OVERVIEW affichait toujours « Score: 0 ».
+
+- **Cause racine établie au BYTECODE** (`ContestsScreen`/`ContestsOverviewContent`, `game-logic-framed.jar`) : l'overview
+  SOLO lit son grand « Score: » et son « Rank: » depuis le champ `this.yourInfo` (un `ContestRankingRow`), PAS depuis
+  `data.getProgressPoints()` (la barre de progression, elle, utilise `getLastSeenContestScore`/`getProgressPoints`).
+  `yourInfo` = `ContestRankings.yourInfo`, posé à la réception de la réponse de l'action **`GET_CONTEST_RANKINGS`** que
+  `ContestsScreen.show()` émet pour un contest solo (`ClientActionHelper.requestContestRankings(id,false)` → extra `ID=<contestID>`).
+  Branche guilde (`isGuildContest()`) = `GET_GUILD_CONTEST_RANKINGS`+`yourGuildInfo` (distincte). Le handler existant de
+  `GET_CONTEST_RANKINGS` renvoyait les points de CONTEST DE GUILDE (`mu.contestPointsIn(g)` = 0 pour un contest de tâches solo).
+- **Correctif (§3, serveur autoritatif ; §2 pas de rustine)** : `buildContestRankings(u, contestID)` devient ID-AWARE.
+  `activeSoloContest(u, id)` cherche dans le snapshot un event ACTIF d'ID `id` portant un composant `Contest` avec
+  `!isGuildContest()`. Si trouvé → **`ServerContestData.soloRankings(store, u, id)`** : (1) `recomputeRank` insère/actualise
+  mes points COURANTS (`rankPoints` du blob) dans le ladder per-(shard,contestID) et calcule mon rang (au cas où
+  `GetAllContestData` n'aurait jamais été envoyé) ; (2) lignes construites depuis le ladder, triées points DÉCROISSANTS puis
+  `reachedAt` CROISSANT (départage « 1ᵉʳ arrivé », gap A) ; chaque `PlayerRow.info` chargé par membre ; `yourInfo` = ma ligne.
+  Sinon (ou `id≤0`) → fallback contest de GUILDE #67 (`buildGuildMemberContestRankings`, ex-`buildContestRankings`, INCHANGÉ).
+  Le call site lit `extraLong(act, ActionExtraType.ID, 0)`.
+- `ContestRankingsTest` (régression **153/153**) : A à 0 pt → `yourInfo.points`=0 rang 1 ; A après 3 `onCampaignAttack(WIN)`
+  (vrai hook du jeu, BATTLE_WON:10) → Score 30 rang 1 ; 2 joueurs → A 30/rang 1, B 10/rang 2, `topPlayers` trié ; round-trip
+  wire `ContestRankings` (WireCheck).
+- **✅ EN JEU** : `AdminEvents --contest 900011 --contest-title "SCORE CLIMB" --contest-task BATTLE_WON:10:1
+  --contest-progress 10:ACE_OF_SPADES:5 --contest-rank number:1:ACE_OF_SPADES:500` (ID NEUF ⇒ 0 pt garanti). Pile lancée,
+  `nav CONTESTS` → serveur `GET_CONTEST_RANKINGS(id=900011) → ton score 0 rang 1` → écran **Score 0 / Rank -** (`gapB_before.png`).
+  `campfight 1 1` + `campquick` → `CampaignAttack NORMAL 1-1 WIN → recordOutcome` + `[contest] palier 0 (10 pts) livré par
+  courrier`. `nav CONTESTS` → serveur `GET_CONTEST_RANKINGS(id=900011) → ton score 10 rang 1` → écran **Score 10 / Rank 1st,
+  barre remplie au palier 10** (`gapB_after.png`). ⇒ le score MONTE bien en jouant (0→10).
+- Aussi (DEV) : pilote `openchest <TYPE> [count]` (chemin réel `ChestHelper.openChestInner`) pour créditer la tâche OPEN_CHEST.
+
+Régression **153/153**. Fichiers : `LoginServer.java` (handler GET_CONTEST_RANKINGS ID-aware + `activeSoloContest` +
+`buildContestRankings`/`buildGuildMemberContestRankings`), `ServerContestData.java` (`soloRankings`), `ContestRankingsTest.java`
+(nouveau), `regression.sh`, `DesktopLauncher.java`/`TutorialDriver.java` (pilote `openchest`), `JOURNAL.md`, `MEMORY.md`.
+**SUITE = gap C (contest de GUILDE de bout en bout, headless + en jeu). Hors contest : audit store, Phase 2.**
