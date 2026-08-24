@@ -6593,3 +6593,26 @@ Régression **155/155**. Fichiers : `ServerEvents.java` (weeklyContestWindow), `
 `ServerExpedition.java` (expedition prepare/deliver), `LoginServer.java` (surge store.save + invasion/war hooks explicites),
 `ContestCampaignRecordTest.java` (nouveau), `regression.sh`, `JOURNAL.md`, `MEMORY.md`. **⇒ Tous les hooks de tâches de contest
 branchés (via le mécanisme le plus fidèle) + ancrage hebdo fidèle, vérifiés EN JEU. RESTE hors contest : audit store, Phase 2.**
+
+## 2026-08-24 (g169) — AUDIT « écrans store pas de crash » ✅ EN JEU (aucun changement de code)
+
+Demande utilisateur : auditer que les écrans STORE (fermés, aucun IAP) ne CRASHENT pas le client.
+
+- **Recensement** : écrans store/achat = `PurchasingScreen` (DIAMONDS), `VIPBenefitsScreen`, `DailyDealsScreen`,
+  `PromosScreen`, + destinations `UINavHelper.Destination` : PURCHASING, DIRECT_PURCHASE, VIDEO_PURCHASING, VIP_BENEFITS,
+  DAILY_DEAL, MEGA_DAILY_DEAL, PROMOS, MEGA_MART (BLACK_MARKET/COLLECTIONS/EVENT_CRATE déjà OK antérieurement).
+- **Analyse anti-crash (bytecode)** : `PurchasingScreen` itère `DH.app.getIAPProducts().products` → NPE si null. Or le CLIENT
+  pose `iapProducts` depuis `BootData.iAPProducts` au boot, et `new BootData()` (= notre `ServerUser.bootData()`) initialise
+  `iAPProducts = new IAPProducts()` (ctor) qui initialise `products = new ArrayList()` → catalogue NON-NULL VIDE → itération
+  d'une liste vide → **rendu store vide, aucun NPE**. (VIP/DailyDeals = lecture seule, aucun message.)
+- **✅ EN JEU** : balayage des 8 destinations via `nav <DEST>`. `[nav] navigateTo(...)` OK pour les 8 ; **client vivant tout
+  du long** ; scan complet du log = **0 crash dur** (`GdxRuntimeException`/déconnexion/exit/OutOfMemory) et **0 message store
+  non géré côté serveur**. Rendus (captures) : `PURCHASING`/`DIRECT_PURCHASE` = écran DIAMONDS (cartes bundles IAP vides —
+  catalogue fermé — mais DAILY VIDEOS / PLAYBACK REWARDS / FYBER rendus, 💎20, VIP LEVEL, BENEFITS) ; `DAILY_DEAL` = zone
+  d'offres vide (gracieux) ; `VIP_BENEFITS` = niveaux 1-3 complets ; `MEGA_MART` = marchand en MONNAIE DU JEU **pleinement
+  fonctionnel** (STAMINA COST RESET, plan bits, hero chips… ; 🪙57,9M, REFRESH, « Refreshes at 9:00 PM »). Warnings observés =
+  pré-existants bénins (`NumberFormatException ""`, `PatchTalent`, trader INVASION) + env/layout headless (`XDG_RUNTIME_DIR`,
+  `auto weight`). AUCUNE modification de code nécessaire (le comportement était déjà correct via l'init BootData du jeu).
+
+Régression **155/155** (inchangée — aucun code modifié). Fichiers : `docs/HUB_NAV.md` §7.3 (résultat d'audit), `JOURNAL.md`,
+`MEMORY.md`. **⇒ Audit clos : les écrans store, volontairement fermés (aucun IAP), NE cassent PAS le client. RESTE = Phase 2.**

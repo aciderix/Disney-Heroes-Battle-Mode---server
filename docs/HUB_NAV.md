@@ -156,6 +156,18 @@ Déblocage `TEAM_LEVEL_REQ` de `unlockables.tab`. **Pour les tester → monter l
 **DEALS** de l'écran EVENTS : offres d'**achat**. **Serveurs d'achats FERMÉS** (aucun IAP réel — choix du
 projet, cf. PRINCIPLES). Actuellement l'onglet DEALS est **vide** (aucune offre : ni event live-ops, ni store).
 
+**✅ AUDIT « PAS DE CRASH » (2026-08-24, en jeu).** Balayage des 8 destinations store via `nav <DEST>`
+(`UINavHelper.navigateTo`) : `PURCHASING`, `DIRECT_PURCHASE`, `VIDEO_PURCHASING`, `VIP_BENEFITS`, `DAILY_DEAL`,
+`MEGA_DAILY_DEAL`, `PROMOS`, `MEGA_MART`. **Aucun crash** (client vivant tout du long, 0 `GdxRuntimeException`/
+déconnexion/exit/OOM ; 0 message store non géré côté serveur). Fait clé qui garantit l'absence de NPE : le CLIENT
+prend son catalogue IAP de `BootData.iAPProducts`, et `new BootData()` l'initialise à un `IAPProducts` NON-NULL avec
+`products = ArrayList` VIDE (ctors du jeu) → `PurchasingScreen` itère une liste vide → **rendu store VIDE, pas de NPE**.
+Rendus observés (captures `store_*.png`) : `PURCHASING`/`DIRECT_PURCHASE` = écran DIAMONDS (cartes bundles IAP vides,
+mais DAILY VIDEOS / PLAYBACK REWARDS / FYBER rendus) ; `DAILY_DEAL` = vide gracieux ; `VIP_BENEFITS` = niveaux 1-3
+complets ; `MEGA_MART` = marchand en MONNAIE DU JEU **pleinement fonctionnel** (comme BLACK_MARKET). Seuls warnings :
+`NumberFormatException ""`/`PatchTalent`/trader INVASION (pré-existants, bénins) + `XDG_RUNTIME_DIR`/`auto weight`
+(env/layout headless). ⇒ Les écrans store, bien que fermés (aucun IAP), ne cassent pas le client.
+
 ### 7.4 Stratégie de test des écrans restants
 1. **Débloquer par le niveau d'équipe** : la plupart des écrans non testés sont gatés `TEAM_LEVEL_REQ`.
    → outil de dev pour **fixer le team level du compte** (ou monter en jouant la campagne) afin d'ouvrir en
