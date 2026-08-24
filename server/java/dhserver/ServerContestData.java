@@ -104,45 +104,66 @@ public final class ServerContestData {
     return resp;
   }
 
-  // --- CLASSEMENT (leaderboard) per-(shard, contestID) : Map<userID, rankPoints> dans shard_state ------------------------
+  // --- CLASSEMENT (leaderboard) per-(shard, contestID) : Map<userID, {points, reachedAt}> dans shard_state ----------------
+  // Chaque entrée porte les points ET l'HORODATAGE où le joueur a atteint ce total (reachedAt) → DÉPARTAGE déterministe des
+  // ex æquo : à points égaux, le PREMIER arrivé au total (reachedAt le plus ancien) est mieux classé (fidèle « first to reach »).
   private static String ladderKey(long contestID) { return "contest_ladder:" + contestID; }
 
-  /** Désérialise le ladder ({@code int n} puis n×{@code long userID,long points}). Vide si absent. */
-  static java.util.Map<Long, Long> loadLadder(UserStore store, int shardID, long contestID) {
-    java.util.Map<Long, Long> m = new java.util.LinkedHashMap<>();
+  /**
+   * Désérialise le ladder. Deux formats (auto-détectés par le 1ᵉʳ int) : ANCIEN ({@code n≥0} puis n×{@code userID,points})
+   * → {@code reachedAt=0} (plus ancien) ; NOUVEAU (marqueur {@code -2}, puis {@code n}, puis n×{@code userID,points,reachedAt}).
+   * Valeur = {@code long[]{points, reachedAt}}.
+   */
+  static java.util.Map<Long, long[]> loadLadder(UserStore store, int shardID, long contestID) {
+    java.util.Map<Long, long[]> m = new java.util.LinkedHashMap<>();
     try {
       byte[] b = store.loadShardState(shardID, ladderKey(contestID));
       if (b == null || b.length == 0) return m;
       java.io.DataInputStream in = new java.io.DataInputStream(new java.io.ByteArrayInputStream(b));
-      int n = in.readInt();
-      for (int i = 0; i < n; i++) { long u = in.readLong(); long p = in.readLong(); m.put(u, p); }
+      int first = in.readInt();
+      if (first >= 0) {                                   // ANCIEN format (n×{userID,points})
+        for (int i = 0; i < first; i++) { long u = in.readLong(); long p = in.readLong(); m.put(u, new long[]{p, 0L}); }
+      } else {                                            // NOUVEAU format (marqueur négatif = version)
+        int n = in.readInt();
+        for (int i = 0; i < n; i++) { long u = in.readLong(); long p = in.readLong(); long r = in.readLong(); m.put(u, new long[]{p, r}); }
+      }
     } catch (Throwable t) { System.out.println("[contest] loadLadder: " + t); }
     return m;
   }
 
-  static void saveLadder(UserStore store, int shardID, long contestID, java.util.Map<Long, Long> m) {
+  static void saveLadder(UserStore store, int shardID, long contestID, java.util.Map<Long, long[]> m) {
     try {
       java.io.ByteArrayOutputStream bos = new java.io.ByteArrayOutputStream();
       java.io.DataOutputStream o = new java.io.DataOutputStream(bos);
+      o.writeInt(-2);                                     // marqueur version 2 (négatif ⇒ distinct de l'ancien n≥0)
       o.writeInt(m.size());
-      for (java.util.Map.Entry<Long, Long> e : m.entrySet()) { o.writeLong(e.getKey()); o.writeLong(e.getValue()); }
+      for (java.util.Map.Entry<Long, long[]> e : m.entrySet()) { o.writeLong(e.getKey()); o.writeLong(e.getValue()[0]); o.writeLong(e.getValue()[1]); }
       o.flush();
       store.saveShardState(shardID, ladderKey(contestID), bos.toByteArray());
     } catch (Throwable t) { System.out.println("[contest] saveLadder: " + t); }
   }
 
   /**
-   * Met à jour le ladder per-shard avec les points de {@code su} pour {@code contestID}, puis calcule et pose
-   * {@code cd.rank} (1 + nb de joueurs STRICTEMENT au-dessus) et {@code cd.totalParticipants} (taille du ladder).
-   * Classement SERVEUR-AUTORITATIF (état partagé, patron {@code arena_ladder}, §5).
+   * Met à jour le ladder per-shard avec les points de {@code su} pour {@code contestID}, puis calcule et pose {@code cd.rank}
+   * et {@code cd.totalParticipants}. {@code reachedAt} : conservé si les points sont INCHANGÉS, remis à MAINTENANT si les points
+   * ont bougé (le joueur vient d'atteindre un nouveau total). Rang = 1 + nb de joueurs STRICTEMENT devant, où « devant » =
+   * plus de points, OU points égaux mais reachedAt plus ANCIEN (départage déterministe). §5 (état partagé, patron arena_ladder).
    */
   public static synchronized void recomputeRank(UserStore store, ServerUser su, long contestID, ContestData cd) {
     if (store == null) return;
-    java.util.Map<Long, Long> ladder = loadLadder(store, su.shardID, contestID);
-    ladder.put(su.userID, cd.rankPoints);
+    java.util.Map<Long, long[]> ladder = loadLadder(store, su.shardID, contestID);
+    long now = com.perblue.heroes.util.TimeUtil.serverTimeNow();
+    long[] prev = ladder.get(su.userID);
+    long myPts = cd.rankPoints;
+    long myReached = (prev != null && prev[0] == myPts) ? prev[1] : now;   // inchangé → garder ; changé/nouveau → maintenant
+    ladder.put(su.userID, new long[]{myPts, myReached});
     saveLadder(store, su.shardID, contestID, ladder);
     int rank = 1;
-    for (long p : ladder.values()) if (p > cd.rankPoints) rank++;
+    for (java.util.Map.Entry<Long, long[]> e : ladder.entrySet()) {
+      if (e.getKey() == su.userID) continue;
+      long p = e.getValue()[0], r = e.getValue()[1];
+      if (p > myPts || (p == myPts && r < myReached)) rank++;
+    }
     cd.rank = rank;
     cd.totalParticipants = ladder.size();
   }
@@ -174,11 +195,15 @@ public final class ServerContestData {
     com.perblue.common.specialevent.components.Contest c =
         (com.perblue.common.specialevent.components.Contest) eventInfo.getComponent(com.perblue.common.specialevent.components.Contest.class);
     if (c == null) return 0;
-    java.util.Map<Long, Long> ladder = loadLadder(store, shardID, contestID);
-    java.util.List<java.util.Map.Entry<Long, Long>> sorted = new java.util.ArrayList<>(ladder.entrySet());
-    sorted.sort((x, y) -> Long.compare(y.getValue(), x.getValue()));   // points décroissants
+    java.util.Map<Long, long[]> ladder = loadLadder(store, shardID, contestID);
+    java.util.List<java.util.Map.Entry<Long, long[]>> sorted = new java.util.ArrayList<>(ladder.entrySet());
+    // Points DÉCROISSANTS, puis reachedAt CROISSANT (le premier arrivé au total départage les ex æquo).
+    sorted.sort((x, y) -> {
+      int c1 = Long.compare(y.getValue()[0], x.getValue()[0]);
+      return c1 != 0 ? c1 : Long.compare(x.getValue()[1], y.getValue()[1]);
+    });
     int total = sorted.size(), delivered = 0, rank = 0;
-    for (java.util.Map.Entry<Long, Long> e : sorted) {
+    for (java.util.Map.Entry<Long, long[]> e : sorted) {
       rank++;
       com.perblue.common.specialevent.components.pieces.ContestRankRewardInfo ri = rankRewardFor(c, rank, total);
       if (ri == null) continue;

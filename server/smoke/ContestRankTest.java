@@ -50,6 +50,21 @@ public final class ContestRankTest {
       ContestData ca2 = (ContestData) ra2.contests.get(cid);
       check(ca2.rank == 1 && ca2.totalParticipants == 2, "A reste 1er sur 2 (" + ca2.rank + "/" + ca2.totalParticipants + ")");
       System.out.println("[contestrank] A re-classé : rang " + ca2.rank + "/" + ca2.totalParticipants + " ✔");
+
+      // DÉPARTAGE des ex æquo (gap A) : 3ᵉ joueur C atteint 500 pts APRÈS A (reachedAt plus récent) → à points ÉGAUX,
+      // A (arrivé le 1ᵉʳ à 500) reste devant C. (busy-wait ~5 ms sur nanoTime pour garantir un horodatage distinct — pas un
+      // sleep shell.)
+      long t0 = System.nanoTime(); while (System.nanoTime() - t0 < 6_000_000L) { /* burn ~6ms */ }
+      ServerUser C = ServerUser.newPlayer(300L, 1);
+      ServerContext.bind(C.gameUser(), C.gameUser().getIndividual());
+      ServerContestData.getContestData(C, cid).rankPoints = 500L;   // MÊME score que A
+      AllContestData rc = ServerContestData.response(C, store);
+      ContestData cc = (ContestData) rc.contests.get(cid);
+      check(cc.rank == 2, "C (500 pts, arrivé APRÈS A) départagé DERRIÈRE A → rang 2 (" + cc.rank + ")");
+      ServerContext.bind(A.gameUser(), A.gameUser().getIndividual());
+      ContestData ca3 = (ContestData) ServerContestData.response(A, store).contests.get(cid);
+      check(ca3.rank == 1, "A (500 pts, arrivé le 1ᵉʳ) reste rang 1 malgré l'ex æquo (" + ca3.rank + ")");
+      System.out.println("[contestrank] ex æquo 500 pts : A (1ᵉʳ arrivé)=rang " + ca3.rank + ", C (après)=rang " + cc.rank + " ✔");
     }
 
     ServerEvents.setOperatorEvents(new ArrayList<>());
