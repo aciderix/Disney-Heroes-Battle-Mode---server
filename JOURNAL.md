@@ -6548,3 +6548,48 @@ Régression **154/154**. Fichiers : `ServerContestExtension.java` (nouveau), `Se
 `LoginServer.java` (activeGuildContest + GET_GUILD_CONTEST_RANKINGS ID-aware), `ContestGuildTest.java` + `ContestGuildSeed.java`
 (nouveaux), `regression.sh`, `JOURNAL.md`, `MEMORY.md`. **⇒ CONTEST 100 % (solo + guilde), TOUS LES GAPS (A/B/C) CLOS & vérifiés
 EN JEU. RESTE hors contest : audit store, Phase 2.**
+
+## 2026-08-24 (g168) — CONTEST : ancrage hebdo (vendredi→jeudi) + câblage de TOUS les hooks de tâches ✅ VÉRIFIÉ EN JEU
+
+Demande utilisateur : « ajoute la possibilité d'ancrage et branche les hooks (tous) ».
+
+- **Découverte clé (bytecode)** : les helpers DU JEU appellent EUX-MÊMES les hooks de contest dans leur `recordOutcome`/
+  `doRaid` : `CampaignHelper`→`onCampaignAttack`, `DifficultyModeHelper`→`onDifficultyModeAttack`, `SurgeHelper`→
+  `onSurgeAttack`, `ExpeditionHelper`→`onExpeditionCompleted`, `InvasionHelper.recordBossFightOutcome`→`onInvasionBossAttack`
+  (+`onBreakerAttack`), `WarClientHelper`→`onWarSabotage`. Le crédit passait par une extension statique (`ContestHelper.
+  extension`) NULLE en headless → d'où gap C (déjà corrigé par `ServerContestExtension`). ⇒ Pattern le PLUS FIDÈLE (§3, aucun
+  argument inventé §4) : **`ServerContestData.prepare(su,user)` AVANT le `recordOutcome` du jeu + `deliverEarnedProgressRewards`
+  après** — le jeu crédite lui-même le blob per-user (rendu blob-backed par prepare). Seuls les hooks pilotés par l'ÉCRAN client
+  (`onWarAttack`, `onExpeditionAttack` per-combat) ou une ré-exéc serveur BESPOKE (invasion = accumulation manuelle des dégâts)
+  nécessitent un appel EXPLICITE.
+- **Ancrage hebdomadaire (fidélité : contests DHBM = 1 semaine, vendredi→jeudi)** : `ServerEvents.weeklyContestWindow(now)` =
+  dernier **vendredi 00:00 UTC** ≤ now → +7 j (java.time, ZoneOffset.UTC). `AdminEvents --contest-weekly` (au lieu de `--days`).
+  L'heure de reset (00:00 UTC) = choix opérateur (contests hors `.tab`).
+- **Câblage** :
+  - prepare-avant/deliver-après (hook interne du helper) : `ServerUser.recordCampaignAttack` (**refactoré** : l'ancien appel
+    explicite `onCampaignAttack` retiré → sinon DOUBLE-compte avec le hook interne, désormais prepare-avant = crédit unique),
+    `ServerUser.recordDifficultyModeAttack` (Port), `ServerSurgeState.applyAttack` (+`store.save(user)` dans le handler surge,
+    qui ne sauvait que le SurgeData), `ServerExpedition` doRaid (→`onExpeditionCompleted`).
+  - hook EXPLICITE via `ServerContestData.record` (lineups du wire `base`) : handler `InvasionBossAttack` (`ba.base` ;
+    le serveur accumule les dégâts manuellement, n'appelle pas `recordBossFightOutcome`), handler `WarAttack` (`wa.base`
+    +`store.save(user)` ; `onWarAttack` est piloté par l'écran, `WarHelper` ne l'appelle pas).
+  - ITEM_EARN/OPEN_CHEST : déjà couverts (openChest = prepare + onChestOpen). ITEM_BURN/RESOURCE_EARN/BURN : créditent partout
+    où un helper du jeu mute items/ressources avec prepare actif ; sites additionnels à brancher au besoin (honnête).
+  - Modes SANS chemin serveur (Coliseum/FightPit/Heist) : rien à brancher (non implémentés côté serveur).
+- **Anti-double-compte** : pour les modes helper-internes, prepare-avant SANS appel explicite (un seul crédit) ; le test le
+  prouve sur le vrai `recordCampaignAttack` (10 pts/combat, pas 20, malgré le hook interne de CampaignHelper).
+- `ContestCampaignRecordTest` (régression **155/155**) : vrai `recordCampaignAttack` → 10 pts (single), 20 au 2e, persiste en
+  DB ; `weeklyContestWindow` = vendredi 00:00 +7j, now dans la fenêtre. #67 (GuildContest/GuildContestSeason), CampaignAttack/
+  Persist inchangés.
+- **✅ EN JEU** : `AdminEvents --contest 900013 --contest-weekly --contest-title "WEEKLY BATTLES" --contest-task BATTLE_WON:10:1
+  --contest-progress 20:ACE:5 --contest-rank number:1:ACE:500`. `nav CONTESTS` → **« Contest Ends In: 3d 6h »** (lundi 24 →
+  vendredi 28 = ancrage Ven→Jeu confirmé) + Score 0 (`hooks_0.png`) → `campfight 1 1`+`campquick` (CAMPAGNE WIN) → serveur
+  `GET_CONTEST_RANKINGS(900013) → score 10` → `portattack PORT_DOCKS` (DifficultyModeAttack PORT_DOCKS WIN → recordOutcome) →
+  `nav CONTESTS` → serveur `score 20` → **Score 20 / Rank 1st, barre pleine au palier 20** (`hooks_2.png`). ⇒ campagne (chemin
+  refactoré prepare-avant) ET Port (nouveau hook diffmode) créditent en jeu ; ancrage hebdo affiché.
+
+Régression **155/155**. Fichiers : `ServerEvents.java` (weeklyContestWindow), `AdminEvents.java` (--contest-weekly),
+`ServerUser.java` (campagne refactorée + diffmode prepare-avant), `ServerSurgeState.java` (surge prepare/deliver),
+`ServerExpedition.java` (expedition prepare/deliver), `LoginServer.java` (surge store.save + invasion/war hooks explicites),
+`ContestCampaignRecordTest.java` (nouveau), `regression.sh`, `JOURNAL.md`, `MEMORY.md`. **⇒ Tous les hooks de tâches de contest
+branchés (via le mécanisme le plus fidèle) + ancrage hebdo fidèle, vérifiés EN JEU. RESTE hors contest : audit store, Phase 2.**
