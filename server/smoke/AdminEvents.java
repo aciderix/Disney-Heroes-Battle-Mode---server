@@ -62,6 +62,11 @@ public final class AdminEvents {
     com.perblue.heroes.network.messages.ResourceType ecCurrency = com.perblue.heroes.network.messages.ResourceType.DIAMONDS;
     String ecTitle = "Event Crate", ecInfo = "Limited-time bonus crate!";
     java.util.List<ServerEvents.ChestDrop> ecDrops = new java.util.ArrayList<>();  // --ec-drop RESULT[:QTY[:WEIGHT]] (répétable)
+    boolean contest = false, closeContest = false, contestGuild = false, contestAggregate = false;   // CONTEST (leaderboard)
+    long contestID = 900_010L;
+    java.util.List<ServerEvents.ContestTask> contestTasks = new java.util.ArrayList<>();       // --contest-task TYPE:POINTS:COUNT[:MAXTIMES:MAXDAILY]
+    java.util.List<ServerEvents.ContestProgress> contestProgress = new java.util.ArrayList<>(); // --contest-progress POINTS:ITEM:QTY
+    java.util.List<ServerEvents.ContestRank> contestRanks = new java.util.ArrayList<>();        // --contest-rank / --contest-rank-unit KIND:RANK:ID:QTY
     int days = 30, bonus = 1;
     for (int i = 0; i < a.length; i++) {
       switch (a[i]) {
@@ -107,6 +112,36 @@ public final class AdminEvents {
         case "--close-team-level": closeTeamLevel = true; break;
         case "--reward-item":  pendingTlItem = a[++i].toUpperCase(); tlItems.add(pendingTlItem); tlQtys.add(1); break;
         case "--reward-qty":   if (pendingTlItem != null) tlQtys.set(tlQtys.size() - 1, Integer.parseInt(a[++i])); break;
+        case "--contest": contest = true;
+          if (i + 1 < a.length && a[i + 1].matches("\\d+")) contestID = Long.parseLong(a[++i]); break;
+        case "--close-contest": closeContest = true; break;
+        case "--contest-guild": contestGuild = true; break;
+        case "--contest-aggregate": contestAggregate = true; break;
+        case "--contest-task": {          // TYPE:POINTS:COUNT[:MAXTIMES:MAXDAILY]
+          String[] p = a[++i].split(":");
+          contestTasks.add(new ServerEvents.ContestTask(p[0].toUpperCase(),
+              p.length > 1 ? Integer.parseInt(p[1]) : 10, p.length > 2 ? Integer.parseInt(p[2]) : 1,
+              p.length > 3 ? Integer.parseInt(p[3]) : -1, p.length > 4 ? Integer.parseInt(p[4]) : -1, "", ""));
+          break;
+        }
+        case "--contest-progress": {      // POINTS:ITEM:QTY
+          String[] p = a[++i].split(":");
+          String drop = "{\"kind\":\"ITEM\",\"itemType\":\"" + p[1].toUpperCase() + "\",\"quantity\":" + (p.length > 2 ? p[2] : "1") + "}";
+          contestProgress.add(new ServerEvents.ContestProgress(Long.parseLong(p[0]), java.util.Collections.singletonList(drop)));
+          break;
+        }
+        case "--contest-rank": {          // KIND:RANK:ITEM:QTY  (KIND=percent|number)
+          String[] p = a[++i].split(":");
+          String drop = "{\"kind\":\"ITEM\",\"itemType\":\"" + p[2].toUpperCase() + "\",\"quantity\":" + (p.length > 3 ? p[3] : "1") + "}";
+          contestRanks.add(new ServerEvents.ContestRank(!"number".equalsIgnoreCase(p[0]), Integer.parseInt(p[1]), java.util.Collections.singletonList(drop)));
+          break;
+        }
+        case "--contest-rank-unit": {      // KIND:RANK:UNIT:QTY  (lot ultime = héros vedette)
+          String[] p = a[++i].split(":");
+          String drop = "{\"kind\":\"UNIT\",\"unitType\":\"" + p[2].toUpperCase() + "\",\"quantity\":" + (p.length > 3 ? p[3] : "1") + "}";
+          contestRanks.add(new ServerEvents.ContestRank(!"number".equalsIgnoreCase(p[0]), Integer.parseInt(p[1]), java.util.Collections.singletonList(drop)));
+          break;
+        }
         case "--extra-chest": extraChest = true;
           if (i + 1 < a.length && a[i + 1].matches("\\d+")) extraChestID = Long.parseLong(a[++i]); break;
         case "--close-extra-chest": closeExtraChest = true; break;
@@ -297,6 +332,24 @@ public final class AdminEvents {
           System.out.println("[events] event EXTRA_CHEST ajouté : eventID=" + extraChestID + " coût=" + ecCost + " " + ecCurrency
               + " buyX=" + ecBuyX + " maxBuys=" + ecMaxBuys + " freeBuys=" + ecFreeBuys + " loot=" + ecDrops.size()
               + " entrée(s) (" + days + " j). Coffre bonus visible sur CRATES via REFRESH_SPECIAL_EVENTS.");
+        }
+      }
+
+      if (closeContest) {
+        int before = specs.size();
+        specs.removeIf(js -> js.contains("CONTEST"));
+        changed = changed || specs.size() != before;
+        System.out.println("[events] events CONTEST retirés (" + (before - specs.size()) + ").");
+      }
+      if (contest) {
+        if (contestTasks.isEmpty()) { System.out.println("[events] --contest requiert au moins un --contest-task TYPE:POINTS:COUNT (ex. BATTLE_WON:10:1). Ignoré."); }
+        else {
+          specs.removeIf(js -> js.contains("CONTEST"));
+          specs.add(ServerEvents.specJsonContest(contestID, contestGuild, contestAggregate, contestTasks, contestProgress, contestRanks, start, end));
+          changed = true;
+          System.out.println("[events] event CONTEST ajouté : eventID=" + contestID + (contestGuild ? " [GUILDE]" : " [solo]")
+              + " tâches=" + contestTasks.size() + " paliers=" + contestProgress.size() + " rangs=" + contestRanks.size()
+              + " (" + days + " j). Écran CONTESTS via REFRESH_SPECIAL_EVENTS.");
         }
       }
 

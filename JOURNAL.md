@@ -6335,3 +6335,36 @@ specJsonExtraChest + eventFromSpec + esc), `ServerUser.java` (openChest branche 
 snapshot**), `AdminEvents.java` (flags --extra-chest/--ec-*), `ChestValidateTest.java`/`WishingWellWishTest.java` (throws), `ExtraChestTest.java`
 (nouveau, + cas freeBuys), `regression.sh`, `docs/SPECIAL_EVENTS.md` (§RECON A = ✅ EN JEU), `MEMORY.md`. **RESTE = Contest (dernier
 composant, mode serveur-autoritatif).**
+
+## 2026-08-24 (g161) — SPECIAL_EVENTS live-ops : CONTEST incrément 1 (structure) ✅ headless
+
+Dernier composant live-ops (mode serveur-autoritatif, effort niveau arène/surge → fait par INCRÉMENTS). Incr.1 = structure.
+**Schéma `Contest.load` cracké au bytecode** (parseur-oracle) : `load(info, param2, param3)`, si `formatVersion==0` lit sur le
+nœud COMPLET param2 : `contestInformation{guild,aggregate}` + `contestTask[]` + `contestRankRewards[]` + `contestProgressRewards[]`
+(le nom des 3 listes change selon formatVersion : `contestTask`/`contestRankRewards`/`contestProgressRewards` en v0, `tasks`/
+`rankRewards`/`progressRewards` sinon).
+- **`contestTask[]`** = `ContestTaskInfo(info, json, Class)` : `maxTimes`/`maxDailyTimes`/`pointsEarned`/`taskIndex` + `taskItem{taskData,
+  taskData2, countNeeded, type=<ContestTaskType>, hidden}`.
+- **`contestProgressRewards[]`** = `ContestProgressRewardInfo(info, json, int)` : `pointsRequired` (long) + `rewarditem`.
+- **`contestRankRewards[]`** = `ContestRankRewardInfo(info, json, int)` : `kind` (PERCENT|NUMBER) + `rank` (int) + `rewarditem`.
+- **`rewarditem`** = `RewardGroup(info, json, isStatic)`. **En formatVersion 0, isStatic=true** → `rewarditem` = un drop OU un
+  TABLEAU de drops (`RewardDrop.parse`/`loadRewards`), **PAS** l'objet `{rewardTarget,rewards}` (qui est la forme isStatic=false).
+  Donc `rewarditem:[{kind:ITEM,itemType,quantity}]` (ou `{kind:UNIT,unitType,quantity}` pour un héros vedette).
+- **Contrainte compil** : `ContestTaskType` a un attribut d'annotation de paramètre CORROMPU laissé par dex2jar
+  (`bad RuntimeInvisibleParameterAnnotations`) → javac refuse de le lire en SOURCE. Contourné par **réflexion**
+  (`Class.forName("…ContestTaskType")` pour le ctor `new Contest(type, ctType)`), jamais d'`import`.
+- `ServerEvents.buildContestEvent(id, guild, aggregate, List<ContestTask>, List<ContestProgress>, List<ContestRank>, start, end)`
+  + types publics `ContestTask`/`ContestProgress`/`ContestRank` + `specJsonContest` (round-trip) + branche `eventFromSpec` CONTEST +
+  helpers `dropsArray`/`contestDropsFromSpec`/`dropSpecFrom`. `AdminEvents --contest [id] [--contest-guild] [--contest-aggregate]
+  --contest-task TYPE:POINTS:COUNT[:MAXTIMES:MAXDAILY] --contest-progress POINTS:ITEM:QTY --contest-rank KIND:RANK:ITEM:QTY
+  --contest-rank-unit KIND:RANK:UNIT:QTY / --close-contest`.
+- `ContestTest` (régression) : (1) structure (2 tâches/2 paliers/2 rangs, solo) ; (2) snapshot expose le CONTEST
+  (`getActiveEvents` filtre par éligibilité → user bindé requis) ; (3) round-trip spec.
+- **API repérée pour la suite (§3)** : `ContestHelper.on*` (onCampaignAttack/onChestOpen/onItemEarn/onItemBurn/onResourceBurn/Earn/
+  onSurgeAttack/onWarAttack/onExpeditionAttack/Completed/…) = hooks DU JEU qui créditent les points ; `IContestData`
+  (getProgressPoints/getRankPoints/getCompletedCount/getPartialCount/hasEarnedProgressReward/recordContribution/…) = l'état par-joueur
+  à persister (incr.2) ; `ContestHelper.recordTasks(user, info, taskInfo, now, contestData)` = le cœur du crédit.
+
+Régression **147/147** (`ContestTest`). Fichiers : `ServerEvents.java` (buildContestEvent + ContestTask/Progress/Rank + specJsonContest
++ eventFromSpec + helpers), `AdminEvents.java` (flags --contest/--contest-*), `ContestTest.java` (nouveau), `regression.sh`,
+`docs/SPECIAL_EVENTS.md`, `MEMORY.md`. **SUITE = incr.2 blob progression par-joueur (`ServerContest`/`IContestData`) + `GetContestData`.**

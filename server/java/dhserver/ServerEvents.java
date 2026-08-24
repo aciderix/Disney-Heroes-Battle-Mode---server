@@ -1118,6 +1118,119 @@ public final class ServerEvents {
 
   private static String esc(String s) { return s == null ? "" : s.replace("\\", "\\\\").replace("\"", "\\\""); }
 
+  // --- CONTEST (leaderboard de tâches, solo ou guilde) -----------------------------------------------------------------
+  /**
+   * UNE tâche de contest = un {@code ContestTaskType} (nom, ex. {@code BATTLE_WON}/{@code ITEM_BURN}) qui rapporte
+   * {@code points} par palier de {@code countNeeded} accomplissements ; {@code maxTimes}/{@code maxDailyTimes} bornent le
+   * cumul (−1 = illimité) ; {@code taskData}/{@code taskData2} = filtres optionnels (ex. mode/objet ciblé). Params ADMIN.
+   */
+  public static final class ContestTask {
+    public final String type; public final int points, countNeeded, maxTimes, maxDailyTimes; public final String taskData, taskData2;
+    public ContestTask(String type, int points, int countNeeded, int maxTimes, int maxDailyTimes, String taskData, String taskData2) {
+      this.type = type; this.points = points; this.countNeeded = Math.max(1, countNeeded);
+      this.maxTimes = maxTimes; this.maxDailyTimes = maxDailyTimes;
+      this.taskData = taskData == null ? "" : taskData; this.taskData2 = taskData2 == null ? "" : taskData2;
+    }
+  }
+  /** UN palier de progression = {@code pointsRequired} points → livre {@code rewardDrops} (drops {@code {kind,itemType,quantity}}). */
+  public static final class ContestProgress {
+    public final long pointsRequired; public final List<String> rewardDrops;
+    public ContestProgress(long pointsRequired, List<String> rewardDrops) { this.pointsRequired = pointsRequired; this.rewardDrops = rewardDrops; }
+  }
+  /** UNE récompense de classement = seuil {@code rank} (percentile si {@code percent}, sinon rang absolu) → {@code rewardDrops}. */
+  public static final class ContestRank {
+    public final boolean percent; public final int rank; public final List<String> rewardDrops;
+    public ContestRank(boolean percent, int rank, List<String> rewardDrops) { this.percent = percent; this.rank = rank; this.rewardDrops = rewardDrops; }
+  }
+
+  private static String dropsArray(List<String> drops) {
+    StringBuilder sb = new StringBuilder("[");
+    for (int i = 0; i < drops.size(); i++) { if (i > 0) sb.append(','); sb.append(drops.get(i)); }
+    return sb.append(']').toString();
+  }
+
+  /** Convertit les drops d'une spec ({@code [{item|unit:X, qty:N}]}) en JSON drops du jeu ({@code {kind,itemType|unitType,quantity}}). */
+  private static List<String> contestDropsFromSpec(JsonValue drops) {
+    List<String> out = new ArrayList<>();
+    if (drops != null) for (JsonValue d = drops.child; d != null; d = d.next) {
+      int qty = d.getInt("qty", 1);
+      if (d.has("unit")) out.add("{\"kind\":\"UNIT\",\"unitType\":\"" + d.getString("unit") + "\",\"quantity\":" + qty + "}");
+      else out.add("{\"kind\":\"ITEM\",\"itemType\":\"" + d.getString("item", "ACE_OF_SPADES") + "\",\"quantity\":" + qty + "}");
+    }
+    return out;
+  }
+
+  /**
+   * Construit un événement <b>CONTEST</b> (composant {@code Contest}) : un leaderboard de tâches (solo ou guilde) où le
+   * joueur gagne des POINTS en accomplissant des {@code ContestTaskType}, avec récompenses de PALIER
+   * ({@code progressRewards}, livrées au fil de l'eau) et de RANG ({@code rankRewards}, en fin de contest).
+   *
+   * <p>Recette relevée au bytecode ({@code Contest.load}, formatVersion 0 → lit sur le nœud COMPLET param2) :
+   * {@code contestInformation{guild,aggregate}} + {@code contestTask[]} ({@code ContestTaskInfo} :
+   * {@code maxTimes/maxDailyTimes/pointsEarned/taskIndex + taskItem{taskData,taskData2,countNeeded,type,hidden}}) +
+   * {@code contestProgressRewards[]} ({@code {pointsRequired, rewarditem}}) + {@code contestRankRewards[]}
+   * ({@code {kind:PERCENT|NUMBER, rank, rewarditem}}). En formatVersion 0, {@code rewarditem} = un drop OU un TABLEAU de
+   * drops ({@code RewardGroup} en mode « static », pas l'objet {@code {rewardTarget,rewards}}). Le composant se construit
+   * par ctor direct {@code new Contest(type, ContestTaskType.class)} — {@code ContestTaskType} chargé par réflexion (dex2jar
+   * laisse un attribut d'annotation de paramètre corrompu qui casse la compilation source). <b>Tout = params ADMIN.</b>
+   */
+  public static SpecialEventInfo buildContestEvent(long id, boolean guild, boolean aggregate,
+      List<ContestTask> tasks, List<ContestProgress> progress, List<ContestRank> ranks, long startMs, long endMs) {
+    try {
+      StringBuilder tk = new StringBuilder();
+      int idx = 0;
+      for (ContestTask t : tasks) {
+        if (tk.length() > 0) tk.append(',');
+        tk.append("{\"maxTimes\":").append(t.maxTimes).append(",\"maxDailyTimes\":").append(t.maxDailyTimes)
+          .append(",\"pointsEarned\":").append(t.points).append(",\"taskIndex\":").append(idx++)
+          .append(",\"taskItem\":{\"taskData\":\"").append(esc(t.taskData)).append("\",\"taskData2\":\"").append(esc(t.taskData2))
+          .append("\",\"countNeeded\":").append(t.countNeeded).append(",\"type\":\"").append(t.type).append("\",\"hidden\":false}}");
+      }
+      StringBuilder pr = new StringBuilder();
+      for (ContestProgress p : progress) {
+        if (pr.length() > 0) pr.append(',');
+        pr.append("{\"pointsRequired\":").append(p.pointsRequired).append(",\"rewarditem\":").append(dropsArray(p.rewardDrops)).append('}');
+      }
+      StringBuilder rr = new StringBuilder();
+      for (ContestRank r : ranks) {
+        if (rr.length() > 0) rr.append(',');
+        rr.append("{\"kind\":\"").append(r.percent ? "PERCENT" : "NUMBER").append("\",\"rank\":").append(r.rank)
+          .append(",\"rewarditem\":").append(dropsArray(r.rewardDrops)).append('}');
+      }
+      String full =
+          "{\"kind\":\"CONTEST\",\"id\":" + id + ",\"formatVersion\":0,"
+        + "\"timeRange\":[{\"serverFilter\":\"1-999999\",\"start\":" + startMs
+        +   ",\"end\":{\"kind\":\"TIME\",\"endTime\":" + endMs + "}}],"
+        + "\"contestInformation\":{\"guild\":" + guild + ",\"aggregate\":" + aggregate + "},"
+        + "\"contestTask\":[" + tk + "],"
+        + "\"contestProgressRewards\":[" + pr + "],"
+        + "\"contestRankRewards\":[" + rr + "]}";
+      JsonValue root = JSON.parse(full);
+
+      SpecialEventInfo info = new SpecialEventInfo(SpecialEventType.class);
+      setField(info, "id", id);
+      setField(info, "type", SpecialEventType.CONTEST);
+      setField(info, "formatVersion", 0);
+
+      EventVisibility vis = new EventVisibility(new int[0]);
+      vis.load(info, root, root.get("timeRange"));
+      addComponent(info, vis);
+      addComponent(info, buildMinimalCard(info));
+
+      Class<?> ctType = Class.forName("com.perblue.heroes.game.specialevent.ContestTaskType");
+      @SuppressWarnings({"unchecked", "rawtypes"})
+      com.perblue.common.specialevent.components.Contest contest =
+          new com.perblue.common.specialevent.components.Contest(SpecialEventType.CONTEST, ctType);
+      contest.load(info, root, root);   // lit contestInformation/contestTask/contest*Rewards sur le nœud complet
+      addComponent(info, contest);
+      return info;
+    } catch (RuntimeException e) {
+      throw e;
+    } catch (Exception e) {
+      throw new RuntimeException("buildContestEvent", e);
+    }
+  }
+
   /** Construit UN événement depuis une spec {kind, modes[], bonus, start, end}. */
   private static SpecialEventInfo eventFromSpec(JsonValue spec) {
     String kind = spec.getString("kind", "MODES_OPEN");
@@ -1180,6 +1293,22 @@ public final class ServerEvents {
       return "MISC_BONUS".equals(kind)
           ? buildMiscBonusEvent(id, mults, val, start, end)
           : buildMiscDiscountEvent(id, mults, val, start, end);
+    }
+    if ("CONTEST".equals(kind)) {
+      List<ContestTask> tasks = new ArrayList<>();
+      JsonValue tn = spec.get("tasks");
+      if (tn != null) for (JsonValue t = tn.child; t != null; t = t.next)
+        tasks.add(new ContestTask(t.getString("type", "BATTLE_WON"), t.getInt("points", 10), t.getInt("countNeeded", 1),
+            t.getInt("maxTimes", -1), t.getInt("maxDailyTimes", -1), t.getString("taskData", ""), t.getString("taskData2", "")));
+      List<ContestProgress> progress = new ArrayList<>();
+      JsonValue pn = spec.get("progress");
+      if (pn != null) for (JsonValue p = pn.child; p != null; p = p.next)
+        progress.add(new ContestProgress(p.getLong("points", 100L), contestDropsFromSpec(p.get("drops"))));
+      List<ContestRank> ranks = new ArrayList<>();
+      JsonValue rn = spec.get("ranks");
+      if (rn != null) for (JsonValue r = rn.child; r != null; r = r.next)
+        ranks.add(new ContestRank(r.getBoolean("percent", true), r.getInt("rank", 10), contestDropsFromSpec(r.get("drops"))));
+      return buildContestEvent(id, spec.getBoolean("guild", false), spec.getBoolean("aggregate", false), tasks, progress, ranks, start, end);
     }
     if ("EXTRA_CHEST".equals(kind)) {
       List<ChestDrop> drops = new ArrayList<>();
@@ -1266,6 +1395,46 @@ public final class ServerEvents {
         + ",\"maxBuys\":" + maxBuys + ",\"maxPurchases\":" + maxPurchases + ",\"freeBuys\":" + freeBuys
         + ",\"featured\":" + featured + ",\"title\":\"" + esc(title) + "\",\"info\":\"" + esc(info)
         + "\",\"draws\":" + draws + ",\"drops\":[" + d + "],\"start\":" + start + ",\"end\":" + end + "}";
+  }
+
+  /** Convertit les drops JSON du jeu ({@code {kind,itemType|unitType,quantity}}) en drops de spec ({@code {item|unit,qty}}). */
+  private static String dropSpecFrom(List<String> gameDrops) {
+    StringBuilder sb = new StringBuilder("[");
+    for (int i = 0; i < gameDrops.size(); i++) {
+      if (i > 0) sb.append(',');
+      JsonValue d = JSON.parse(gameDrops.get(i));
+      int qty = d.getInt("quantity", 1);
+      if ("UNIT".equals(d.getString("kind", "ITEM"))) sb.append("{\"unit\":\"").append(d.getString("unitType")).append("\",\"qty\":").append(qty).append('}');
+      else sb.append("{\"item\":\"").append(d.getString("itemType", "ACE_OF_SPADES")).append("\",\"qty\":").append(qty).append('}');
+    }
+    return sb.append(']').toString();
+  }
+
+  /**
+   * Construit la chaîne JSON d'UNE spec CONTEST (params ADMIN : guild/aggregate + tâches + paliers de progression +
+   * récompenses de rang). Symétrique de {@link #buildContestEvent} (round-trip via {@code eventFromSpec}).
+   */
+  public static String specJsonContest(long id, boolean guild, boolean aggregate,
+      List<ContestTask> tasks, List<ContestProgress> progress, List<ContestRank> ranks, long start, long end) {
+    StringBuilder tk = new StringBuilder();
+    for (ContestTask t : tasks) {
+      if (tk.length() > 0) tk.append(',');
+      tk.append("{\"type\":\"").append(t.type).append("\",\"points\":").append(t.points).append(",\"countNeeded\":").append(t.countNeeded)
+        .append(",\"maxTimes\":").append(t.maxTimes).append(",\"maxDailyTimes\":").append(t.maxDailyTimes)
+        .append(",\"taskData\":\"").append(esc(t.taskData)).append("\",\"taskData2\":\"").append(esc(t.taskData2)).append("\"}");
+    }
+    StringBuilder pr = new StringBuilder();
+    for (ContestProgress p : progress) {
+      if (pr.length() > 0) pr.append(',');
+      pr.append("{\"points\":").append(p.pointsRequired).append(",\"drops\":").append(dropSpecFrom(p.rewardDrops)).append('}');
+    }
+    StringBuilder rr = new StringBuilder();
+    for (ContestRank r : ranks) {
+      if (rr.length() > 0) rr.append(',');
+      rr.append("{\"percent\":").append(r.percent).append(",\"rank\":").append(r.rank).append(",\"drops\":").append(dropSpecFrom(r.rewardDrops)).append('}');
+    }
+    return "{\"kind\":\"CONTEST\",\"modes\":[],\"bonus\":0,\"id\":" + id + ",\"guild\":" + guild + ",\"aggregate\":" + aggregate
+        + ",\"tasks\":[" + tk + "],\"progress\":[" + pr + "],\"ranks\":[" + rr + "],\"start\":" + start + ",\"end\":" + end + "}";
   }
 
   /** Construit la chaîne JSON d'UNE spec INCREASED_CHANCES (chanceType → nombre de chances en plus = params ADMIN). */

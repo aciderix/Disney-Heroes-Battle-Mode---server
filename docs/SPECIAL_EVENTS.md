@@ -250,6 +250,17 @@ jamais inventer les poids/loot.
   (2) `buildExtraChestEvent(id, drops, cost, currency, freeBuys, maxBuys, …)` + spec + AdminEvents ; (3) snapshot → CRATES (getSingleEventChest) ;
   (4) chemin d'achat/ouverture du coffre event (`openChest`) + crédit des drops ; (5) vérif EN JEU (CRATES montre le coffre bonus, achat/ouverture).
 
+### B. Contest (CONTEST) — LEADERBOARD de tâches (solo ou guilde) = mode SERVEUR-AUTORITATIF complet — 🚧 EN COURS (incr.1 ✅ headless, g161)
+> **Incr.1 LIVRÉ (g161, headless)** : schéma `Contest.load` cracké (formatVersion 0 → `contestInformation{guild,aggregate}` +
+> `contestTask[]` [`ContestTaskInfo`: maxTimes/maxDailyTimes/pointsEarned/taskIndex + taskItem{taskData,taskData2,countNeeded,type,hidden}]
+> + `contestProgressRewards[]` [`{pointsRequired, rewarditem}`] + `contestRankRewards[]` [`{kind:PERCENT|NUMBER, rank, rewarditem}`] ;
+> **`rewarditem` en v0 = un drop ou un TABLEAU de drops** (`RewardGroup` isStatic=true), PAS `{rewardTarget,rewards}`). Ctor direct
+> `new Contest(type, ContestTaskType.class)` — **ContestTaskType chargé par RÉFLEXION** (`Class.forName`), car dex2jar y laisse un
+> attribut d'annotation de paramètre corrompu qui casse la compilation source. `buildContestEvent`+`specJsonContest`+`AdminEvents --contest`
+> + `ContestTest` (structure/snapshot/round-trip). **Reste incr.2-5** (blob progression `IContestData`, wiring `ContestHelper.on*`, classement,
+> réclamation, en jeu). **API repérée** : `ContestHelper.on*`(campaign/chest/item/resource/surge/war/expedition…)+`recordTasks` = crédit du jeu ;
+> `IContestData`(getProgressPoints/getRankPoints/getCompletedCount/…) = l'état par-joueur.
+
 ### B. Contest (CONTEST) — LEADERBOARD de tâches (solo ou guilde) = mode SERVEUR-AUTORITATIF complet
 **Mécanique RÉELLE (g159, helpshift PerBlue + communauté ; wiki fandom bloqué 402)** — cf. `perblue.helpshift.com/.../178-what-are-progress-and-rank-rewards`.
 Un contest = event à durée limitée où le joueur gagne des POINTS en accomplissant un `ContestTaskType` (dépenser/gagner Gold/Diamonds/Mémoires/
