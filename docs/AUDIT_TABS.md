@@ -1,11 +1,11 @@
 # AUDIT A5 — couverture des `.tab` (données du jeu)
 
-> AUTO-GÉNÉRÉ par `tools/audit/audit.sh a5` — 2026-08-24T21:27Z. Carte `.tab → classe Stats` (le code du jeu associe CHAQUE
+> AUTO-GÉNÉRÉ par `tools/audit/audit.sh a5` — 2026-08-24T21:36Z. Carte `.tab → classe Stats` (le code du jeu associe CHAQUE
 > `.tab` à une classe `Stats` = la « partie du jeu » concernée ; le PACKAGE = le mode/feature). "Nommée serveur" =
 > la classe apparaît dans `server/java` (⚠️ approximation : une classe NON nommée peut être chargée par la LOGIQUE
 > du jeu que le serveur exécute — ex. CampaignStats via CampaignHelper — donc « non nommée » ≠ « inutilisée »).
 
-**272 `.tab` sur disque · 265 référencées par le code · 67 classes Stats (26 nommées serveur).**
+**273 `.tab` sur disque · 265 référencées par le code · 67 classes Stats (26 nommées serveur).**
 
 ## .tab SUR DISQUE mais NON référencées par une classe (orphelines / chargées par nom dynamique)
 - `content.1.tab`
@@ -20,7 +20,6 @@
 > NB : les `content.N.tab` sont chargées par nom CONSTRUIT (`content.<shard>.tab`, ContentStats) → non orphelines.
 
 ## .tab RÉFÉRENCÉES par le code mais ABSENTES du disque (à extraire ? gap d'extraction)
-- `unit_abilities.tab`
 
 ## Carte par FEATURE (package) — classe Stats + nb .tab + nommée serveur
 

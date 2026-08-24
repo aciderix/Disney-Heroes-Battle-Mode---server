@@ -185,12 +185,15 @@ a5() {
   # 1) carte .tab → classe Stats (une passe sur les packages de données du jar)
   ( cd "$WORK"; unzip -oq "$GAME" 'com/perblue/heroes/game/data/*' 'com/perblue/common/stats/*' 2>/dev/null )
   local MAP; MAP="$(mktemp)"
-  grep -aroE '[a-z0-9_]+\.tab' "$WORK" --include='*.class' 2>/dev/null \
+  # NB : capter aussi les variantes BINAIRES `.tabb` (double b — le jeu charge binaire-d'abord, forceText=false),
+  # sinon faux positif « référencée mais absente » (unit_abilities/friendship_campaign).
+  grep -aroE '[a-z0-9_]+\.tabb?' "$WORK" --include='*.class' 2>/dev/null \
     | sed -E "s#^${WORK}/##; s#\.class:# #" \
     | awk '{cls=$1; tab=$2; sub(/\$.*/,"",cls); gsub("/",".",cls); print tab"\t"cls}' | sort -u > "$MAP"
-  # 2) .tab sur disque vs référencées
-  ls "$ROOT/game-data/stats"/*.tab 2>/dev/null | sed 's#.*/##' | sort -u > "$WORK/ondisk"
-  cut -f1 "$MAP" | sed -E 's/^0//' | sort -u > "$WORK/refd"   # (le '0' initial = artefact de concat strings)
+  # 2) .tab/.tabb sur disque vs référencées. NORMALISATION `.tabb`→`.tab` : le binaire `.tabb` SATISFAIT la référence
+  #    logique `.tab` (le jeu charge binaire-d'abord via StatFileHelper) → sinon faux « orpheline »/« absente ».
+  ls "$ROOT/game-data/stats"/*.tab "$ROOT/game-data/stats"/*.tabb 2>/dev/null | sed 's#.*/##; s/\.tabb$/.tab/' | sort -u > "$WORK/ondisk"
+  cut -f1 "$MAP" | sed -E 's/^0//; s/\.tabb$/.tab/' | sort -u > "$WORK/refd"   # (le '0' initial = artefact de concat strings)
   # 3) classes Stats nommées dans server/java
   local USED; USED="$(mktemp)"
   cut -f2 "$MAP" | sort -u | while read -r cls; do

@@ -6671,3 +6671,27 @@ telle partie du jeu ? ».
 Aucun code serveur modifié (outil + docs) → régression 155/155 inchangée. Fichiers : `tools/audit/audit.sh` (axe a5),
 `docs/AUDIT_TABS.md` (nouveau), `docs/PHASE2_TRACKING.md` (triage A5), `JOURNAL.md`, `MEMORY.md`. **SUITE = décision util. sur
 les GAPS de feature A5 (implémenter codebase/reinfection/chest-upgrade/airdrop… ou documenter hors scope) + les 7 GAPS A2.**
+
+## 2026-08-24 (g172) — Triage Phase 2, ÉTAPE 1 : `unit_abilities.tab(b)` — FAUX POSITIF résolu (non-gap)
+
+Ordre de travail utilisateur (triage factuel avant toute implémentation). Étape 1 = `unit_abilities.tab`.
+
+- **Pourquoi « référencée mais absente » ?** L'APK ne contient PAS `unit_abilities.tab` (texte) mais `unit_abilities.tab**b**`
+  (BINAIRE, double « b »). `extract_game_data.sh` fait un simple `unzip assets/stats/*` → le `.tabb` EST bien extrait sur
+  disque. Il n'y a **que 2 binaires** dans l'APK : `unit_abilities.tabb` + `friendship_campaign.tabb`. Le code du jeu
+  référence le nom LOGIQUE `.tab` ; `StatFileHelper` (ouvreur `ServerStats`, `forceText()=false`) essaie le **binaire `.tabb`
+  d'abord**, puis retombe sur le texte `.tab`. **Preuve** : `friendship_campaign.tabb` alimente la campagne d'amitié ✅
+  vérifiée EN JEU → la résolution `.tabb` fonctionne, donc `unit_abilities.tabb` aussi.
+- **Faux positif de l'outil A5** : (a) regex `[a-z0-9_]+\.tab` tronquait `.tabb`→`.tab` (fausse « référence ») ; (b) glob
+  `*.tab` ne matchait pas `.tabb` (fausse « absence »/« orpheline »). **Corrigé** dans `tools/audit/audit.sh` : regex `\.tabb?`
+  + normalisation `.tabb`→`.tab` à la comparaison. Re-run A5 : « absentes du disque » = ∅ ; orphelines = seulement
+  `content.N.tab` (nom construit) + `invasion_boss_rewards.tab` (loot client). `friendship_campaign.tabb`/`unit_abilities.tabb`
+  ne sont plus signalés.
+- **Besoin serveur ?** `grep AbilityStats|unit_abilities server/java` = 0 → le serveur ne charge JAMAIS explicitement les
+  aptitudes. C'est **client-only** : données d'aptitudes des héros, lues par la SIMULATION de combat CÔTÉ CLIENT (combat
+  client-autoritatif via unidbg) ; le serveur ne rejoue que la progression (`recordOutcome`), pas la simulation. **Aucun ajout
+  artificiel** (le fichier est présent et chargeable au cas où). ⇒ **VERDICT : non-gap [OK-connu]**, documenté.
+
+Aucun code serveur modifié (correctif outil d'audit + docs) → régression 155/155 inchangée. Fichiers : `tools/audit/audit.sh`
+(fix `.tabb`), `docs/AUDIT_TABS.md` (régénéré), `docs/PHASE2_TRACKING.md` (résolution étape 1), `JOURNAL.md`. **SUITE = étape 2
+(boucler les 7 GAPS A2).**

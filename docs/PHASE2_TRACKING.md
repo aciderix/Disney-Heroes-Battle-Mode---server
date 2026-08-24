@@ -89,9 +89,16 @@ Aucun MODE oublié détecté ; le reste = sous-écrans/onglets d'un mode déjà 
   `battle_pass_v2_*`→`BattlePassV2Stats`, `invasion_*`→`InvasionStats`…).
 - **Orphelines sur disque** : `content.{1,13,14,21,23,25,99}.tab` (⚠️ **PAS orphelines** — chargées par nom CONSTRUIT
   `content.<shard>.tab` via `ContentStats`) + `invasion_boss_rewards.tab` (loot tiré CÔTÉ CLIENT, §SHIMS #25 — normal).
-- **Référencée par le code mais ABSENTE du disque** : **`unit_abilities.tab`** → notre `extract_game_data.sh` ne l'extrait
-  pas. **[À VÉRIFIER]** : le serveur en a-t-il besoin ? (le combat est client-autoritatif via unidbg → probablement non côté
-  serveur, mais à confirmer ; sinon = simple lacune d'extraction sans impact serveur).
+- **~~Référencée mais absente : `unit_abilities.tab`~~ → RÉSOLU (2026-08-24, étape 1) : FAUX POSITIF de l'outil, PAS un gap.**
+  L'APK ne livre `unit_abilities` et `friendship_campaign` qu'en variante **BINAIRE `.tabb`** (double « b » ; les 2 seuls
+  binaires) — bien extraites sur disque. Le jeu les charge **binaire-d'abord** (`ServerStats.forceText()=false` → « essaie
+  `.tabb` puis `.tab` » ; `StatFileHelper`). **Preuve** : `friendship_campaign.tabb` alimente la campagne d'amitié ✅ vérifiée
+  en jeu → la résolution `.tabb` marche, donc `unit_abilities.tabb` l'est aussi. L'outil A5 flagguait à tort car (a) le regex
+  `\.tab` tronquait `.tabb`, (b) le glob `*.tab` ratait `.tabb` → **corrigé** (regex `\.tabb?` + normalisation `.tabb`→`.tab`).
+  **Besoin serveur** : le serveur ne nomme JAMAIS `AbilityStats`/`unit_abilities` (grep server/java = 0) → **client-only**
+  (données d'aptitudes des héros, lues par la SIMULATION de combat côté CLIENT, qui est client-autoritative via unidbg ; le
+  serveur ne rejoue que la progression `recordOutcome`, pas la simulation). Aucun ajout artificiel — le fichier est présent et
+  chargeable si un chemin serveur venait à en avoir besoin. ⇒ **[OK-connu]**, non-gap.
 - **⚠️ « Nommée serveur » est APPROXIMATIF** : beaucoup de features à `—` sont en réalité UTILISÉES via la logique du jeu que
   le serveur exécute (sans que notre glue nomme la classe) — **CONFIRMÉ implémentées** : `CampaignStats`, `FriendshipStats`/
   `FriendshipCampaignStats`, `CollectionStats` (CollectionClaim/Mastery/Avatar ✅), `GuildCheckInStats` (GuildCheckInTest ✅),
