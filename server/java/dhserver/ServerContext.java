@@ -167,6 +167,11 @@ public final class ServerContext {
       try {
         Class.forName("com.perblue.heroes.game.data.patchedheroes.PatchStats");
       } catch (Throwable t) { System.out.println("[ctx] warm-up PatchStats: " + t); }
+      // CONTEST (gap C) : installe l'extension serveur de ContestHelper (crédit des tâches de contest de GUILDE — sinon
+      // le champ statique `extension` est null en headless et le crédit de guilde est perdu ; le solo reste crédité à
+      // l'identique, sans double-compte — vérifié). §3 : nous sommes le backend, les méthodes record* par défaut du jeu
+      // font le vrai barème.
+      ServerContestExtension.install();
       System.out.println("[ctx] DH.app headless + données du jeu + couche évènements spéciaux");
     } catch (Throwable t) {
       throw new RuntimeException("échec init contexte serveur (DH.app)", t);

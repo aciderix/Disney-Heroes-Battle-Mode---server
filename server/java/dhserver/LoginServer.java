@@ -619,12 +619,19 @@ public final class LoginServer {
                     + gr.topGuilds.size() + " guilde(s), ton rang " + gr.yourGuildRank + "/" + all.size()
                     + " valeur " + gr.yourGuildValue + ")");
               } else if (act.command == com.perblue.heroes.network.messages.CommandType.GET_GUILD_CONTEST_RANKINGS) {
-                // CONTEST DES GUILDES (#67) — leaderboard RÉEL : guildes du shard triées par GuildInfo.contestPoints.
-                com.perblue.heroes.network.messages.GuildContestRankings gc = buildGuildContestRankings(user);
+                // CONTEST DE GUILDE — l'action porte l'ID du contest (extra ID). Si l'ID = un contest de GUILDE actif du
+                // composant SPECIAL_EVENTS `Contest` → leaderboard agrégé serveur-autoritatif (somme des points des membres,
+                // gap C) ; sinon fallback #67 (guildes triées par GuildInfo.contestPoints).
+                long gContestID = extraLong(act, com.perblue.heroes.network.messages.ActionExtraType.ID, 0);
+                com.perblue.heroes.network.messages.GuildContestRankings gc =
+                    activeGuildContest(user, gContestID) != null
+                        ? ServerContestData.guildRankings(store, user, gContestID)
+                        : buildGuildContestRankings(user);
                 gc.setAsReplyTo(m);
                 c.send(gc);
-                System.out.println("[login] <== GET_GUILD_CONTEST_RANKINGS → ==> GuildContestRankings ("
-                    + gc.topGuilds.size() + " guilde(s))");
+                System.out.println("[login] <== GET_GUILD_CONTEST_RANKINGS(id=" + gContestID + ") → ==> GuildContestRankings ("
+                    + gc.topGuilds.size() + " guilde(s), ta guilde "
+                    + (gc.yourGuildInfo == null ? "-" : ("score " + gc.yourGuildInfo.points + " rang " + gc.yourGuildInfo.rank)) + ")");
               } else if (act.command == com.perblue.heroes.network.messages.CommandType.GET_CONTEST_RANKINGS) {
                 // CONTEST DES JOUEURS — l'action porte l'ID du contest (extra ID). Deux régimes :
                 //  (a) contest SOLO du composant SPECIAL_EVENTS `Contest` (leaderboard SERVEUR-AUTORITATIF, ladder per-shard) ;
@@ -2835,6 +2842,24 @@ public final class LoginServer {
             if (ct != null && !ct.isGuildContest()) return e;
           }
         } catch (Throwable t) { System.out.println("[login]     ! activeSoloContest: " + t); }
+        return null;
+      }
+
+      /** L'{@code SpecialEventInfo} du contest de GUILDE (composant {@code Contest}, {@code isGuildContest()}) d'ID
+       *  {@code contestID} ACTIF pour {@code u}, ou {@code null} (⇒ fallback contest de guilde #67). {@code u} doit être bindé. */
+      @SuppressWarnings("unchecked")
+      private com.perblue.common.specialevent.SpecialEventInfo activeGuildContest(ServerUser u, long contestID) {
+        if (contestID <= 0) return null;
+        try {
+          com.perblue.heroes.game.specialevent.SpecialEventSnapshot snap = ServerEvents.snapshot();
+          for (Object o : snap.getActiveEvents()) {
+            com.perblue.common.specialevent.SpecialEventInfo e = (com.perblue.common.specialevent.SpecialEventInfo) o;
+            if (e.getID() != contestID) continue;
+            com.perblue.common.specialevent.components.Contest ct =
+                (com.perblue.common.specialevent.components.Contest) e.getComponent(com.perblue.common.specialevent.components.Contest.class);
+            if (ct != null && ct.isGuildContest()) return e;
+          }
+        } catch (Throwable t) { System.out.println("[login]     ! activeGuildContest: " + t); }
         return null;
       }
 

@@ -93,11 +93,21 @@ public final class ServerContestData {
       com.perblue.heroes.game.specialevent.SpecialEventSnapshot snap = ServerEvents.snapshot();
       for (Object o : snap.getActiveEvents()) {
         com.perblue.common.specialevent.SpecialEventInfo e = (com.perblue.common.specialevent.SpecialEventInfo) o;
-        if (e.getComponent(com.perblue.common.specialevent.components.Contest.class) != null) {
+        com.perblue.common.specialevent.components.Contest ct =
+            (com.perblue.common.specialevent.components.Contest) e.getComponent(com.perblue.common.specialevent.components.Contest.class);
+        if (ct != null) {
           long id = e.getID();
-          ContestData cd = getContestData(su, id);
-          recomputeRank(store, su, id, cd);   // classement serveur-autoritatif (ladder per-shard)
-          resp.contests.put(id, cd);
+          if (ct.isGuildContest()) {
+            // Contest de GUILDE : l'entrée (lue par getGuildContestData côté client) porte l'AGRÉGAT de ma guilde
+            // (barre de progression + paliers de guilde). Le crédit reste per-membre (patron gap B) ; on agrège à la lecture.
+            ServerGuild mine = null;
+            try { long gid = su.currentGuildID(); if (gid != 0) mine = store.loadGuild(su.shardID, gid); } catch (Throwable ignore) {}
+            resp.contests.put(id, guildAggregateData(store, mine, id));
+          } else {
+            ContestData cd = getContestData(su, id);
+            recomputeRank(store, su, id, cd);   // classement serveur-autoritatif (ladder per-shard)
+            resp.contests.put(id, cd);
+          }
         }
       }
     } catch (Throwable t) { System.out.println("[contest] response: " + t); }
@@ -272,6 +282,85 @@ public final class ServerContestData {
       }
     } catch (Throwable t) { System.out.println("[contest] soloRankings: " + t); }
     return cr;
+  }
+
+  // --- CONTEST DE GUILDE (agrégé) — gap C -----------------------------------------------------------------------------------
+  // Un contest de GUILDE ({@code Contest.isGuildContest()}) classe les GUILDES ; son score = la SOMME (agrégat) des points de
+  // contest per-user de ses MEMBRES ({@code isAggregateContest()}). Le crédit per-membre écrit déjà dans le blob per-user de
+  // chaque membre (patron gap B). On AGRÈGE à la lecture (dérivé, pas de stockage guilde séparé) → fidèle §3/§4, zéro invention.
+
+  /** Les points de contest per-user (persistés) de {@code mu} pour {@code contestID}, en LECTURE seule (pas de mutation/blob frais). */
+  @SuppressWarnings("unchecked")
+  static long memberRankPoints(ServerUser mu, long contestID) {
+    try {
+      AllContestData all = mu.contestDataOrNull();
+      if (all == null || all.contests == null) return 0L;
+      ContestData cd = (ContestData) all.contests.get(contestID);
+      return cd == null ? 0L : cd.rankPoints;
+    } catch (Throwable t) { return 0L; }
+  }
+
+  /** Score AGRÉGÉ d'une guilde pour {@code contestID} = somme des points de contest per-user de ses membres. */
+  public static synchronized long guildAggregate(UserStore store, ServerGuild g, long contestID) {
+    if (g == null) return 0L;
+    long sum = 0L;
+    for (Long mid : g.memberIDs) {
+      try {
+        ServerUser mu = store.loadIfExists(mid, g.shardID);
+        if (mu != null) sum += memberRankPoints(mu, contestID);
+      } catch (Exception e) { System.out.println("[contest] guildAggregate membre " + mid + ": " + e); }
+    }
+    return sum;
+  }
+
+  /** {@code ContestData} AGRÉGÉ (score de la guilde) pour l'écran : {@code progressPoints=rankPoints=agrégat} (barre de progression
+   *  + paliers de guilde lus dessus). {@code extraData} initialisé pour éviter tout NPE côté client. */
+  public static ContestData guildAggregateData(UserStore store, ServerGuild g, long contestID) {
+    ContestData d = freshContestData(g == null ? 0 : g.shardID);
+    long agg = guildAggregate(store, g, contestID);
+    d.progressPoints = agg;
+    d.rankPoints = agg;
+    return d;
+  }
+
+  /**
+   * CLASSEMENT DE GUILDE (leaderboard serveur-autoritatif) d'un contest de guilde : construit un
+   * {@link com.perblue.heroes.network.messages.GuildContestRankings} ({@code yourGuildInfo} + {@code topGuilds} +
+   * {@code guildContestData}) en agrégeant, pour CHAQUE guilde du shard, la somme des points de contest de ses membres, puis en
+   * triant décroissant. {@code yourGuildInfo} = la ligne de la guilde de {@code u} (ou {@code null} s'il n'a pas de guilde).
+   */
+  public static synchronized com.perblue.heroes.network.messages.GuildContestRankings guildRankings(
+      UserStore store, ServerUser u, long contestID) {
+    com.perblue.heroes.network.messages.GuildContestRankings gc =
+        new com.perblue.heroes.network.messages.GuildContestRankings();
+    gc.topGuilds = new ArrayList<>();
+    try {
+      long myGid = u.currentGuildID();
+      java.util.List<ServerGuild> all;
+      try { all = store.listGuilds(u.shardID, null, 200); }
+      catch (Exception e) { System.out.println("[contest] guildRankings listGuilds: " + e); return gc; }
+      // Agrège chaque guilde puis trie décroissant (départage : guildID croissant, déterministe).
+      java.util.List<long[]> scored = new ArrayList<>();   // {guildID, points}
+      java.util.Map<Long, ServerGuild> byId = new HashMap<>();
+      for (ServerGuild sg : all) { byId.put(sg.guildID, sg); scored.add(new long[]{sg.guildID, guildAggregate(store, sg, contestID)}); }
+      scored.sort((x, y) -> { int c1 = Long.compare(y[1], x[1]); return c1 != 0 ? c1 : Long.compare(x[0], y[0]); });
+      int idx = 0;
+      for (long[] row : scored) {
+        idx++;
+        com.perblue.heroes.network.messages.GuildContestRankingRow gr =
+            new com.perblue.heroes.network.messages.GuildContestRankingRow();
+        ServerGuild sg = byId.get(row[0]);
+        gr.guildInfo = (sg == null || sg.info == null) ? null : sg.info.basicInfo;   // BasicGuildInfo
+        gr.points = row[1];
+        gr.rank = idx; gr.contestRankIndex = idx - 1;
+        gc.topGuilds.add(gr);
+        if (row[0] == myGid) gc.yourGuildInfo = gr;
+      }
+      // Données agrégées de MA guilde (barre de progression + paliers de l'overview).
+      ServerGuild mine = byId.get(myGid);
+      gc.guildContestData = guildAggregateData(store, mine, contestID);
+    } catch (Throwable t) { System.out.println("[contest] guildRankings: " + t); }
+    return gc;
   }
 
   /** IDs des contests ACTIFS (composant {@code Contest} du snapshot opérateur) pour {@code su} (user déjà bindé). */
