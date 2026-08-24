@@ -6509,3 +6509,42 @@ Régression **153/153**. Fichiers : `LoginServer.java` (handler GET_CONTEST_RANK
 `buildContestRankings`/`buildGuildMemberContestRankings`), `ServerContestData.java` (`soloRankings`), `ContestRankingsTest.java`
 (nouveau), `regression.sh`, `DesktopLauncher.java`/`TutorialDriver.java` (pilote `openchest`), `JOURNAL.md`, `MEMORY.md`.
 **SUITE = gap C (contest de GUILDE de bout en bout, headless + en jeu). Hors contest : audit store, Phase 2.**
+
+## 2026-08-24 (g167) — CONTEST gap C : contest de GUILDE agrégé (crédit per-membre + agrégat + classement) ✅ VÉRIFIÉ EN JEU
+
+Gap C = le dernier « manque » du contest : le mode GUILDE du composant SPECIAL_EVENTS `Contest` (les GUILDES sont classées,
+le score d'une guilde = SOMME des points de contest per-user de ses membres, `isGuildContest()`+`isAggregateContest()`).
+
+- **Cause racine (bytecode)** : le crédit des tâches est délégué par le jeu à `ContestHelper.IContestHelperExtension`
+  (champ statique privé `extension`). Côté CLIENT posée au boot ; côté SERVEUR headless NULLE → `recordTasks(4-arg)` route
+  le guilde vers `extension.recordGuildContestTasks` (null → RIEN crédité). Les 2 méthodes `record*` PAR DÉFAUT de l'interface
+  font le vrai travail : `recordContestTasks`→`user.getContestData(id)`, `recordGuildContestTasks`→`user.getGuildContestData(id)`
+  (**exige `User.guildID>0`** ; sinon renvoie null), toutes deux → `ContestHelper.recordTasks(…,IContestData)` (barème du jeu, §4).
+  `getGuildContestData(id)` = MÊME map `User.contestData`, MÊME clé `id` que le solo (gardée par guildID>0). Sonde empirique :
+  sans extension → crédit guilde = 0 ; avec une extension → crédit guilde OK ET solo toujours EXACT (pas de double-compte).
+- **Correctif (§3, nous sommes le backend PerBlue)** :
+  - `ServerContestExtension implements IContestHelperExtension` : implémente les 2 méthodes ABSTRAITES (`earnedPoints`/
+    `earnedProgressLevel` = no-op tracé) et LAISSE les `record*` par défaut faire le crédit. Installée par RÉFLEXION dans
+    `ServerContext.init` (champ `extension` privé, pas de setter). Idempotent. La livraison des paliers reste
+    `ServerContestData.deliverEarnedProgressRewards` (idempotent, scan).
+  - `ServerContestData` : `memberRankPoints` (lecture seule du blob d'un membre), `guildAggregate` (somme des membres),
+    `guildAggregateData` (ContestData agrégé = barre de progression), `guildRankings` (guildes du shard triées par agrégat →
+    `yourGuildInfo`+`topGuilds`+`guildContestData`) ; `response` (GetAllContestData) guild-aware (entrée guilde = agrégat).
+  - `LoginServer` : `GET_GUILD_CONTEST_RANKINGS` ID-aware (`activeGuildContest`→`ServerContestData.guildRankings` ; sinon
+    fallback #67 `buildGuildContestRankings` inchangé).
+- `ContestGuildTest` (régression **154/154**) : G1(A+C) vs G2(D), BATTLE_WON:10 → A 2 combats=20, C 1=10 ⇒ G1=30 ; D 1=10 ⇒
+  G2=10 ; classement G1 rang 1 / G2 rang 2, `yourGuildInfo`+`guildContestData`=30, round-trip wire. Les tests SOLO restent verts
+  (extension sans régression). DEV : `ContestGuildSeed <guildID> <contestID> <memberID> <points>` (peuple une guilde + crédite un membre).
+- **✅ EN JEU (multi-membres, choix utilisateur)** : `AdminEvents --contest 990011 --contest-guild --contest-aggregate
+  --contest-title "GUILD SHOWDOWN" --contest-task BATTLE_WON:10:1 --contest-progress 50:ACE:5 --contest-rank number:1:ACE:500`
+  ; `ContestGuildSeed 1 990011 2 50` (guilde #1 « Surge Testers » = userID1 + membre 2 crédité 50). Client (userID1) →
+  `nav CONTESTS` → branche GUILDE → écran **« GUILD SHOWDOWN » / COMMUNITY PROGRESS Score 50 / MY RANK 1ST** (l'agrégat inclut
+  le membre 2, userID1=0 ; `gapC_before.png`) → `campfight 1 1`+`campquick` (combat WIN → crédit guilde via extension) →
+  `nav CONTESTS` → serveur `GET_GUILD_CONTEST_RANKINGS(990011) → ta guilde score 60 rang 1` → **Score 60 / MY RANK 1ST/60**
+  (50+10, `gapC_after2.png`). ⇒ l'agrégat inclut bien les AUTRES membres ET monte quand un membre joue.
+
+Régression **154/154**. Fichiers : `ServerContestExtension.java` (nouveau), `ServerContext.java` (install extension),
+`ServerContestData.java` (memberRankPoints/guildAggregate/guildAggregateData/guildRankings + response guild-aware),
+`LoginServer.java` (activeGuildContest + GET_GUILD_CONTEST_RANKINGS ID-aware), `ContestGuildTest.java` + `ContestGuildSeed.java`
+(nouveaux), `regression.sh`, `JOURNAL.md`, `MEMORY.md`. **⇒ CONTEST 100 % (solo + guilde), TOUS LES GAPS (A/B/C) CLOS & vérifiés
+EN JEU. RESTE hors contest : audit store, Phase 2.**
