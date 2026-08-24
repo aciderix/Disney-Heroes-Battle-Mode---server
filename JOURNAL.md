@@ -6767,3 +6767,43 @@ Triage factuel des 6 features candidates A5 (data / code client / messages serve
 Stats (consigne respectée). Aucun code modifié (analyse + doc), régression 156/156. Fichiers : `docs/PHASE2_TRACKING.md` (étape 4),
 `JOURNAL.md`, `MEMORY.md`. **⇒ TRIAGE PHASE 2 (étapes 1→4) TERMINÉ.** Reste = décisions utilisateur (codebase INVESTIGATE ?
 release-picker chantier D ?) puis chantiers B→G.
+
+## 2026-08-24 (g176) — INVESTIGATION APPROFONDIE `codebase` (décision restauration) — CLASSIFICATION : PARTIALLY RESTORABLE (effort MODÉRÉ)
+
+Consigne util. : investiguer Codebase À FOND avant de décider (comme A2), sans implémenter. Répondre : feature historiquement
+complète mais non câblée, ou chantier majeur ? Classification RESTORABLE / PARTIALLY RESTORABLE / NOT PRACTICAL + briques manquantes
++ effort. Preuves = bytecode `libs/game.jar`, `.tab`, code serveur. **Aucun code écrit (audit seul).**
+
+- **Point d'entrée** : grep jar complet → seul `TeamTrialsChooserScreen` référence `CodebaseDetailScreen`+`CodebaseHelper`
+  (`doCodebaseButtonPress`, `lastCodebaseOpen/nextCodebaseEndTime/onCooldownCodebase`). Atteint par nav **permanente**
+  `Destination.TEAM_TRIALS`. **⚠️ CORRECTIF g175** : les Acts (`CodebaseActV1`/`CodebaseIntroActV1`) = TUTORIEL, PAS la porte —
+  Codebase n'est pas « événementiel scripté sans nav » mais un **MODE DE DIFFICULTÉ ROTATIF**.
+- **Difficulty-mode** : `GameMode.CODEBASE` ; `DifficultyModeHelper.getCooldownType(CODEBASE)=CooldownType.CODEBASE_ATTACK`
+  (voisin `SPOTLIGHT_TRIAL_ATTACK`) ; `VIPFeature.CODEBASE_COOLDOWN`. Réf. méthode = `docs/PORT.md`.
+- **Gating (data-gated, déterministe)** : `isFeatureEnabled` = `Unlockables.isUnlocked(getUnlockableForChapter(REQUIRED_CAMPAIGN_
+  CHAPTER=41))` ; `getCurrentIterationID(long,int)` = rotation **3 j** (`SCHEDULING_EPOCH=2035-02-08T12:00Z`+`AVAILABLE_DAYS=3`+
+  `TimeUtil.computeTimeForDay`) ; `getNextEndTime`/`getStartTimeOfCurrentIteration`/`getNextResetTime`. **Aucun event opérateur.**
+- **Réseau (tout ROUTABLE, `MessageFactory` : CodebaseAttack1/GetCodebaseAttackLogs1/CodebaseAttackLogs1/CodebaseAttackLog1/
+  CodebaseAttackInfo1)** : `CodebaseAttack{base,codebaseID,weakness,minorBuffs,finalWeaknessCount,finalScore,
+  megavirusTotalDamageTaken,attackEndTime,lootEarned}` (envoyée par `CodebaseAttackScreen extends LootAttackScreen` = **combat
+  client-autoritatif**) ; `GetCodebaseAttackLogs`→`CodebaseAttackLogs{logs:Map<iter,CodebaseAttackLog{topScores,recent}>}` ;
+  `CodebaseAttackInfo{lineup,rageLevel,score,attackTime}`.
+- **Logique serveur-exécutable présente** : `CodebaseHelper.recordOutcome(...)` (autoritatif : cooldown GAME_MODE_COOLDOWN, chances
+  GAME_MODE_CHANCES_GONE, CODEBASE_REQUIRES_YELLOW_HERO, open/locked ; loot client-reporté ; `tryUpdateHighScores` ;
+  `ContestHelper.onDifficultyModeAttack` ; `UserActivityTracker`), `makeMegaVirus`/`getMegaVirusWeakness`/`getMegaVirusLevel`,
+  `CodebaseLootCalculator`. `.tab` (4) toutes présentes/chargeables.
+- **État serveur** : progression per-user **DÉJÀ dans le wire + AUTO-PERSISTÉE (write-through §3)** — `IndividualUserExtra` porte
+  `currentCodebaseID/currentCodebaseHighScore/currentCodebaseHighRageLevel/lifetimeCodebaseHighScore/lifetimeCodebaseHighRageLevel`,
+  `IndividualUser.setCurrentCodebaseHighScore` = `putfield extra`. **Seul état manquant = blob leaderboard/logs** (patron Arena
+  ladder / Invasion ranking / Surge). NOTRE serveur : grep `server/java` = 0 trace (aucun handler partiel, rien à défaire).
+
+**⇒ CLASSIFICATION : PARTIALLY RESTORABLE — effort MODÉRÉ.** Pas un simple « unwire » ; pas un chantier majeur. **Aucune règle/donnée
+à réécrire (§3/§4 tenables).** Briques manquantes (glue serveur) : (1) handler `CodebaseAttack`→`recordOutcome`+resync
+individualUserExtra+save (patron `recordDifficultyModeAttack`, petit) ; (2) blob leaderboard per-shard `CodebaseAttackLogs`
+(top≤10/recent≤10, patron Arena/Invasion, moyen) ; (3) exposer le bouton chooser (cooldown+timers d'itération, petit) ; (4) vérif
+EN JEU (§8) = compte débloqué chapitre 41 (seul point dur logistique). Non-bloquants (déjà OK) : routing/codec, persistance
+progression (write-through), hook contest (déjà branché), rotation (déterministe data).
+
+Aucun code modifié (audit + doc). Régression **156/156 inchangée** (0 fichier serveur touché). Fichiers : `docs/PHASE2_TRACKING.md`
+(étape 4bis + correctifs étape 4), `JOURNAL.md`, `MEMORY.md`. **⇒ Investigation Codebase TERMINÉE. Décision utilisateur : implémenter
+la restauration (4 briques) OU laisser documenté. Puis chantiers B→G (Phase 2).**

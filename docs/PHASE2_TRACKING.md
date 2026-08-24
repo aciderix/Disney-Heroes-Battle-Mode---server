@@ -127,18 +127,96 @@ OUT OF SCOPE**. (Preuves : écrans UI, destinations `nav`, messages réseau, poi
 
 | Feature | data (.tab) | code client | messages réseau | exposée / point d'entrée | verdict |
 |---|---|---|---|---|---|
-| **codebase** | ✅ 4 | ✅ **UI complète** (Attack/Detail/HeroChooser/AttackLog) | ✅ `CodebaseAttack`/`CodebaseWeakness`/`CodebaseAttackInfo`/`GetCodebaseAttackLogs`/`CodebaseMinorBuffType` | via **Act** (`CodebaseActV1`/`CodebaseIntroActV1` = séquence scriptée/événementielle) — **PAS** de destination nav permanente | **INVESTIGATE** — vrai mode (UI+messages complets) mais **événementiel** (limité) ; restauration = **gros effort** (mode serveur-autoritatif + déclencheur d'act, niveau Surge/Invasion). Pas un reliquat ; décision utilisateur. |
+| **codebase** | ✅ 4 | ✅ **UI complète** (Attack/Detail/HeroChooser/AttackLog) | ✅ `CodebaseAttack`/`CodebaseWeakness`/`CodebaseAttackInfo`/`GetCodebaseAttackLogs`/`CodebaseMinorBuffType` | **nav permanente** via `Destination.TEAM_TRIALS` → `TeamTrialsChooserScreen.doCodebaseButtonPress` ; gate = chapitre 41 ; rotation 3 j déterministe (les Acts ne sont que le tutoriel) | **INVESTIGATE → voir étape 4bis (g176) : PARTIALLY RESTORABLE, effort MODÉRÉ.** _(⚠️ correctif : mode de DIFFICULTÉ rotatif, PAS un event scripté)_ |
 | **emerald** | ✅ 4 | (stat de gear) | `EmeraldStatSlot`/`EmeraldStatTier` (enums) | **DÉJÀ UTILISÉ** côté serveur (`ServerUser.emeraldStatSlotChoices`, lineups) | **OUT OF SCOPE** — sous-système de STAT de gear **déjà intégré** (faux négatif A5 : chargé via la logique du jeu). Rien à faire. |
 | **airdrop** | ✅ 2 | `AirdropHelper` (+`StatsProvider`), **aucun écran** | `AirDropClaimStatus` (1) | piloté par **stat-sync** (`SyncStatDataClientHelper`), pas d'UI joueur | **OUT OF SCOPE** — feature de config/stat-sync sans mode joueur ; pas d'écran ni d'action de réclamation exposée. |
 | **campaign reinfection** | ✅ 4 | aucun écran | **aucun** | sous-mécanique de campagne (`REINFECTIONS_CLEANSED` = tâche contest) | **OUT OF SCOPE** — variante/modificateur de campagne ; passe par le chemin campagne existant (`recordCampaignAttack`), aucun travail serveur distinct. |
 | **chest upgrade** | ✅ 3 | aucun écran | `ChestUpgradeTrackType` (enum) | pas de message/écran distinct | **OUT OF SCOPE** — data alimentant la logique de coffres ; aucune feature/handler distinct à câbler. |
 | **herospotlight** | ✅ 1 | aucun écran | **aucun** | data-only (héros vedette) | **OUT OF SCOPE** — données seules (distinct du SPOTLIGHT_TRIAL, déjà ✅). |
 
-⇒ **Bilan étape 4** : **1 INVESTIGATE** (`codebase` = vrai mode événementiel, restauration = décision + gros effort) ; **5 OUT OF
+⇒ **Bilan étape 4** : **1 INVESTIGATE** (`codebase` → investigué en étape 4bis/g176 = **PARTIALLY RESTORABLE, effort modéré**, mode
+de difficulté rotatif) ; **5 OUT OF
 SCOPE** (`emerald` déjà intégré ; `airdrop` stat-sync sans UI ; `reinfection`/`chest upgrade` sous-mécaniques sans message ;
 `herospotlight` data-only). **0 IMPLEMENT immédiat.** Aucune logique serveur créée sur la seule existence d'une `.tab`/classe
 `Stats` (consigne respectée : on distingue les vraies features restaurables des reliquats/data-only).
 **Décision utilisateur** : veux-tu qu'on INVESTIGUE `codebase` plus loin (faisabilité complète d'une restauration event-mode) ?
+
+#### ÉTAPE 4bis — INVESTIGATION APPROFONDIE `codebase` (2026-08-24, g176) — CLASSIFICATION : **PARTIALLY RESTORABLE (effort MODÉRÉ)**
+
+Investigation factuelle complète (bytecode `libs/game.jar`, `.tab`, code serveur), même méthode que A2. **⚠️ Correction d'un
+fait de l'étape 4** : Codebase n'est **PAS** un « mode événementiel scripté sans nav permanente ». C'est un **MODE DE DIFFICULTÉ
+ROTATIF** (comme Team Trials / Spotlight / Port), les Acts n'étant que le TUTORIEL d'intro. Preuves ci-dessous.
+
+**1. Point d'entrée exact.** Grep jar complet : seul `com.perblue.heroes.ui.screens.TeamTrialsChooserScreen` référence
+`CodebaseDetailScreen` + `CodebaseHelper`. Le chooser expose un bouton Codebase (`doCodebaseButtonPress`, champs
+`lastCodebaseOpen/lastCodebaseTime/nextCodebaseEndTime/onCooldownCodebase`, `TeamTrialsChooserScreen$CodebaseError`). Le chooser
+est atteint par la destination nav **permanente** `UINavHelper.Destination.TEAM_TRIALS`. ⇒ **entrée = nav permanente**, pas un Act.
+`CodebaseActV1`/`CodebaseIntroActV1` = actes de **tutoriel** (déclenchés par `TutorialHelper`), pas la porte d'activation.
+
+**2. Nature « difficulty-mode » (décisif).** `GameMode.CODEBASE` existe ; `DifficultyModeHelper.getCooldownType(CODEBASE) =
+CooldownType.CODEBASE_ATTACK` (voisin de `SPOTLIGHT_TRIAL_ATTACK`) ; `VIPFeature.CODEBASE_COOLDOWN`. ⇒ Codebase est traité
+EXACTEMENT comme les autres modes de difficulté qu'on a déjà livrés (Port/Trials/Surge). `docs/PORT.md` = la référence de méthode.
+
+**3. Activation / gating (data-gated, déterministe, PAS d'event opérateur requis).**
+  - `isFeatureEnabled(IUser)` = `Unlockables.isUnlocked(getUnlockableForChapter(CodebaseStats.getRequiredCampaignChapter()))` →
+    **chapitre de campagne 41** (`codebase_constants.tab: REQUIRED_CAMPAIGN_CHAPTER=41`). Verrou permanent, déblocable.
+  - `isOpen(IUser)` = booléen court (fenêtre d'itération).
+  - `getCurrentIterationID(long,int)` = **rotation déterministe** depuis `SCHEDULING_EPOCH=2035-02-08T12:00Z` + `AVAILABLE_DAYS=3`
+    + `TimeUtil.computeTimeForDay` → itérations de **3 jours**, calculées de `serverTime`+data (comme la rotation Invasion/Surge).
+    `getNextEndTime`/`getStartTimeOfCurrentIteration`/`getNextResetTime` fournissent les timers. **Aucun event AdminEvents requis.**
+
+**4. Requêtes/réponses réseau — toutes ROUTABLES (enregistrées `MessageFactory`).**
+  - `CodebaseAttack` (envoyée par `CodebaseAttackScreen`, sous-classe de `LootAttackScreen`) : `{base:AttackBase, codebaseID,
+    weakness:CodebaseWeakness, minorBuffs:List, finalWeaknessCount, finalScore, megavirusTotalDamageTaken, attackEndTime,
+    lootEarned:List}` → **combat client-autoritatif** (le client joue, envoie l'issue ; le serveur ré-exécute `recordOutcome`).
+  - `GetCodebaseAttackLogs` → réponse `CodebaseAttackLogs {logs: Map<iterationID, CodebaseAttackLog>}` ;
+    `CodebaseAttackLog {topScores:List<CodebaseAttackInfo>, recent:List<CodebaseAttackInfo>}` ;
+    `CodebaseAttackInfo {lineup:List, rageLevel, score, attackTime}`. `CodebaseWeakness`/`CodebaseMinorBuffType` = enums.
+
+**5. Mapping écrans → serveur.** `CodebaseDetailScreen` (overview : lit l'état user + timers, calcule le boss/faiblesse en local) ;
+  `CodebaseHeroChooserScreen` (choix lineup, local) ; `CodebaseAttackScreen` (combat → **envoie `CodebaseAttack`**) ;
+  `CodebaseAttackLogScreen` (**envoie `GetCodebaseAttackLogs`** → rend `CodebaseAttackLogs`, tri top/recent).
+
+**6. Données/`.tab` nécessaires : TOUTES PRÉSENTES & chargeables.** `codebase_constants.tab` (SCHEDULING_EPOCH, AVAILABLE_DAYS=3,
+  BASE_CHANCES=3, BATTLE_LENGTH=90, REQUIRED_CAMPAIGN_CHAPTER=41, DAMAGE_TO_SCORE_MULT, VULNERABILITY_*, MEGABIT_*_WEIGHT,
+  ATTACK_LOG_MAX_*) ; `codebase_rage_levels.tab` ; `codebase_minor_buffs.tab` ; `codebase_iterations.tab` (WEAKNESS_OVERRIDE).
+  Logique de jeu **entièrement présente et serveur-exécutable** : `CodebaseHelper.recordOutcome(...)` (autoritatif : valide cooldown
+  `GAME_MODE_COOLDOWN`, chances `GAME_MODE_CHANCES_GONE`, héros jaune requis `CODEBASE_REQUIRES_YELLOW_HERO`, ouverture/verrou ;
+  crédite le loot client-reporté ; `tryUpdateHighScores` ; `ContestHelper.onDifficultyModeAttack` ; `UserActivityTracker`),
+  `makeMegaVirus(iter)`/`getMegaVirusWeakness(iter)`/`getMegaVirusLevel`, `CodebaseLootCalculator`, timing d'itération.
+
+**7. État serveur pour reproduire le mode.**
+  - **Progression per-user = DÉJÀ dans le modèle wire + AUTO-PERSISTÉE (write-through §3).** `IndividualUserExtra` porte
+    `currentCodebaseID, currentCodebaseHighScore, currentCodebaseHighRageLevel, lifetimeCodebaseHighScore,
+    lifetimeCodebaseHighRageLevel` ; `IndividualUser.setCurrentCodebaseHighScore` fait `extra.currentCodebaseHighScore = …`
+    (putfield sur `extra`). ⇒ `recordOutcome`/`tryUpdateHighScores` persistent **sans nouvelle colonne** (au plus un `resync`).
+  - **SEUL état manquant = le blob leaderboard/logs** (`CodebaseAttackLogs` = Map<iterationID,{topScores,recent}>), **serveur-
+    autoritatif** — exactement le patron déjà fait pour Arena ladder / Invasion ranking / Surge (blob per-shard).
+
+**8. Dépendance event/rotation/date/état :** rotation 3 j déterministe (serverTime+data), gate chapitre 41. **Aucun** déclencheur
+  opérateur. Cohérent avec les modes déjà livrés (pas d'AdminEvents nécessaire ; `AdminClock` bougerait la rotation comme le reste).
+
+**9. Traces dans NOTRE serveur :** grep `server/java` = **0** (seule mention `codebase` = `ServerEvents` sans rapport). Aucun handler
+  partiel. `GetCodebaseAttackLogs` déjà listé comme GAP A2 (étape 2, différé ici). Donc : **rien de câblé, mais rien à défaire.**
+
+**⇒ CLASSIFICATION : PARTIALLY RESTORABLE — effort MODÉRÉ (niveau d'un mode de difficulté type Surge/Trial, PAS un chantier majeur).**
+Ce n'est **pas** un simple « unwire » (il manque un handler d'attaque + le blob leaderboard + l'exposition du bouton), mais il n'y a
+**aucune règle ni donnée à réécrire/inventer** (§3/§4 tenables intégralement). Briques manquantes précises :
+
+  | # | Brique manquante (serveur, glue uniquement) | Patron existant à copier | Effort |
+  |---|---|---|---|
+  | 1 | Handler `CodebaseAttack` : rebuild `User` du wire → `CodebaseHelper.recordOutcome(user, outcome, attackEndTime, codebaseID, lootEarned, minorBuffs, weakness-count coll., finalWeaknessCount, finalScore, snapshot)` → resync `individualUserExtra` codebase + `store.save` | `recordDifficultyModeAttack` (Port/Trials) + hook contest déjà en place | petit |
+  | 2 | Blob leaderboard per-shard `CodebaseAttackLogs` (Map<iter,{topScores≤10, recent≤10}>) : alimenté à chaque `CodebaseAttack`, servi sur `GetCodebaseAttackLogs` ; bornes `ATTACK_LOG_MAX_TOP_ROWS/RECENT_ROWS=10` | Arena ladder / `ServerInvasion.guildMemberRanking` (blob per-shard + tri) | moyen |
+  | 3 | Exposition du bouton Codebase dans le chooser Team Trials : fournir cooldown `CODEBASE_ATTACK` + timers d'itération (`getCurrentIterationID/getNextEndTime`) au client ; le reste (boss/faiblesse) est calculé client via `CodebaseHelper` | timers Port/Trials déjà servis | petit |
+  | 4 | Vérif EN JEU (§8, obligatoire) : compte de test **débloqué au chapitre 41** (`REQUIRED_CAMPAIGN_CHAPTER`) — le seul vrai point dur logistique | outils admin (grant chapters / SetFlag / SkillSetup) | moyen (setup) |
+
+Non-bloquants (déjà résolus par l'archi) : codec/routing (messages enregistrés), persistance progression (write-through),
+intégration contest (`onDifficultyModeAttack` déjà branché via `ServerContestData.prepare`/deliver), rotation (déterministe data).
+
+**Verdict final** : Codebase est **historiquement complet côté logique+data+UI** et **partiellement restaurable** avec un effort
+**modéré** (2 petites briques + 1 blob leaderboard + setup de vérif chapitre 41), **sans réécrire aucune règle**. Ce n'est ni un
+« simple câblage » (le blob leaderboard + le handler sont un vrai incrément), ni un « chantier majeur ». **Décision utilisateur**
+requise avant toute implémentation (aucun code écrit ; investigation seule, §« ne l'implémente pas encore »).
 
 ### ÉTAPE 3 — analyse `content.N.tab` : détermination de l'ère + faisabilité « choix d'ère » (2026-08-24, g174) — ANALYSE, PAS d'implémentation
 
