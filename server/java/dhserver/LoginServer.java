@@ -2020,6 +2020,15 @@ public final class LoginServer {
               c.send(td);
               System.out.println("[login] <== GetTrialEventData(" + req.eventID + ") → ==> TrialEventData (chancesUsed="
                   + td.chancesUsed + ", sous-trials=" + (td.subtrials == null ? 0 : td.subtrials.size()) + ")");
+            } else if (m instanceof com.perblue.heroes.network.messages.GetAllContestData) {
+              // CONTEST incr. 2 — le client envoie GetAllContestData et attend un AllContestData (Map<contestID, ContestData> :
+              // points de progression/rang + compteurs de tâches) pour rendre l'écran CONTESTS. Builder ABSENT du jar client
+              // (état backend PerBlue) → construit+persisté serveur-autoritativement (ServerContest, patron TrialEventData/ArenaInfo).
+              com.perblue.heroes.network.messages.AllContestData acd = ServerContestData.response(user);
+              try { store.save(user); } catch (Exception e) { System.out.println("[login]     ! persist contest: " + e); }
+              acd.setAsReplyTo(m);
+              c.send(acd);
+              System.out.println("[login] <== GetAllContestData → ==> AllContestData (" + (acd.contests == null ? 0 : acd.contests.size()) + " contest(s))");
             } else if (m instanceof com.perblue.heroes.network.messages.GetExpedition) {
               // EXPEDITION #72 incr. 1 — rafraîchissement d'un run ACTIF : le client envoie GetExpedition, le serveur
               // répond GetExpeditionResponse (patron GetSurge) avec le run PERSISTÉ (ou vide → sélection de difficulté).

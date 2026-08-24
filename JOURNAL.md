@@ -6368,3 +6368,31 @@ nœud COMPLET param2 : `contestInformation{guild,aggregate}` + `contestTask[]` +
 Régression **147/147** (`ContestTest`). Fichiers : `ServerEvents.java` (buildContestEvent + ContestTask/Progress/Rank + specJsonContest
 + eventFromSpec + helpers), `AdminEvents.java` (flags --contest/--contest-*), `ContestTest.java` (nouveau), `regression.sh`,
 `docs/SPECIAL_EVENTS.md`, `MEMORY.md`. **SUITE = incr.2 blob progression par-joueur (`ServerContest`/`IContestData`) + `GetContestData`.**
+
+## 2026-08-24 (g162) — CONTEST incrément 2 (état per-user serveur-autoritatif + GetAllContestData + persistance) ✅ headless
+
+Incr.2 = servir/persister la progression per-joueur. Modèle wire découvert : `GetAllContestData` (requête) → `AllContestData`
+(`Map<contestID, ContestData>`) ; `ContestData{extraData:ContestExtraData, progressPoints, rank, rankPoints, totalParticipants}` ;
+`ContestExtraData{taskCompletionCount/taskDailyCompletionCount/taskPartialCount (+old*), contribution, earnedProgressRewards,
+lastDailyResetTime, originalShardID}` ; **`ClientContestData implements IContestData`** = l'objet d'EXÉCUTION qui ENVELOPPE un
+`ContestData` wire (ses setters écrivent dans le wire → persistance directe ; c'est l'objet passé à `ContestHelper.recordTasks/on*`).
+- **⚠️ COLLISION DE NOM évitée** : `ServerContest` EXISTE DÉJÀ (#67, SAISON de contest de GUILDE — guilde-vs-guilde par
+  `GuildInfo.contestPoints`, paliers admin, `Tier`, `deliverContestSeasonReward`). Ce sont **2 systèmes DISTINCTS** : l'ancien =
+  contest de guilde (perk `GUILD_CONTESTS`) ; le NOUVEAU (composant SPECIAL_EVENTS `Contest`) = leaderboard de TÂCHES per-joueur.
+  → ma classe = **`ServerContestData`** (jamais toucher `ServerContest`). [J'avais écrasé `ServerContest` par erreur — restauré
+  via `git checkout`, code déplacé dans `ServerContestData` ; leçon : regarder la cible avant d'écraser.]
+- `ServerContestData` : `freshContestData(shard)` (0 point, maps/list INITIALISÉES sinon NPE au 1ᵉʳ crédit) ; `getAllData(su)`
+  (blob `AllContestData` frais si absent) ; `getContestData(su, id)` (persisté sinon frais + stocké) ; `clientData(id, cd)` =
+  `ClientContestData` ; `response(su)` = `AllContestData` de tous les contests ACTIFS (composant `Contest` du snapshot ; bind requis
+  pour le filtre d'éligibilité).
+- **Persistance** : nouvelle colonne BLOB `contestData` (`AllContestData` sérialisé), patron `trialEventData` — `ServerUser.contestWire/
+  setContestWire/contestDataOrNull/setContestData` + migration `UserStore` + SELECT/INSERT (col 9/11). NULL = aucun état (pré-migration OK).
+- **Handler `LoginServer`** : `GetAllContestData` → `ServerContestData.response(user)` → persiste → répond `AllContestData`.
+- **⚠️ Sémantique du jeu relevée** : `ClientContestData.setRankPoints(v)` **LIE** rank↔progress (fait aussi `progressPoints +=
+  delta`) — rank points = sous-ensemble des progress points. Le test écrit `rankPoints` sur le champ wire pour un cas isolé.
+- `ContestDataTest` (régression) : frais servi+posé ; write-through `ClientContestData`→wire (500 pts, tâche0=3) ; round-trip WIRE
+  (points+compteurs préservés) ; `response` expose 1 contest actif.
+
+Régression **148/148** (`ContestDataTest`). Fichiers : `ServerContestData.java` (nouveau), `ServerUser.java` (persistance contestData),
+`UserStore.java` (colonne + migration + SELECT/INSERT), `LoginServer.java` (handler GetAllContestData), `ContestDataTest.java` (nouveau),
+`regression.sh`, `JOURNAL.md`, `MEMORY.md`. **SUITE = incr.3 wiring des tâches (`ContestHelper.on*` → crédit points dans le blob).**

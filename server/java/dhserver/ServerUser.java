@@ -4095,6 +4095,19 @@ public final class ServerUser {
   public synchronized com.perblue.heroes.network.messages.TrialEventData trialEventDataOrNull() { return trialEventData; }
   /** Remplace l'état de trial (GetTrialEventData / record TrialEventAttack) — l'appelant persiste via {@code store.save}. */
   public synchronized void setTrialEventData(com.perblue.heroes.network.messages.TrialEventData d) { trialEventData = d; }
+
+  // CONTEST — l'ÉTAT per-user de progression des contests ({@code AllContestData} : Map<contestID, ContestData> avec
+  // points de progression/rang + compteurs de tâches dans {@code ContestExtraData}) est SERVEUR-AUTORITATIF (aucun builder
+  // client) → persisté à part (colonne BLOB `contestData`). NULL = aucun état (le serveur en sert un frais via ServerContest).
+  private com.perblue.heroes.network.messages.AllContestData contestData;
+  /** Octets wire de l'état de contests persisté (NULL si aucun). */
+  public synchronized byte[] contestWire() { return contestData == null ? null : wire(contestData); }
+  /** Restaure l'état de contests persisté (au chargement DB ; NULL = aucun). */
+  public synchronized void setContestWire(byte[] bytes) { if (bytes != null && bytes.length > 0) contestData = read(bytes); }
+  /** État de contests courant (persisté), ou {@code null}. Accès pour {@link ServerContest}. */
+  public synchronized com.perblue.heroes.network.messages.AllContestData contestDataOrNull() { return contestData; }
+  /** Remplace l'état de contests (GetAllContestData / record de tâche) — l'appelant persiste via {@code store.save}. */
+  public synchronized void setContestData(com.perblue.heroes.network.messages.AllContestData d) { contestData = d; }
   /** Sticker FAVORI (SET_FAVORITE_STICKER) : posé dans {@code userExtra} (source lue par {@code getUser}) + miroir
    *  {@code BasicUserInfo} — {@code User.setFavoriteSticker} n'écrit PAS dans extra (champ User seul). Auto-persisté. */
   public synchronized void setFavoriteSticker(com.perblue.heroes.network.messages.StickerType type) {
