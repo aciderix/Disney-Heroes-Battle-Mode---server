@@ -1582,7 +1582,7 @@ public final class ServerUser {
    * {@code chestUpgradeXP}) sont re-synchronisés dans le wire.
    */
   @SuppressWarnings("unchecked")
-  public synchronized LootResults openChest(BuyChests m) {
+  public synchronized LootResults openChest(BuyChests m) throws com.perblue.heroes.ClientErrorCodeException {
     ServerContext.init();
     // User de jeu SUR nos objets wire (getUser fait this.extra = userExtra → mutations partagées).
     User user = ClientNetworkStateConverter.getUser(userInfo, userExtra, "chest");
@@ -1674,6 +1674,27 @@ public final class ServerUser {
       com.perblue.heroes.game.logic.ChestHelper.updateWishingWellWeights(user, jw, hcw);  // persiste (code du jeu)
       lr.newWishJackpotWeight = jw;
       lr.newWishHeroChipsWeight = hcw;
+    } else if (type == ChestType.EVENT) {
+      // COFFRE ÉVÉNEMENT (EXTRA_CHEST) — le loot NE vient PAS de chests.tab (getDropTable(EVENT)=null) mais de la
+      // TABLE INLINE de l'event actif : snapshot.getSingleEventChest().getStats() = un EventChestStats (=
+      // DHDropTableStats). On roule sa VRAIE table (getTable().rollNode) avec le MÊME contexte que les coffres normaux
+      // (ChestContext(user) → scaling niveau d'équipe, etc.), une fois par coffre acheté (buy X = X coffres = X rolls).
+      // Coût/monnaie/limites d'achat sont déjà gérés par la logique du jeu (getBasePurchaseCost/getPurchaseCurrency/
+      // getPurchaseCost/validateChestPurchase EVENT → getSingleEventChest) sur le snapshot opérateur (chestSnap). §3.
+      com.perblue.common.specialevent.components.pieces.EventChestData ecd = chestSnap.getSingleEventChest();
+      if (ecd == null || ecd.getStats() == null) {
+        throw new com.perblue.heroes.ClientErrorCodeException(
+            com.perblue.heroes.util.localization.ClientErrorCode.ERROR, new String[0]);   // aucun coffre event actif
+      }
+      DropTable dt = ((com.perblue.common.stats.DropTableStats<?>) ecd.getStats()).getTable();
+      ChestContext ctx = new ChestContext(user);
+      ctx.setChestType(type);
+      ctx.setCount(count);
+      ctx.setIsPaidRoll(true);
+      java.util.List<Object> acc = new java.util.ArrayList<>();
+      for (int i = 0; i < count; i++) acc.addAll(dt.rollNode("ROOT", ctx, new Random()));
+      drops = acc;
+      lr.lootDrops = new DropConverter(user).convert(drops);
     } else {
       DropTable dt = dropTable(type);
       ChestContext ctx = new ChestContext(user);
@@ -1683,8 +1704,10 @@ public final class ServerUser {
       lr.lootDrops = new DropConverter(user).convert(drops);
     }
     lr.wasFree = freeChest(user, type, count);
-    // Donne les récompenses au joueur autoritatif + remplit heroesUnlocked (bl=true) — code du jeu.
-    ChestHelper.giveChestRewards(user, type, lr, null, m.eventID, true, count);
+    // Donne les récompenses au joueur autoritatif + remplit heroesUnlocked (bl=true) — code du jeu. On passe le SNAPSHOT
+    // opérateur (chestSnap, pas null) : giveChestRewards appelle getPurchaseCurrency(type, snapshot) qui, pour EVENT,
+    // déréférence getSingleEventChest() (null → NPE). Pour les coffres normaux, chestSnap == comportement NONE (défaut sûr).
+    ChestHelper.giveChestRewards(user, type, lr, chestSnap, m.eventID, true, count);
     ChestHelper.updateChestRollCounters(user, type, count, m.usedItem, lr.wasFree, m.hasBulkBonus);
     // Compteurs QUOTIDIENS d'ouverture (limites d'achat + tâches de contest sur don d'objet). Passe par
     // la couche évènements spéciaux (SpecialEventsHelper.helper) — initialisée dans ServerContext (comme

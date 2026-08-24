@@ -199,7 +199,28 @@ immédiate — ce sont des composants de CONTENU, pas « un builder de plus ».
 
 > **APPROFONDISSEMENT (g159, demande user « regarde bien ce que c'est » + `.tab`/code/outils)** — findings ci-dessous intégrés.
 
-### A. ExtraChest (EXTRA_CHEST) — coffre BONUS temporaire sur l'écran CRATES
+### A. ExtraChest (EXTRA_CHEST) — coffre BONUS temporaire sur l'écran CRATES — ✅ IMPLÉMENTÉ (headless, g160)
+> **LIVRÉ (g160)** — `ServerEvents.buildExtraChestEvent` + `specJsonExtraChest` + branche `eventFromSpec` + `AdminEvents --extra-chest`
+> + branche EVENT de `ServerUser.openChest` (roll serveur-autoritatif). `ExtraChestTest` (146) PROUVE bout-en-bout headless :
+> snapshot expose le coffre (coût/monnaie du jeu), la table inline roule du VRAI loot, **`openChest(EVENT)` débite exactement le
+> coût + crédite le loot**, round-trip spec. **Point dur `preset` RÉSOLU** en trouvant le **schéma FORMAT B** (voir ci-dessous) —
+> pas de rustine (§2). RESTE = vérif EN JEU (§8, CRATES montre le coffre bonus + achat/ouverture).
+>
+> **Schéma EXACT (bytecode `EventChestData.<init>`)** : le discriminant est `if (eventChestData.has("text")) …` — DEUX formats.
+> **Format A** (`text` présent) : `text.preset` (String REQUIS) → résout les libellés d'écran via `EventPresets.properties` (le
+> point dur historique). **Format B** (PAS de `text`, celui qu'on utilise) : `preset=""`, tous les libellés INLINE via 3 sous-objets
+> REQUIS `selectionCard{title,info}`, `detailsScreen{title,info}`, `info{title,heading1,content1,heading2,content2[]}` (chaque
+> `title`/`info` = `getString` requis) → **AUCUNE dépendance `preset`/bundle** (auto-suffisant, §4). Communs aux 2 : `cost`
+> (getInt requis), `buyXNumber` (requis), `currency` (ResourceType, défaut ""), `maxBuys`/`maxPurchases`/`freeBuys` (défauts),
+> `featured` (défaut), et **`config` = la TABLE DE DROPS inline** (String requis → `EventChestStats(String)` = `DHDropTableStats`
+> avec DTCodes `ROOT`/`DISPLAY`). La carte `EventCardDisplay` doit PRÉCÉDER l'ExtraChest (lit `getComponent(EventCardDisplay).getImage()`).
+> **Consommation** : `ChestType.EVENT` — coût/monnaie/limites/validation = logique du jeu (`getBasePurchaseCost`/`getPurchaseCurrency`/
+> `getPurchaseCost`/`validateChestPurchase` branche EVENT → `getSingleEventChest`) sur le snapshot opérateur ; le loot NE vient PAS de
+> `chests.tab` (`getDropTable(EVENT)`=null) mais de `getSingleEventChest().getStats().getTable().rollNode("ROOT", ChestContext(user))`
+> (1 roll/coffre acheté). `giveChestRewards` reçoit le snapshot (sinon `getPurchaseCurrency(EVENT,null)` NPE). **Enregistrement =
+> `OPERATOR_EVENTS`** (chemin persistant AdminEvents) : chaque `ServerContext.bind` (dont l'INTERNE à `openChest`) réinstalle depuis
+> lui — un simple `install()` serait effacé au bind suivant.
+
 **Ce que C'EST vraiment (g159)** : un COFFRE bonus complet (comme GOLD/DIAMOND CRATE) affiché temporairement sur l'écran CRATES, acheté
 avec une monnaie (DIAMONDS par défaut), avec des free-buys/max-buys, et sa PROPRE table de drops. **Le contenu N'EST PAS une simple liste
 de récompenses** : `EventChestStats extends DHDropTableStats` (ctor `EventChestStats(String)`) → le champ `content` de `eventChestData` est une

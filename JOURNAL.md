@@ -6277,3 +6277,40 @@ Demande user : « regarde bien ce que c'est » (ExtraChest) + wiki Contest (http
 Rien de code changé (recon pure). Régression 145/145 (inchangée). Fichiers : `docs/SPECIAL_EVENTS.md` (§RECON approfondi), `MEMORY.md`
 (pointeur « mode en cours » corrigé → SPECIAL_EVENTS ; g159). **La CONSIGNE DE HANDOFF (successeur : rituel de reprise EN ENTIER avant toute
 reprise) est en tête de MEMORY + imposée par le hook SessionStart — rappelée explicitement à chaque compression.**
+
+## 2026-08-24 (g160) — SPECIAL_EVENTS live-ops : composant EXTRA_CHEST (coffre bonus CRATES) ✅ headless
+
+7ᵉ des 8 composants live-ops LIVRÉ (reste Contest). **Point dur historique `preset` RÉSOLU sur les FAITS du bytecode** (§2, pas de
+rustine ; §8, pas de supposition). Méthode : disassembly de `EventChestData.<init>` → le discriminant est `if (eventChestData.has("text"))`.
+- **DEUX formats** : **A** (`text` présent) lit `text.preset` (String REQUIS → résout les libellés d'écran via `EventPresets.properties`,
+  le point dur). **B** (PAS de `text`, celui qu'on utilise) : `preset=""`, TOUS les libellés INLINE via 3 sous-objets REQUIS
+  `selectionCard{title,info}` / `detailsScreen{title,info}` / `info{title,heading1,content1,heading2,content2[]}` → **zéro dépendance
+  `preset`/bundle** (auto-suffisant, §4). Communs : `cost`/`buyXNumber` (getInt requis), `currency` (ResourceType), `maxBuys`/
+  `maxPurchases`/`freeBuys`/`featured` (défauts), et **`config` = TABLE DE DROPS inline** (String → `EventChestStats(String)` =
+  `DHDropTableStats` DTCodes `ROOT`/`DISPLAY`). Carte `EventCardDisplay` REQUISE avant l'ExtraChest (lit `getImage()`).
+- **Feasibility prouvée par sonde** (`/tmp/ecx`) : LOAD OK Format B ; tous les champs parsés (cost=100/currency=DIAMONDS/maxBuys=50/
+  freeBuys=1/featured=true) ; **`getStats().rollNodeSimpleDrops("ROOT",1)` roule du VRAI loot** (`[DIAMONDS]`, `[GOLD*100000]`).
+- **Builder** `ServerEvents.buildExtraChestEvent(id, cost, currency, buyX, maxBuys, maxPurchases, freeBuys, featured, title, info,
+  List<ChestDrop>, draws, start, end)` + helper `extraChestDropTsv` (assemble la TABLE au format `chests.tab` : ROOT tire `draws` dans
+  le pool pondéré PICK ; l'admin fournit result/qty/weight, §4) + `specJsonExtraChest` + branche `eventFromSpec` `EXTRA_CHEST`.
+- **Consommation serveur** : `ChestType.EVENT`. Coût/monnaie/limites/validation = LOGIQUE DU JEU (`getBasePurchaseCost`/
+  `getPurchaseCurrency`/`getPurchaseCost`/`validateChestPurchase` branche EVENT → `getSingleEventChest`) sur le snapshot opérateur
+  (déjà passé, chestSnap). **Branche EVENT ajoutée à `ServerUser.openChest`** : le loot NE vient PAS de `chests.tab`
+  (`getDropTable(EVENT)`=null) mais de `getSingleEventChest().getStats().getTable().rollNode("ROOT", ChestContext(user))` (1 roll/coffre
+  acheté = buy X → X rolls). **2 correctifs §8** : (a) `openChest` déclare désormais `throws ClientErrorCodeException` (checkée ; garde
+  « aucun coffre event actif ») → helpers de test `ChestValidateTest.open`/`WishingWellWishTest.rollBatch` re-déclarés ; (b)
+  `giveChestRewards` reçoit le snapshot opérateur (pas `null`) sinon `getPurchaseCurrency(EVENT,null)` NPE (pour les coffres normaux,
+  chestSnap == comportement NONE).
+- **Enregistrement = `OPERATOR_EVENTS`** (chemin PERSISTANT AdminEvents), PAS `install()` : chaque `ServerContext.bind` (dont l'INTERNE
+  à `openChest`, ligne 1591) réinitialise puis réinstalle depuis `OPERATOR_EVENTS` → un simple `install()` serait effacé au 1ᵉʳ bind
+  (racine du `CHEST_EVENT_ENDED` initial du test).
+- `AdminEvents --extra-chest [id] --ec-cost N --ec-currency TYPE --ec-buyx N --ec-maxbuys N --ec-maxpurchases N --ec-freebuys N
+  --ec-title STR --ec-info STR --ec-drop RESULT[:QTY[:WEIGHT]] (répétable) --ec-draws N / --close-extra-chest`.
+- `ExtraChestTest` (régression) : (1) snapshot expose le coffre (coût 100 DIAMONDS, monnaie via logique du jeu) ; (2) la table inline
+  roule ≥1 drop ; (3) **`openChest(EVENT)` end-to-end → loot crédité + DIAMONDS 100000→99900 (débit=100)** ; (4) round-trip spec.
+
+Régression **146/146** (`ExtraChestTest`). Fichiers : `ServerEvents.java` (buildExtraChestEvent + ChestDrop + extraChestDropTsv +
+specJsonExtraChest + eventFromSpec + esc), `ServerUser.java` (openChest branche EVENT + throws + giveChestRewards snapshot),
+`AdminEvents.java` (flags --extra-chest/--ec-*), `ChestValidateTest.java`/`WishingWellWishTest.java` (throws), `ExtraChestTest.java`
+(nouveau), `regression.sh`, `docs/SPECIAL_EVENTS.md` (§RECON A = IMPLÉMENTÉ), `MEMORY.md`. **RESTE = vérif EN JEU EXTRA_CHEST (§8) puis
+Contest (dernier composant, mode serveur-autoritatif).**

@@ -23,7 +23,7 @@ public final class WishingWellWishTest {
   static boolean sawReset = false;         // au moins un tirage a réinitialisé (jackpot ou stone) la pity hero-chips
   static float peakJackpot = 0f;
 
-  static int rollBatch(ServerUser su, int n, String heroToken) {
+  static int rollBatch(ServerUser su, int n, String heroToken) throws com.perblue.heroes.ClientErrorCodeException {
     BuyChests m = new BuyChests();
     m.chestType = ChestType.WISH; m.count = 1; m.cost = 500;
     int heroNamed = 0;

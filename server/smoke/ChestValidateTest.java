@@ -11,7 +11,7 @@ import dhserver.ServerUser;
  */
 public final class ChestValidateTest {
 
-  static LootResults open(ServerUser su, ChestType t) {
+  static LootResults open(ServerUser su, ChestType t) throws com.perblue.heroes.ClientErrorCodeException {
     BuyChests bc = new BuyChests(); bc.chestType = t; bc.count = 1;
     return su.openChest(bc);
   }

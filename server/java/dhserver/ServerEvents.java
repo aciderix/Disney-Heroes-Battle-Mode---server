@@ -1011,6 +1011,96 @@ public final class ServerEvents {
     return events;
   }
 
+  // --- EXTRA_CHEST (coffre bonus temporaire sur l'écran CRATES) ---------------------------------------------------------
+  /**
+   * Un <b>drop</b> de coffre event = {@code result} (un {@code ResourceType}/{@code ItemType} du jeu, ou une référence de
+   * nœud), {@code quantity} et {@code weight} (poids relatif du tirage). Params ADMIN. Le format de la TABLE est celui du
+   * jeu ({@code chests.tab} : {@code NODE/WEIGHT/QUANTITY/RESULT/BEHAVIOR}) — on ne fait qu'assembler les lignes, jamais
+   * inventer un loot ou un poids (§4 : l'admin fournit result/qty/weight, le jeu les extrait/tire).
+   */
+  public static final class ChestDrop {
+    public final String result; public final String quantity; public final int weight;
+    public ChestDrop(String result, String quantity, int weight) { this.result = result; this.quantity = quantity; this.weight = Math.max(1, weight); }
+  }
+
+  /**
+   * Assemble une TABLE DE DROPS au FORMAT DU JEU ({@code DHDropTableStats}/{@code chests.tab} : colonnes
+   * {@code NODE/WEIGHT/QUANTITY/RESULT/BEHAVIOR}, 1ʳᵉ colonne = index de ligne). {@code ROOT} tire {@code draws} fois
+   * dans le pool pondéré {@code PICK} (chaque entrée = une ligne {@code PICK} de poids/quantité/résultat). C'est la donnée
+   * inline consommée par {@code EventChestStats(String)} (= {@code getStats().getTable()}), pas une règle réécrite (§3/§4).
+   */
+  public static String extraChestDropTsv(List<ChestDrop> drops, int draws) {
+    StringBuilder sb = new StringBuilder();
+    sb.append('\t').append("NODE\tWEIGHT\tQUANTITY\tRESULT\tBEHAVIOR\n");
+    int row = 1;
+    sb.append(row++).append("\tROOT\t1\t").append(Math.max(1, draws)).append("\t<PICK>\t\n");
+    for (ChestDrop d : drops)
+      sb.append(row++).append("\tPICK\t").append(d.weight).append('\t').append(d.quantity).append('\t').append(d.result).append("\t\n");
+    return sb.toString();
+  }
+
+  /**
+   * Construit un événement <b>EXTRA_CHEST</b> (composant {@code ExtraChest}, coffre bonus affiché temporairement sur
+   * l'écran CRATES et acheté avec une monnaie). Recette relevée au bytecode ({@code EventChestData.<init>}) :
+   * <ul>
+   *   <li>{@code EventVisibility} + {@code EventCardDisplay} (carte REQUISE : {@code EventChestData} lit
+   *       {@code getComponent(EventCardDisplay).getImage()}) + {@code ExtraChest} via la FABRIQUE
+   *       {@code createComponent("eventChestData")} (câble {@code IEventChestStatsFactory} → {@code EventChestStats}).</li>
+   *   <li>Sous-objet {@code eventChestData} — <b>FORMAT B</b> (sans {@code text}/{@code preset}, tout inline) :
+   *       {@code cost}, {@code buyXNumber}, {@code currency} ({@code ResourceType}), {@code maxBuys}, {@code maxPurchases},
+   *       {@code freeBuys}, {@code featured} ; sous-écrans {@code selectionCard{title,info}}, {@code detailsScreen{title,info}},
+   *       {@code info{title,heading1,content1,heading2,content2[]}} ; et {@code config} = la TABLE DE DROPS inline
+   *       ({@link #extraChestDropTsv}). Le point dur historique ({@code preset}) est ainsi ÉVITÉ (§2 : voie fidèle, pas de rustine).</li>
+   * </ul>
+   * Consommation : {@code BaseEventSnapshot.getSingleEventChest()} → l'écran CRATES ; l'achat/ouverture passe par
+   * {@code ChestType.EVENT} (coût/monnaie/limites = logique du jeu sur le snapshot ; roll serveur-autoritatif de la table).
+   * <b>Tout est param ADMIN</b> (coût, monnaie, buyX, maxBuys/maxPurchases, freeBuys, titres, loot).
+   */
+  public static SpecialEventInfo buildExtraChestEvent(long id, int cost, com.perblue.heroes.network.messages.ResourceType currency,
+      int buyXNumber, int maxBuys, int maxPurchases, int freeBuys, boolean featured,
+      String title, String info, List<ChestDrop> drops, int draws, long startMs, long endMs) {
+    try {
+      String tsv = extraChestDropTsv(drops, draws).replace("\\", "\\\\").replace("\t", "\\t").replace("\n", "\\n").replace("\"", "\\\"");
+      String t = esc(title == null ? "Event Crate" : title), inf = esc(info == null ? "Limited-time bonus crate!" : info);
+      String full =
+          "{\"kind\":\"EXTRA_CHEST\",\"id\":" + id + ",\"formatVersion\":0,"
+        + "\"timeRange\":[{\"serverFilter\":\"1-999999\",\"start\":" + startMs
+        +   ",\"end\":{\"kind\":\"TIME\",\"endTime\":" + endMs + "}}],"
+        + "\"eventChestData\":{"
+        +   "\"cost\":" + cost + ",\"buyXNumber\":" + Math.max(1, buyXNumber) + ",\"currency\":\"" + currency.name() + "\","
+        +   "\"maxBuys\":" + maxBuys + ",\"maxPurchases\":" + maxPurchases + ",\"freeBuys\":" + freeBuys + ",\"featured\":" + featured + ","
+        +   "\"config\":\"" + tsv + "\","
+        +   "\"selectionCard\":{\"title\":\"" + t + "\",\"info\":\"" + inf + "\"},"
+        +   "\"detailsScreen\":{\"title\":\"" + t + "\",\"info\":\"" + inf + "\"},"
+        +   "\"info\":{\"title\":\"" + t + "\",\"heading1\":\"Summary\",\"content1\":\"" + inf + "\",\"heading2\":\"Details\",\"content2\":[\"" + inf + "\"]}"
+        + "}}";
+      JsonValue root = JSON.parse(full);
+
+      SpecialEventInfo evtInfo = new SpecialEventInfo(SpecialEventType.class);
+      setField(evtInfo, "id", id);
+      setField(evtInfo, "type", SpecialEventType.EXTRA_CHEST);
+      setField(evtInfo, "formatVersion", 0);
+
+      EventVisibility vis = new EventVisibility(new int[0]);
+      vis.load(evtInfo, root, root.get("timeRange"));
+      addComponent(evtInfo, vis);
+
+      // La carte DOIT précéder l'ExtraChest (EventChestData lit getComponent(EventCardDisplay).getImage()).
+      addComponent(evtInfo, buildMinimalCard(evtInfo));
+
+      IEventComponent ec = SpecialEventBuilder.createComponent("eventChestData");
+      ec.load(evtInfo, root, root);   // lit eventChestData sur le nœud complet (param2)
+      addComponent(evtInfo, ec);
+      return evtInfo;
+    } catch (RuntimeException e) {
+      throw e;
+    } catch (Exception e) {
+      throw new RuntimeException("buildExtraChestEvent", e);
+    }
+  }
+
+  private static String esc(String s) { return s == null ? "" : s.replace("\\", "\\\\").replace("\"", "\\\""); }
+
   /** Construit UN événement depuis une spec {kind, modes[], bonus, start, end}. */
   private static SpecialEventInfo eventFromSpec(JsonValue spec) {
     String kind = spec.getString("kind", "MODES_OPEN");
@@ -1074,6 +1164,18 @@ public final class ServerEvents {
           ? buildMiscBonusEvent(id, mults, val, start, end)
           : buildMiscDiscountEvent(id, mults, val, start, end);
     }
+    if ("EXTRA_CHEST".equals(kind)) {
+      List<ChestDrop> drops = new ArrayList<>();
+      JsonValue dn = spec.get("drops");
+      if (dn != null) for (JsonValue d = dn.child; d != null; d = d.next)
+        drops.add(new ChestDrop(d.getString("result"), d.getString("quantity", "1"), d.getInt("weight", 1)));
+      com.perblue.heroes.network.messages.ResourceType cur =
+          com.perblue.heroes.network.messages.ResourceType.valueOf(spec.getString("currency", "DIAMONDS"));
+      return buildExtraChestEvent(id, spec.getInt("cost", 100), cur, spec.getInt("buyXNumber", 10),
+          spec.getInt("maxBuys", 50), spec.getInt("maxPurchases", 5), spec.getInt("freeBuys", 0),
+          spec.getBoolean("featured", true), spec.getString("title", "Event Crate"),
+          spec.getString("info", "Limited-time bonus crate!"), drops, spec.getInt("draws", 1), start, end);
+    }
     return buildModesOpenEvent(id, modes, start, end);
   }
 
@@ -1126,6 +1228,27 @@ public final class ServerEvents {
     return "{\"kind\":\"CHEST_DISCOUNT\",\"modes\":[],\"bonus\":0,\"id\":" + id
         + ",\"chests\":[" + c + "],\"percentOff\":" + percentOff
         + ",\"start\":" + start + ",\"end\":" + end + "}";
+  }
+
+  /**
+   * Construit la chaîne JSON d'UNE spec EXTRA_CHEST (coffre bonus CRATES). Params ADMIN : {@code cost}, {@code currency},
+   * {@code buyXNumber}, {@code maxBuys}, {@code maxPurchases}, {@code freeBuys}, {@code featured}, titres, {@code draws} et
+   * la liste de drops ({@code result}/{@code quantity}/{@code weight}). La table est reconstruite par {@link #buildExtraChestEvent}.
+   */
+  public static String specJsonExtraChest(long id, int cost, com.perblue.heroes.network.messages.ResourceType currency,
+      int buyXNumber, int maxBuys, int maxPurchases, int freeBuys, boolean featured, String title, String info,
+      List<ChestDrop> drops, int draws, long start, long end) {
+    StringBuilder d = new StringBuilder();
+    for (ChestDrop cd : drops) {
+      if (d.length() > 0) d.append(',');
+      d.append("{\"result\":\"").append(esc(cd.result)).append("\",\"quantity\":\"").append(esc(cd.quantity))
+       .append("\",\"weight\":").append(cd.weight).append('}');
+    }
+    return "{\"kind\":\"EXTRA_CHEST\",\"modes\":[],\"bonus\":0,\"id\":" + id
+        + ",\"cost\":" + cost + ",\"currency\":\"" + currency.name() + "\",\"buyXNumber\":" + buyXNumber
+        + ",\"maxBuys\":" + maxBuys + ",\"maxPurchases\":" + maxPurchases + ",\"freeBuys\":" + freeBuys
+        + ",\"featured\":" + featured + ",\"title\":\"" + esc(title) + "\",\"info\":\"" + esc(info)
+        + "\",\"draws\":" + draws + ",\"drops\":[" + d + "],\"start\":" + start + ",\"end\":" + end + "}";
   }
 
   /** Construit la chaîne JSON d'UNE spec INCREASED_CHANCES (chanceType → nombre de chances en plus = params ADMIN). */

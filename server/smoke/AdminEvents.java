@@ -56,6 +56,12 @@ public final class AdminEvents {
     long teamLevelID = 900_008L; int teamLevelValue = 50;
     java.util.List<String> tlItems = new java.util.ArrayList<>(); java.util.List<Integer> tlQtys = new java.util.ArrayList<>();
     String pendingTlItem = null;
+    boolean extraChest = false, closeExtraChest = false;                       // EXTRA_CHEST (coffre bonus CRATES)
+    long extraChestID = 900_009L;
+    int ecCost = 100, ecBuyX = 10, ecMaxBuys = 50, ecMaxPurchases = 5, ecFreeBuys = 0, ecDraws = 1;
+    com.perblue.heroes.network.messages.ResourceType ecCurrency = com.perblue.heroes.network.messages.ResourceType.DIAMONDS;
+    String ecTitle = "Event Crate", ecInfo = "Limited-time bonus crate!";
+    java.util.List<ServerEvents.ChestDrop> ecDrops = new java.util.ArrayList<>();  // --ec-drop RESULT[:QTY[:WEIGHT]] (répétable)
     int days = 30, bonus = 1;
     for (int i = 0; i < a.length; i++) {
       switch (a[i]) {
@@ -101,6 +107,24 @@ public final class AdminEvents {
         case "--close-team-level": closeTeamLevel = true; break;
         case "--reward-item":  pendingTlItem = a[++i].toUpperCase(); tlItems.add(pendingTlItem); tlQtys.add(1); break;
         case "--reward-qty":   if (pendingTlItem != null) tlQtys.set(tlQtys.size() - 1, Integer.parseInt(a[++i])); break;
+        case "--extra-chest": extraChest = true;
+          if (i + 1 < a.length && a[i + 1].matches("\\d+")) extraChestID = Long.parseLong(a[++i]); break;
+        case "--close-extra-chest": closeExtraChest = true; break;
+        case "--ec-cost":     ecCost = Integer.parseInt(a[++i]); break;
+        case "--ec-currency": ecCurrency = com.perblue.heroes.network.messages.ResourceType.valueOf(a[++i].toUpperCase()); break;
+        case "--ec-buyx":     ecBuyX = Integer.parseInt(a[++i]); break;
+        case "--ec-maxbuys":  ecMaxBuys = Integer.parseInt(a[++i]); break;
+        case "--ec-maxpurchases": ecMaxPurchases = Integer.parseInt(a[++i]); break;
+        case "--ec-freebuys": ecFreeBuys = Integer.parseInt(a[++i]); break;
+        case "--ec-draws":    ecDraws = Integer.parseInt(a[++i]); break;
+        case "--ec-title":    ecTitle = a[++i]; break;
+        case "--ec-info":     ecInfo = a[++i]; break;
+        case "--ec-drop": {
+          String[] p = a[++i].split(":");
+          ecDrops.add(new ServerEvents.ChestDrop(p[0].toUpperCase(), p.length > 1 ? p[1] : "1",
+              p.length > 2 ? Integer.parseInt(p[2]) : 1));
+          break;
+        }
         case "--open-trial":  openTrial = true;
           if (i + 1 < a.length && a[i + 1].matches("\\d+")) trialID = Long.parseLong(a[++i]); break;
         case "--close-trial": closeTrial = true; break;
@@ -254,6 +278,25 @@ public final class AdminEvents {
           changed = true;
           System.out.println("[events] event TEAM LEVEL ajouté : eventID=" + teamLevelID + " niveau=" + teamLevelValue
               + (teamLevelEvery ? " (tous les X)" : " (au palier)") + " récompenses=" + tlItems + "×" + tlQtys + " (" + days + " j).");
+        }
+      }
+
+      if (closeExtraChest) {
+        int before = specs.size();
+        specs.removeIf(js -> js.contains("EXTRA_CHEST"));
+        changed = changed || specs.size() != before;
+        System.out.println("[events] events EXTRA_CHEST retirés (" + (before - specs.size()) + ").");
+      }
+      if (extraChest) {
+        if (ecDrops.isEmpty()) { System.out.println("[events] --extra-chest requiert au moins un --ec-drop RESULT[:QTY[:WEIGHT]] (ex. GOLD:100000:3). Ignoré."); }
+        else {
+          specs.removeIf(js -> js.contains("EXTRA_CHEST"));
+          specs.add(ServerEvents.specJsonExtraChest(extraChestID, ecCost, ecCurrency, ecBuyX, ecMaxBuys, ecMaxPurchases,
+              ecFreeBuys, true, ecTitle, ecInfo, ecDrops, ecDraws, start, end));
+          changed = true;
+          System.out.println("[events] event EXTRA_CHEST ajouté : eventID=" + extraChestID + " coût=" + ecCost + " " + ecCurrency
+              + " buyX=" + ecBuyX + " maxBuys=" + ecMaxBuys + " freeBuys=" + ecFreeBuys + " loot=" + ecDrops.size()
+              + " entrée(s) (" + days + " j). Coffre bonus visible sur CRATES via REFRESH_SPECIAL_EVENTS.");
         }
       }
 
