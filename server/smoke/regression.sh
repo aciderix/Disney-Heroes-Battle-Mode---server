@@ -77,6 +77,7 @@ TESTS=(
   ContestCreditTest
   ContestRewardTest
   ContestRankTest
+  ContestRankingsTest
   ContestEndTest
 )
 

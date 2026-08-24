@@ -224,6 +224,56 @@ public final class ServerContestData {
     return delivered;
   }
 
+  /**
+   * CLASSEMENT SOLO (leaderboard serveur-autoritatif) d'un contest : construit un {@link com.perblue.heroes.network.messages.ContestRankings}
+   * ({@code yourInfo} + {@code topPlayers}) depuis le ladder per-(shard, contestID). D'abord {@link #recomputeRank} pousse les points
+   * COURANTS de {@code su} dans le ladder et calcule son rang (au cas où {@code GetAllContestData} n'aurait jamais été envoyé),
+   * puis on trie (points DÉCROISSANTS, puis {@code reachedAt} CROISSANT = 1ᵉʳ arrivé départage) et on renseigne chaque ligne
+   * ({@code PlayerRow.info} chargé par membre, {@code points}/{@code rank}). {@code yourInfo} = la ligne du joueur.
+   */
+  public static synchronized com.perblue.heroes.network.messages.ContestRankings soloRankings(
+      UserStore store, ServerUser su, long contestID) {
+    com.perblue.heroes.network.messages.ContestRankings cr =
+        new com.perblue.heroes.network.messages.ContestRankings();
+    cr.guildMembers = new ArrayList<>();   // solo → pas de membres de guilde
+    cr.topPlayers = new ArrayList<>();
+    try {
+      ContestData cd = getContestData(su, contestID);
+      recomputeRank(store, su, contestID, cd);
+      java.util.Map<Long, long[]> ladder = loadLadder(store, su.shardID, contestID);
+      java.util.List<java.util.Map.Entry<Long, long[]>> sorted = new ArrayList<>(ladder.entrySet());
+      sorted.sort((x, y) -> {
+        int c1 = Long.compare(y.getValue()[0], x.getValue()[0]);
+        return c1 != 0 ? c1 : Long.compare(x.getValue()[1], y.getValue()[1]);
+      });
+      int idx = 0;
+      for (java.util.Map.Entry<Long, long[]> e : sorted) {
+        idx++;
+        com.perblue.heroes.network.messages.ContestRankingRow row =
+            new com.perblue.heroes.network.messages.ContestRankingRow();
+        com.perblue.heroes.network.messages.PlayerRow pr = new com.perblue.heroes.network.messages.PlayerRow();
+        try {
+          ServerUser mu = (e.getKey() == su.userID) ? su : store.loadIfExists(e.getKey(), su.shardID);
+          if (mu != null) pr.info = mu.basicInfo();
+        } catch (Exception ex) { System.out.println("[contest] soloRankings membre " + e.getKey() + ": " + ex); }
+        row.playerRow = pr;
+        row.points = e.getValue()[0];
+        row.rank = idx; row.contestRankIndex = idx - 1;
+        cr.topPlayers.add(row);
+        if (e.getKey() == su.userID) cr.yourInfo = row;
+      }
+      if (cr.yourInfo == null) {   // filet : ladder vide
+        com.perblue.heroes.network.messages.ContestRankingRow mine =
+            new com.perblue.heroes.network.messages.ContestRankingRow();
+        com.perblue.heroes.network.messages.PlayerRow pr = new com.perblue.heroes.network.messages.PlayerRow();
+        pr.info = su.basicInfo(); mine.playerRow = pr;
+        mine.points = cd.rankPoints; mine.rank = (cd.rank > 0 ? cd.rank : 1); mine.contestRankIndex = mine.rank - 1;
+        cr.yourInfo = mine;
+      }
+    } catch (Throwable t) { System.out.println("[contest] soloRankings: " + t); }
+    return cr;
+  }
+
   /** IDs des contests ACTIFS (composant {@code Contest} du snapshot opérateur) pour {@code su} (user déjà bindé). */
   @SuppressWarnings("unchecked")
   public static java.util.List<Long> activeContestIDs(ServerUser su) {

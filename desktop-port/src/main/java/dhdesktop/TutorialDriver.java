@@ -1249,6 +1249,21 @@ public final class TutorialDriver {
         } catch (Throwable e) { System.out.println("[wish] échec: " + e); e.printStackTrace(); }
     }
 
+    /** DEV : OUVRE un coffre {@code ChestType.<type>} par le chemin client réel {@code ChestHelper.openChestInner}
+     *  (construit + envoie le {@code BuyChests}, sans boîte de confirmation ni écran). Sert à créditer une action de
+     *  jeu de manière déterministe (ex. tâche de CONTEST {@code OPEN_CHEST}). Invoqué via "openchest &lt;TYPE&gt; [count]". */
+    public static void openChestPilot(GameMain game, String typeName, int count) {
+        try {
+            com.perblue.heroes.network.messages.ChestType t = com.perblue.heroes.network.messages.ChestType.valueOf(typeName);
+            com.perblue.heroes.game.specialevent.SpecialEventSnapshot NONE = com.perblue.heroes.game.specialevent.SpecialEventSnapshot.NONE;
+            int cost = com.perblue.heroes.game.logic.ChestHelper.getPurchaseCost(game.getYourUser(), t, count, NONE);
+            System.out.println("[openchest] " + t + " x" + count + " cost=" + cost + " [chemin réel]");
+            com.perblue.heroes.game.logic.ChestHelper.openChestInner(
+                t, count, cost, com.perblue.heroes.network.messages.ItemType.DEFAULT, false, NONE);
+            System.out.println("[openchest] BuyChests(" + t + " x" + count + ") envoyé");
+        } catch (Throwable e) { System.out.println("[openchest] échec: " + e); e.printStackTrace(); }
+    }
+
     /** DEV : OUVRE le VRAI écran du puits aux souhaits {@code WishingWellChestScreen} (chemin réel, pushScreen) —
      *  pour vérification VISUELLE (cible + coffre WISH). Invoqué via "wishscreen". */
     public static void wishScreen(GameMain game) {

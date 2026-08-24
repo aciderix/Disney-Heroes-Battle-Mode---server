@@ -626,13 +626,16 @@ public final class LoginServer {
                 System.out.println("[login] <== GET_GUILD_CONTEST_RANKINGS → ==> GuildContestRankings ("
                     + gc.topGuilds.size() + " guilde(s))");
               } else if (act.command == com.perblue.heroes.network.messages.CommandType.GET_CONTEST_RANKINGS) {
-                // CONTEST DES JOUEURS (#67) — membres de la guilde triés par leurs points de contest
-                // (ressource GUILD_CONTEST_POINTS) + ta ligne.
-                com.perblue.heroes.network.messages.ContestRankings cr = buildContestRankings(user);
+                // CONTEST DES JOUEURS — l'action porte l'ID du contest (extra ID). Deux régimes :
+                //  (a) contest SOLO du composant SPECIAL_EVENTS `Contest` (leaderboard SERVEUR-AUTORITATIF, ladder per-shard) ;
+                //  (b) sinon fallback #67 (membres de la guilde triés par leurs points de contest de guilde).
+                long contestID = extraLong(act, com.perblue.heroes.network.messages.ActionExtraType.ID, 0);
+                com.perblue.heroes.network.messages.ContestRankings cr = buildContestRankings(user, contestID);
                 cr.setAsReplyTo(m);
                 c.send(cr);
-                System.out.println("[login] <== GET_CONTEST_RANKINGS → ==> ContestRankings ("
-                    + cr.guildMembers.size() + " membre(s), ton rang " + (cr.yourInfo == null ? 0 : cr.yourInfo.rank) + ")");
+                System.out.println("[login] <== GET_CONTEST_RANKINGS(id=" + contestID + ") → ==> ContestRankings ("
+                    + cr.topPlayers.size() + " joueur(s), ton score " + (cr.yourInfo == null ? 0 : cr.yourInfo.points)
+                    + " rang " + (cr.yourInfo == null ? 0 : cr.yourInfo.rank) + ")");
               } else if (act.command == com.perblue.heroes.network.messages.CommandType.UPGRADE_GUILD_PERK) {
                 // PERK — upgrade autoritatif (débit influence de guilde + niveau+1). Le type de perk est dans extra.
                 System.out.println("[login]     UPGRADE_GUILD_PERK extra=" + act.extra);
@@ -2817,9 +2820,40 @@ public final class LoginServer {
         return gc;
       }
 
-      /** CONTEST DES JOUEURS (#67) — membres de la guilde du joueur classés par leurs points de contest
-       *  (ressource {@code GUILD_CONTEST_POINTS}) ; {@code yourInfo} = la ligne du joueur. */
-      private com.perblue.heroes.network.messages.ContestRankings buildContestRankings(ServerUser u) {
+      /** L'{@code SpecialEventInfo} du contest SOLO (composant {@code Contest}, {@code !isGuildContest()}) d'ID {@code contestID}
+       *  ACTIF pour {@code u}, ou {@code null} si aucun (⇒ fallback contest de guilde #67). {@code u} doit être bindé. */
+      @SuppressWarnings("unchecked")
+      private com.perblue.common.specialevent.SpecialEventInfo activeSoloContest(ServerUser u, long contestID) {
+        if (contestID <= 0) return null;
+        try {
+          com.perblue.heroes.game.specialevent.SpecialEventSnapshot snap = ServerEvents.snapshot();
+          for (Object o : snap.getActiveEvents()) {
+            com.perblue.common.specialevent.SpecialEventInfo e = (com.perblue.common.specialevent.SpecialEventInfo) o;
+            if (e.getID() != contestID) continue;
+            com.perblue.common.specialevent.components.Contest ct =
+                (com.perblue.common.specialevent.components.Contest) e.getComponent(com.perblue.common.specialevent.components.Contest.class);
+            if (ct != null && !ct.isGuildContest()) return e;
+          }
+        } catch (Throwable t) { System.out.println("[login]     ! activeSoloContest: " + t); }
+        return null;
+      }
+
+      /**
+       * CONTEST DES JOUEURS — {@code yourInfo} = la ligne du joueur, {@code topPlayers} = le classement.
+       * <p>Si {@code contestID} désigne un contest SOLO actif (composant SPECIAL_EVENTS {@code Contest}), le classement est
+       * SERVEUR-AUTORITATIF, construit depuis le ladder per-shard de {@link ServerContestData} (points = {@code rankPoints}
+       * du blob per-user, rang départagé par horodatage). Sinon, fallback contest de GUILDE (#67 : membres de la guilde du
+       * joueur classés par leurs points de contest de guilde).
+       */
+      private com.perblue.heroes.network.messages.ContestRankings buildContestRankings(ServerUser u, long contestID) {
+        com.perblue.common.specialevent.SpecialEventInfo solo = activeSoloContest(u, contestID);
+        if (solo != null) return ServerContestData.soloRankings(store, u, contestID);   // leaderboard serveur-autoritatif
+        return buildGuildMemberContestRankings(u);
+      }
+
+      /** CONTEST DE GUILDE (#67) — membres de la guilde du joueur classés par leurs points de contest de guilde
+       *  (ventilation SERVEUR par membre) ; {@code yourInfo} = la ligne du joueur. */
+      private com.perblue.heroes.network.messages.ContestRankings buildGuildMemberContestRankings(ServerUser u) {
         com.perblue.heroes.network.messages.ContestRankings cr =
             new com.perblue.heroes.network.messages.ContestRankings();
         cr.guildMembers = new java.util.ArrayList<>();

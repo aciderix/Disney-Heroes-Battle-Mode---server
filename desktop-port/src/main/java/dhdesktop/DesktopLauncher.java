@@ -584,6 +584,13 @@ public final class DesktopLauncher {
                     TutorialDriver.wishOpen(game, wc);
                     continue;
                 }
+                if (low.startsWith("openchest")) {               // openchest <TYPE> [count] → BuyChests(TYPE) chemin réel
+                    String[] cs = ln.trim().split("[,;\\s]+");
+                    String type = cs.length >= 2 ? cs[1].trim().toUpperCase() : "GOLD";
+                    int cc = cs.length >= 3 ? Integer.parseInt(cs[2].trim()) : 1;
+                    TutorialDriver.openChestPilot(game, type, cc);
+                    continue;
+                }
                 if (low.startsWith("wishscreen")) {              // wishscreen → ouvre le puits aux souhaits
                     TutorialDriver.wishScreen(game);
                     continue;
