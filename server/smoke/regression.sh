@@ -79,6 +79,7 @@ TESTS=(
   ContestRankTest
   ContestRankingsTest
   ContestGuildTest
+  ContestCampaignRecordTest
   ContestEndTest
 )
 

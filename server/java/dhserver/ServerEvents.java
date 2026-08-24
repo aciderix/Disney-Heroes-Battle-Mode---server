@@ -1189,6 +1189,20 @@ public final class ServerEvents {
     return buildContestEvent(id, guild, aggregate, "Contest", "Complete tasks to earn points and rewards!", tasks, progress, ranks, startMs, endMs);
   }
 
+  /**
+   * FENÊTRE HEBDOMADAIRE fidèle au vrai jeu : les contests de Disney Heroes durent une semaine, <b>vendredi → jeudi</b>.
+   * Renvoie {@code {start, end}} où {@code start} = le dernier <b>vendredi 00:00 UTC</b> ≤ {@code now} et {@code end} = start + 7 j
+   * (= vendredi suivant 00:00 = fin du jeudi). L'heure de reset (00:00 UTC) est un choix d'opérateur (les contests ne sont pas
+   * dans les {@code .tab} — contenu live-ops) ; l'admin peut toujours viser une fenêtre libre via {@code --days}.
+   */
+  public static long[] weeklyContestWindow(long now) {
+    java.time.ZonedDateTime day = java.time.Instant.ofEpochMilli(now)
+        .atZone(java.time.ZoneOffset.UTC).toLocalDate().atStartOfDay(java.time.ZoneOffset.UTC);
+    int back = (day.getDayOfWeek().getValue() - java.time.DayOfWeek.FRIDAY.getValue() + 7) % 7;  // jours écoulés depuis vendredi
+    long start = day.minusDays(back).toInstant().toEpochMilli();
+    return new long[]{start, start + 7L * 86_400_000L};
+  }
+
   /** Variante avec TITRE + RÉSUMÉ (affichés par l'écran CONTESTS via {@code EventCardDisplay.getTitle/getSummary}) = params ADMIN. */
   public static SpecialEventInfo buildContestEvent(long id, boolean guild, boolean aggregate, String title, String summary,
       List<ContestTask> tasks, List<ContestProgress> progress, List<ContestRank> ranks, long startMs, long endMs) {

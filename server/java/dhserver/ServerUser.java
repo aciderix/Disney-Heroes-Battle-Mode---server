@@ -1946,6 +1946,10 @@ public final class ServerUser {
         ? creditLootAuthoritative(user, iu, type, m.chapter, m.level, clientLoot, advancedState)
         : clientLoot;
     java.util.List shownDelta = new java.util.ArrayList<>();
+    // CONTEST : PRÉ-PEUPLE la map contestData du user AVANT recordOutcome. CampaignHelper.recordOutcome appelle
+    // LUI-MÊME ContestHelper.onCampaignAttack en interne (§3) → il crédite alors le blob per-user (prepare l'a rendu
+    // blob-backed). On ne fait donc AUCUN appel de hook explicite (sinon double-compte). Défaut (aucun contest) = no-op.
+    ServerContestData.prepare(this, user);
     // base : attackers/defenders = Collection de AttackLineupSummary, outcome + stars remplis par le client.
     CampaignHelper.recordOutcome(user, user, level, m.base.outcome, m.base.stars, m.stagesCleared,
         lootEarned, shownDelta, m.base.attackers, m.base.defenders, SpecialEventSnapshot.NONE);
@@ -1991,18 +1995,9 @@ public final class ServerUser {
         System.out.println("[teamlevel] TL " + oldTL + "→" + newTL + " → " + tlDrops.size() + " récompense(s) par courrier [persisté]");
       }
     }
-    // CONTEST live-ops : créditer les tâches de contest via la LOGIQUE DU JEU (ContestHelper.onCampaignAttack) — les points
-    // sont crédités dans le blob per-user (ServerContestData, mutation en place). Défaut (aucun contest actif) = no-op. On
-    // passe les VRAIS lineups client (m.base.attackers/defenders) = la signature native du jeu (tâches BATTLE_WON,
-    // ENEMY_DEFEATED, BATTLE_HEROES_LEFT…). Persistance via le store.save du handler (comme le reste du record).
-    if (m.base != null && m.base.outcome != null) {
-      final GameMode cmode = mode;
-      final com.perblue.heroes.network.messages.CombatOutcome outcome = m.base.outcome;
-      final java.util.Collection atk = m.base.attackers != null ? m.base.attackers : new java.util.ArrayList<>();
-      final java.util.Collection def = m.base.defenders != null ? m.base.defenders : new java.util.ArrayList<>();
-      ServerContestData.record(this, user, u ->
-          com.perblue.heroes.game.logic.ContestHelper.onCampaignAttack(u, cmode, outcome, atk, def));
-    }
+    // CONTEST : livre les paliers franchis (le crédit des points a été fait par le onCampaignAttack INTERNE de
+    // CampaignHelper.recordOutcome, sur le blob pré-peuplé par prepare ci-dessus). Persistance via le store.save du handler.
+    ServerContestData.deliverEarnedProgressRewards(this, user);
   }
 
   /**
@@ -3672,10 +3667,14 @@ public final class ServerUser {
     // Snapshot RÉEL de la couche événements (pas NONE) : doChecks/isOpen doit voir les événements MODES_OPEN opérateur
     // (ex. WAREHOUSE ouvert), sinon la planification d'ouverture est fausse. Cf. ServerEvents / docs/SPECIAL_EVENTS.md.
     com.perblue.heroes.game.specialevent.SpecialEventSnapshot snap = ServerEvents.snapshot();
+    // CONTEST : prepare AVANT recordOutcome — DifficultyModeHelper.recordOutcome appelle lui-même onDifficultyModeAttack
+    // en interne (§3) → crédite le blob per-user (rendu blob-backed par prepare). Aucun hook explicite (pas de double-compte).
+    ServerContestData.prepare(this, user);
     com.perblue.heroes.game.logic.DifficultyModeHelper.recordOutcome(user, m.gameMode, diff, outcome,
         m.stagesCleared, loot, attackers, defenders, m.attackEndTime, snap);
     // incr. 3 : mémorise le container de récompense double posé par giveLoot (null si VIP DOUBLE_PORT_REWARDS = auto-doublé).
     this.pendingDoubleLoot = iu.getVideoDoubleLoot();
+    ServerContestData.deliverEarnedProgressRewards(this, user);   // paliers franchis (crédit fait par le hook interne)
     resyncHeroes(user);
     resyncDiamonds(user);
     resyncCounts(user);

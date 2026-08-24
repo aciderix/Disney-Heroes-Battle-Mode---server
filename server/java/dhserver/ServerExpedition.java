@@ -290,8 +290,12 @@ public final class ServerExpedition {
       // NULL (aload 5 ifnull → saute compareDrops) → le serveur ROULE et CRÉDITE son PROPRE butin autoritatif, sans
       // rejet faux sur divergence RNG (même choix que le loot de campagne #25/§4bis). On passe donc null aussi.
       // Lève ClientErrorCodeException (anti-triche) si non raidable / tickets insuffisants → on refuse proprement.
+      // CONTEST : prepare AVANT — ExpeditionHelper.doRaid appelle onExpeditionCompleted en interne (§3) → crédite le blob
+      // per-user (tâche EXPEDITION_FINISHED). deliver après pour les paliers. Le run/user est persisté par l'appelant.
+      ServerContestData.prepare(su, user);
       com.perblue.heroes.game.logic.ExpeditionHelper.doRaid(
           user, difficulty, run.nodesDefeated, snap, finisher, null);
+      ServerContestData.deliverEarnedProgressRewards(su, user);
     } catch (Throwable t) {
       // doRaid lève ClientErrorCodeException (anti-triche : non raidable / tickets insuffisants / resets épuisés).
       boolean antiCheat = t instanceof com.perblue.heroes.ClientErrorCodeException;

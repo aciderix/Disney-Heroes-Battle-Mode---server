@@ -424,8 +424,12 @@ public final class ServerSurgeState {
     }
     long pointsBefore = summary.totalPointsGained;
     User u = attacker.gameUser();
+    // CONTEST : prepare AVANT — SurgeHelper.recordOutcome (dans applyRegionOutcome) appelle onSurgeAttack en interne (§3)
+    // → crédite le blob per-user (rendu blob-backed par prepare). deliver après pour les paliers. L'appelant persiste l'attaquant.
+    ServerContestData.prepare(attacker, u);
     ServerSurgeCombat.applyRegionOutcome(u, summary, data.surgeID, 0L, m,
         com.perblue.heroes.game.specialevent.SpecialEventSnapshot.NONE);
+    ServerContestData.deliverEarnedProgressRewards(attacker, u);
 
     SurgeOpponentSummary op = opponentFor(data, m.district);
     int districtsDelta = 0;

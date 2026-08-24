@@ -63,6 +63,7 @@ public final class AdminEvents {
     String ecTitle = "Event Crate", ecInfo = "Limited-time bonus crate!";
     java.util.List<ServerEvents.ChestDrop> ecDrops = new java.util.ArrayList<>();  // --ec-drop RESULT[:QTY[:WEIGHT]] (répétable)
     boolean contest = false, closeContest = false, contestGuild = false, contestAggregate = false;   // CONTEST (leaderboard)
+    boolean contestWeekly = false;   // --contest-weekly : fenêtre hebdo fidèle (vendredi → jeudi) au lieu de --days
     long contestID = 900_010L;
     java.util.List<ServerEvents.ContestTask> contestTasks = new java.util.ArrayList<>();       // --contest-task TYPE:POINTS:COUNT[:MAXTIMES:MAXDAILY]
     java.util.List<ServerEvents.ContestProgress> contestProgress = new java.util.ArrayList<>(); // --contest-progress POINTS:ITEM:QTY
@@ -123,6 +124,7 @@ public final class AdminEvents {
         case "--contest-title":   contestTitle = a[++i]; break;
         case "--contest-summary": contestSummary = a[++i]; break;
         case "--contest-aggregate": contestAggregate = true; break;
+        case "--contest-weekly": contestWeekly = true; break;
         case "--contest-task": {          // TYPE:POINTS:COUNT[:MAXTIMES:MAXDAILY]
           String[] p = a[++i].split(":");
           contestTasks.add(new ServerEvents.ContestTask(p[0].toUpperCase(),
@@ -350,12 +352,15 @@ public final class AdminEvents {
       if (contest) {
         if (contestTasks.isEmpty()) { System.out.println("[events] --contest requiert au moins un --contest-task TYPE:POINTS:COUNT (ex. BATTLE_WON:10:1). Ignoré."); }
         else {
+          // Fenêtre : --contest-weekly = hebdo fidèle (vendredi → jeudi) ; sinon la fenêtre générique (--days N, défaut 30).
+          long cStart = start, cEnd = end;
+          if (contestWeekly) { long[] w = ServerEvents.weeklyContestWindow(now); cStart = w[0]; cEnd = w[1]; }
           specs.removeIf(js -> js.contains("CONTEST"));
-          specs.add(ServerEvents.specJsonContest(contestID, contestGuild, contestAggregate, contestTitle, contestSummary, contestTasks, contestProgress, contestRanks, start, end));
+          specs.add(ServerEvents.specJsonContest(contestID, contestGuild, contestAggregate, contestTitle, contestSummary, contestTasks, contestProgress, contestRanks, cStart, cEnd));
           changed = true;
           System.out.println("[events] event CONTEST ajouté : eventID=" + contestID + (contestGuild ? " [GUILDE]" : " [solo]")
               + " tâches=" + contestTasks.size() + " paliers=" + contestProgress.size() + " rangs=" + contestRanks.size()
-              + " (" + days + " j). Écran CONTESTS via REFRESH_SPECIAL_EVENTS.");
+              + (contestWeekly ? " [HEBDO ven→jeu]" : " (" + days + " j)") + ". Écran CONTESTS via REFRESH_SPECIAL_EVENTS.");
         }
       }
 

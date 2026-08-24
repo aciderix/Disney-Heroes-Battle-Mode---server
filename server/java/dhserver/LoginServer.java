@@ -2196,6 +2196,7 @@ public final class LoginServer {
                 com.perblue.heroes.network.messages.SurgeData sad = ServerSurgeState.loadOrReset(store, sag, sanow);
                 com.perblue.heroes.network.messages.SurgeUpdate up = ServerSurgeState.applyAttack(sag, sad, user, sa);
                 ServerSurgeState.save(store, sag, sad.surgeID, sad);
+                store.save(user);   // CONTEST : persiste le crédit des tâches de surge (blob per-user muté par applyAttack)
                 up.setAsReplyTo(m);
                 c.send(up);
                 pushToGuild(sag, user.userID, up);          // diffusion temps réel aux autres membres en ligne
@@ -2305,6 +2306,17 @@ public final class LoginServer {
                 long dmg = ServerInvasion.extractBossDamage(ba, bossType);
                 ServerInvasion.BossOutcome bo =
                     ServerInvasion.attackBoss(bg2, user, ud, ba.bossID, ba.damageMultiplier, dmg, banow);
+                // CONTEST : le chemin serveur d'invasion accumule les dégâts MANUELLEMENT (n'appelle pas
+                // InvasionHelper.recordBossFightOutcome qui, lui, déclencherait onInvasionBossAttack) → on appelle le hook
+                // EXPLICITEMENT (§3) avec les lineups du wire. Tâche INVASION/BATTLE_* → blob per-user (persisté par store.save).
+                if (ba.base != null && ba.base.outcome != null) {
+                  final com.perblue.heroes.network.messages.CombatOutcome io = ba.base.outcome;
+                  final java.util.Collection ia = ba.base.attackers != null ? ba.base.attackers : new java.util.ArrayList<>();
+                  final java.util.Collection idf = ba.base.defenders != null ? ba.base.defenders : new java.util.ArrayList<>();
+                  com.perblue.heroes.game.objects.User iGameUser = user.gameUser();
+                  ServerContestData.record(user, iGameUser, u ->
+                      com.perblue.heroes.game.logic.ContestHelper.onInvasionBossAttack(u, io, ia, idf));
+                }
                 store.saveUserInvasion(user.shardID, user.userID, ServerInvasion.userDataToBytes(ud));
                 store.save(user);
                 if (bg2 != null) store.saveGuild(bg2);
@@ -2592,6 +2604,17 @@ public final class LoginServer {
                   ServerWarAttack.recordAttack(w, g.guildID, user.basicInfo(), wa.defendingUserID,
                       wa.battles, extra, com.perblue.heroes.util.TimeUtil.serverTimeNow());
                   store.saveWar(w);
+                  // CONTEST : onWarAttack est piloté par l'écran client (WarHelper ne l'appelle pas) → hook EXPLICITE (§3)
+                  // avec les lineups du wire (wa.base). Tâche WAR_ATTACK/BATTLE_* → blob per-user, persisté ci-dessous.
+                  if (wa.base != null && wa.base.outcome != null) {
+                    final com.perblue.heroes.network.messages.CombatOutcome wo = wa.base.outcome;
+                    final java.util.Collection waAtk = wa.base.attackers != null ? wa.base.attackers : new java.util.ArrayList<>();
+                    final java.util.Collection waDef = wa.base.defenders != null ? wa.base.defenders : new java.util.ArrayList<>();
+                    com.perblue.heroes.game.objects.User wGameUser = user.gameUser();
+                    ServerContestData.record(user, wGameUser, u ->
+                        com.perblue.heroes.game.logic.ContestHelper.onWarAttack(u, wo, waAtk, waDef));
+                    store.save(user);
+                  }
                   com.perblue.heroes.network.messages.WarPointsUpdate up =
                       ServerWarScoring.toPointsUpdate(w, g.guildID);
                   c.send(up);
