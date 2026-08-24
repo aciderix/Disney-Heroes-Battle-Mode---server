@@ -1704,10 +1704,17 @@ public final class ServerUser {
       lr.lootDrops = new DropConverter(user).convert(drops);
     }
     lr.wasFree = freeChest(user, type, count, chestSnap);
+    // CONTEST live-ops : PRÉ-PEUPLER la map contest du user AVANT giveChestRewards, pour que ses crédits INTERNES de contest
+    // (RewardHelper.giveReward → ContestHelper.onItemEarn → tâches ITEM_EARN_*) ET l'appel onChestOpen ci-dessous mutent le
+    // blob per-user PERSISTÉ (ServerContestData). Défaut (aucun contest actif) = no-op.
+    ServerContestData.prepare(this, user);
     // Donne les récompenses au joueur autoritatif + remplit heroesUnlocked (bl=true) — code du jeu. On passe le SNAPSHOT
     // opérateur (chestSnap, pas null) : giveChestRewards appelle getPurchaseCurrency(type, snapshot) qui, pour EVENT,
     // déréférence getSingleEventChest() (null → NPE). Pour les coffres normaux, chestSnap == comportement NONE (défaut sûr).
     ChestHelper.giveChestRewards(user, type, lr, chestSnap, m.eventID, true, count);
+    // Tâche OPEN_CHEST du contest (logique du jeu) — le blob a été pré-peuplé ci-dessus.
+    try { com.perblue.heroes.game.logic.ContestHelper.onChestOpen(user, type, count); }
+    catch (Throwable t) { System.out.println("[contest] onChestOpen: " + t); }
     ChestHelper.updateChestRollCounters(user, type, count, m.usedItem, lr.wasFree, m.hasBulkBonus);
     // Compteurs QUOTIDIENS d'ouverture (limites d'achat + tâches de contest sur don d'objet). Passe par
     // la couche évènements spéciaux (SpecialEventsHelper.helper) — initialisée dans ServerContext (comme
@@ -1982,6 +1989,18 @@ public final class ServerUser {
             "Team Level " + newTL + " Reward", "Congratulations on reaching Team Level " + newTL + "!", tlDrops);
         System.out.println("[teamlevel] TL " + oldTL + "→" + newTL + " → " + tlDrops.size() + " récompense(s) par courrier [persisté]");
       }
+    }
+    // CONTEST live-ops : créditer les tâches de contest via la LOGIQUE DU JEU (ContestHelper.onCampaignAttack) — les points
+    // sont crédités dans le blob per-user (ServerContestData, mutation en place). Défaut (aucun contest actif) = no-op. On
+    // passe les VRAIS lineups client (m.base.attackers/defenders) = la signature native du jeu (tâches BATTLE_WON,
+    // ENEMY_DEFEATED, BATTLE_HEROES_LEFT…). Persistance via le store.save du handler (comme le reste du record).
+    if (m.base != null && m.base.outcome != null) {
+      final GameMode cmode = mode;
+      final com.perblue.heroes.network.messages.CombatOutcome outcome = m.base.outcome;
+      final java.util.Collection atk = m.base.attackers != null ? m.base.attackers : new java.util.ArrayList<>();
+      final java.util.Collection def = m.base.defenders != null ? m.base.defenders : new java.util.ArrayList<>();
+      ServerContestData.record(this, user, u ->
+          com.perblue.heroes.game.logic.ContestHelper.onCampaignAttack(u, cmode, outcome, atk, def));
     }
   }
 

@@ -6396,3 +6396,28 @@ lastDailyResetTime, originalShardID}` ; **`ClientContestData implements IContest
 Régression **148/148** (`ContestDataTest`). Fichiers : `ServerContestData.java` (nouveau), `ServerUser.java` (persistance contestData),
 `UserStore.java` (colonne + migration + SELECT/INSERT), `LoginServer.java` (handler GetAllContestData), `ContestDataTest.java` (nouveau),
 `regression.sh`, `JOURNAL.md`, `MEMORY.md`. **SUITE = incr.3 wiring des tâches (`ContestHelper.on*` → crédit points dans le blob).**
+
+## 2026-08-24 (g163) — CONTEST incrément 3 (wiring des tâches → crédit de points) ✅ headless
+
+Incr.3 = brancher les déclencheurs DU JEU pour créditer les points de contest dans le blob per-user (§3, on exécute la logique
+du jeu, on n'invente pas le barème).
+- **Point d'intégration découvert** : `IUser.getContestData(long id)` → `ClientContestData` depuis la map `User.contestData`
+  (crée un frais si absent). `ContestHelper.on*` → `recordAttackTasks` → `SpecialEventsHelper.getActiveContests(user)` +
+  `ContestTaskType.recordAttackForTask(...)` créditent via `user.getContestData(id)`. **Recette** : PRÉ-PEUPLER
+  `user.getContestData()` avec un `ClientContestData` enveloppant le `ContestData` PERSISTÉ du blob → le jeu mute EN PLACE notre
+  blob (aucune extraction). Sans ça, le jeu créerait un `ClientContestData` frais hors blob → progression perdue.
+- `ServerContestData.prepare(su, user)` (pré-peuple les contests actifs) + `record(su, user, hook)` (prepare + hook) +
+  `activeContestIDs(su)` + interface `ContestHook`.
+- **Wiring** : (a) `recordCampaignAttack` → `ContestHelper.onCampaignAttack(user, mode, m.base.outcome, m.base.attackers,
+  m.base.defenders)` (lineups NATIFS du client = signature du jeu ; tâches BATTLE_WON/ENEMY_DEFEATED/BATTLE_HEROES_LEFT…) ;
+  (b) `openChest` → `prepare` AVANT `giveChestRewards` (pour capter le crédit INTERNE `onItemEarn` des tâches ITEM_EARN_*) +
+  `ContestHelper.onChestOpen(user, type, count)` (tâche OPEN_CHEST). Persistance via le `store.save` des handlers.
+- `ContestCreditTest` (régression) : contest BATTLE_WON (10 pts) → `onCampaignAttack(WIN)` crédite 10 pts ; 2ᵉ combat → 20 ;
+  round-trip WIRE préserve. Coffres/campagne inchangés (ChestCharge/ExtraChest/CampaignAttack verts).
+- **RESTE (incr.4)** : classement serveur-autoritatif (rang par points) + réclamation des progressRewards (paliers, courrier) +
+  rankRewards (fin de contest). D'autres hooks (`onSurgeAttack`/`onWarAttack`/`onExpeditionAttack`/`onItemBurn`/`onResourceBurn`)
+  se branchent au même patron `ServerContestData.record` sur leurs chemins respectifs (à ajouter au besoin/en jeu, §8).
+
+Régression **149/149** (`ContestCreditTest`). Fichiers : `ServerContestData.java` (prepare/record/activeContestIDs/ContestHook),
+`ServerUser.java` (recordCampaignAttack → onCampaignAttack ; openChest → prepare + onChestOpen), `ContestCreditTest.java` (nouveau),
+`regression.sh`, `JOURNAL.md`, `MEMORY.md`. **SUITE = incr.4 classement + réclamation.**

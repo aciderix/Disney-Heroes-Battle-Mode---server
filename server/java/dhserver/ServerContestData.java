@@ -99,4 +99,50 @@ public final class ServerContestData {
     } catch (Throwable t) { System.out.println("[contest] response: " + t); }
     return resp;
   }
+
+  /** IDs des contests ACTIFS (composant {@code Contest} du snapshot opérateur) pour {@code su} (user déjà bindé). */
+  @SuppressWarnings("unchecked")
+  public static java.util.List<Long> activeContestIDs(ServerUser su) {
+    java.util.List<Long> ids = new java.util.ArrayList<>();
+    try {
+      com.perblue.heroes.game.specialevent.SpecialEventSnapshot snap = ServerEvents.snapshot();
+      for (Object o : snap.getActiveEvents()) {
+        com.perblue.common.specialevent.SpecialEventInfo e = (com.perblue.common.specialevent.SpecialEventInfo) o;
+        if (e.getComponent(com.perblue.common.specialevent.components.Contest.class) != null) ids.add(e.getID());
+      }
+    } catch (Throwable t) { System.out.println("[contest] activeContestIDs: " + t); }
+    return ids;
+  }
+
+  /** Un hook qui exécute la logique DU JEU de crédit ({@code ContestHelper.on*}) sur le {@code User} préparé. */
+  public interface ContestHook { void run(com.perblue.heroes.game.objects.User u); }
+
+  /**
+   * Exécute un crédit de tâche de contest (§3) : (1) PRÉ-PEUPLE la map {@code user.getContestData()} avec, pour chaque
+   * contest ACTIF, un {@code ClientContestData} qui enveloppe le {@code ContestData} PERSISTÉ du blob de {@code su} ;
+   * (2) lance le hook du jeu ({@code ContestHelper.on*}) qui mute cet objet via {@code user.getContestData(id)} — mutation
+   * EN PLACE du blob (aucune extraction nécessaire) ; (3) l'appelant PERSISTE ({@code store.save}). Sans la pré-population,
+   * le jeu créerait un {@code ClientContestData} frais hors de notre blob → progression perdue.
+   */
+  /**
+   * PRÉ-PEUPLE la map {@code user.getContestData()} avec, pour chaque contest ACTIF, un {@code ClientContestData}
+   * enveloppant le {@code ContestData} PERSISTÉ du blob de {@code su}. À appeler AVANT toute logique du jeu qui crédite
+   * un contest ({@code ContestHelper.on*}, y compris les crédits INTERNES comme {@code onItemEarn} de {@code giveChestRewards})
+   * → ces crédits mutent EN PLACE notre blob. L'appelant PERSISTE ensuite ({@code store.save}).
+   */
+  @SuppressWarnings("unchecked")
+  public static synchronized void prepare(ServerUser su, com.perblue.heroes.game.objects.User user) {
+    try {
+      java.util.Map<Object, Object> map = user.getContestData();
+      if (map == null) return;
+      for (Long id : activeContestIDs(su))
+        map.put(id, clientData(id, getContestData(su, id)));   // blob-backed → mutation en place
+    } catch (Throwable t) { System.out.println("[contest] prepare: " + t); }
+  }
+
+  /** {@link #prepare} + exécute le hook du jeu ({@code ContestHelper.on*}). L'appelant persiste. */
+  public static synchronized void record(ServerUser su, com.perblue.heroes.game.objects.User user, ContestHook hook) {
+    prepare(su, user);
+    try { hook.run(user); } catch (Throwable t) { System.out.println("[contest] record: " + t); }
+  }
 }
