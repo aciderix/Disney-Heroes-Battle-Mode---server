@@ -199,12 +199,16 @@ immédiate — ce sont des composants de CONTENU, pas « un builder de plus ».
 
 > **APPROFONDISSEMENT (g159, demande user « regarde bien ce que c'est » + `.tab`/code/outils)** — findings ci-dessous intégrés.
 
-### A. ExtraChest (EXTRA_CHEST) — coffre BONUS temporaire sur l'écran CRATES — ✅ IMPLÉMENTÉ (headless, g160)
-> **LIVRÉ (g160)** — `ServerEvents.buildExtraChestEvent` + `specJsonExtraChest` + branche `eventFromSpec` + `AdminEvents --extra-chest`
-> + branche EVENT de `ServerUser.openChest` (roll serveur-autoritatif). `ExtraChestTest` (146) PROUVE bout-en-bout headless :
+### A. ExtraChest (EXTRA_CHEST) — coffre BONUS temporaire sur l'écran CRATES — ✅ LIVRÉ & VÉRIFIÉ EN JEU (g160)
+> **LIVRÉ + ✅ EN JEU (g160)** — `ServerEvents.buildExtraChestEvent` + `specJsonExtraChest` + branche `eventFromSpec` + `AdminEvents
+> --extra-chest` + branche EVENT de `ServerUser.openChest` (roll serveur-autoritatif). `ExtraChestTest` (146) PROUVE bout-en-bout headless :
 > snapshot expose le coffre (coût/monnaie du jeu), la table inline roule du VRAI loot, **`openChest(EVENT)` débite exactement le
-> coût + crédite le loot**, round-trip spec. **Point dur `preset` RÉSOLU** en trouvant le **schéma FORMAT B** (voir ci-dessous) —
-> pas de rustine (§2). RESTE = vérif EN JEU (§8, CRATES montre le coffre bonus + achat/ouverture).
+> coût + crédite le loot**, free buys (wasFree, 0 débit), round-trip spec. **Point dur `preset` RÉSOLU** via le **schéma FORMAT B** (voir
+> ci-dessous) — pas de rustine (§2). **✅ EN JEU** : `nav CHESTS` (coffre bonus sur CRATES) + `nav EVENT_CRATE` (« SUPPLY CRATE » + info +
+> « FREE NOW! » + « Crates Left: 50/50 » = mes params admin) + ouverture (tap FREE NOW → `BuyChests(EVENT)` → serveur roule MA table
+> inline → « CRATE REWARDS » 50 GEAR_TOKENS/20 DIAMONDS, `LootResults [persisté]`). Captures `manual/eventcrate/ec_after/ec_free.png`.
+> **CORRECTIF §8 trouvé en jeu** : `freeChest()` passait `null` à `hasFreeChest` → la branche EVENT (lit `getFreeBuys()` vs
+> `getEventCompletionCount(id)`) ne voyait pas les free buys → « FREE NOW » facturé à tort ; fix = passer le snapshot opérateur.
 >
 > **Schéma EXACT (bytecode `EventChestData.<init>`)** : le discriminant est `if (eventChestData.has("text")) …` — DEUX formats.
 > **Format A** (`text` présent) : `text.preset` (String REQUIS) → résout les libellés d'écran via `EventPresets.properties` (le

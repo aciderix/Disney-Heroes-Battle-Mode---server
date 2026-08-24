@@ -6278,7 +6278,7 @@ Rien de code changé (recon pure). Régression 145/145 (inchangée). Fichiers : 
 (pointeur « mode en cours » corrigé → SPECIAL_EVENTS ; g159). **La CONSIGNE DE HANDOFF (successeur : rituel de reprise EN ENTIER avant toute
 reprise) est en tête de MEMORY + imposée par le hook SessionStart — rappelée explicitement à chaque compression.**
 
-## 2026-08-24 (g160) — SPECIAL_EVENTS live-ops : composant EXTRA_CHEST (coffre bonus CRATES) ✅ headless
+## 2026-08-24 (g160) — SPECIAL_EVENTS live-ops : composant EXTRA_CHEST (coffre bonus CRATES) ✅ headless + ✅ VÉRIFIÉ EN JEU
 
 7ᵉ des 8 composants live-ops LIVRÉ (reste Contest). **Point dur historique `preset` RÉSOLU sur les FAITS du bytecode** (§2, pas de
 rustine ; §8, pas de supposition). Méthode : disassembly de `EventChestData.<init>` → le discriminant est `if (eventChestData.has("text"))`.
@@ -6309,8 +6309,23 @@ rustine ; §8, pas de supposition). Méthode : disassembly de `EventChestData.<i
 - `ExtraChestTest` (régression) : (1) snapshot expose le coffre (coût 100 DIAMONDS, monnaie via logique du jeu) ; (2) la table inline
   roule ≥1 drop ; (3) **`openChest(EVENT)` end-to-end → loot crédité + DIAMONDS 100000→99900 (débit=100)** ; (4) round-trip spec.
 
+**✅ VÉRIFIÉ EN JEU (§8)** — `AdminEvents --extra-chest … --ec-drop GOLD:100000:3 --ec-drop GEAR_TOKENS:50:2 --ec-drop DIAMONDS:20:1`
+poussé dans la DB serveur → `run-online.sh` (client réel, id=1 TL200) :
+- **`nav CHESTS`** → écran CRATES montre le coffre bonus à côté des GOLD/DIAMOND/GUILD CRATE (capture `manual.png`).
+- **`nav EVENT_CRATE`** → détail **« SUPPLY CRATE » + « Contains an assortment of resources! » + « FREE NOW! » + « Crates Left: 50/50 »**
+  = EXACTEMENT mes params admin (title/info/freeBuys/maxBuys), rendus par le client depuis `REFRESH_SPECIAL_EVENTS`. Capture `eventcrate.png`.
+- **Ouverture** (tap FREE NOW via pilote `fire`) → client `BuyChests(EVENT)` → serveur roule MA table inline → écran **« CRATE REWARDS »**
+  (50 GEAR_TOKENS puis 20 DIAMONDS selon le tirage pondéré). Serveur : `BuyChests1` → `LootResults coffre EVENT [persisté]` +
+  `RECORD_SERVER_ROLL_FINISHED [persisté]`. Captures `ec_after.png`/`ec_free.png`.
+- **CORRECTIF FIDÉLITÉ §8 (trouvé EN JEU)** : le 1ᵉʳ open affichait « FREE NOW » mais le serveur prenait le chemin PAYANT (débit 100,
+  écrêté à 0 car compte 0💎). Cause : `freeChest()` passait un snapshot `null` à `hasFreeChest` → la branche EVENT (qui lit
+  `getSingleEventChest().getFreeBuys()` vs `getEventCompletionCount(id)`) ne voyait pas les free buys. **Fix** : `freeChest(user, type,
+  count, snap)` passe le snapshot opérateur → « FREE NOW » honoré (chemin GRATUIT, aucun débit). Re-vérifié EN JEU (freeBuys=3 → open
+  GRATUIT confirmé, 0 ligne `coffre PAYANT` serveur + 20 DIAMONDS crédités). `ExtraChestTest` renforcé (cas freeBuys=1 → wasFree=true, 0 débit).
+  Coffres normaux inchangés (`FreeChest/ChestCharge/ChestPaidDebit/ChestValidate` verts).
+
 Régression **146/146** (`ExtraChestTest`). Fichiers : `ServerEvents.java` (buildExtraChestEvent + ChestDrop + extraChestDropTsv +
-specJsonExtraChest + eventFromSpec + esc), `ServerUser.java` (openChest branche EVENT + throws + giveChestRewards snapshot),
-`AdminEvents.java` (flags --extra-chest/--ec-*), `ChestValidateTest.java`/`WishingWellWishTest.java` (throws), `ExtraChestTest.java`
-(nouveau), `regression.sh`, `docs/SPECIAL_EVENTS.md` (§RECON A = IMPLÉMENTÉ), `MEMORY.md`. **RESTE = vérif EN JEU EXTRA_CHEST (§8) puis
-Contest (dernier composant, mode serveur-autoritatif).**
+specJsonExtraChest + eventFromSpec + esc), `ServerUser.java` (openChest branche EVENT + throws + giveChestRewards snapshot + **freeChest
+snapshot**), `AdminEvents.java` (flags --extra-chest/--ec-*), `ChestValidateTest.java`/`WishingWellWishTest.java` (throws), `ExtraChestTest.java`
+(nouveau, + cas freeBuys), `regression.sh`, `docs/SPECIAL_EVENTS.md` (§RECON A = ✅ EN JEU), `MEMORY.md`. **RESTE = Contest (dernier
+composant, mode serveur-autoritatif).**

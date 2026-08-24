@@ -86,7 +86,26 @@ public final class ExtraChestTest {
     check(ChestHelper.getPurchaseCost(bind(su, bd), ChestType.EVENT, 1, snap2) == 100, "event reconstruit → même coût");
     System.out.println("[extrachest] spec round-trip → coffre reconstruit (coût 100 DIAMONDS) ✔");
 
+    // (5) FREE BUYS : un coffre event avec freeBuys=1 → le PREMIER achat est GRATUIT (wasFree=true, aucun débit) —
+    // fidélité du « FREE NOW » du client. hasFreeChest(EVENT, snapshot) lit getFreeBuys() vs getEventCompletionCount(id) ;
+    // freeChest passe le snapshot opérateur (sinon la branche EVENT NPE → coffre traité en payant à tort). Vérifié EN JEU.
+    ServerUser su2 = ServerUser.newPlayer(2L, 1);
+    BootData bd2 = su2.bootData(); bd2.userInfo.basicInfo.teamLevel = 60; bd2.userInfo.diamonds = 0;   // 0 diamant : seul un FREE peut ouvrir
+    SpecialEventInfo evFree = ServerEvents.buildExtraChestEvent(950_011L, 100, ResourceType.DIAMONDS,
+        10, 50, 5, 1, true, "Free Crate", "First one free!", drops, 1, now - 1000, now + 86_400_000L);
+    ServerEvents.setOperatorEvents(Collections.singletonList(evFree));
+    ServerEvents.installBootDefaults();
+    long dBefore = bd2.userInfo.diamonds;
+    BuyChests freeBuy = new BuyChests(); freeBuy.chestType = ChestType.EVENT; freeBuy.count = 1; freeBuy.cost = 0;
+    LootResults rf = su2.openChest(freeBuy);
+    long dAfter = bd2.userInfo.diamonds;
+    check(rf.wasFree, "freeBuys=1 → 1er achat GRATUIT (wasFree=true) (" + rf.wasFree + ")");
+    check(dAfter == dBefore, "achat GRATUIT → aucun débit (" + dBefore + "→" + dAfter + ")");
+    check(rf.lootDrops != null && !rf.lootDrops.isEmpty(), "coffre gratuit crédite quand même le loot");
+    System.out.println("[extrachest] freeBuys=1 : 1er achat GRATUIT (wasFree=" + rf.wasFree + ", DIAMONDS " + dBefore + "→" + dAfter + ", loot=" + rf.lootDrops.size() + ") ✔");
+
+    ServerEvents.setOperatorEvents(new ArrayList<>());
     ServerEvents.install(new ArrayList<>());
-    System.out.println("[extrachest] OK — EXTRA_CHEST objet+table du jeu, coût/monnaie/loot = params admin, chemin openChest(EVENT) réel. [headless]");
+    System.out.println("[extrachest] OK — EXTRA_CHEST objet+table du jeu, coût/monnaie/loot/freeBuys = params admin, chemin openChest(EVENT) réel. [headless]");
   }
 }

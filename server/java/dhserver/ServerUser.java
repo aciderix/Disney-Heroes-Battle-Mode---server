@@ -1703,7 +1703,7 @@ public final class ServerUser {
       drops = dt.rollNode("ROOT", ctx, new Random());   // vrai roll de la table du jeu
       lr.lootDrops = new DropConverter(user).convert(drops);
     }
-    lr.wasFree = freeChest(user, type, count);
+    lr.wasFree = freeChest(user, type, count, chestSnap);
     // Donne les récompenses au joueur autoritatif + remplit heroesUnlocked (bl=true) — code du jeu. On passe le SNAPSHOT
     // opérateur (chestSnap, pas null) : giveChestRewards appelle getPurchaseCurrency(type, snapshot) qui, pour EVENT,
     // déréférence getSingleEventChest() (null → NPE). Pour les coffres normaux, chestSnap == comportement NONE (défaut sûr).
@@ -3455,8 +3455,13 @@ public final class ServerUser {
   }
 
   /** Coffre gratuit ? (logique du jeu ; défaut prudent = gratuit si l'appel échoue headless). */
-  private static boolean freeChest(User user, ChestType type, int count) {
-    try { return ChestHelper.hasFreeChest(user, type, null, count); }
+  private static boolean freeChest(User user, ChestType type, int count, SpecialEventSnapshot snap) {
+    // On passe le SNAPSHOT opérateur (pas null) : pour ChestType.EVENT, hasFreeChest lit
+    // snapshot.getSingleEventChest().getFreeBuys() vs user.getEventCompletionCount(eventID) → décide fidèlement
+    // « FREE NOW » (comme le client). Avec null, la branche EVENT NPE (getSingleEventChest sur null) → le coffre
+    // event était traité en PAYANT à tort. Pour les coffres normaux (GOLD/SILVER), la dispo du coffre gratuit
+    // quotidien passe par getResource/getFreeChestResource (pas le snapshot) → comportement inchangé.
+    try { return ChestHelper.hasFreeChest(user, type, snap, count); }
     catch (Throwable t) { return true; }
   }
 
