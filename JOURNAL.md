@@ -6616,3 +6616,32 @@ Demande utilisateur : auditer que les écrans STORE (fermés, aucun IAP) ne CRAS
 
 Régression **155/155** (inchangée — aucun code modifié). Fichiers : `docs/HUB_NAV.md` §7.3 (résultat d'audit), `JOURNAL.md`,
 `MEMORY.md`. **⇒ Audit clos : les écrans store, volontairement fermés (aucun IAP), NE cassent PAS le client. RESTE = Phase 2.**
+
+## 2026-08-24 (g170) — PHASE 2 : doc de suivi + AUDIT GLOBAL automatisé (4 axes, auto-log des manques)
+
+Demande utilisateur : créer un doc de SUIVI Phase 2 (à mettre à jour) et démarrer par un AUDIT de tout le jeu via les outils
+d'industrialisation — (1) aucun écran oublié, (2) tout bien câblé, (3) pas de valeurs en dur qui devraient venir de
+`.tab`/jeu/admin, (4) pas d'erreurs client — avec **auto-log des manques** en doc pour suivi. « Travail propre, intelligent. »
+
+- **`docs/PHASE2_TRACKING.md`** (nouveau) : tableau de bord vivant des chantiers A→G (détail dans `PHASE2_PLAN.md`), avec le
+  chantier A (vérif globale) décomposé en 4 axes + statuts + liens vers les rapports auto-générés + triage des manques.
+- **`tools/audit/audit.sh`** (nouveau, réutilise `tools/screentool` ModeGraph/ScreenContract) : 4 axes, régénère 4 rapports :
+  - **A1** `docs/AUDIT_SCREENS.md` : inventaire des **179 écrans** `*Screen` par package (aucun MODE oublié ; sous-écrans à
+    cocher au balayage §7.4 HUB_NAV).
+  - **A2** `docs/AUDIT_WIRING.md` : couverture handlers (section C de `ScreenContract` agrégée sur les 37 packages UI) =
+    messages ENVOYÉS par un écran mais non routés par `LoginServer`. **14 manques** trouvés → triés dans le suivi :
+    3 non-gaps (HEIST retiré du jeu), 1 Phase 2 C (`GetServers`), 3 faibles (`RequestResync` générique fire-and-forget),
+    **7 GAPS réels** (`GetGMemInvasionRankInfo`, `GetPrizeWallData`×2, `GetChestConsumableHistory`, `GetCodebaseAttackLogs`,
+    `GetBlockedList`, `GetUserSaveData`) — écrans secondaires (rankings/journaux/social) → correctif type « réponse vide »
+    (patron hall-of-fame contest), à vérifier EN JEU un par un.
+  - **A3** `docs/AUDIT_HARDCODED.md` : heuristique littéraux métier — **0 candidat** ⇒ le serveur ne code pas les valeurs de
+    RÈGLE en dur (§4 respecté ; défauts de config = dans les `Admin*`, légitime).
+  - **A4** `docs/AUDIT_CLIENT_ERRORS.md` : scan de 8 logs en jeu — **0 erreur non-bénigne** ; bénins CONNUS confirmés
+    (stat-parse `NumberFormatException ""`, `PatchTalent`, `black_market_merchant_drops.tab row 18 auto-weight→1` absorbé,
+    trader INVASION, env/audio/layout headless).
+- **Méthode** : les rapports `AUDIT_*.md` sont AUTO-GÉNÉRÉS (faits bruts, régénérables) ; le TRIAGE/décisions vit dans
+  `PHASE2_TRACKING.md` (maintenu à la main) — séparation propre faits ↔ décisions.
+
+Aucun code serveur modifié (outil + docs) → régression inchangée (155/155). Fichiers : `docs/PHASE2_TRACKING.md`,
+`tools/audit/audit.sh`, `docs/AUDIT_{SCREENS,WIRING,HARDCODED,CLIENT_ERRORS}.md` (nouveaux), `JOURNAL.md`, `MEMORY.md`.
+**SUITE = trancher les 7 GAPS A2 (réponses vides + vérif en jeu), puis chantiers B→G.**
