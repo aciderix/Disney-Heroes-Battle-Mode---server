@@ -515,6 +515,11 @@ public final class DesktopLauncher {
                     else System.out.println("[portattack] usage: portattack <MODE>");
                     continue;
                 }
+                if (low.equals("codebaseattack") || low.startsWith("codebaseattack ")) {  // CODEBASE → combat (chemin réseau réel)
+                    String[] cb = ln.trim().split("[,;\\s]+");
+                    TutorialDriver.codebaseAttack(game, cb.length >= 2 ? Long.parseLong(cb[1]) : 500L);
+                    continue;
+                }
                 if (low.startsWith("portraid ")) {               // portraid <MODE> [raids] → RAID mode difficulty (PORT)
                     String[] pr = ln.trim().split("[,;\\s]+");
                     if (pr.length >= 2) TutorialDriver.portRaid(game, pr[1].toUpperCase(), pr.length >= 3 ? Integer.parseInt(pr[2]) : 3);

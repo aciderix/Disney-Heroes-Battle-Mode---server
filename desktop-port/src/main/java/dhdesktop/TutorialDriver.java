@@ -1613,6 +1613,51 @@ public final class TutorialDriver {
         } catch (Throwable e) { System.out.println("[portattack] échec: " + e); e.printStackTrace(); }
     }
 
+    /** DEV (B-bis) : joue un combat CODEBASE en envoyant le VRAI message {@code CodebaseAttack} par le réseau du client (le
+     *  serveur ré-exécute {@code CodebaseHelper.recordOutcome}). Itération + faiblesse calculées par la logique DU JEU
+     *  ({@code CodebaseHelper}). Un attaquant JAUNE réel du roster satisfait {@code CODEBASE_REQUIRES_YELLOW_HERO}.
+     *  Usage pilote : {@code codebaseattack [score]}. */
+    public static void codebaseAttack(GameMain game, long score) {
+        try {
+            com.perblue.heroes.game.objects.User u = game.getYourUser();
+            int iter = com.perblue.heroes.game.codebase.CodebaseHelper.getCurrentIterationID(u);
+            com.perblue.heroes.network.messages.CodebaseWeakness weak =
+                com.perblue.heroes.game.codebase.CodebaseHelper.getMegaVirusWeakness(iter);
+            // Un attaquant JAUNE réel (lu du roster) : le predicat serveur relit getHero(type).getRarity() >= YELLOW.
+            com.perblue.heroes.network.messages.AttackUnitSummary aus = null;
+            for (Object o : u.getHeroes()) {
+                com.perblue.heroes.game.objects.UnitData ud = (com.perblue.heroes.game.objects.UnitData) o;
+                if (ud.getRarity().ordinal() >= com.perblue.heroes.network.messages.Rarity.YELLOW.ordinal()) {
+                    aus = new com.perblue.heroes.network.messages.AttackUnitSummary();
+                    aus.type = ud.getType(); aus.rarity = ud.getRarity(); aus.power = Math.max(1L, ud.getPower(0)); aus.survived = true;
+                    break;
+                }
+            }
+            if (aus == null) { System.out.println("[codebaseattack] aucun héros JAUNE au roster (lance CodebaseUnlock d'abord)"); return; }
+            com.perblue.heroes.network.messages.AttackLineupSummary als = new com.perblue.heroes.network.messages.AttackLineupSummary();
+            als.units = new java.util.ArrayList<>(java.util.Collections.singletonList(aus));
+
+            com.perblue.heroes.network.messages.CodebaseAttack m = new com.perblue.heroes.network.messages.CodebaseAttack();
+            m.codebaseID = iter;
+            m.weakness = weak;
+            m.finalScore = score;
+            m.megavirusTotalDamageTaken = (float) (score * 1000);   // dégâts→rage via la formule du jeu côté serveur
+            m.finalWeaknessCount = 0;
+            m.minorBuffs = new java.util.ArrayList<>();
+            m.lootEarned = new java.util.ArrayList<>();
+            m.attackEndTime = com.perblue.heroes.util.TimeUtil.serverTimeNow();
+            m.base = new com.perblue.heroes.network.messages.AttackBase();
+            m.base.outcome = com.perblue.heroes.network.messages.CombatOutcome.WIN;
+            m.base.stars = 3;
+            m.base.attackers = new java.util.ArrayList<>(java.util.Collections.singletonList(als));
+            m.base.defenders = new java.util.ArrayList<>();
+            System.out.println("[codebaseattack] iter=" + iter + " weak=" + weak + " score=" + score
+                + " attacker=" + aus.type + "(" + aus.rarity + ") [chemin réseau réel]");
+            game.getNetworkProvider().sendMessage(m);
+            System.out.println("[codebaseattack] CodebaseAttack envoyé");
+        } catch (Throwable e) { System.out.println("[codebaseattack] échec: " + e); e.printStackTrace(); }
+    }
+
     /** DEV : joue un RAID de mode « difficulty » (ex. PORT_DOCKS) en envoyant le VRAI message
      *  {@code RaidDifficultyMode} (×N raids, butin GOLD par raid) par le chemin réseau réel — le serveur ré-exécute
      *  {@code useRaidTickets} (anti-triche + gate VIP/3★) puis {@code recordRaidOutcome} (crédit + cooldown).
