@@ -59,8 +59,32 @@ public class Native {
     public static String getLastSpineError() { return CMP ? CB.getLastSpineError() : JNI ? HostSpine.getLastSpineError() : UnidbgVM.get().getLastSpineError(); }
     public static void printUsedHandleReport() { if (!JNI) UnidbgVM.get().printUsedHandleReport(); }
 
-    static int Atlas_create(byte[] a, boolean pma) { p("Atlas_create"); return CMP ? CB.Atlas_create(a, pma) : JNI ? HostSpine.Atlas_create(a, pma) : UnidbgVM.get().atlasCreate(a, pma); }
-    static void Atlas_dispose(int h) { p("Atlas_dispose"); if (CMP) CB.Atlas_dispose(h); else if (JNI) HostSpine.Atlas_dispose(h); else UnidbgVM.get().atlasDispose(h); }
+    static int Atlas_create(byte[] a, boolean pma) {
+        p("Atlas_create");
+        if (CMP) return CB.Atlas_create(a, pma);
+        if (JNI) {
+            // Un atlas est PARTAGÉ spine↔particules. Le spine tourne sur HostSpine (x86), les particules sur unidbg
+            // (ARM). On crée donc l'atlas dans les DEUX moteurs d'origine et on ponte les handles (cf. AtlasBridge) →
+            // le shadow cparticle traduit le handle pour unidbg. Glue plateforme, aucun moteur réécrit.
+            int hj = HostSpine.Atlas_create(a, pma);
+            try { int hu = UnidbgVM.get().atlasCreate(a, pma); dhbackend.jnispine.AtlasBridge.map(hj, hu); }
+            catch (Throwable t) { System.out.println("[cspine] dual-create atlas unidbg (particules) échec: " + t); }
+            return hj;
+        }
+        return UnidbgVM.get().atlasCreate(a, pma);
+    }
+    static void Atlas_dispose(int h) {
+        p("Atlas_dispose");
+        if (CMP) { CB.Atlas_dispose(h); return; }
+        if (JNI) {
+            HostSpine.Atlas_dispose(h);
+            int hu = dhbackend.jnispine.AtlasBridge.toUnidbg(h);
+            if (hu != h) { try { UnidbgVM.get().atlasDispose(hu); } catch (Throwable ignore) {} }
+            dhbackend.jnispine.AtlasBridge.unmap(h);
+            return;
+        }
+        UnidbgVM.get().atlasDispose(h);
+    }
     static boolean Atlas_getParams(int h, int pg, int[] out) { p("Atlas_getParams"); return CMP ? CB.Atlas_getParams(h, pg, out) : JNI ? HostSpine.Atlas_getParams(h, pg, out) : UnidbgVM.get().atlasGetParams(h, pg, out); }
     static String Atlas_getTexture(int h, int pg) { p("Atlas_getTexture"); return CMP ? CB.Atlas_getTexture(h, pg) : JNI ? HostSpine.Atlas_getTexture(h, pg) : UnidbgVM.get().atlasGetTexture(h, pg); }
 

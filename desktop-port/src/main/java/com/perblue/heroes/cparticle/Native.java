@@ -13,7 +13,11 @@ public class Native {
     public static void ensureLoaded() { UnidbgVM.get(); }
 
     public static String getLastParticleError() { return UnidbgVM.get().getLastParticleError(); }
-    static int Effect_create(byte[] npBytes, int atlasHandle) { return UnidbgVM.get().effectCreate(npBytes, atlasHandle); }
+    static int Effect_create(byte[] npBytes, int atlasHandle) {
+        // Les particules tournent sur unidbg (moteur d'origine). L'atlas peut avoir été créé par HostSpine (mode
+        // spinebackend=jni) → traduire le handle vers celui d'unidbg via AtlasBridge (no-op hors mode jni). §1 glue.
+        return UnidbgVM.get().effectCreate(npBytes, dhbackend.jnispine.AtlasBridge.toUnidbg(atlasHandle));
+    }
     static int Effect_clone(int handle) { return UnidbgVM.get().effectClone(handle); }
     static void Effect_dispose(int handle) { UnidbgVM.get().effectDispose(handle); }
     static int Effect_getVertices(int handle, FloatBuffer verts, ShortBuffer drawCalls) { return UnidbgVM.get().effectGetVertices(handle, verts, drawCalls); }
