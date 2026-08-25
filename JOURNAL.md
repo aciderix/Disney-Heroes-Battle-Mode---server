@@ -6865,3 +6865,32 @@ classement per-shard PERSISTÉS ; anti-triche cooldown réelle). Régression 157
 `TutorialDriver.java`+`DesktopLauncher.java` (pilote), `docs/CODEBASE.md`, `docs/PHASE2_TRACKING.md`, `JOURNAL.md`, `MEMORY.md`.
 Capture `desktop-port/build/cb.png` (hub TL 300). **⇒ Mode Codebase COMPLET. Reste (Phase 2) = décisions util. (release-picker
 chantier D ?) + chantiers B→G.**
+
+## 2026-08-24 (g179) — Régression ~10× + Release-picker + design distribution/login (consigné)
+
+Trois demandes utilisateur.
+
+**1. Régression accélérée (~10×).** Mesure : coût dominant = `ServerContext.init` (~1,7 s, parse ~274 `.tab` + charge
+game-framed.jar) × 157 = ~267 s redondants. La parallélisation de process (4 cœurs) EMPIRE (contention → 427 s mesurés).
+Solution = AMORTIR l'init : `BatchRunner` exécute la majorité des tests DANS UN SEUL JVM (init unique), en réinitialisant
+l'état statique mutable partagé (offset d'horloge + événements opérateur) avant chaque test. Les tests démarrant un vrai
+serveur/socket ou appelant `System.exit` (tueraient le JVM partagé) sont AUTO-DÉTECTÉS (`LoginServer|System.exit|ServerSocket|
+new Socket`) et lancés en process séparés (parallèles). `DH_REG_ISOLATED=1` force l'ancien mode 100 % process-par-test.
+**Résultat : 157/157 verts en ~30 s (vs ~300 s), même couverture.** Fichiers : `BatchRunner.java`, `regression.sh`.
+
+**2. Release-picker (chantier D).** `AdminRelease --list/--status/--set-release <Rxx|#idx>/--reset` = wrapper mince d'AdminClock
+(release → date de la colonne `content.<shard>.tab` → ancre `clock_offset_ms` persistée). Vérifié : R50 → 2022-05-17 Max TL 305
+(persisté, relu process neuf) ; reset → R102 réel. **`docs/RELEASE_PICKER.md` DÉFINIT le périmètre vs `.tab`** : le choix de
+release ne gouverne QUE les `.tab` TimeTable (`content.<shard>.tab` = 38 dimensions [caps/disponibilités/rosters rotatifs/drops
+datés] + `patched_heroes` franchise-season) ; les ~270 AUTRES `.tab` (équilibrage, skills, gear, chests…) = snapshot unique de
+l'APK, INCHANGÉS (choisir R50 ne rétro-version PAS les nombres d'équilibrage). Couplage horloge/timers = dépendance cachée
+(étape 3). Fichiers : `AdminRelease.java`, `docs/RELEASE_PICKER.md`.
+
+**3. Design distribution + login (consigné, non implémenté).** `docs/DISTRIBUTION.md` : (a) on livre le LOGICIEL sans le jeu ;
+l'utilisateur fournit l'APK (dernière version) et le logiciel génère à la demande le port Windows/Linux OU le nécessaire serveur
+(pipeline `decompile`/`reframe`/`extract_game_data`, §4/§7, version-agnostique, réf. testée v12.1.0). (b) identité/login joueur =
+**phrase de mots aléatoires** (mnémonique type crypto/BIP39) : dérive userID+clé, portable, zéro PII, jamais stockée en clair —
+cadre le multi-serveur (§5). Décisions consignées pour Phase 2 (C launcher / D backend / E APK).
+
+Régression 157/157 (~30 s). Fichiers : `BatchRunner.java`, `regression.sh`, `AdminRelease.java`, `docs/RELEASE_PICKER.md`,
+`docs/DISTRIBUTION.md`, `JOURNAL.md`, `MEMORY.md`.
