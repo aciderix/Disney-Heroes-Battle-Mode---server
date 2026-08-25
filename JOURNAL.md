@@ -6939,3 +6939,25 @@ Correctif du commentaire ServerContext (240-244) + `docs/PHASE2_TRACKING.md` ét
 Régression **158/158** (mode rapide ~42 s). Fichiers : `ServerContext.java`, `ServerUser.java`, `LoginServer.java`,
 `AdminRelease.java`, `ReleaseOffsetTest.java` (nouveau), `regression.sh`, `docs/RELEASE_PICKER.md`, `docs/PHASE2_TRACKING.md`,
 `JOURNAL.md`, `MEMORY.md`.
+
+## 2026-08-25 (g182) — Chantier B (perf combat) : ÉTUDE DÉTAILLÉE + rebuild natif de-risqué (docs/PERF_PLAN.md)
+
+Demande util. : étudier proprement TOUT ce qu'il faut pour jouer/tester, cible **≥30 fps combat**, **zéro destruction
+visuelle/gameplay**. Étude factuelle (faits déjà mesurés consolidés) :
+- **Diagnostic** : particules unidbg = viable (~118/frame, pas le goulot) ; **spine = goulot** (~2111 µs/squelette émulé →
+  ~7/frame @60 ; combat=10 héros) ; fps combat mesuré ~9 (llvmpipe headless). **Ratio backend mesuré** : unidbg 16 900 ms vs
+  **JNI natif x86 337 ms = ~50×** ; ~5,8 ms/frame vs **~0,12 ms/frame** → 60 fps atteignable, spine sorti du chemin critique.
+- **Archi retenue (déjà bâtie)** : rendu desktop = **spine-c officiel 3.6 compilé hôte** (`libhostspine64.so`, colle JNI d'origine,
+  JNI réel) `-Ddh.spinebackend=jni` ; particules = unidbg (identique) ; **autorité combat = serveur unidbg bit-exact** (dérive
+  flottante ARM↔x86 → JNI non bit-identique, OK pour l'affichage, PAS pour l'autorité §3) ; certif = mode `compare` (0 diff).
+  ⇒ desktop natif pour l'œil, serveur unidbg pour l'issue → **fidélité visuelle ET gameplay par construction**. Composants
+  existants : `HostSpine.java`, `CompareBackend.java`, `JavaSpineBackend.java`, `native/build.sh`+`build-hostspine.sh`, oracle.
+- **B1 de-risqué ce jour** : `native/build.sh && build-hostspine.sh` en conteneur neuf (clone spine-c 3.6, gcc 13) → **OK** :
+  `libhostspine64.so` (250 Ko, 47 symboles HostSpine) + `spine-native64.so` (252 Ko). Recette reproductible (§7 ; .so gitignorés).
+- **Reste (ordonné)** : **B2 boot JNI-autonome (handle-registry) = BLOQUANT principal** ; B3 certif matrice (0 diff) ; B4 scène
+  combinée ; B5 couverture hors-combat (MainScreen ~12 persos, méthodes omises `setSlotEyeState`…) ; B6 mesure fps EN JEU sur GPU
+  réel (⚠️ llvmpipe headless fausse la mesure) ; B7 optim résiduelles (getVertices cache/LOD, C2/dynarmic) si <30 ; B8 garde-fous
+  fidélité (issue=serveur, sommets vs oracle, captures vs référence).
+
+Aucun code produit (étude + rebuild de vérif). Fichiers : `docs/PERF_PLAN.md` (nouveau), `JOURNAL.md`, `MEMORY.md`.
+**Chemin critique jouable : B1 ✅ → B2 → B6 (GPU réel).**
