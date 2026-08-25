@@ -22,9 +22,10 @@ Principes tenus :
 - **§4 / §7** : ces artefacts sont **régénérés par script** depuis l'APK, **jamais committés/distribués** (cf. `.gitignore`,
   `docs/ASSETS.md`). Le logiciel = de la glue + des outils ; le contenu du jeu vient toujours de l'APK de l'utilisateur.
 - **Version-agnostique** : la pipeline **re-extrait / re-décompile** depuis l'APK fourni → pas de valeur du jeu figée dans notre
-  code. **Build de référence actuellement testé = v12.1.0** ; l'utilisateur fournit la dernière version disponible au moment de
-  l'installation (le pipeline s'y adapte ; d'éventuels écarts de schéma `.tab`/bytecode sont traités comme des faits à corriger,
-  §8, pas contournés).
+  code. **Version PUBLIQUE de référence = 8.0** (nom marketing de l'app ; l'APK de référence dans le repo est nommé
+  `game/disney-heroes-12.1.0.apk` — numérotation interne/build distincte du numéro public). L'utilisateur fournit la dernière
+  version publiée au moment de l'installation ; le pipeline s'y adapte (d'éventuels écarts de schéma `.tab`/bytecode sont traités
+  comme des faits à corriger, §8, jamais contournés).
 - **Ergonomie cible (chantier C, launcher)** : un assistant unique « fournis ton APK → choisis (Port PC / Port Linux / Serveur)
   → le reste est généré » (encapsule `decompile.sh` / `reframe` / `extract_game_data.sh` / build).
 

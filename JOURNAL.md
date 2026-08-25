@@ -6894,3 +6894,20 @@ cadre le multi-serveur (§5). Décisions consignées pour Phase 2 (C launcher / 
 
 Régression 157/157 (~30 s). Fichiers : `BatchRunner.java`, `regression.sh`, `AdminRelease.java`, `docs/RELEASE_PICKER.md`,
 `docs/DISTRIBUTION.md`, `JOURNAL.md`, `MEMORY.md`.
+
+## 2026-08-24 (g180) — Précisions util. : version publique 8.0 + périmètre admin du release-picker (faits vérifiés)
+
+Retour utilisateur. (1) Version PUBLIQUE de l'app = **8.0** (l'APK repo `disney-heroes-12.1.0.apk` = numérotation interne/build) →
+noté dans `docs/DISTRIBUTION.md`. (2) Clarification de l'intention admin du release-picker, VÉRIFIÉE au bytecode :
+- **Ère → PLAFONDS** (via AdminRelease) : `ContentColumn` porte `maxTeamLevel` (R1=50→R102=565), `maxRarity`, `maxGearRarity`,
+  `maxGuildLevel`, `maxChapter`, `port/trialsDifficultyCap`, `invasionMaxTeamLevel/Rarity`. ⇒ oui, les débuts avaient des paliers
+  bas, restaurables. MAIS l'ère **ne contrôle PAS l'échelle des nombres** (aucun champ ressources/cap/monnaie dans ContentColumn ;
+  l'accumulation « milliards » vient des `.tab` d'équilibrage = snapshot APK courant) → plafonds bas + nombres actuels ; pas de
+  retour aux « petits chiffres » sans data historique (absente). Alternative granulaire : `ContentStats.setUserOffset(user,off)`
+  (ère par joueur, même caveat d'affichage client).
+- **Événements → `AdminEvents`** (couche opérateur, fenêtres explicites), **indépendant de l'ère** : c'est là qu'on gère
+  précisément les events, sans bouger l'ère. **Timers (reset)** = `TimeUtil.serverTimeNow()`+`computeTimeForDay` → serveur-
+  autoritatifs, **découplés de l'appareil du joueur** (uniformes) ✅ ; MAIS PAS de l'ère (même `serverTimeNow`) → déplacer l'ère
+  décale aussi les timers. ⇒ ère/plafonds = AdminRelease ; events = AdminEvents.
+
+Docs : `docs/RELEASE_PICKER.md` (§4bis), `docs/DISTRIBUTION.md`. Aucun code modifié.
