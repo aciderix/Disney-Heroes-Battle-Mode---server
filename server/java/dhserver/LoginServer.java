@@ -363,6 +363,39 @@ public final class LoginServer {
                   System.out.println("[login]     ⛔ RaidDifficultyMode REFUSÉ (anti-triche) : " + t.getMessage());
                 } else { System.out.println("[login]     ! recordRaidDifficultyMode échec: " + t); t.printStackTrace(); }
               }
+            } else if (m instanceof com.perblue.heroes.network.messages.CodebaseAttack) {
+              // CODEBASE (« The Codebase ») — combat du mode de difficulté CODEBASE. Le client a joué (client-autoritatif) et
+              // envoie l'issue (fire-and-forget). Le serveur ré-exécute CodebaseHelper.recordOutcome (anti-triche : chapitre 41 /
+              // ouvert / héros jaune / quota / cooldown ; crédit butin ; high scores per-user write-through ; hook contest), puis
+              // insère l'attaque dans le CLASSEMENT/journal per-shard serveur-autoritatif (topScores + recent), et persiste.
+              // Anti-triche = ClientErrorCodeException → on n'accorde rien. codebaseID (message) = l'ID d'itération courant.
+              try {
+                com.perblue.heroes.network.messages.CodebaseAttack cba = (com.perblue.heroes.network.messages.CodebaseAttack) m;
+                com.perblue.heroes.network.messages.CodebaseAttackInfo entry = user.recordCodebaseAttack(cba);
+                try {
+                  com.perblue.heroes.network.messages.CodebaseAttackLogs logs = ServerCodebase.loadLogs(store, user.shardID);
+                  ServerCodebase.recordAttack(logs, cba.weakness, entry.lineup, entry.rageLevel, entry.score, entry.attackTime);
+                  ServerCodebase.saveLogs(store, user.shardID, logs);
+                } catch (Exception e) { System.out.println("[login]     ! journal codebase non mis à jour: " + e); }
+                try { store.save(user); } catch (Exception e) {
+                  System.out.println("[login]     ! persistance échouée: " + e); }
+                System.out.println("[login] <== CodebaseAttack : iter=" + cba.codebaseID + " score=" + cba.finalScore
+                    + " rage=" + entry.rageLevel + " outcome=" + (cba.base == null ? "?" : cba.base.outcome)
+                    + " → recordOutcome + classement [persisté]");
+              } catch (Throwable t) {
+                if (t instanceof com.perblue.heroes.ClientErrorCodeException) {
+                  System.out.println("[login]     ⛔ CodebaseAttack REFUSÉ (anti-triche) : " + t.getMessage());
+                } else { System.out.println("[login]     ! recordCodebaseAttack échec: " + t); t.printStackTrace(); }
+              }
+            } else if (m instanceof com.perblue.heroes.network.messages.GetCodebaseAttackLogs) {
+              // CODEBASE — CodebaseAttackLogScreen : classement/journal (top scores + attaques récentes) par itération. Réponse
+              // serveur-autoritative depuis le blob per-shard. Sans ce handler l'écran restait sur LOADING (gap A2). Vide = fidèle
+              // (aucune attaque encore enregistrée sur ce shard).
+              com.perblue.heroes.network.messages.CodebaseAttackLogs logs = ServerCodebase.loadLogs(store, user.shardID);
+              logs.setAsReplyTo(m);
+              c.send(logs);
+              System.out.println("[login] <== GetCodebaseAttackLogs → ==> CodebaseAttackLogs ("
+                  + (logs.logs == null ? 0 : logs.logs.size()) + " itération(s))");
             } else if (m instanceof com.perblue.heroes.network.messages.TrialEventAttack) {
               // FRANCHISE_TRIALS (EVENT/FRANCHISE) incr. 3 — combat d'un nœud de trial. Le client a joué (client-autoritatif)
               // et envoie l'issue (fire-and-forget). Le serveur ré-exécute BaseEventTrialNode.recordOutcome (anti-triche :

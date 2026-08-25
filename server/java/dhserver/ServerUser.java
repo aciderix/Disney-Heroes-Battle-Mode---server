@@ -2331,6 +2331,27 @@ public final class ServerUser {
    * {@code lastWinTime} lu par réflexion — cf. {@code readLastWinTime}). Même schéma que
    * {@code resyncHeroes} (état gardé hors {@code this.extra}). Ensemble fermé, validé par round-trip.
    */
+  /**
+   * Pose/écrase un STATUT DE NIVEAU de campagne dans l'état persisté ({@code individualUserExtra.levelStatuses}) — un joueur
+   * ayant réellement terminé ce niveau. Utilisé pour amener un compte au chapitre requis d'un déblocage (ex. CODEBASE = chapitre
+   * NORMAL 41, {@code CodebaseStats.getRequiredCampaignChapter}) côté outil/test/admin, sans rejouer toute la campagne. Écrit le
+   * MÊME format wire que {@link #resyncCampaign} (statuts lus par la logique du jeu) → {@code CampaignHelper.isChapterComplete}
+   * (= {@code getStarsForLevel(dernier niveau du chapitre) > 0}) devient vrai. Ne réécrit aucune règle.
+   */
+  public synchronized void grantCampaignLevel(CampaignType type, int chapter, int level, int stars) {
+    if (individualUserExtra.levelStatuses == null) individualUserExtra.levelStatuses = new java.util.ArrayList<>();
+    for (Object o : individualUserExtra.levelStatuses) {
+      CampaignLevelStatus w = (CampaignLevelStatus) o;
+      if (w.campaignType == type && w.chapter == chapter && w.level == level) {
+        w.stars = Math.max(w.stars, stars); w.totalWins = Math.max(w.totalWins, 1); return;
+      }
+    }
+    CampaignLevelStatus w = new CampaignLevelStatus();
+    w.campaignType = type; w.chapter = chapter; w.level = level; w.stars = stars;
+    w.totalAttempts = 1; w.totalWins = 1; w.winsAtCurrentStars = 1;
+    individualUserExtra.levelStatuses.add(w);
+  }
+
   @SuppressWarnings("unchecked")
   private void resyncCampaign(IndividualUser iu) {
     java.util.List<CampaignLevelStatus> out = new java.util.ArrayList<>();
@@ -3678,6 +3699,65 @@ public final class ServerUser {
     resyncHeroes(user);
     resyncDiamonds(user);
     resyncCounts(user);
+  }
+
+  /**
+   * CODEBASE (« The Codebase ») — RECORD d'un combat (client-autoritatif), même patron que {@link #recordDifficultyModeAttack}
+   * (Codebase = mode de DIFFICULTÉ, {@code GameMode.CODEBASE}). Le client a joué le combat et envoie
+   * {@code CodebaseAttack{base, codebaseID, weakness, minorBuffs, finalWeaknessCount, finalScore, megavirusTotalDamageTaken,
+   * attackEndTime, lootEarned}} (fire-and-forget). Le serveur AUTORITATIF ré-exécute {@code CodebaseHelper.recordOutcome} — qui
+   * fait TOUT (anti-triche : {@code GAME_MODE_LOCKED} chapitre 41 / {@code GAME_MODE_NOT_OPEN} / {@code CODEBASE_REQUIRES_YELLOW_HERO}
+   * ≥1 héros jaune dans les attaquants / {@code GAME_MODE_CHANCES_GONE} quota quotidien / {@code GAME_MODE_COOLDOWN} ; crédite le
+   * butin client-reporté ; consomme une chance ; pose le cooldown ; {@code tryUpdateHighScores} → high scores courant/à-vie sur
+   * {@code individualUserExtra} write-through §3 ; {@code ContestHelper.onDifficultyModeAttack}). Aucune règle réécrite (glue §3).
+   *
+   * <p><b>Mappage exact des arguments</b> (relevé au bytecode du VRAI appelant {@code CodebaseAttackScreen.handleBattleOutcome}) :
+   * {@code recordOutcome(user, outcome, finalScore, rageLevel, lootEarned, attackers, defenders, codebaseID, attackEndTime, snap)}.
+   * Les collections {@code attackers}/{@code defenders} sont des {@code Collection<AttackUnitSummary>} (predicat « héros jaune » +
+   * statistiques du jeu) → on APLATIT {@code base.attackers}/{@code base.defenders} (des {@code AttackLineupSummary.units}). Le
+   * {@code rageLevel} n'est PAS porté par le message (combat client) → on le REconstruit par la formule DU JEU
+   * {@code CodebaseStats.getRageLevelFromDamageDealt(megavirusTotalDamageTaken)} (table {@code codebase_rage_levels.tab}).
+   *
+   * @return l'entrée de journal {@code CodebaseAttackInfo{lineup, rageLevel, score, attackTime}} calculée (le combat a été
+   *         accepté par le jeu) — l'appelant l'insère dans le classement per-shard ({@link ServerCodebase}) ; jamais null (les
+   *         refus anti-triche remontent en {@code ClientErrorCodeException}).
+   */
+  public synchronized com.perblue.heroes.network.messages.CodebaseAttackInfo recordCodebaseAttack(
+      com.perblue.heroes.network.messages.CodebaseAttack m)
+      throws com.perblue.heroes.ClientErrorCodeException {
+    ServerContext.init();
+    User user = ClientNetworkStateConverter.getUser(userInfo, userExtra, "codebase");
+    IndividualUser iu = ClientNetworkStateConverter.getIndividualUser(
+        individualUserExtra, userID, userInfo.diamonds, "codebase");
+    ServerContext.bind(user, iu);
+
+    com.perblue.heroes.network.messages.CombatOutcome outcome = m.base == null ? null : m.base.outcome;
+    java.util.Collection<?> loot = m.lootEarned == null ? java.util.Collections.emptyList() : m.lootEarned;
+    // attackers/defenders = les LINEUP summaries wire (List<AttackLineupSummary>) passés TELS QUELS : recordOutcome les aplatit
+    // lui-même (countUnits/forEachUnitEx parcourent les units de chaque lineup) — comme l'appelant client getAttackerLineupSummaries.
+    java.util.Collection<?> attackers = (m.base == null || m.base.attackers == null) ? java.util.Collections.emptyList() : m.base.attackers;
+    java.util.Collection<?> defenders = (m.base == null || m.base.defenders == null) ? java.util.Collections.emptyList() : m.base.defenders;
+    // rageLevel reconstruit par la formule DU JEU depuis les dégâts totaux reportés (le message ne le porte pas).
+    int rageLevel = com.perblue.heroes.game.data.codebase.CodebaseStats.getRageLevelFromDamageDealt(m.megavirusTotalDamageTaken);
+    com.perblue.heroes.game.specialevent.SpecialEventSnapshot snap = ServerEvents.snapshot();
+
+    // CONTEST : prepare AVANT — recordOutcome appelle lui-même onDifficultyModeAttack en interne (§3, pas de double-compte).
+    ServerContestData.prepare(this, user);
+    com.perblue.heroes.game.codebase.CodebaseHelper.recordOutcome(user, outcome, m.finalScore, rageLevel,
+        loot, attackers, defenders, m.codebaseID, m.attackEndTime, snap);
+    ServerContestData.deliverEarnedProgressRewards(this, user);
+
+    // Entrée de classement (lineup CODEBASE réel du joueur). attackTime = fin d'attaque reportée (comme le client).
+    com.perblue.heroes.network.messages.CodebaseAttackInfo entry = new com.perblue.heroes.network.messages.CodebaseAttackInfo();
+    entry.lineup = new java.util.ArrayList<>(ServerCodebase.lineupOf(user));
+    entry.rageLevel = rageLevel;
+    entry.score = m.finalScore;
+    entry.attackTime = m.attackEndTime;
+
+    resyncHeroes(user);
+    resyncDiamonds(user);
+    resyncCounts(user);
+    return entry;
   }
 
   /**

@@ -6807,3 +6807,36 @@ progression (write-through), hook contest (déjà branché), rotation (détermin
 Aucun code modifié (audit + doc). Régression **156/156 inchangée** (0 fichier serveur touché). Fichiers : `docs/PHASE2_TRACKING.md`
 (étape 4bis + correctifs étape 4), `JOURNAL.md`, `MEMORY.md`. **⇒ Investigation Codebase TERMINÉE. Décision utilisateur : implémenter
 la restauration (4 briques) OU laisser documenté. Puis chantiers B→G (Phase 2).**
+
+## 2026-08-24 (g177) — CODEBASE incr.1 : RESTAURATION serveur (recordOutcome + classement per-shard + persistance) — headless 🟢
+
+Décision util. « Restaure ». Codebase = mode de DIFFICULTÉ rotatif (cf. g176). Implémentation glue serveur (§3, aucune règle
+réécrite), même patron que Port/Trials/Surge. Mappage des args relevé au **bytecode du vrai appelant**
+`CodebaseAttackScreen.handleBattleOutcome` (jamais deviné) :
+`CodebaseHelper.recordOutcome(user, outcome, finalScore, rageLevel, lootEarned, attackers, defenders, codebaseID, attackEndTime, snap)`.
+
+- **`ServerUser.recordCodebaseAttack(CodebaseAttack)`** : rebuild user/iu + bind, `ServerContestData.prepare` (hook contest
+  interne, pas de double-compte), `recordOutcome`, `deliver` + resync ; renvoie l'entrée de journal. Faits de fidélité :
+  attackers/defenders passés TELS QUELS (`List<AttackLineupSummary>` — recordOutcome aplatit lui-même ; un aplatissage manuel →
+  `ClassCastException AttackUnitSummary→AttackLineupSummary`, corrigé §8) ; `rageLevel` NON porté par le message → reconstruit par
+  `CodebaseStats.getRageLevelFromDamageDealt(megavirusTotalDamageTaken)` (table `codebase_rage_levels.tab`).
+- **Progression per-user = write-through §3** : `recordOutcome→tryUpdateHighScores` écrit dans
+  `IndividualUserExtra.{current,lifetime}Codebase{HighScore,HighRageLevel}`+`currentCodebaseID` (déjà wire/DB, AUTO-persisté).
+- **`ServerCodebase`** (blob per-shard serveur-autoritatif, patron Arena/Invasion) : `CodebaseAttackLogs{logs:
+  Map<CodebaseWeakness, CodebaseAttackLog{topScores,recent}>}` — **clé = la FAIBLESSE** (corrigé §8 : d'abord tenté par
+  itération → `writeData` packe la clé en `packEnumList` → `ClassCastException Integer→Enum` ; le journal est groupé par
+  faiblesse, celle qu'affiche `CodebaseAttackLogScreen`). Insertion : top trié↓/borné, recent en-tête/borné, bornes lues des
+  `.tab` (`ATTACK_LOG_MAX_TOP_ROWS/RECENT_ROWS`, via `CodebaseStats.CONSTANTS.getStats()`). Stocké via
+  `UserStore.loadShardState/saveShardState(shardID,"codebase_logs")` (round-trip wire).
+- **`LoginServer`** : handler `CodebaseAttack` (recordCodebaseAttack + ServerCodebase.recordAttack + store.save) ; handler
+  `GetCodebaseAttackLogs` (blob per-shard → débloque `CodebaseAttackLogScreen`, gap A2 clos).
+- **Support test/admin** : `ServerUser.grantCampaignLevel(type,chapter,level,stars)` (amène un compte au chapitre requis 41 =
+  `Unlockable.CODEBASE`, écrit le même format que resyncCampaign).
+
+`CodebaseTest` (régression **157/157**) : (1) classement top trié↓/borné 10 + recent en-tête/borné 10 + round-trip wire + DB ;
+(2) **anti-triche RÉELLE** — compte non débloqué REFUSÉ `GAME_MODE_LOCKED` (preuve : vraie logique du jeu, pas de stub) ;
+(3) chemin nominal — chapitre 41 + team-level + héros JAUNE → recordOutcome accepté, `currentCodebaseHighScore` 0→750
+(write-through) + persiste au round-trip wire. Fichiers : `ServerCodebase.java` (nouveau), `ServerUser.java`
+(recordCodebaseAttack + grantCampaignLevel), `LoginServer.java` (2 handlers), `CodebaseTest.java`, `regression.sh`,
+`docs/CODEBASE.md` (nouveau), `docs/PHASE2_TRACKING.md`, `JOURNAL.md`, `MEMORY.md`.
+**SUITE = incr.2 : vérif EN JEU (§8) — compte débloqué chapitre 41 → nav TEAM_TRIALS → Codebase → combat → high score + journal.**

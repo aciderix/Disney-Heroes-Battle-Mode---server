@@ -215,8 +215,22 @@ intégration contest (`onDifficultyModeAttack` déjà branché via `ServerContes
 
 **Verdict final** : Codebase est **historiquement complet côté logique+data+UI** et **partiellement restaurable** avec un effort
 **modéré** (2 petites briques + 1 blob leaderboard + setup de vérif chapitre 41), **sans réécrire aucune règle**. Ce n'est ni un
-« simple câblage » (le blob leaderboard + le handler sont un vrai incrément), ni un « chantier majeur ». **Décision utilisateur**
-requise avant toute implémentation (aucun code écrit ; investigation seule, §« ne l'implémente pas encore »).
+« simple câblage » (le blob leaderboard + le handler sont un vrai incrément), ni un « chantier majeur ».
+
+#### ÉTAPE 4ter — RESTAURATION `codebase` (2026-08-24, g177) — DÉCISION UTIL. « Restaure » → **incr.1 LIVRÉ (headless 🟢)**
+
+Briques 1-3 de l'étape 4bis **implémentées** (glue serveur, aucune règle réécrite ; détail `docs/CODEBASE.md`, `JOURNAL.md` g177) :
+- **Brique 1** ✅ handler `CodebaseAttack` → `ServerUser.recordCodebaseAttack` → `CodebaseHelper.recordOutcome` (args relevés au
+  bytecode du vrai appelant) + resync + `store.save`. Progression per-user auto-persistée (write-through `IndividualUserExtra`).
+- **Brique 2** ✅ blob leaderboard per-shard `ServerCodebase` (`CodebaseAttackLogs` **clé = `CodebaseWeakness`**, top≤10/recent≤10
+  bornes `.tab`) + handler `GetCodebaseAttackLogs` (gap A2 `GetCodebaseAttackLogs` CLOS).
+- **Brique 3** ✅ le mode passe par `DifficultyModeHelper` (cooldown `CODEBASE_ATTACK`, timers d'itération déterministes) — exposé
+  via le chooser Team Trials (rendu client).
+- Test `CodebaseTest` (régression **157/157**) : classement (tri/bornes/wire/DB) + anti-triche réelle (`GAME_MODE_LOCKED`) + high
+  score nominal (chapitre 41 + héros jaune → 0→750, persisté).
+
+**Brique 4 (RESTE)** = **vérif EN JEU (§8, obligatoire)** : compte débloqué chapitre 41 → nav TEAM_TRIALS → Codebase → combat →
+high score + journal. Statut : 🟢 headless, **⏳ EN JEU à confirmer** (incr.2).
 
 ### ÉTAPE 3 — analyse `content.N.tab` : détermination de l'ère + faisabilité « choix d'ère » (2026-08-24, g174) — ANALYSE, PAS d'implémentation
 
