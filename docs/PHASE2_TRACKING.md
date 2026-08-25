@@ -229,8 +229,10 @@ Briques 1-3 de l'étape 4bis **implémentées** (glue serveur, aucune règle ré
 - Test `CodebaseTest` (régression **157/157**) : classement (tri/bornes/wire/DB) + anti-triche réelle (`GAME_MODE_LOCKED`) + high
   score nominal (chapitre 41 + héros jaune → 0→750, persisté).
 
-**Brique 4 (RESTE)** = **vérif EN JEU (§8, obligatoire)** : compte débloqué chapitre 41 → nav TEAM_TRIALS → Codebase → combat →
-high score + journal. Statut : 🟢 headless, **⏳ EN JEU à confirmer** (incr.2).
+**Brique 4** ✅ **vérif EN JEU (§8) FAITE** (incr.2, g178) : `CodebaseUnlock` (TL 300 + chapitre 41 + héros JAUNE) → client réel →
+pilote `codebaseattack` (VRAI `CodebaseAttack`, attaquant jaune réel) → serveur **1re acceptée** (recordOutcome + classement
+persistés), **2e refusée `GAME_MODE_COOLDOWN`** ; DB relue : `currentCodebaseHighScore=500`/lifetime=500, classement per-shard
+BLIND top=1/500. **⇒ CODEBASE RESTAURÉ & vérifié de bout en bout (client → serveur → persistance). Mode COMPLET.**
 
 ### ÉTAPE 3 — analyse `content.N.tab` : détermination de l'ère + faisabilité « choix d'ère » (2026-08-24, g174) — ANALYSE, PAS d'implémentation
 

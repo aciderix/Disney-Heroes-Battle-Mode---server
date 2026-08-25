@@ -6840,3 +6840,28 @@ réécrite), même patron que Port/Trials/Surge. Mappage des args relevé au **b
 (recordCodebaseAttack + grantCampaignLevel), `LoginServer.java` (2 handlers), `CodebaseTest.java`, `regression.sh`,
 `docs/CODEBASE.md` (nouveau), `docs/PHASE2_TRACKING.md`, `JOURNAL.md`, `MEMORY.md`.
 **SUITE = incr.2 : vérif EN JEU (§8) — compte débloqué chapitre 41 → nav TEAM_TRIALS → Codebase → combat → high score + journal.**
+
+## 2026-08-24 (g178) — CODEBASE incr.2 : ✅ VÉRIFIÉ EN JEU (§8) — mode restauré de bout en bout
+
+Vérif EN JEU obligatoire (§8) de la restauration Codebase (g177). Outillage : `CodebaseUnlock` (débloque le compte persisté :
+TL 300 + chapitre NORMAL 41 terminé = `Unlockable.CODEBASE` + 5 héros JAUNE = `CODEBASE_REQUIRES_YELLOW_HERO`) ; pilote
+`codebaseattack [score]` (`TutorialDriver.codebaseAttack` — envoie le VRAI `CodebaseAttack` par le réseau du client, B-bis :
+itération/faiblesse via `CodebaseHelper`, 1 attaquant JAUNE réel lu du roster).
+
+Déroulé : seed `CodebaseUnlock` sur `server/data/dh-server.db` (compte déjà post-tuto) → `run-online.sh` (client réel LIVE →
+127.0.0.1:8080) → hub (TL 300) → `teamtrialsscreen` (chooser, planning client) → `codebaseattack 500` puis `codebaseattack 750`.
+
+Résultats (FAITS) :
+- Client : `[codebaseattack] iter=-1030 weak=BLIND score=500 attacker=RALPH(YELLOW) [chemin réseau réel]` → `CodebaseAttack envoyé`.
+- Serveur (`/tmp/dh_game.log`) : `<== CodebaseAttack : iter=-1030 score=500 rage=0 outcome=WIN → recordOutcome + classement
+  [persisté]` (1re ACCEPTÉE) ; 2e `⛔ CodebaseAttack REFUSÉ (anti-triche) : GAME_MODE_COOLDOWN` (cooldown réel posé par la 1re).
+- Persistance relue en DB (serveur arrêté) : `currentCodebaseID=-1030`, `currentCodebaseHighScore=500`,
+  `lifetimeCodebaseHighScore=500` ; classement per-shard = 1 faiblesse **BLIND** top=1/recent=1 topScore=500.
+- `iter=-1030` négatif = normal (SCHEDULING_EPOCH 2035 dans le futur vs temps serveur ; l'ID d'itération déterministe peut être
+  négatif, sans incidence — clé de rotation). `rage=0` = `getRageLevelFromDamageDealt(500000)` sous le 1er seuil (fidèle .tab).
+
+⇒ **CODEBASE RESTAURÉ & VÉRIFIÉ DE BOUT EN BOUT** (client réel → serveur autoritatif `recordOutcome` → high scores per-user +
+classement per-shard PERSISTÉS ; anti-triche cooldown réelle). Régression 157/157 (inchangée). Fichiers : `CodebaseUnlock.java`,
+`TutorialDriver.java`+`DesktopLauncher.java` (pilote), `docs/CODEBASE.md`, `docs/PHASE2_TRACKING.md`, `JOURNAL.md`, `MEMORY.md`.
+Capture `desktop-port/build/cb.png` (hub TL 300). **⇒ Mode Codebase COMPLET. Reste (Phase 2) = décisions util. (release-picker
+chantier D ?) + chantiers B→G.**

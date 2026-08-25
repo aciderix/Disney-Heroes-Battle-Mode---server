@@ -71,5 +71,9 @@ Puis : `RewardHelper.giveRewards` (butin client-reporté), `recordDailyUse`, `se
 
 - **Headless** : `server/smoke/CodebaseTest.java` (régression) — classement (tri↓/bornes/round-trip/DB) ; anti-triche RÉELLE
   (compte verrouillé → `GAME_MODE_LOCKED`) ; chemin nominal (chapitre 41 + héros jaune → high score mis à jour + persisté). 🟢
-- **EN JEU (§8, obligatoire)** : compte débloqué chapitre 41 → nav TEAM_TRIALS → Codebase → combat → high score + journal.
-  **⏳ À FAIRE** (incr. 2).
+- **EN JEU (§8)** ✅ **VÉRIFIÉ** (incr. 2) : compte débloqué (`CodebaseUnlock` : TL 300 + chapitre 41 + 5 héros JAUNE) → client
+  réel → pilote `codebaseattack` envoie le VRAI `CodebaseAttack` (iter=-1030, weakness=BLIND, attaquant RALPH/YELLOW réel du
+  roster). Serveur : **1re attaque ACCEPTÉE** (`recordOutcome + classement [persisté]`), **2e REFUSÉE `GAME_MODE_COOLDOWN`**
+  (anti-triche réelle). Persistance relue en DB après arrêt : `currentCodebaseHighScore=500`, `lifetimeCodebaseHighScore=500`,
+  `currentCodebaseID=-1030` ; classement per-shard = 1 faiblesse (BLIND) top=1/recent=1 topScore=500. ⇒ mode restauré de bout en
+  bout (client → serveur → persistance).
