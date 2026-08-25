@@ -358,11 +358,22 @@ static int buildVertices(JNIEnv* e, spSkeleton* s, jobject vertsBuf, jobject ind
         fprintf(stderr, " sum=%d\n", sum);
         dbgN++;
     }
-    /* Recale les buffers Java sur ce qu'on a écrit (le renderer s'appuie sur leurs limit/position). */
-    bufferSetLimit(e, vertsBuf, vi);
-    bufferSetLimit(e, indicesBuf, ii);
-    bufferSetLimit(e, drawCallsBuf, drawCount*2);
-    return drawCount;
+    /* CONTRAT EXACT extrait de NativeSkeleton.getVertices (le jeu, §4) — À REPRODUIRE FIDÈLEMENT (pas de devinette) :
+     *   • la valeur de RETOUR native = le nombre d'INDICES (ii), PAS le nombre de draw calls ;
+     *   • 2 shorts de MÉTADONNÉES sont écrits APRÈS les indices : indices[ii] = nb de VERTICES (le jeu fait ×6 → limite
+     *     du buffer verts), indices[ii+1] = nb de DRAW CALLS (le jeu fait ×2 → limite drawCalls, et renvoie /2) ;
+     *   • le JEU recale lui-même les limites (verts/indices/drawCalls) à partir de la valeur de retour + ces métadonnées
+     *     → getVertices ne DOIT PAS fixer les limites (comme la lib ARM d'origine, qui laisse les buffers tels quels).
+     * (Avant : on renvoyait drawCount et on posait les limites → dépassement de buffer côté renderer sur squelette
+     *  multi-pages. Corrigé par extraction du contrat réel.) */
+    {
+        long icap = (*e)->GetDirectBufferCapacity(e, indicesBuf);
+        if (icap >= ii + 2) {                 /* place pour les 2 shorts de métadonnées */
+            indices[ii]   = (short)vertexCount;
+            indices[ii+1] = (short)drawCount;
+        }
+    }
+    return ii;
 }
 
 JNIEXPORT jint JNICALL Java_com_perblue_heroes_cspine_Native_Skeleton_1getVertices(JNIEnv* e, jclass c, jint h, jobject verts, jobject indices, jobject drawCalls) {

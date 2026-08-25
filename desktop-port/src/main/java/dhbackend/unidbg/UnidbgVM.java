@@ -220,8 +220,19 @@ public final class UnidbgVM {
         copyFloats(embVerts, verts, verts == null ? 0 : verts.capacity());
         copyShorts(embIndices, indices, indices == null ? 0 : indices.capacity());
         copyShorts(embDraw, draws, n * 2);
+        if (SPINEDBG && dbgVertN < 14) {   // EXTRACTION : contrat exact de la lib ARM (oracle). n = valeur de retour BRUTE.
+            dbgVertN++;
+            StringBuilder dc = new StringBuilder();   // 8 premières paires du buffer drawcalls, SANS supposer que n = nb de paires
+            if (draws != null) { int pairs = Math.min(8, draws.limit()/2); for (int g = 0; g < pairs; g++) dc.append(draws.get(g*2) & 0xffff).append('/').append(draws.get(g*2+1)&0xffff).append(' '); }
+            System.out.println("[spinedbg-ARM] getVertices RET=" + n
+                + " | verts pos=" + (verts==null?-1:verts.position()) + " lim=" + (verts==null?-1:verts.limit()) + " cap=" + (verts==null?-1:verts.capacity())
+                + " | indices pos=" + (indices==null?-1:indices.position()) + " lim=" + (indices==null?-1:indices.limit()) + " cap=" + (indices==null?-1:indices.capacity())
+                + " | draws pos=" + (draws==null?-1:draws.position()) + " lim=" + (draws==null?-1:draws.limit()) + " head=" + dc);
+        }
         return n;
     }
+    private static final boolean SPINEDBG = System.getenv("DH_SPINEDBG") != null;
+    private int dbgVertN = 0;
     public synchronized int skeletonGetVerticesAndBounds(int h, FloatBuffer verts, ShortBuffer indices, ShortBuffer draws, float[] bounds) {
         FloatArray ba = new FloatArray(vm, bounds);
         int n = si("Skeleton_getVerticesAndBounds(ILjava/nio/FloatBuffer;Ljava/nio/ShortBuffer;Ljava/nio/ShortBuffer;[F)I", h, objVerts, objIndices, objDraw, ba);
