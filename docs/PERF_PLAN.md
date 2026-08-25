@@ -121,3 +121,8 @@ L'essentiel du chantier B est **déjà bâti et le gain est prouvé par la mesur
 chemin critique). Ce n'est PAS une réécriture : c'est le **même spine-c que le jeu**, compilé au lieu d'être émulé, l'autorité
 restant sur le binaire ARM d'origine (serveur) → **fidélité visuelle ET gameplay préservées par construction**. Le travail restant
 est surtout **B2 (débloquer le boot natif)** puis **mesurer/certifier/couvrir** — pas d'invention, pas d'approximation.
+
+### B6 — mesure fps avant/après (2026-08-25, GL logiciel) — RÉSULTAT + bug fidélité
+Sur le HERO CHOOSER (spine multi-héros), MÊME machine (llvmpipe) : **unidbg ~15 fps (spine 25–34 ms/frame)** → **jni ~38 fps (spine ~0 ms/frame)** = **×2,5, >30 fps même sur GL logiciel** (le spine sort du chemin critique). Sur GPU réel → 60+ attendus. **Thèse perf PROUVÉE.**
+
+**⚠️ Bug fidélité (blocage #3, §4bis)** : en mode jni les squelettes à **mesh déformables** (héros) sont rendus **éclatés** ; les attachements REGION (hub) rendent bien. Chemin mesh de `buildVertices` à corriger PAR EXTRACTION (certif `compare` : diff vertices mesh HostSpine vs unidbg → matcher). À faire avant de basculer `jni` par défaut.

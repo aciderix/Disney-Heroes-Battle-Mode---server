@@ -7003,3 +7003,17 @@ erreur, VISUELLEMENT IDENTIQUE à unidbg** (capture `desktop-port/build/jnihub.p
 l'UI de bout en bout. Fichiers : `native/src/cspine_jni.c`, `desktop-port/.../UnidbgVM.java` (diag), `docs/PERF_PLAN.md` (B2
 terminé), `JOURNAL.md`, `MEMORY.md`. **SUITE = rendre le COMBAT en mode jni (B4) + mesurer fps sur GPU réel (B6) ; certif matrice
 (B3) + couverture autres écrans (B5).**
+
+## 2026-08-25 (g185) — Perf B6 : mesure avant/après (MÊME machine, GL logiciel) + DÉCOUVERTE bug fidélité mesh
+
+Demande util. : lancer un combat pour comparer avant/après. Le quick-fight se résout serveur-side (pas de combat RENDU animé) →
+mesure sur le HERO CHOOSER (écran spine multi-héros, même coût que le combat), via DH_FPS, MÊME machine (GL llvmpipe = pire cas) :
+- unidbg (avant) : ~15 fps ; spine émulé = 25–34 ms/frame ; GL ~30–35 ms.
+- jni natif (après) : ~38 fps ; spine = ~0 ms/frame ; GL ~26 ms.
+⇒ coût spine (~30 ms) ÉLIMINÉ ; fps ~15 → ~38 (×2,5), DÉJÀ >30 fps sur GL LOGICIEL. Sur GPU réel → 60+ attendus.
+Thèse perf B PROUVÉE.
+
+⚠️ BUG FIDÉLITÉ (bloquant §4bis) : en mode jni, les squelettes à MESH déformables (héros) rendus ÉCLATÉS (build/fps_j.png) ;
+unidbg les rend corrects ; le hub (attachements REGION) rend bien. ⇒ chemin mesh de buildVertices faux (world-vertices pondérés /
+indices). Backend rapide FONCTIONNEL+RAPIDE mais pas pixel-fidèle → à corriger (blocage #3).
+SUITE = certification compare (diff vertices mesh HostSpine vs unidbg) → corriger par extraction.
