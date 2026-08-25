@@ -30,29 +30,44 @@ Chaque colonne expose l'état « live-ops » de l'époque. Regroupées :
 - **Drops de pierres d'âme datés** : `getCampaignSoulStone`, `getCampaignStoneDrops`, `getLevelsWithStone`.
 - **Versioning** : `getContentUpdate` / `getInvasionContentUpdate` / `getMapping`.
 
-### b) `patched_heroes*` — 2 `TimeTable` (via `serverTimeNow`)
+### b) `patched_heroes*` — 2 `TimeTable`
 `PatchStats$FranchiseSeasonMappingStats` + `PatchStats$GameModeFranchisesMappingStats` : le **mapping franchise ↔ saison**
-et **franchises par mode** utilisés par les Trials. Datés → suivent aussi l'heure serveur.
+et **franchises par mode** utilisés par les Trials. Datés → suivent l'offset d'ère (le client applique aussi
+`contentStatsTimeOffset` à `PatchStats.debugSetUserOffset`).
+
+### c) Valeurs de `.tab` INDEXÉES PAR RELEASE (`ContentUpdate`) — **13 getters**
+Certaines valeurs d'équilibrage sont **paramétrées par la release** (colonne `ContentUpdate` de l'ère courante) → elles
+**changent avec l'ère**. Les principales : **stamina** (`StaminaStats.getHardCap` / `getRegenAmount` / `getRegenInterval` /
+`getBuyAmount` / `getDailyCheckIn` / `getStaminaRow`), `getMaxChest`, `getSupplyPackageMaxLevel`, `getWeeklyQuestRewardPerTier`,
+`getMaxStarsForRelease`, `getMaxGearRarity`. ⇒ p. ex. **le plafond de stamina EST plus bas aux premières ères** (répond au « on
+n'accumulait peut-être pas autant au début » : vrai pour ces axes-là).
 
 ## 3. Ce que le choix de release NE gouverne PAS (snapshot unique de l'APK)
 
-**Toutes les autres ~270 `.tab` ne sont PAS versionnées dans le temps** : ce sont un **snapshot unique**, celui de l'APK
-installé (la dernière version). Le release-picker **ne les touche pas**. En particulier **NE changent PAS** avec la release :
+**La grande majorité des `.tab` ne sont PAS versionnées dans le temps** : ce sont un **snapshot unique**, celui de l'APK
+installé (dernière version). Le release-picker **ne les touche pas**. En particulier **NE changent PAS** avec la release :
 
 - Équilibrage & entités : `unit_stats`, `unit_abilities(.tabb)`, `skills`, `gear`/`mods`/`real_gear`, `enchanting`, `chests`,
-  `campaign` (layout des niveaux), prix/coûts, tables de drop, `codebase_*`, etc.
+  `campaign` (layout des niveaux), la plupart des prix/coûts, tables de drop, `codebase_*`, etc.
 
-⇒ **Conséquence clé (fidélité, §4bis)** : choisir R50 met l'ère « comme en mai 2022 » pour les **caps, disponibilités, rosters
-et drops datés** (ce que `ContentStats` porte historiquement), mais **NE remet PAS** les *nombres d'équilibrage* (stats des
-héros, dégâts des skills, coûts…) à leur valeur de 2022 — ils restent ceux de l'APK courant. Une « vraie » rétro-version
-complète du build n'existe pas dans les données : seul `content.<shard>.tab` (+ patched_heroes) est un historique daté.
+⇒ **Conséquence clé (fidélité, §4bis)** : choisir R50 met l'ère « comme en mai 2022 » pour les **caps, disponibilités, rosters,
+drops datés ET les ~13 valeurs indexées par release** (§2c : stamina, weekly quest rewards…). Mais **NE remet PAS** les *nombres
+d'équilibrage NON indexés* (stats des héros, dégâts des skills, coûts de la plupart des tabs) à leur valeur de 2022 — ils restent
+ceux de l'APK courant. Une rétro-version *complète* du build n'existe pas dans les données : seuls `content.<shard>.tab`,
+`patched_heroes` et les colonnes `ContentUpdate` portent un historique daté.
 
-## 4. Dépendance cachée (couplage horloge) — documentée étape 3
+## 4. Découplage ère ↔ timers — RÉSOLU (correctif 2026-08-25)
 
-Release = offset d'horloge (via `serverTime`). Or `BootData.serverTime` pilote À LA FOIS le contenu daté ET l'**affichage des
-timers** côté client. Déplacer l'ère **décale donc aussi l'horloge perçue** (timers d'événements, cooldowns affichés) et la
-**saison** (sauf ancre `AdminSeason` posée séparément — cf. `docs/PHASE2_TRACKING.md` étape 3). Compromis assumé d'`AdminClock` ;
-un découplage contenu↔timers exigerait de modifier le client (hors §1).
+**L'ancienne conclusion « on ne peut pas découpler sans modifier le client » (étape 3) était FAUSSE.** Le jeu/le client
+supportent nativement un **canal de contenu séparé** : `BootData.contentStatsTimeOffset` (distinct de `serverTime`). Au boot,
+`GameMain` lit ce champ et applique `ContentStats.setUserOffset(user, offset)` + `PatchStats.debugSetUserOffset` → le client
+résout **son contenu daté** par `serverTimeNow() + offset` (ère), MAIS garde ses **timers** (resets, cooldowns, régén,
+horodatages de sauvegarde) sur `serverTimeNow()` **BRUT**.
+
+⇒ **`AdminRelease` règle donc l'offset d'ÈRE DÉCOUPLÉ** (`ServerContext.setContentOffsetMillis` → méta `content_offset_ms` →
+`bootData().contentStatsTimeOffset`), PAS l'horloge. **Changer d'ère ne casse NI les sauvegardes NI les timers.** (Si on veut au
+contraire déplacer *tout* le monde dans le temps, timers compris, c'est `AdminClock` — outil distinct.) Prouvé : `ReleaseOffsetTest`
+(régression) — `contentStatsTimeOffset` reflète l'ère, `serverTime`/`serverTimeNow()` restent au présent.
 
 ## 4bis. Intention ADMIN — ce que l'opérateur peut vraiment régler (faits vérifiés)
 
@@ -64,11 +79,11 @@ Deux usages admin distincts sont souvent confondus ; ils passent par des leviers
 `trialsDifficultyCap`, `invasionMaxTeamLevel`/`invasionRarity`. ⇒ **Oui : au début (R1…) on démarrait à des paliers plus bas**, et
 `AdminRelease --set-release Rxx` les rétablit fidèlement.
 
-**MAIS — VÉRIFIÉ aussi : l'ère NE contrôle PAS l'échelle des NOMBRES** (ni cap de ressources, ni magnitude des gains/coûts).
-Aucun champ « ressources/monnaie/cap » dans `ContentColumn` ; l'accumulation (« des milliards ») vient des `.tab` d'ÉQUILIBRAGE
-(gains/coûts), qui sont le **snapshot unique de l'APK courant**. Donc choisir R1 donne des **plafonds bas** mais des **nombres à
-l'échelle actuelle** — on ne peut pas « revenir aux petits chiffres du début » sans données d'équilibrage historiques (absentes de
-l'APK). C'est la frontière de fidélité (§2/§3 ci-dessus).
+**Nuance sur les NOMBRES** : l'ère contrôle DEUX sortes de valeurs : (i) les **caps** de `ContentColumn` (ci-dessus), et (ii) les
+**~13 valeurs indexées par release** (§2c — dont la **stamina** : cap/régén/achat, plus max chest, weekly quest rewards…), qui
+**sont bien plus basses aux premières ères**. En revanche l'ère **ne touche PAS** les nombres NON indexés (stats héros, dégâts
+skills, la plupart des coûts) = snapshot APK courant. Donc R1 = plafonds + stamina + quelques récompenses « du début », mais le
+gros de l'équilibrage reste à l'échelle actuelle (pas de rétro-version complète sans données historiques absentes de l'APK).
 
 - *Granularité alternative* : le jeu expose un **offset de contenu PAR JOUEUR** (`ContentStats.setUserOffset(user, offset)`) →
   décaler l'ère d'un seul compte sans toucher l'horloge globale. Utile pour tester, MAIS même caveat d'affichage client que §4
@@ -81,10 +96,10 @@ C'est LE bon outil pour « gérer précisément les événements » — inutile 
 
 Sur les **timers (reset)** : **VÉRIFIÉ** qu'ils sont **serveur-autoritatifs** — calculés depuis `TimeUtil.serverTimeNow()` +
 `computeTimeForDay` (fuseau serveur), donc **découplés de l'horloge de l'APPAREIL du joueur** (uniformes pour tous, pas la « montre
-locale » de chacun). ✅ C'est bien ce que tu pensais. **Nuance importante** : ils ne sont PAS découplés de l'**ère** — reset et
-fenêtres d'événements lisent le MÊME `serverTimeNow()` que l'ère. Donc **déplacer l'ère (release-picker = offset d'horloge) décale
-aussi ces timers** (cf. §4). ⇒ Règle : pour l'**ère/plafonds** → `AdminRelease` ; pour la **gestion fine des événements** →
-`AdminEvents` (sans bouger l'ère). Un vrai découplage ère↔timers exigerait de modifier le client (hors §1).
+locale » de chacun). ✅ C'est bien ce que tu pensais. **Et depuis le correctif §4, ils sont AUSSI découplés de l'ère** :
+`AdminRelease` déplace l'ère via `contentStatsTimeOffset` (contenu seulement), pas via l'horloge → **les timers ne bougent pas**
+quand on change de release. ⇒ Règle : **ère/plafonds/stamina** → `AdminRelease` (timers préservés) ; **gestion fine des
+événements** → `AdminEvents` (indépendant de l'ère) ; **déplacer TOUT le monde dans le temps** (timers compris) → `AdminClock`.
 
 ## 5. Outil `AdminRelease`
 

@@ -261,13 +261,16 @@ BLIND top=1/500. **⇒ CODEBASE RESTAURÉ & vérifié de bout en bout (client �
   `BootData.serverTime` (non décalé) → désynchro affichage (client R102 / serveur R95), sauf à décaler aussi `BootData.serverTime`
   (ré-introduit le couplage timers).
 
-**VERDICT étape 3 (documenté, NON implémenté — consigne « documenter les dépendances d'abord »)** :
-- Release-picker admin = **faisable et sûr** UNIQUEMENT comme wrapper d'AdminClock (release→date→horloge), en ACCEPTANT que
-  l'affichage client des timers suive l'ère (même compromis qu'AdminClock, déjà vérifié). Le serveur garde l'enforcement réel.
-- « Choix d'ère SANS toucher les timers » = **PAS proprement réalisable** : le jeu couple contenu-daté ↔ horloge via l'unique
-  `BootData.serverTime` ; le forcer exigerait des modifs CLIENT (hors §1) ou désynchroniserait l'affichage de contenu.
-- ⇒ **DÉCISION UTILISATEUR (chantier D)** : (1) release-picker = wrapper AdminClock (accepte décalage affichage timers) ; ou
-  (2) rester sur AdminClock brut ; ou (3) vrai découplage (modifs client, hors §1). **Pas d'implémentation avant ce choix.**
+**VERDICT étape 3 (documenté)** — ⚠️ **CORRIGÉ le 2026-08-25 (g181), voir ci-dessous** :
+- ~~Release-picker faisable UNIQUEMENT comme wrapper AdminClock (l'affichage timers suit l'ère)~~ ;
+- ~~« Choix d'ère SANS toucher les timers » PAS réalisable sans modifs client (couplage via l'unique `BootData.serverTime`)~~.
+
+**CORRECTIF g181 (le verdict ci-dessus était FAUX)** : le jeu N'utilise PAS que `BootData.serverTime` pour le contenu — il y a un
+champ SÉPARÉ **`BootData.contentStatsTimeOffset`** que `GameMain` (boot) applique à `ContentStats.setUserOffset` +
+`PatchStats.debugSetUserOffset`. Donc l'ère se décale **sans** toucher les timers, **sans modif client**. ⇒ Release-picker
+**IMPLÉMENTÉ découplé** (`ServerContext.setContentOffsetMillis` → méta `content_offset_ms` → `bootData().contentStatsTimeOffset`),
+outil `AdminRelease` (cf. `docs/RELEASE_PICKER.md`), test `ReleaseOffsetTest`. **Changer d'ère ne casse ni sauvegardes ni timers.**
+AdminClock reste l'outil distinct pour déplacer *tout* le monde dans le temps (timers compris).
 
 ---
 

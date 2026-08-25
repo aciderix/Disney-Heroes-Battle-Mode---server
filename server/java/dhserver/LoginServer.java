@@ -3126,6 +3126,16 @@ public final class LoginServer {
         System.out.println("[login] ⏱ ancre de saison PERSISTÉE appliquée (offset " + seasonAnchor + " ms)");
       }
     } catch (Exception e) { System.out.println("[login] ! ancre de saison : " + e); }
+    // OFFSET D'ÈRE DE CONTENU PERSISTÉ (release-picker, config ADMIN) — DÉCOUPLÉ de l'horloge : n'affecte QUE l'ère
+    // (émis dans bootData().contentStatsTimeOffset → le client décale SON contenu daté, pas ses timers). Défaut (absent/0)
+    // → ère = date réelle. Réglé par l'opérateur via AdminRelease. Cf. ServerContext.setContentOffsetMillis.
+    try {
+      Long contentOffset = store.getMetaLong("content_offset_ms");
+      if (contentOffset != null && contentOffset != 0L) {
+        ServerContext.setContentOffsetMillis(contentOffset);
+        System.out.println("[login] 🗓 offset d'ère de contenu PERSISTÉ appliqué (offset " + contentOffset + " ms)");
+      }
+    } catch (Exception e) { System.out.println("[login] ! offset d'ère de contenu : " + e); }
     // ÉVÉNEMENTS OPÉRATEUR (live-ops) — chargés depuis shard_state (clé "operator_events") dans le holder statique de
     // ServerEvents. Défaut = VIDE → aucune ouverture forcée → le jeu applique sa ROTATION par défaut (getOpenDays). Un
     // opérateur AJOUTE des overrides (MODES_OPEN/DropBonus) via l'outil AdminEvents ; ils survivent aux redémarrages.

@@ -83,6 +83,7 @@ TESTS=(
   ContestEndTest
   WiringGapsTest
   CodebaseTest
+  ReleaseOffsetTest
 )
 
 echo "[reg] compilation (serveur + ${#TESTS[@]} tests) ..."

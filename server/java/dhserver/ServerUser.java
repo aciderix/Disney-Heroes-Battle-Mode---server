@@ -210,6 +210,10 @@ public final class ServerUser {
     // désynchroniserait le client du serveur dès qu'un décalage est en place.
     long now = com.perblue.heroes.util.TimeUtil.serverTimeNow();
     bd.serverTime = now;
+    // OFFSET D'ÈRE DE CONTENU (release-picker) — DÉCOUPLÉ des timers : le client applique `contentStatsTimeOffset` à
+    // ContentStats/PatchStats.setUserOffset (contenu daté = serverTime + offset) MAIS garde ses timers sur serverTime brut.
+    // 0 par défaut → ère = date réelle. Réglé par l'opérateur (AdminRelease), persisté en méta `content_offset_ms`.
+    bd.contentStatsTimeOffset = ServerContext.contentOffsetMillis();
     bd.currentServer.shardID = shardID;
     userInfo.lastLoginTime = now;
     // « Vu pour la dernière fois » (roster de guilde, tri ONLINE) = BasicUserInfo.userLastActive. Le joueur se

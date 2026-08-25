@@ -6911,3 +6911,31 @@ noté dans `docs/DISTRIBUTION.md`. (2) Clarification de l'intention admin du rel
   décale aussi les timers. ⇒ ère/plafonds = AdminRelease ; events = AdminEvents.
 
 Docs : `docs/RELEASE_PICKER.md` (§4bis), `docs/DISTRIBUTION.md`. Aucun code modifié.
+
+## 2026-08-25 (g181) — Release-picker DÉCOUPLÉ (ère sans casser timers/sauvegardes) + correctif étape 3 + stamina era-indexée
+
+Demande util. : « faudrait pas découpler [l'ère des timers] ? changer d'ère ne doit pas casser sauvegardes/timers » + « comment
+sont gérés stamina_values.tab & co ? ».
+
+**Découverte (bytecode) qui INVALIDE le verdict étape 3** : le client N'utilise PAS que `BootData.serverTime` pour le contenu.
+`BootData` a un champ SÉPARÉ **`contentStatsTimeOffset`** que `GameMain` (boot) applique à `ContentStats.setUserOffset(user,off)` +
+`PatchStats.debugSetUserOffset` → le client résout SON contenu daté par `serverTimeNow()+off` (ère) MAIS garde ses timers (resets/
+cooldowns/régén/horodatages) sur `serverTimeNow()` BRUT. ⇒ **découplage ère↔timers natif, sans modif client.**
+
+**Implémenté (glue §3)** : `ServerContext.setContentOffsetMillis/contentOffsetMillis` (offset d'ère découplé) ; `ServerUser.bootData()`
+émet `bd.contentStatsTimeOffset = contentOffsetMillis()` ; `LoginServer` (boot) ré-applique la méta persistée `content_offset_ms` ;
+`AdminRelease` REFAIT pour poser `content_offset_ms` (= dateRelease − serverTimeNow) au lieu de l'horloge → **timers/sauvegardes
+inchangés**. Vérifié : `AdminRelease --set-release R50` → ère R50 @ 2022-05-17 Max TL 305, **timers heure réelle 2026-08-25**.
+`ReleaseOffsetTest` (régression) : `contentStatsTimeOffset` reflète l'ère, `serverTime`/`serverTimeNow()` restent au présent.
+Correctif du commentaire ServerContext (240-244) + `docs/PHASE2_TRACKING.md` étape 3 (verdict corrigé) + `docs/RELEASE_PICKER.md`.
+
+**Réponse « stamina & co »** (vérifié bytecode) : certaines valeurs d'équilibrage SONT indexées par release (`ContentUpdate`) —
+**13 getters**, dont **StaminaStats** (`getHardCap`/`getRegenAmount`/`getRegenInterval`/`getBuyAmount`/`getDailyCheckIn`/
+`getStaminaRow`), `getMaxChest`, `getSupplyPackageMaxLevel`, `getWeeklyQuestRewardPerTier`, `getMaxStarsForRelease`,
+`getMaxGearRarity` → elles **changent avec l'ère** (plafond stamina plus bas au début = confirmé). Les AUTRES ~270 `.tab`
+(unit_stats/skills/gear/chests/coûts) = snapshot unique de l'APK, NON versionnées → inchangées par l'ère. Documenté
+`docs/RELEASE_PICKER.md` §2c/§3.
+
+Régression **158/158** (mode rapide ~42 s). Fichiers : `ServerContext.java`, `ServerUser.java`, `LoginServer.java`,
+`AdminRelease.java`, `ReleaseOffsetTest.java` (nouveau), `regression.sh`, `docs/RELEASE_PICKER.md`, `docs/PHASE2_TRACKING.md`,
+`JOURNAL.md`, `MEMORY.md`.

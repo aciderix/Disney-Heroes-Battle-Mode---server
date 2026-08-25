@@ -237,11 +237,10 @@ public final class ServerContext {
   // à la sélection de saison (ServerEvents.seasonTrialConfigs via seasonTimeNow()), JAMAIS aux timers joueur.
   // Défaut 0 → seasonTimeNow() == serverTimeNow() (comportement historique, aucun changement). L'admin le règle
   // (outil AdminSeason), il est persisté en méta `season_anchor_offset_ms` et ré-appliqué au boot par LoginServer.
-  // NB (choix de fidélité) : l'ÈRE DE CONTENU (R1…R102, ContentStats.getServerColumn) reste couplée à serverTimeNow
-  // À DESSEIN — le client synchronise son horloge sur BootData.serverTime et résout SON contenu daté par cette date ;
-  // découpler l'ère provoquerait un affichage incohérent côté client. Seule la saison (poussée par NOUS, invisible
-  // au calendrier client) est découplée ici. (Le jeu modélise d'ailleurs un offset de contenu PAR JOUEUR via
-  // ContentStats.setUserOffset/getServerColumn(IUser) — non requis pour ce découplage-ci.)
+  // NB : l'ÈRE DE CONTENU (R1…R102) EST elle aussi découplable des timers — cf. le bloc CONTENT_OFFSET_MS ci-dessous
+  // (correctif 2026-08-25 : le client applique `BootData.contentStatsTimeOffset` à ContentStats.setUserOffset, donc l'ère se
+  // décale sans toucher serverTime/les timers). La saison (ci-dessus) reste un canal SÉPARÉ, poussé par nous, invisible au
+  // calendrier client.
   private static volatile long SEASON_ANCHOR_OFFSET_MS = 0L;
 
   /** Offset d'ancre de saison courant (ms), ADDITIONNÉ à {@code serverTimeNow()} pour la sélection de saison. 0 = suit la date réelle. */
@@ -257,6 +256,27 @@ public final class ServerContext {
   /** Heure de RÉFÉRENCE POUR LA SAISON = {@code serverTimeNow() + ancre de saison}. Découplée des timers joueur (qui gardent serverTimeNow). */
   public static long seasonTimeNow() {
     return com.perblue.heroes.util.TimeUtil.serverTimeNow() + SEASON_ANCHOR_OFFSET_MS;
+  }
+
+  // ─── OFFSET DE CONTENU (ÈRE) — DÉCOUPLÉ DES TIMERS JOUEUR ────────────────────────────────────────────────────────────
+  // CORRECTIF (2026-08-25) du choix noté plus haut : l'ère de contenu (R1…R102) PEUT être découplée de serverTimeNow SANS
+  // modifier le client — le jeu/le client le supportent NATIVEMENT via `BootData.contentStatsTimeOffset` :
+  // `GameMain` (boot) lit ce champ et appelle `ContentStats.setUserOffset(user, offset)` + `PatchStats.debugSetUserOffset` →
+  // le client résout SON contenu daté par `serverTimeNow() + offset`, MAIS garde ses TIMERS (resets/cooldowns/régén) sur
+  // `serverTimeNow()` brut. Donc changer d'ère via cet offset NE casse NI les sauvegardes NI les timers (contrairement à
+  // AdminClock qui décale l'horloge entière). C'est le levier correct du « release picker ». Offset ADDITIF sur le contenu
+  // uniquement ; défaut 0 → ère = date réelle. Persisté en méta `content_offset_ms`, ré-appliqué au boot par LoginServer,
+  // émis dans `bootData().contentStatsTimeOffset`, et appliqué CÔTÉ SERVEUR à chaque {@link #bind} (getServerColumn(user)).
+  private static volatile long CONTENT_OFFSET_MS = 0L;
+
+  /** Offset de contenu (ms) ADDITIONNÉ à {@code serverTimeNow()} pour la SEULE résolution d'ère (ContentStats/PatchStats). 0 = date réelle. */
+  public static long contentOffsetMillis() { return CONTENT_OFFSET_MS; }
+
+  /** Règle l'offset d'ère de contenu (ms). Découplé de l'horloge : n'affecte QUE l'ère (caps/rosters/dispos/valeurs indexées
+   *  par ContentUpdate), JAMAIS les timers/cooldowns/sauvegardes joueur (qui gardent serverTimeNow). */
+  public static void setContentOffsetMillis(long offsetMs) {
+    CONTENT_OFFSET_MS = offsetMs;
+    System.out.println("[ctx] 🗓 offset d'ère de contenu : " + offsetMs + " ms (timers joueur INCHANGÉS)");
   }
 
   /** Lie le joueur courant au shim {@code DH.app} (getYourUser/getYourIndividualUser). */
