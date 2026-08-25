@@ -345,6 +345,19 @@ static int buildVertices(JNIEnv* e, spSkeleton* s, jobject vertsBuf, jobject ind
         if (draws) draws[curDrawIdx] += (short)idxAdded;
     }
     if (boundsOut) { if (minX>maxX){minX=minY=maxX=maxY=0;} boundsOut[0]=minX; boundsOut[1]=minY; boundsOut[2]=maxX; boundsOut[3]=maxY; }
+    /* DIAG (DH_SPINEDBG) : trace tailles/capacités pour diagnostiquer un dépassement de buffer côté renderer. */
+    static int dbg = -1; static int dbgN = 0;
+    if (dbg < 0) dbg = getenv("DH_SPINEDBG") ? 1 : 0;
+    if (dbg && dbgN < 40) {
+        long vcap = (*e)->GetDirectBufferCapacity(e, vertsBuf);
+        long icap = (*e)->GetDirectBufferCapacity(e, indicesBuf);
+        long dcap = drawCallsBuf ? (*e)->GetDirectBufferCapacity(e, drawCallsBuf) : -1;
+        fprintf(stderr, "[spinedbg] slots=%d vi=%d(cap%ld float) ii=%d(cap%ld short) drawCount=%d(cap%ld short) sumCounts=",
+                s->slotsCount, vi, vcap, ii, icap, drawCount, dcap);
+        int sum=0; for (int g=0; g<drawCount && draws; g++) { sum += (unsigned short)draws[g*2]; fprintf(stderr,"%d,", (unsigned short)draws[g*2]); }
+        fprintf(stderr, " sum=%d\n", sum);
+        dbgN++;
+    }
     /* Recale les buffers Java sur ce qu'on a écrit (le renderer s'appuie sur leurs limit/position). */
     bufferSetLimit(e, vertsBuf, vi);
     bufferSetLimit(e, indicesBuf, ii);

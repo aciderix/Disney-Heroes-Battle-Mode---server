@@ -6961,3 +6961,27 @@ visuelle/gameplay**. Étude factuelle (faits déjà mesurés consolidés) :
 
 Aucun code produit (étude + rebuild de vérif). Fichiers : `docs/PERF_PLAN.md` (nouveau), `JOURNAL.md`, `MEMORY.md`.
 **Chemin critique jouable : B1 ✅ → B2 → B6 (GPU réel).**
+
+## 2026-08-25 (g183) — Perf B2 : déblocage boot mode jni — blocage #1 ATLAS résolu, blocage #2 getVertices root-causé (EN JEU)
+
+Déblocage du backend spine natif (`-Ddh.spinebackend=jni`) demandé (construction auto, zéro réécriture). Reproduit EN JEU (§8) :
+- **Blocage #1 — atlas partagé cross-backend → ✅ RÉSOLU.** Log ARM : « Bad handle type: Wanted ATLAS but is actually NONE for
+  handle 1 » sur un `.np` de particules. Cause : en mode jni le spine tourne sur HostSpine (x86, table propre) mais les particules
+  restent sur unidbg (ARM) ; l'atlas (partagé) créé seulement côté HostSpine manquait à la table unidbg. Fix glue plateforme (§1,
+  aucun moteur réécrit) : `AtlasBridge` — dual-create de l'atlas dans les DEUX moteurs d'origine + traduction du handle d'atlas
+  dans le shadow `cparticle`. Boot passe le registre de handles → atteint MainScreen (0 « Bad handle », 0 « Atlas not found »).
+- **Blocage #2 — getVertices multi-pages → ⬜ ROOT-CAUSÉ.** `newPosition > limit (27>3)` dans
+  `NativeSkeletonRenderer.renderPreparedVertices`→`Mesh.render`. Contrat relevé (bytecode) : `render()` remplit les buffers PROPRES
+  du mesh via `getVertices`, puis `Mesh.render(offset,count)` par draw call (`buf.position(offset); buf.limit(offset+count); draw;
+  restore`). Instrumentation `DH_SPINEDBG` (ajoutée à `cspine_jni.c`, off par défaut) : squelettes à 1 draw call OK (ii=918) ; le
+  crash est un squelette **multi-pages** (drawCount=3, counts 27/6/6, ii=39) au **2ᵉ** draw call (`position(27)` alors que limite=3).
+  Avec la bonne limite (39) les 3 rendus devraient passer → notre `buildVertices` ne laisse pas le buffer d'indices du mesh dans
+  l'état attendu pour un squelette multi-pages. Jamais exercé avant (le mode `compare` rend la sortie unidbg). **Fix = répliquer
+  exactement l'état/contrat des buffers de la lib ARM d'origine** (désassemblage `native/reference/libspine-native.so`, NATIVE_PLAN
+  étape 5, §4 — pas de devinette).
+
+Fichiers : `desktop-port/.../dhbackend/jnispine/AtlasBridge.java` (nouveau), `com/perblue/heroes/cspine/Native.java` (dual-create
+atlas), `com/perblue/heroes/cparticle/Native.java` (traduction handle), `native/src/cspine_jni.c` (diag `DH_SPINEDBG`),
+`docs/PERF_PLAN.md` (B2 détaillé), `JOURNAL.md`, `MEMORY.md`. Régression serveur inchangée (aucun code serveur touché).
+**SUITE = blocage #2 (getVertices multi-pages) : désassembler la lib ARM pour matcher le contrat des buffers, puis re-tester
+EN JEU → MainScreen rendu → mesurer fps.**

@@ -48,11 +48,22 @@ mécanique des symboles JNI + unification des tables de handles → `libhostspin
 sur le tag 3.6 exact, documenter prérequis (gcc, JDK) ; `.so` gitignoré/regénérable (§7). **Trou connu** : `spine-libgdx-perblue.jar`
 (backend Java alternatif) n'a **aucune recette de build** → soit documenter sa provenance, soit ne retenir que le JNI natif.
 
-### B2 — Lever le blocage « boot JNI-autonome » (handle-registry) — **BLOQUANT PRINCIPAL**
-Aujourd'hui le jeu boote sur unidbg même en mode `compare` (le JNI tourne en parallèle, non rendu). Pour un desktop natif de
-**production** (`spinebackend=jni` rendu par défaut), le **boot JNI-autonome bute sur le registre de handles** du jeu (le jeu exige
-des handles globalement uniques ; l'unification des tables dans `build-hostspine.sh` va dans ce sens mais le boot bout-en-bout n'est
-pas encore passé). **C'est LE bloquant** avant de pouvoir mesurer le fps natif de bout en bout. → investiguer/lever ce point.
+### B2 — Boot JNI-autonome — **2 blocages trouvés EN JEU (§8, 2026-08-25)** ; #1 RÉSOLU, #2 root-causé
+En lançant réellement `-Ddh.spinebackend=jni` (lib rebâtie), deux blocages distincts sont apparus l'un après l'autre :
+
+- **Blocage #1 — ATLAS partagé cross-backend → ✅ RÉSOLU (g183).** Un atlas est utilisé par le spine (HostSpine/x86) ET les
+  particules (unidbg/ARM). Créé seulement côté HostSpine, il manquait à la table unidbg → la lib ARM émettait
+  « Bad handle type: Wanted ATLAS but is actually NONE » (crash boot sur un `.np`). **Fix** (`AtlasBridge`, glue plateforme, §1) :
+  dual-create de l'atlas dans les deux moteurs + traduction du handle pour le chemin particules. **Boot passe, atteint MainScreen.**
+
+- **Blocage #2 — `getVertices` multi-page → ⬜ ROOT-CAUSÉ, à corriger.** Trace EN JEU :
+  `IllegalArgumentException: newPosition > limit (27 > 3)` dans `NativeSkeletonRenderer.renderPreparedVertices` → `Mesh.render`.
+  Instrumentation (`DH_SPINEDBG`) : les squelettes à **1 seul draw call** rendent bien (ii=918) ; le crash est un squelette
+  **multi-pages** (drawCount=3, counts 27/6/6, ii=39) sur le **2ᵉ draw call** (`position(27)`, mais limite=3). Avec la bonne
+  limite (39) les 3 rendus devraient passer → notre `buildVertices`/glue ne laisse PAS le buffer d'indices du mesh dans l'état où
+  la lib ARM le laisse pour un squelette multi-pages (contrat `getVertices`↔`Mesh` à répliquer exactement). **Jamais exercé avant**
+  car le mode `compare` rend la sortie unidbg, pas celle du JNI. **Fix = matcher l'état/contrat des buffers de la lib ARM d'origine**
+  (désassemblage `native/reference/libspine-native.so` = étape 5, §4 ; pas de devinette). Outil de diag ajouté (`DH_SPINEDBG`).
 
 ### B3 — Certification différentielle (large matrice) → 0 diff visuel
 Rejouer `CompareBackend` sur une **matrice héros × niveaux × graines**, combats **serrés** (RNG discriminant, cf. #24/#28) →
