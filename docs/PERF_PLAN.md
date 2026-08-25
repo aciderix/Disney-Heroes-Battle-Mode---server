@@ -56,14 +56,18 @@ En lançant réellement `-Ddh.spinebackend=jni` (lib rebâtie), deux blocages di
   « Bad handle type: Wanted ATLAS but is actually NONE » (crash boot sur un `.np`). **Fix** (`AtlasBridge`, glue plateforme, §1) :
   dual-create de l'atlas dans les deux moteurs + traduction du handle pour le chemin particules. **Boot passe, atteint MainScreen.**
 
-- **Blocage #2 — `getVertices` multi-page → ⬜ ROOT-CAUSÉ, à corriger.** Trace EN JEU :
-  `IllegalArgumentException: newPosition > limit (27 > 3)` dans `NativeSkeletonRenderer.renderPreparedVertices` → `Mesh.render`.
-  Instrumentation (`DH_SPINEDBG`) : les squelettes à **1 seul draw call** rendent bien (ii=918) ; le crash est un squelette
-  **multi-pages** (drawCount=3, counts 27/6/6, ii=39) sur le **2ᵉ draw call** (`position(27)`, mais limite=3). Avec la bonne
-  limite (39) les 3 rendus devraient passer → notre `buildVertices`/glue ne laisse PAS le buffer d'indices du mesh dans l'état où
-  la lib ARM le laisse pour un squelette multi-pages (contrat `getVertices`↔`Mesh` à répliquer exactement). **Jamais exercé avant**
-  car le mode `compare` rend la sortie unidbg, pas celle du JNI. **Fix = matcher l'état/contrat des buffers de la lib ARM d'origine**
-  (désassemblage `native/reference/libspine-native.so` = étape 5, §4 ; pas de devinette). Outil de diag ajouté (`DH_SPINEDBG`).
+- **Blocage #2 — `getVertices` multi-pages → ✅ RÉSOLU PAR EXTRACTION (g184).** Trace EN JEU : `newPosition > limit (27>3)` dans
+  `NativeSkeletonRenderer.renderPreparedVertices`→`Mesh.render`, sur les squelettes **multi-pages** (les 1-draw-call passaient).
+  **Contrat EXACT extrait du wrapper DU JEU** `NativeSkeleton.getVertices` (§4, pas de devinette) : la valeur de RETOUR native =
+  **nombre d'INDICES** (pas de draw calls) ; 2 shorts de **MÉTADONNÉES** écrits après les indices — `indices[n]` = nb de vertices
+  (le jeu fait ×6 → limite verts), `indices[n+1]` = nb de draw calls (le jeu fait ×2 → limite drawCalls, et renvoie /2) ; **le jeu
+  recale lui-même toutes les limites** → `getVertices` ne doit pas les poser (comme la lib ARM, vérifié via l'oracle unidbg avec
+  `DH_SPINEDBG` : RET=indexCount, buffers laissés à leur capacité). Notre `buildVertices` renvoyait `drawCount` et posait les limites
+  → dépassement. **Corrigé** dans `cspine_jni.c`. **Résultat EN JEU : mode `jni` boote et REND le hub (MainScreen, multi-pages
+  inclus), visuellement IDENTIQUE à unidbg, 0 exception** (capture `desktop-port/build/jnihub.png`).
+
+**⇒ B2 TERMINÉ : le backend spine natif rend l'UI de bout en bout.** Reste avant « jouable ≥30 fps » : B4 (scène combat combinée)
++ B6 (mesure fps sur GPU réel) + B3 (certif matrice) + B5 (couverture autres écrans).
 
 ### B3 — Certification différentielle (large matrice) → 0 diff visuel
 Rejouer `CompareBackend` sur une **matrice héros × niveaux × graines**, combats **serrés** (RNG discriminant, cf. #24/#28) →

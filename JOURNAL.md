@@ -6985,3 +6985,21 @@ atlas), `com/perblue/heroes/cparticle/Native.java` (traduction handle), `native/
 `docs/PERF_PLAN.md` (B2 détaillé), `JOURNAL.md`, `MEMORY.md`. Régression serveur inchangée (aucun code serveur touché).
 **SUITE = blocage #2 (getVertices multi-pages) : désassembler la lib ARM pour matcher le contrat des buffers, puis re-tester
 EN JEU → MainScreen rendu → mesurer fps.**
+
+## 2026-08-25 (g184) — Perf B2 TERMINÉ : contrat getVertices extrait → hub RENDU en spine natif (mode jni), fidèle
+
+Suite g183 (blocage #1 atlas résolu). Blocage #2 (squelettes multi-pages, `newPosition > limit`) **résolu PAR EXTRACTION**
+(consigne util. : porter le format exact par extraction, sans réécriture, pour éviter les erreurs). Méthode :
+- Instrumentation de l'ORACLE unidbg (`DH_SPINEDBG` dans `UnidbgVM.skeletonGetVertices`) → la lib ARM renvoie RET = **nombre
+  d'INDICES** (ex. 39), laisse les buffers à leur capacité (ne pose pas les limites).
+- Contrat EXACT relevé dans le wrapper DU JEU `NativeSkeleton.getVertices` (bytecode) : retour natif = nb d'indices ; 2 shorts de
+  MÉTADONNÉES après les indices — `indices[n]`=nb vertices (jeu ×6 → limite verts), `indices[n+1]`=nb draw calls (jeu ×2 → limite
+  drawCalls, renvoie /2) ; le JEU recale lui-même verts/indices/drawCalls.
+- Fix `cspine_jni.c buildVertices` : écrit les 2 métadonnées, renvoie `ii` (indices), ne pose plus les limites. Reproduction
+  fidèle (§4), pas de devinette, pas de réécriture de moteur.
+
+**Résultat EN JEU (§8)** : `-Ddh.spinebackend=jni` boote et **REND le hub (MainScreen)** — squelettes multi-pages inclus — **sans
+erreur, VISUELLEMENT IDENTIQUE à unidbg** (capture `desktop-port/build/jnihub.png`). 0 exception. ⇒ le backend spine natif rend
+l'UI de bout en bout. Fichiers : `native/src/cspine_jni.c`, `desktop-port/.../UnidbgVM.java` (diag), `docs/PERF_PLAN.md` (B2
+terminé), `JOURNAL.md`, `MEMORY.md`. **SUITE = rendre le COMBAT en mode jni (B4) + mesurer fps sur GPU réel (B6) ; certif matrice
+(B3) + couverture autres écrans (B5).**
