@@ -1,5 +1,54 @@
 # JOURNAL — journal détaillé des modifications
 
+## 2026-08-29 (g185) — Perf B3 : bug fidélité mesh (héros « éclatés » en mode spine `jni`) ✅ RÉSOLU EN JEU
+
+Suite de B2 (hub rendu en spine natif). En mode `-Ddh.spinebackend=jni` les **héros** (mesh déformables) étaient
+rendus **éclatés/mal teintés** (blocage #3, contrainte user « aucune destruction visuelle »). Résolu PAR EXTRACTION —
+aucune devinette, aucune réécriture du moteur : on reproduit la sortie de l'ORACLE (unidbg = binaire ARM PerBlue) à
+l'octet près.
+
+**Outil (harnais différentiel `CompareBackend`, `-Ddh.spinebackend=compare` + `DH_SPINEDBG=1`)** — enrichi :
+- **ventilation des diffs de sommet par float** `[x,y,light,dark,u,v]` (compte + maxAbs par position) ;
+- **dump hex ABGR** oracle vs JNI pour les floats couleur (light #2 / dark #3) → dérivation directe de la formule ;
+- **hook d'arrêt** JVM qui imprime le rapport de certification même quand le process est tué par timeout.
+
+**4 causes distinctes trouvées et corrigées dans `native/src/cspine_jni.c`** :
+1. **Coord V ×2 — LA cause de l'« éclatement ».** Diag : `u=0 diff` (parfait) mais `v` faux sur ~100 % des sommets,
+   exactement **2× l'oracle** (`0.992=2×0.496`). `Atlas_getParams` (hauteur de page) IDENTIQUES entre backends →
+   pas une hauteur différente. Cause réelle : les textures sont **ETC1** (sans canal alpha) → PerBlue empile l'alpha
+   SOUS le RGB, la texture PHYSIQUE fait **2× la hauteur** déclarée dans l'atlas. Preuve : en-tête **PKM = 2048×1024**
+   alors que l'atlas dit `size: 2048,512` (RGB en haut, alpha en bas). Le shader échantillonne le RGB dans la moitié
+   haute → `v_out = v_atlas × (512/1024) = v × 0.5`. La lib ARM applique ce ×0,5 à l'émission ; notre spine-c émettait
+   V pleine échelle. **Fix : `#define TEXV_SCALE 0.5f`** sur la coord V (region + mesh). ⇒ **`v` diffs = 0**.
+2. **Masque anti-NaN libGDX.** `packColor` appliquait `& 0xfeffffff` (idiome `Color.toFloatBits`). L'oracle écrit les
+   **octets ABGR bruts** (blanc opaque → `0xFFFFFFFF` = NaN, relu en ubyte normalisé par le shader → la « NaN-itude »
+   est sans effet). Masque retiré.
+3. **Light prémultipliée à tort.** Relevé hex décisif : oracle light `0x00FFFFFF` (α=0, **rgb blanc conservé**),
+   `0x4199F0FF` (rgb **droit**). Notre tentative de premultiply (rgb×α) donnait `0x00000000`/`0x41273D41`. ⇒ **light =
+   couleur DROITE, non prémultipliée** (retour à la formule initiale, sans le masque).
+4. **`Skeleton_setTintBlack` = NO-OP.** Relevé hex : tous les slots SANS `darkColor` propre portaient la MÊME dark
+   oracle (`0xFF331100` = rgb (0,17,51), α=255) alors qu'on émettait `0xFF000000`. ⇒ c'est un **tint sombre GLOBAL**
+   posé par le jeu et qu'on ignorait. **Implémenté** : stockage du tint par squelette (table parallèle indexée par
+   `spSkeleton*`, car spine-c 3.6 n'a pas de champ ; nettoyée au `dispose`), servi comme base de `dark` au
+   `getVertices` quand le slot n'a pas de `darkColor`. Dark = **DROITE** (cohérent avec light), alpha = flag PMA (0xFF).
+   ⇒ **`dark` diffs = 0**.
+
+**Certification `compare` (hero chooser + hub)** : **`v=0, u=0, dark=0` (bit-exacts)**, `light` alpha bit-exact,
+`x/y` = dérive flottante ARM↔x86 **imperceptible** (~9e-5, §4bis OK). **Résiduel** : `light`-RGB diverge sur ~10 % des
+slots (alpha exact ; rgb blanc attendu mais teinté, ex. `0x…AFFFFD`) — **PARTIEL documenté** (`docs/SHIMS.md`),
+**invisible sur les héros**. Piste : couleur d'attachment appliquée en trop, ou évaluation de courbe `ColorTimeline`.
+
+**✅ VÉRIFIÉ EN JEU (§8)** : `-Ddh.spinebackend=jni`, écran **« CHOOSE YOUR HEROES! »** → les 5 héros (Merida, Moana,
+Belle, Jack Sparrow, la Bête) rendus **PARFAITEMENT** (textures, couleurs, contours corrects, zéro éclatement) —
+visuellement indistinguable du mobile. Hub + portrait Sign-In OK également. Captures : `/tmp/jni_final.png`,
+`/tmp/jni_chooser.png`.
+
+**Fichiers** : `native/src/cspine_jni.c` (TEXV_SCALE, packColor octets bruts, light/dark droites, setTintBlack réel +
+table de tint), `desktop-port/src/main/java/dhbackend/spine/CompareBackend.java` (ventilation par float, dump hex,
+hook d'arrêt — outillage de dev, gated `DH_SPINEDBG`). **SUITE** : B4 (scène combat complète en jni : VFX additifs +
+particules unidbg) + B6 (fps GPU réel) → basculer `jni` par défaut ; affiner le light-RGB résiduel si un artefact
+apparaît sur les slots additifs en combat.
+
 ## 2026-08-10 (g88) — FRIENDSHIPS (#72) SPEEDUP_MISSION + SET_MISSION_ITEM_COST_LIMIT ✅ (headless + en jeu) + MàJ EXPLORATION
 
 Dernières actions QoL du sous-système MISSIONS idle, code du jeu (§3), zéro invention (§4).

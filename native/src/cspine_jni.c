@@ -33,6 +33,23 @@ char* _spUtil_readFile(const char* path, int* length) { (void)path; if (length) 
 typedef struct { void** items; int size, cap; } HandleTable;
 static HandleTable t_atlas, t_skelData, t_skel, t_asd, t_animState;
 
+/* Tint black GLOBAL par squelette (Skeleton_setTintBlack) : spine-c 3.6 n'a pas de champ pour ça, on le stocke
+ * à côté, indexé par pointeur spSkeleton*. Relevé hex de l'oracle : tous les slots SANS darkColor propre portent
+ * la MÊME dark (ex. 0x00,0x11,0x33) → c'est un tint sombre global, pas une couleur par-slot. Le no-op précédent
+ * laissait dark=0 (héros légèrement moins teintés). */
+typedef struct { spSkeleton* key; float r, g, b; } TintEntry;
+static TintEntry* g_tints = 0; static int g_tintCount = 0, g_tintCap = 0;
+static TintEntry* tintFor(spSkeleton* s, int create) {
+    for (int i = 0; i < g_tintCount; i++) if (g_tints[i].key == s) return &g_tints[i];
+    if (!create) return 0;
+    if (g_tintCount >= g_tintCap) { g_tintCap = g_tintCap ? g_tintCap*2 : 32; g_tints = (TintEntry*)realloc(g_tints, g_tintCap*sizeof(TintEntry)); }
+    g_tints[g_tintCount].key = s; g_tints[g_tintCount].r = g_tints[g_tintCount].g = g_tints[g_tintCount].b = 0;
+    return &g_tints[g_tintCount++];
+}
+static void tintRemove(spSkeleton* s) {
+    for (int i = 0; i < g_tintCount; i++) if (g_tints[i].key == s) { g_tints[i] = g_tints[--g_tintCount]; return; } /* évite un tint périmé si malloc réutilise l'adresse */
+}
+
 static int ht_add(HandleTable* t, void* p) {
     if (t->size >= t->cap) { t->cap = t->cap ? t->cap*2 : 64; t->items = (void**)realloc(t->items, t->cap*sizeof(void*)); }
     /* réutilise un trou libre si possible */
@@ -177,7 +194,7 @@ JNIEXPORT jint JNICALL Java_com_perblue_heroes_cspine_Native_Skeleton_1create(JN
     return ht_add(&t_skel, s);
 }
 JNIEXPORT void JNICALL Java_com_perblue_heroes_cspine_Native_Skeleton_1dispose(JNIEnv* e, jclass c, jint h) {
-    (void)e; (void)c; spSkeleton* s = (spSkeleton*)ht_take(&t_skel, h); if (s) spSkeleton_dispose(s);
+    (void)e; (void)c; spSkeleton* s = (spSkeleton*)ht_take(&t_skel, h); if (s) { tintRemove(s); spSkeleton_dispose(s); }
 }
 JNIEXPORT void JNICALL Java_com_perblue_heroes_cspine_Native_Skeleton_1update(JNIEnv* e, jclass c, jint h, jfloat dt) {
     (void)e; (void)c; spSkeleton* s = (spSkeleton*)ht_get(&t_skel, h); if (s) spSkeleton_update(s, dt);
@@ -193,7 +210,8 @@ JNIEXPORT void JNICALL Java_com_perblue_heroes_cspine_Native_Skeleton_1setColor(
     if (s) { s->color.r = r; s->color.g = g; s->color.b = b; s->color.a = a; }
 }
 JNIEXPORT void JNICALL Java_com_perblue_heroes_cspine_Native_Skeleton_1setTintBlack(JNIEnv* e, jclass c, jint h, jfloat r, jfloat g, jfloat b) {
-    (void)e; (void)c; (void)h; (void)r; (void)g; (void)b; /* tint sombre global — appliqué au getVertices via slot->darkColor */
+    (void)e; (void)c; spSkeleton* s = (spSkeleton*)ht_get(&t_skel, h); if (!s) return;
+    TintEntry* t = tintFor(s, 1); t->r = r; t->g = g; t->b = b; /* tint sombre GLOBAL, base de dark au getVertices */
 }
 JNIEXPORT jboolean JNICALL Java_com_perblue_heroes_cspine_Native_Skeleton_1setSkin(JNIEnv* e, jclass c, jint h, jstring name) {
     (void)c; spSkeleton* s = (spSkeleton*)ht_get(&t_skel, h); if (!s) return JNI_FALSE;
@@ -264,11 +282,23 @@ JNIEXPORT void JNICALL Java_com_perblue_heroes_cspine_Native_Skeleton_1getPosedB
  * ⇒ drawCalls = n paires de shorts (indexCount, texturePageIndex). Les triangles étant émis DANS
  *   l'ordre de dessin (draw order), on ouvre un nouveau draw call à chaque changement de page ; les
  *   attachments consécutifs sur la même page fusionnent (indexCount cumulé). getVertices renvoie n. */
+/* ETC1 n'a PAS de canal alpha → PerBlue empile l'alpha SOUS le RGB : la texture physique fait 2× la hauteur
+ * déclarée dans l'atlas (relevé : PKM = 2048×1024 alors que l'atlas dit « size: 2048,512 » ; RGB en haut,
+ * alpha en bas). Le shader du jeu échantillonne le RGB dans la MOITIÉ HAUTE → la coord V doit être ramenée
+ * dans [0, 0.5] : v_out = v_atlas × (512/1024) = v_atlas × 0.5. La lib ARM d'origine (oracle unidbg) applique
+ * ce facteur dans getVertices (relevé par le harnais différentiel : notre V valait 2× celui de l'oracle, U
+ * identique). page->height reste 512 dans les DEUX moteurs (Atlas_getParams identiques) → le facteur est un
+ * ×0.5 explicite à l'émission, PAS une hauteur de page différente. (Extraction fidèle, pas une rustine.) */
+#define TEXV_SCALE 0.5f
 static float packColor(float r, float g, float b, float a) {
     unsigned int ir=(unsigned int)(r*255), ig=(unsigned int)(g*255), ib=(unsigned int)(b*255), ia=(unsigned int)(a*255);
     if(ir>255)ir=255; if(ig>255)ig=255; if(ib>255)ib=255; if(ia>255)ia=255;
-    unsigned int c = (ia<<24)|(ib<<16)|(ig<<8)|ir; /* ABGR empaqueté (comme Color.toFloatBits) */
-    float f; unsigned int m = c & 0xfeffffff; memcpy(&f,&m,4); return f;
+    unsigned int c = (ia<<24)|(ib<<16)|(ig<<8)|ir; /* ABGR empaqueté (octets bruts) */
+    /* PAS de masque NaN-avoidance (& 0xfeffffff) : la lib ARM d'origine (oracle unidbg) écrit les 4 OCTETS
+       BRUTS réinterprétés en float ; le shader les relit en ubyte normalisé → la « NaN-itude » du float est
+       sans effet. blanc opaque → 0xFFFFFFFF (=NaN), exactement comme PerBlue (relevé par le harnais différentiel :
+       u=NaN vs notre 0xFEFFFFFF masqué). Reproduire l'oracle à l'octet près, pas l'idiome libGDX Color.toFloatBits. */
+    float f; memcpy(&f,&c,4); return f;
 }
 
 /* Recale un java.nio.Buffer (position=0, limit=n) après remplissage par pointeur direct : le natif
@@ -307,20 +337,24 @@ static int buildVertices(JNIEnv* e, spSkeleton* s, jobject vertsBuf, jobject ind
     int drawCount = 0, curPage = -1, curDrawIdx = -1;   /* regroupement par page (draw order) */
     float minX=1e30f, minY=1e30f, maxX=-1e30f, maxY=-1e30f, wv[8];
     static const int QUAD[6] = {0,1,2,2,3,0};
+    TintEntry* tb = tintFor(s, 0);                                     /* tint black global (setTintBlack) ; base de dark */
+    float gtr = tb?tb->r:0, gtg = tb?tb->g:0, gtb = tb?tb->b:0;
     for (int d = 0; d < s->slotsCount; d++) {
         spSlot* slot = s->drawOrder[d]; spAttachment* att = slot->attachment; if (!att) continue;
         if (att->type != SP_ATTACHMENT_REGION && att->type != SP_ATTACHMENT_MESH) continue;
         float lr = s->color.r*slot->color.r, lg = s->color.g*slot->color.g, lb = s->color.b*slot->color.b, la = s->color.a*slot->color.a;
-        float dr = slot->darkColor?slot->darkColor->r:0, dg = slot->darkColor?slot->darkColor->g:0, db = slot->darkColor?slot->darkColor->b:0;
+        /* dark = darkColor propre du slot (slot 2-couleurs) si présent, SINON le tint black global (relevé oracle). */
+        float dr = slot->darkColor?slot->darkColor->r:gtr, dg = slot->darkColor?slot->darkColor->g:gtg, db = slot->darkColor?slot->darkColor->b:gtb;
         int page = attachmentPage(att);
         int idxAdded = 0;
         if (att->type == SP_ATTACHMENT_REGION) {
             spRegionAttachment* r = (spRegionAttachment*)att;
             spRegionAttachment_computeWorldVertices(r, slot->bone, wv, 0, 2);
-            float pl = packColor(lr*r->color.r, lg*r->color.g, lb*r->color.b, la*r->color.a);
-            float pd = packColor(dr,dg,db,0);
+            float A = la*r->color.a;                                                    /* alpha totale (squelette×slot×attachment) */
+            float pl = packColor(lr*r->color.r, lg*r->color.g, lb*r->color.b, A);        /* light DROITE, rgb NON prémultipliée (relevé hex oracle : 0x00FFFFFF à A=0 → rgb blanc conservé) */
+            float pd = packColor(dr, dg, db, 1);                                         /* dark DROITE, alpha=flag PMA=1 (0xFF) */
             for (int k=0;k<4;k++){ float X=wv[k*2],Y=wv[k*2+1];
-                verts[vi++]=X; verts[vi++]=Y; verts[vi++]=pl; verts[vi++]=pd; verts[vi++]=r->uvs[k*2]; verts[vi++]=r->uvs[k*2+1];
+                verts[vi++]=X; verts[vi++]=Y; verts[vi++]=pl; verts[vi++]=pd; verts[vi++]=r->uvs[k*2]; verts[vi++]=r->uvs[k*2+1]*TEXV_SCALE;
                 if(X<minX)minX=X; if(X>maxX)maxX=X; if(Y<minY)minY=Y; if(Y>maxY)maxY=Y; }
             for (int k=0;k<6;k++) indices[ii++] = (short)(vertexCount + QUAD[k]);
             vertexCount += 4; idxAdded = 6;
@@ -328,10 +362,11 @@ static int buildVertices(JNIEnv* e, spSkeleton* s, jobject vertsBuf, jobject ind
             spMeshAttachment* m = (spMeshAttachment*)att; int n = m->super.worldVerticesLength;
             float* mv = (float*)malloc(sizeof(float)*n);
             spVertexAttachment_computeWorldVertices(&m->super, slot, 0, n, mv, 0, 2);
-            float pl = packColor(lr*m->color.r, lg*m->color.g, lb*m->color.b, la*m->color.a);
-            float pd = packColor(dr,dg,db,0); int nv = n/2;
+            float A = la*m->color.a; int nv = n/2;                                       /* alpha totale */
+            float pl = packColor(lr*m->color.r, lg*m->color.g, lb*m->color.b, A);        /* light DROITE, rgb NON prémultipliée */
+            float pd = packColor(dr, dg, db, 1);                                         /* dark DROITE, alpha=flag PMA=1 (0xFF) */
             for (int k=0;k<nv;k++){ float X=mv[k*2],Y=mv[k*2+1];
-                verts[vi++]=X; verts[vi++]=Y; verts[vi++]=pl; verts[vi++]=pd; verts[vi++]=m->uvs[k*2]; verts[vi++]=m->uvs[k*2+1];
+                verts[vi++]=X; verts[vi++]=Y; verts[vi++]=pl; verts[vi++]=pd; verts[vi++]=m->uvs[k*2]; verts[vi++]=m->uvs[k*2+1]*TEXV_SCALE;
                 if(X<minX)minX=X; if(X>maxX)maxX=X; if(Y<minY)minY=Y; if(Y>maxY)maxY=Y; }
             for (int k=0;k<m->trianglesCount;k++) indices[ii++] = (short)(vertexCount + m->triangles[k]);
             vertexCount += nv; idxAdded = m->trianglesCount; free(mv);

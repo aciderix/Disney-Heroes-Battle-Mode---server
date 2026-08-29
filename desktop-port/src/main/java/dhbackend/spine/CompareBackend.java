@@ -31,7 +31,9 @@ public final class CompareBackend {
 
     /** Comparaison ACTIVE seulement dans la fenêtre voulue (ex. un combat) — hors fenêtre le boot tourne sur
      *  unidbg seul (rapide) ; les create/dispose restent doublés pour garder la table de handles cohérente. */
-    public volatile boolean active = false;
+    public volatile boolean active = System.getenv("DH_SPINEDBG") != null;   // DH_SPINEDBG → compare AUSSI pendant le rendu normal
+    private static final boolean SPINEDBG = System.getenv("DH_SPINEDBG") != null;
+    private int vdiagN = 0;
 
     // PerBlue réordonne les os en interne (getBoneID unidbg ≠ index de getBoneNames). Pour comparer le MÊME os
     // logique, on traduit l'index d'os unidbg → index d'os JNI PAR NOM. Rempli via les appels getBoneID du jeu.
@@ -50,8 +52,18 @@ public final class CompareBackend {
     // ---- rapport de diffs ----
     static final class Stat { final LongAdder calls = new LongAdder(), diffs = new LongAdder(); volatile long maxUlp = 0; volatile double maxAbs = 0; volatile double maxAbsMat = 0; volatile double maxAbsPos = 0; volatile String firstEx; }
     private final ConcurrentHashMap<String, Stat> stats = new ConcurrentHashMap<>();
+    // Ventilation des diffs de sommet par position de float : [0]=x [1]=y [2]=light [3]=dark [4]=u [5]=v
+    private static final LongAdder[] POS_DIFFS = { new LongAdder(), new LongAdder(), new LongAdder(), new LongAdder(), new LongAdder(), new LongAdder() };
+    private static final double[] POS_MAXABS = new double[6];
+    private static final java.util.concurrent.atomic.AtomicInteger HEXDUMP = new java.util.concurrent.atomic.AtomicInteger();
     private Stat st(String m) { return stats.computeIfAbsent(m, k -> new Stat()); }
-    public void ensureLoaded() { UnidbgVM.get(); HostSpine.ensureLoaded(); }
+    public void ensureLoaded() {
+        UnidbgVM.get(); HostSpine.ensureLoaded();
+        System.out.println("[compare] backend ACTIF (oracle=unidbg, candidat=JNI HostSpine) ; active(compareRendu)=" + active);
+        // Le process est souvent tué par timeout (pas de sortie propre) → hook d'arrêt pour TOUJOURS livrer le
+        // rapport de certification (TOTAL DIFFS). Harnais de dev uniquement, aucun effet sur le jeu.
+        Runtime.getRuntime().addShutdownHook(new Thread(() -> System.out.println(report())));
+    }
 
     public String report() {
         StringBuilder b = new StringBuilder("[compare] certification unidbg(oracle) vs JNI-natif :\n");
@@ -61,6 +73,10 @@ public final class CompareBackend {
                     ? String.format(" [mat=%.3g pos=%.3g]", s.maxAbsMat, s.maxAbsPos) : "";
                 b.append(String.format("  %-34s appels=%-7d DIFFS=%-7d maxAbs=%.3g%s maxUlp=%d%s%n",
                     e.getKey(), s.calls.sum(), s.diffs.sum(), s.maxAbs, split, s.maxUlp, s.firstEx == null ? "" : "  ex: " + s.firstEx)); });
+        String[] pn = {"x","y","light","dark","u","v"};
+        b.append("  [sommet] diffs par float :");
+        for (int i = 0; i < 6; i++) b.append(String.format(" %s=%d(maxAbs=%.4g)", pn[i], POS_DIFFS[i].sum(), POS_MAXABS[i]));
+        b.append('\n');
         long tot = stats.values().stream().mapToLong(s -> s.diffs.sum()).sum();
         b.append("  ==> TOTAL DIFFS = ").append(tot).append(tot == 0 ? "  ✅ CERTIFIÉ IDENTIQUE" : "  ❌ divergences").append('\n');
         double uMs = uNanos.sum() / 1e6, jMs = jNanos.sum() / 1e6;
@@ -160,14 +176,46 @@ public final class CompareBackend {
     // Compare le rendu : buffers JNI parallèles, mêmes capacités, sans perturber ceux du jeu (remplis par unidbg).
     private void compareVerts(String m, int h, FloatBuffer v, ShortBuffer i, ShortBuffer d, int nU, float[] bU) {
         Stat s = st(m); s.calls.increment();
-        FloatBuffer vj = FloatBuffer.allocate(v.capacity()); ShortBuffer ij = ShortBuffer.allocate(i.capacity()); ShortBuffer dj = ShortBuffer.allocate(d.capacity());
+        // Buffers DIRECTS (HostSpine lit via GetDirectBufferAddress → NULL sur un buffer heap ; sans ça il n'écrivait RIEN et
+        // la comparaison de sommets était vide). Mêmes capacités que ceux du jeu ; ne perturbent pas ceux remplis par unidbg.
+        FloatBuffer vj = java.nio.ByteBuffer.allocateDirect(v.capacity()*4).order(java.nio.ByteOrder.nativeOrder()).asFloatBuffer();
+        ShortBuffer ij = java.nio.ByteBuffer.allocateDirect(i.capacity()*2).order(java.nio.ByteOrder.nativeOrder()).asShortBuffer();
+        ShortBuffer dj = java.nio.ByteBuffer.allocateDirect(d.capacity()*2).order(java.nio.ByteOrder.nativeOrder()).asShortBuffer();
         float[] bj = bU == null ? null : new float[bU.length];
         int nJ = bU == null ? HostSpine.Skeleton_getVertices(tr(h), vj, ij, dj) : HostSpine.Skeleton_getVerticesAndBounds(tr(h), vj, ij, dj, bj);
-        boolean diff = nU != nJ;
-        long mu = 0;
-        int fv = Math.min(v.position(), vj.position());
-        for (int k = 0; k < fv; k++) { float a = v.get(k), c = vj.get(k); if (Float.floatToRawIntBits(a) != Float.floatToRawIntBits(c)) { diff = true; mu = Math.max(mu, ulp(a, c)); } }
-        if (diff) { s.diffs.increment(); if (mu > s.maxUlp) s.maxUlp = mu; if (s.firstEx == null) s.firstEx = "nU=" + nU + " nJ=" + nJ + " maxUlp=" + mu; }
+        // Contrat (extrait de NativeSkeleton.getVertices) : RET = nb d'INDICES ; indices[RET]=nb vertices, indices[RET+1]=drawCount.
+        // unidbg (oracle) remplit v/i/d (les buffers du jeu) ; on relit ses métadonnées pour cadrer la comparaison au MÊME domaine.
+        int vertsU = (nU >= 0 && nU + 0 < i.capacity()) ? (i.get(nU) & 0xffff) : 0;         // nb de vertices (oracle)
+        int vertsJ = (nJ >= 0 && nJ < ij.capacity()) ? (ij.get(nJ) & 0xffff) : 0;
+        int dcU = (nU >= 0 && nU + 1 < i.capacity()) ? (i.get(nU+1) & 0xffff) : 0;           // drawCount (oracle)
+        int dcJ = (nJ >= 0 && nJ+1 < ij.capacity()) ? (ij.get(nJ+1) & 0xffff) : 0;
+        boolean diff = (nU != nJ) || (vertsU != vertsJ) || (dcU != dcJ);
+        long mu = 0; double maxAbs = 0; int firstBad = -1;
+        int floats = Math.min(vertsU, vertsJ) * 6;                                            // 6 floats/vertex
+        for (int k = 0; k < floats && k < v.capacity() && k < vj.capacity(); k++) {
+            float a = v.get(k), c = vj.get(k);
+            if (Float.floatToRawIntBits(a) != Float.floatToRawIntBits(c)) { diff = true; mu = Math.max(mu, ulp(a, c)); double ad = Math.abs((double)a-c); if (ad>maxAbs) maxAbs=ad; if (firstBad<0) firstBad=k;
+                int pos = k % 6; POS_DIFFS[pos].increment(); double pd = ad; synchronized (POS_MAXABS) { if (pd > POS_MAXABS[pos]) POS_MAXABS[pos] = pd; }  // ventilation par float [x,y,light,dark,u,v]
+                // Dump hex ABGR (oracle vs jni) pour dériver la formule EXACTE de packing couleur (light=#2, dark=#3).
+                if (SPINEDBG && pos == 2 && HEXDUMP.getAndIncrement() < 24)
+                    System.out.printf("[spinedbg-HEX] %s#%d oracle=%08X jni=%08X%n", pos==2?"light":"dark", k,
+                        Float.floatToRawIntBits(a), Float.floatToRawIntBits(c)); }
+        }
+        // Diff d'INDICES (triangles) : révèle un mauvais regroupement/ordre (cause probable des meshes « éclatés »).
+        int idxN = Math.min(nU, nJ); int idxDiffs = 0; int firstIdxBad = -1;
+        for (int k = 0; k < idxN && k < i.capacity() && k < ij.capacity(); k++) {
+            if ((i.get(k) & 0xffff) != (ij.get(k) & 0xffff)) { diff = true; idxDiffs++; if (firstIdxBad < 0) firstIdxBad = k; }
+        }
+        if (diff) { s.diffs.increment(); if (mu > s.maxUlp) s.maxUlp = mu; if (maxAbs > s.maxAbs) s.maxAbs = maxAbs;
+            if (s.firstEx == null) s.firstEx = "nU=" + nU + " nJ=" + nJ + " vertsU=" + vertsU + " vertsJ=" + vertsJ
+                + " dcU=" + dcU + " dcJ=" + dcJ + " maxAbsVert=" + maxAbs + " (float#" + firstBad + ") idxDiffs=" + idxDiffs + " (idx#" + firstIdxBad + ")"; }
+        if (SPINEDBG && diff && vdiagN < 12) { vdiagN++;
+            System.out.println("[spinedbg-CMP] getVertices DIFF: nU=" + nU + " nJ=" + nJ + " vertsU=" + vertsU + " vertsJ=" + vertsJ
+                + " dcU=" + dcU + " dcJ=" + dcJ + " | maxAbsVert=" + maxAbs + " 1erFloat#" + firstBad
+                + " | idxDiffs=" + idxDiffs + "/" + idxN + " 1erIdx#" + firstIdxBad
+                + (firstBad>=0 ? " (v.u=" + v.get(firstBad) + " v.j=" + vj.get(firstBad) + ")" : "")
+                + (firstIdxBad>=0 ? " (idx.u=" + (i.get(firstIdxBad)&0xffff) + " idx.j=" + (ij.get(firstIdxBad)&0xffff) + ")" : ""));
+        }
     }
 
     // ================= AnimationStateData
