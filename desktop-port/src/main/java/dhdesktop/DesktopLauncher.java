@@ -481,6 +481,10 @@ public final class DesktopLauncher {
                     TutorialDriver.campQuick(game);
                     continue;
                 }
+                if (low.startsWith("campstart")) {               // campstart → combat RENDU (bouton FIGHT → CampaignAttackScreen) : vérif B4/B6
+                    TutorialDriver.campStart(game);
+                    continue;
+                }
                 if (low.startsWith("buyavatar ")) {              // buyavatar <ITEM> → BUY_COLLECTION_AVATAR
                     String[] ba = ln.trim().split("[,;\\s]+");
                     if (ba.length >= 2) TutorialDriver.buyAvatar(game, ba[1].toUpperCase());

@@ -345,6 +345,13 @@ static int buildVertices(JNIEnv* e, spSkeleton* s, jobject vertsBuf, jobject ind
         float lr = s->color.r*slot->color.r, lg = s->color.g*slot->color.g, lb = s->color.b*slot->color.b, la = s->color.a*slot->color.a;
         /* dark = darkColor propre du slot (slot 2-couleurs) si présent, SINON le tint black global (relevé oracle). */
         float dr = slot->darkColor?slot->darkColor->r:gtr, dg = slot->darkColor?slot->darkColor->g:gtg, db = slot->darkColor?slot->darkColor->b:gtb;
+        /* DIAG (DH_SPINEDBG2) : composantes de couleur par slot → identifier la source d'un light-RGB divergent. */
+        { static int dbg2 = -1; static int dbg2N = 0;
+          if (dbg2 < 0) dbg2 = getenv("DH_SPINEDBG2") ? 1 : 0;
+          if (dbg2 && dbg2N < 40) { spColor* ac = (att->type==SP_ATTACHMENT_REGION)?&((spRegionAttachment*)att)->color:&((spMeshAttachment*)att)->color;
+            fprintf(stderr, "[spinedbg2] slot='%s' skel=(%.3f,%.3f,%.3f,%.3f) slotC=(%.3f,%.3f,%.3f,%.3f) attC=(%.3f,%.3f,%.3f,%.3f) blend=%d\n",
+              slot->data->name, s->color.r,s->color.g,s->color.b,s->color.a, slot->color.r,slot->color.g,slot->color.b,slot->color.a,
+              ac->r,ac->g,ac->b,ac->a, (int)slot->data->blendMode); dbg2N++; } }
         int page = attachmentPage(att);
         int idxAdded = 0;
         if (att->type == SP_ATTACHMENT_REGION) {

@@ -1204,6 +1204,41 @@ public final class TutorialDriver {
         } catch (Throwable t) { System.out.println("[campquick] échec: " + t); t.printStackTrace(); }
     }
 
+    /** DEV : lance le combat RENDU (pas le quick-fight) depuis le chooser de campagne — sélectionne des héros
+     *  possédés (même chemin réel `unitSelected` que campQuick) puis appelle `startBattleInner()` (le bouton FIGHT
+     *  vert → pousse `CampaignAttackScreen`, combat visuel). Invoqué via "campstart". Sert à la vérif B4 (scène
+     *  combat combinée en mode spine natif jni) + B6 (fps combat). */
+    public static void campStart(GameMain game) {
+        try {
+            Object screen = game.getScreenManager().getScreen();
+            if (screen == null || !screen.getClass().getSimpleName().contains("CampaignHeroChooser")) {
+                System.out.println("[campstart] écran courant = "
+                    + (screen == null ? "null" : screen.getClass().getSimpleName()) + " (pas CampaignHeroChooserScreen)"); return;
+            }
+            com.perblue.heroes.ui.herochooser.CampaignHeroChooserScreen s =
+                (com.perblue.heroes.ui.herochooser.CampaignHeroChooserScreen) screen;
+            var provider = com.perblue.heroes.game.logic.CollectionHelper.fromUser(game.getYourUser());
+            java.util.List<com.perblue.heroes.network.messages.UnitType> want = new java.util.ArrayList<>();
+            var lineup = game.getYourUser().getHeroLineup(
+                com.perblue.heroes.network.messages.HeroLineupType.NORMAL_CAMPAIGN, 0L);
+            if (lineup != null && lineup.heroes != null)
+                for (Object ht : lineup.heroes) want.add((com.perblue.heroes.network.messages.UnitType) ht);
+            for (Object ho : game.getYourUser().getHeroes()) {
+                com.perblue.heroes.game.objects.IHero h = (com.perblue.heroes.game.objects.IHero) ho;
+                if (!want.contains(h.getType())) want.add(h.getType());
+            }
+            for (com.perblue.heroes.network.messages.UnitType t : want) {
+                if (s.getSelectedHeroes().size >= 5) break;
+                var hero = game.getYourUser().getHero(t);
+                if (!(hero instanceof com.perblue.heroes.game.objects.UnitData)) continue;
+                com.perblue.heroes.game.objects.UnitData ud = (com.perblue.heroes.game.objects.UnitData) hero;
+                if (s.canSelectUnit(ud)) s.unitSelected(ud, provider, 0f, 0f);
+            }
+            System.out.println("[campstart] héros sélectionnés=" + s.getSelectedHeroes().size + " → startBattleInner() [combat RENDU]");
+            s.startBattleInner();
+        } catch (Throwable t) { System.out.println("[campstart] échec: " + t); t.printStackTrace(); }
+    }
+
     /** DEV : ACHÈTE un avatar de collection (mastery shop) — chemin client réel
      *  {@code ClientActionHelper.buyCollectionAvatar(itemType)} (Action BUY_COLLECTION_AVATAR ; le serveur ré-exécute
      *  buyCollectionAvatar : gate + débit MASTERY_TOKENS + don). Invoqué via "buyavatar &lt;ITEM&gt;". */

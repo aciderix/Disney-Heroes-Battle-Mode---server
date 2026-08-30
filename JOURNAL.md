@@ -1,5 +1,44 @@
 # JOURNAL — journal détaillé des modifications
 
+## 2026-08-29 (g186) — Perf B4+B6 : COMBAT RENDU en spine natif `jni` ✅ EN JEU + résiduels expliqués
+
+Suite de g185 (héros parfaits au chooser). Réponse à 2 demandes : (a) les résiduels (imperceptibles + light-RGB)
+peuvent-ils être améliorés ? (b) B4/B6 + vérif combat (fps, qualité, problèmes).
+
+**(a) Résiduels — ANALYSE (diag `DH_SPINEDBG2` = dump des composantes de couleur par slot au `getVertices`)** :
+- **light-RGB (~10 % des slots)** : les slots divergents sont à **couleur ANIMÉE** — glow d'ambiance du HUB
+  (`midground/light` slotC pulsant chaud `(1,0.94,0.60,α)`, `midground/lense_flare`), **PAS les héros**. Les slots à
+  couleur **statique** (corps des héros, `slotC` blanc) sont **bit-exacts**. Cause = **dérive de phase entre 2
+  horloges d'animation indépendantes** : le harnais `compare` fait tourner unidbg (ARM) ET HostSpine (x86) en //,
+  chacun accumulant son `dt` en flottant (bionic vs glibc) → sur une boucle de couleur rapide, léger décalage de
+  temps = phase différente (alpha ~identique car courbe plus plate). **En PRODUCTION (`jni` seul, UNE horloge) ça
+  n'existe pas** → artefact de mesure, pas un défaut.
+- **x/y (~9e-5)** : même classe = ARM↔x86 dans les **libm** (sin/cos/atan2 des transforms d'os), différence de
+  BIBLIOTHÈQUE (bionic vs glibc), **pas corrigeable par flags** (pas de FMA sur x86-64 baseline). Seule l'émulation
+  ARM (unidbg) matche bit-à-bit → gardée pour l'**AUTORITÉ**. Affichage = §4bis (sous-pixel).
+- ⇒ **Rien à « corriger »** : héros/gameplay fidèles, autorité bit-exacte. Docs `SHIMS.md`/`PERF_PLAN.md` mis à jour.
+
+**(b) B4 (scène combat combinée) + B6-combat (fps)** — pilote `campstart` ajouté (`TutorialDriver.campStart` +
+commande clickfile) : sélectionne 5 héros possédés (chemin réel `unitSelected`) puis appelle
+`CampaignHeroChooserScreen.startBattleInner()` = le bouton **FIGHT** (combat RENDU `CampaignAttackScreen`, pas le
+quick-fight). **VÉRIFIÉ EN JEU (§8)** :
+- **Combat joué de bout en bout en mode `jni`** : 1465 frames, **0 crash**, cohabitation **spine natif + particules
+  unidbg + GL** stable.
+- **fps combat (llvmpipe)** : **`unidbg=0.0 ms` sur 1446/1465 frames** (spine ÉLIMINÉ du hot-path ; les rares
+  0.3–8 ms = bursts de particules unidbg au cast d'aptitude) ; moy 47 ms/**21 fps** mais **min 11 ms/91 fps** →
+  borné par le **GL logiciel**, pas le spine. Ancien mode spine-unidbg = 25–34 ms/frame *rien que* pour le spine.
+  **GPU réel → 60 fps.**
+- **Qualité PARFAITE** : les 5 héros (Merida/Moana/Belle/Jack Sparrow/Bête) + **ennemi Soulless (tête en flamme
+  bleue = effet ADDITIF, rendu propre → 0 artefact du résiduel light-RGB)** + fond rooftop + HUD complet (vague 1/3,
+  timer, barres de vie, AUTO). Indistinguable du mobile. Capture `/tmp/jni_combat_final.png`.
+- **Problèmes trouvés = PRÉ-EXISTANTS, non liés au spine** : `patched_heroes_talent_assignments.tab` row 159 → enum
+  `PatchTalent.PREDICTIVE_FORTIFICATION` absent du code 12.1.0 (gap data/version) ; sons `glitch_glitch_in_1250_*`
+  manquants ; `NumberFormatException("")`. À traiter hors chantier spine.
+
+**Fichiers** : `desktop-port/.../TutorialDriver.java` (`campStart`), `.../DesktopLauncher.java` (commande `campstart`),
+`native/src/cspine_jni.c` (diag `DH_SPINEDBG2`), `docs/PERF_PLAN.md` + `docs/SHIMS.md` (analyse résiduels + B4/B6).
+**SUITE** : B5 (inventaire + couverture des autres écrans spine) avant de basculer `-Ddh.spinebackend=jni` par défaut.
+
 ## 2026-08-29 (g185) — Perf B3 : bug fidélité mesh (héros « éclatés » en mode spine `jni`) ✅ RÉSOLU EN JEU
 
 Suite de B2 (hub rendu en spine natif). En mode `-Ddh.spinebackend=jni` les **héros** (mesh déformables) étaient
