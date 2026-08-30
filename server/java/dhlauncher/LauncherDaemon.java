@@ -33,7 +33,9 @@ public final class LauncherDaemon {
     private final HttpServer http;
     private final HttpClient client = HttpClient.newHttpClient();
     private final LauncherConfig config = new LauncherConfig();
-    private final HostManager host = new HostManager(System.getProperty("dh.launcher.projectdir", System.getProperty("user.dir", ".")));
+    private final String projectDir = System.getProperty("dh.launcher.projectdir", System.getProperty("user.dir", "."));
+    private final HostManager host = new HostManager(projectDir);
+    private final BuildManager build = new BuildManager(projectDir);
 
     /** @param port port local (0 = éphémère, choisi par l'OS). Lié à loopback seulement. */
     public LauncherDaemon(int port) throws IOException {
@@ -48,6 +50,8 @@ public final class LauncherDaemon {
         http.createContext("/host/start", this::hostStart);     // C2a-3 : héberger en local
         http.createContext("/host/stop", this::hostStop);
         http.createContext("/host/status", this::hostStatus);
+        http.createContext("/build/start", this::buildStart);   // C2a-4 : générer le serveur depuis l'APK
+        http.createContext("/build/status", this::buildStatus);
         http.setExecutor(null);
     }
 
@@ -155,6 +159,22 @@ public final class LauncherDaemon {
     /** GET /host/status → état du serveur local hébergé (running, écoute, ports, PIDs, uptime). */
     private void hostStatus(HttpExchange ex) throws IOException {
         send(ex, 200, host.status());
+    }
+
+    /** POST /build/start {apkPath, [target=server|client|apk], [outDir], [full=false]} → génère depuis l'APK (async). */
+    private void buildStart(HttpExchange ex) throws IOException {
+        if (!post(ex)) return;
+        Map<String, String> f = form(ex);
+        boolean full = "true".equalsIgnoreCase(f.getOrDefault("full", "false")) || "1".equals(f.getOrDefault("full", ""));
+        BuildManager.Target tgt;
+        try { tgt = BuildManager.Target.valueOf(f.getOrDefault("target", "server").trim().toUpperCase()); }
+        catch (Exception e) { send(ex, 400, "{\"error\":\"target invalide (server|client|apk)\"}"); return; }
+        send(ex, 200, build.start(f.getOrDefault("apkPath", ""), f.getOrDefault("outDir", ""), tgt, full));
+    }
+
+    /** GET /build/status → état du build (state, step, outDir, tail du log). */
+    private void buildStatus(HttpExchange ex) throws IOException {
+        send(ex, 200, build.status());
     }
 
     private static int intOr(Map<String, String> f, String k, int def) {

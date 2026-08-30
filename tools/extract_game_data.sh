@@ -20,7 +20,10 @@ if [[ -z "$APK" || ! -f "$APK" ]]; then
   exit 1
 fi
 
-DEST="$ROOT/game-data"
+# Destination surchageable (DH_DATA_DEST) pour générer les données dans un dossier de SORTIE choisi
+# (ex. le launcher qui « génère un serveur » depuis un APK, sans écraser le game-data du projet courant).
+# Défaut inchangé = game-data/ du projet.
+DEST="${DH_DATA_DEST:-$ROOT/game-data}"
 TMP="$(mktemp -d)"
 trap 'rm -rf "$TMP"' EXIT
 

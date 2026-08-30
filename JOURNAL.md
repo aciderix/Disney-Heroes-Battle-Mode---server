@@ -1,5 +1,33 @@
 # JOURNAL — journal détaillé des modifications
 
+## 2026-08-30 (g195) — Phase 2 C2a-4 : GÉNÉRATION depuis l'APK — cible SERVEUR 🟢 (client/APK = incréments à venir)
+
+Précision util. : le launcher devra proposer **3 cibles de build** depuis l'APK fourni — **build PC** (Windows ou
+Linux), **build serveur** (hébergement), **patch APK** (jeu mobile — ULTÉRIEUR, il faudra y intégrer la découverte/
+redirection serveur). **On avance par incréments** : cet incrément câble la cible **SERVEUR**.
+
+**Distinction établie (répondu à l'util.)** — l'APK donne 3 briques : (a) **données** `.tab`/strings (partagées
+client+serveur) ; (b) **`game.jar`→`game-framed.jar`** (classes du jeu → SERVEUR) ; (c) pour le **CLIENT PC** en
+plus : `game-logic-framed.jar` + **assets** (spine/atlas) + **natifs** + **build gradle** de `desktop-port`.
+
+**`dhlauncher.BuildManager`** (glue §3/§4/§7, orchestre le pipeline reproductible EXISTANT, rien réécrit) : job en
+ARRIÈRE-PLAN vers un **dossier de SORTIE choisi** (ne touche pas le serveur courant), avec état interrogeable.
+- Cible **SERVER** câblée : étape LÉGÈRE `tools/extract_game_data.sh` (unzip des `.tab`, sans réseau) → `<out>/
+  game-data` ; en mode `full` aussi `decompile.sh` (dex2jar/Maven, LOURD) + reframe `ReframeJar` → `game-framed.jar`.
+- Cibles **CLIENT**/**APK** : **refus HONNÊTE** (state=FAILED, « incrément à venir » — PAS de faux succès §2).
+- Override `DH_DATA_DEST` ajouté à `extract_game_data.sh` (défaut inchangé) pour cibler le dossier de sortie.
+
+**`LauncherDaemon`** : `POST /build/start {apkPath, target=server|client|apk, [outDir], [full]}`, `GET /build/status`
+(state, target, step, tail du log). **`BuildDataGenTest`** (5/5) : APK introuvable→FAILED ; cible client→refus
+honnête ; cible SERVER→extraction RÉELLE du VRAI APK→**>50 `.tab` générés dans le dossier de sortie** (game-data du
+projet INTACT, 274 fichiers). Régression **168/168**.
+
+⇒ le launcher-core sait **générer les données+artefacts d'un SERVEUR depuis l'APK** (auto-hébergement de bout en
+bout : générer → héberger C2a-3 → jouer C2a-2). Fichiers : `dhlauncher/BuildManager.java` (nouveau), `LauncherDaemon.
+java` (endpoints `/build/*`), `tools/extract_game_data.sh` (`DH_DATA_DEST`), `server/smoke/BuildDataGenTest.java`
+(nouveau), `regression.sh`, docs. **SUITE = C2a-4b (build CLIENT PC Win/Linux : game-logic-framed + assets + natifs
++ gradle), plus tard patch APK ; puis C2b (front Tauri+React).**
+
 ## 2026-08-30 (g194) — Phase 2 C2a-3 : HÉBERGEMENT LOCAL (launcher-core /host/start,stop,status) 🟢
 
 Décision util. (périmètre) : C2a-3 = **hébergement local MINIMAL** (auto-héberger sur sa propre machine) — le
