@@ -37,28 +37,31 @@ public final class ServerBundleTest {
         File tabs = new File(gen, "game-data/stats");
         ok(tabs.isDirectory() && tabs.list().length > 50, "game-data/stats peuplé");
 
-        // 3) COPIE le bundle HORS de l'arbre de dev, puis le LANCE via run.sh (ports hauts pour éviter les collisions)
+        // 3) COPIE le bundle HORS de l'arbre de dev, puis l'HÉBERGE via HostManager.startBundle — c.-à-d. le chemin
+        //    « bouton Héberger du launcher lance le bundle généré » (même artefact que le double-clic standalone).
         File runDir = Files.createTempDirectory("dh-bundle-run").toFile();
         copyTree(gen.toPath(), runDir.toPath());
         int G = 19091;
-        ProcessBuilder pb = new ProcessBuilder("bash", new File(runDir, "run.sh").getPath())
-                .directory(runDir).redirectErrorStream(true).redirectOutput(new File(runDir, "server.log"));
-        pb.environment().put("DH_GAME_PORT", String.valueOf(G));
-        pb.environment().put("DH_CONTENT_PORT", "19090");
-        pb.environment().put("DH_AUTH_PORT", "19092");
-        Process p = pb.start();
-
-        boolean listening = false;
+        dhlauncher.HostManager hm = new dhlauncher.HostManager(runDir.getPath());
+        boolean listening = false, downAfterStop = false;
         try {
+            String st = hm.startBundle(runDir.getPath(), 19090, G, 19092, false);
+            ok(st.contains("\"gamePort\":" + G), "startBundle accepté");
+
             long dl = System.currentTimeMillis() + 90_000L;
-            while (System.currentTimeMillis() < dl && p.isAlive()) {
+            while (System.currentTimeMillis() < dl && hm.isRunning()) {
                 try (Socket s = new Socket()) { s.connect(new InetSocketAddress("127.0.0.1", G), 500); listening = true; break; }
                 catch (Exception e) { Thread.sleep(500); }
             }
-            ok(listening, "BUNDLE LANCÉ HORS DEV : port de jeu " + G + " en écoute (serveur autonome)");
+            ok(listening, "BUNDLE HÉBERGÉ HORS DEV via le launcher : port de jeu " + G + " en écoute (autonome)");
+
+            hm.stop();
+            Thread.sleep(1000);
+            try (Socket s = new Socket()) { s.connect(new InetSocketAddress("127.0.0.1", G), 500); }
+            catch (Exception e) { downAfterStop = true; }
+            ok(downAfterStop, "arrêt propre : port fermé après stop (content_server + serveur tués ensemble)");
         } finally {
-            p.destroy();
-            try { if (!p.waitFor(3, java.util.concurrent.TimeUnit.SECONDS)) p.destroyForcibly(); } catch (Exception ignore) {}
+            try { hm.stop(); } catch (Exception ignore) {}
             deleteRec(gen); deleteRec(runDir);
         }
 

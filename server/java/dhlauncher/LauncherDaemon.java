@@ -140,13 +140,18 @@ public final class LauncherDaemon {
         }
     }
 
-    /** POST /host/start {[contentPort=8080], [gamePort=8081], [authPort=8082], [strict=false]} → héberge en local. */
+    /** POST /host/start {[bundleDir], [contentPort=8080], [gamePort=8081], [authPort=8082], [strict=false]} → héberge.
+     *  Si {@code bundleDir} est fourni → lance le BUNDLE généré (run.sh/run.bat = même artefact que le standalone) ;
+     *  sinon → serveur depuis le classpath courant (dev). */
     private void hostStart(HttpExchange ex) throws IOException {
         if (!post(ex)) return;
         Map<String, String> f = form(ex);
         boolean strict = "true".equalsIgnoreCase(f.getOrDefault("strict", "false")) || "1".equals(f.getOrDefault("strict", ""));
+        String bundleDir = f.getOrDefault("bundleDir", "");
+        int cp = intOr(f, "contentPort", 8080), gp = intOr(f, "gamePort", 8081), ap = intOr(f, "authPort", 8082);
         try {
-            send(ex, 200, host.start(intOr(f, "contentPort", 8080), intOr(f, "gamePort", 8081), intOr(f, "authPort", 8082), strict));
+            send(ex, 200, bundleDir.isEmpty() ? host.start(cp, gp, ap, strict)
+                                              : host.startBundle(bundleDir, cp, gp, ap, strict));
         } catch (Exception e) { send(ex, 500, "{\"error\":\"" + e.getClass().getSimpleName() + "\"}"); }
     }
 

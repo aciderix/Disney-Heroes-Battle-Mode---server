@@ -25,12 +25,43 @@ public final class HostManager {
     private long startedAt;
     private int contentPort, gamePort, authPort;
     private boolean strict;
+    private boolean bundleMode;   // true = un seul process (run.sh du bundle, qui lance content+serveur en interne)
 
     public HostManager(String projectDir) { this.projectDir = projectDir; }
 
-    /** Serveur ET content_server vivants ? (un process mort ⇒ non « running »). */
+    /** Vivant ? En mode dev = serveur ET content_server ; en mode BUNDLE = le seul process run.sh. */
     public synchronized boolean isRunning() {
+        if (bundleMode) return server != null && server.isAlive();
         return server != null && server.isAlive() && content != null && content.isAlive();
+    }
+
+    /**
+     * Héberge un BUNDLE serveur AUTONOME généré (C2a-4-pkg) : lance son {@code run.sh}/{@code run.bat} — le MÊME
+     * artefact que le standalone → le bouton « Héberger » du launcher exécute exactement ce qui se double-clique.
+     * Un seul process géré (le script lance content_server + serveur en interne, et les arrête ensemble au SIGTERM).
+     */
+    public synchronized String startBundle(String bundleDir, int contentPort, int gamePort, int authPort, boolean strict) throws IOException {
+        if (isRunning()) return status();
+        stopQuiet();
+        File dir = new File(bundleDir);
+        boolean win = System.getProperty("os.name", "").toLowerCase().contains("win");
+        File script = new File(dir, win ? "run.bat" : "run.sh");
+        if (!script.isFile()) throw new IOException("bundle invalide (run script absent): " + script);
+        this.contentPort = contentPort; this.gamePort = gamePort; this.authPort = authPort;
+        this.strict = strict; this.bundleMode = true; this.content = null;
+
+        ProcessBuilder pb = new ProcessBuilder(win
+                ? new java.util.ArrayList<>(List.of("cmd", "/c", script.getPath()))
+                : new java.util.ArrayList<>(List.of("bash", script.getPath())))
+                .directory(dir).redirectErrorStream(true)
+                .redirectOutput(new File(dir, "host.log"));
+        pb.environment().put("DH_CONTENT_PORT", String.valueOf(contentPort));
+        pb.environment().put("DH_GAME_PORT", String.valueOf(gamePort));
+        pb.environment().put("DH_AUTH_PORT", String.valueOf(authPort));
+        if (strict) pb.environment().put("DH_SERVER_OPTS", "-Ddh.auth=on");
+        server = pb.start();
+        startedAt = System.currentTimeMillis();
+        return status();
     }
 
     /**
@@ -42,6 +73,7 @@ public final class HostManager {
         // nettoie un démarrage précédent partiellement mort
         stopQuiet();
         this.contentPort = contentPort; this.gamePort = gamePort; this.authPort = authPort; this.strict = strict;
+        this.bundleMode = false;
 
         String java = System.getProperty("java.home") + File.separator + "bin" + File.separator + "java";
         String cp = System.getProperty("java.class.path");   // le daemon embarque déjà dhserver + les jars du jeu

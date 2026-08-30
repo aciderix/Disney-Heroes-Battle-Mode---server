@@ -26,7 +26,11 @@ lambda** — « il n'y a plus qu'à cliquer ». L'utilisateur fournit son APK **
 lancement), pas juste des artefacts épars dans un arbre de dev. **Zéro assemblage manuel, zéro dépendance à installer à
 la main** (le runtime requis — JRE embarqué/vérifié, `python3` pour le content-server, etc. — est fourni ou détecté et
 guidé). Corollaire d'implémentation : chaque cible de build (C2a-4 serveur, C2a-4b client) se termine par une **étape de
-PACKAGING** qui produit ce bundle lançable.
+PACKAGING** qui produit ce bundle lançable. **Statut** : bundle serveur ✅ (`run.sh`/`run.bat`, lancé hors dev +
+hébergé par le launcher via `HostManager.startBundle`, cf. `JOURNAL.md` g196/g197). **Reste pour le vrai « zéro-
+install » lambda** : embarquer un **JRE** (jlink) et **retirer/embarquer la dépendance `python3`** du content-server
+(aujourd'hui le bundle exige Java + python présents) → un lanceur natif (`.exe` / AppImage) qui ne réclame RIEN.
+Un-clic « Héberger » via le launcher OU double-clic du bundle standalone (machine headless) : les deux marchent.
 
 **Hébergement CLOUD (distinct du self-host, guidé plutôt que one-click)** : héberger sur un cloud/VPS demande par nature
 **plus de manipulations côté utilisateur** (provisionner une machine, ouvrir les ports / DNS / TLS, adresse publique).

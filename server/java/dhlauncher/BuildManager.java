@@ -174,10 +174,13 @@ public final class BuildManager {
       + "mkdir -p \"$DIR/data\"\n"
       + "python3 \"$DIR/content_server.py\" --port \"$CONTENT_PORT\" --rewrite-host \"127.0.0.1:$CONTENT_PORT\" \\\n"
       + "        --game-server \"127.0.0.1:$GAME_PORT\" & CPID=$!\n"
-      + "trap 'kill $CPID 2>/dev/null' EXIT\n"
-      + "exec java -XX:TieredStopAtLevel=1 ${DH_SERVER_OPTS:-} -Ddh.db=\"$DIR/data/dh-server.db\" \\\n"
+      + "java -XX:TieredStopAtLevel=1 ${DH_SERVER_OPTS:-} -Ddh.db=\"$DIR/data/dh-server.db\" \\\n"
       + "     -Ddh.stats=\"$DIR/game-data/stats\" -Ddh.auth.port=\"$AUTH_PORT\" \\\n"
-      + "     -cp \"$DIR/lib/*\" dhserver.LoginServer \"$GAME_PORT\"\n";
+      + "     -cp \"$DIR/lib/*\" dhserver.LoginServer \"$GAME_PORT\" & JPID=$!\n"
+      // les deux en arrière-plan + wait : le trap survit (contrairement à exec) → arrêt PROPRE des DEUX process
+      // que l'arrêt vienne d'un Ctrl-C (standalone) ou d'un SIGTERM (bouton « arrêter » du launcher).
+      + "trap 'kill $CPID $JPID 2>/dev/null' TERM INT EXIT\n"
+      + "wait $JPID\n";
 
     private static final String RUN_BAT =
         "@echo off\r\n"

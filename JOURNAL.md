@@ -1,5 +1,31 @@
 # JOURNAL — journal détaillé des modifications
 
+## 2026-08-30 (g197) — Un-clic serveur : le bouton « Héberger » lance le BUNDLE généré (+ arrêt propre) 🟢
+
+Demande util. : s'assurer qu'on puisse **exécuter un serveur en UN CLIC** (hors cloud) — via un lanceur Linux/exe
+OU via le launcher. **Modèle clarifié** (doc) : le **launcher** (app Tauri, `.exe`/AppImage) est le point d'entrée
+un-clic (**Héberger** / **Jouer**) ; **en plus**, le **bundle serveur généré est autonome** (double-clic `run.sh`/
+`run.bat`, sans launcher — pour une machine serveur headless). Idem le port PC (exe/AppImage, C2a-4b).
+
+**Cohérence artefact** : le bouton « Héberger » doit lancer **le bundle généré**, pas l'arbre de dev. Ajouté :
+- **`HostManager.startBundle(bundleDir,…)`** : héberge un bundle en lançant son `run.sh`/`run.bat` (détection OS)
+  comme UN process géré (le script lance content_server + serveur en interne, ports via env `DH_{CONTENT,GAME,AUTH}
+  _PORT`, strict via `DH_SERVER_OPTS=-Ddh.auth=on`). ⇒ « Héberger » exécute EXACTEMENT ce qui se double-clique.
+- **`/host/start`** : param optionnel `bundleDir` → mode bundle ; sinon mode dev (classpath courant).
+- **`run.sh` corrigé** : plus de `exec java` (qui perdait le `trap` → content_server orphelin). Les deux process en
+  arrière-plan + `wait $JPID` + `trap … TERM INT EXIT` → **arrêt PROPRE des deux** (Ctrl-C standalone OU SIGTERM du
+  bouton « arrêter »).
+
+**`ServerBundleTest`** (9/9, isolé) : génère le bundle → structure → **COPIE hors dev** → **HÉBERGE via
+`HostManager.startBundle`** (= chemin du bouton Héberger) → **port de jeu en écoute** → `stop` → **port fermé**
+(les 2 process tués ensemble). Régression **169/169**.
+
+⇒ **serveur en un clic** confirmé : via le launcher (Héberger lance le bundle) OU en double-cliquant le bundle
+standalone. **Reste pour le « zéro-install » lambda** (noté `DISTRIBUTION.md`) : embarquer un **JRE** (jlink) + régler
+la dépendance **python3** du content-server (le bundle exige aujourd'hui Java+python présents) — couche packaging
+runtime, à finir. Fichiers : `HostManager.java` (startBundle), `LauncherDaemon.java` (`bundleDir`), `BuildManager.java`
+(`run.sh` trap/wait), `ServerBundleTest.java`, docs. **SUITE = runtime embarqué (JRE/python) ; C2a-4b (client PC) ; C2b (front).**
+
 ## 2026-08-30 (g196) — Phase 2 C2a-4-pkg : PACKAGING serveur AUTONOME (clé-en-main) — lancé HORS dev 🟢
 
 Consigne util. (ajoutée au plan g195bis) : tout ce qu'on génère depuis l'APK doit être **clé-en-main** (bundle
