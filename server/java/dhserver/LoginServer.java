@@ -191,11 +191,31 @@ public final class LoginServer {
             // n'est modifiée, le compilateur garantit la cohérence.
             ServerUser user = connUsers.getOrDefault(c, LoginServer.this.user);
             if (m instanceof ClientInfo) {
-              long uid = ((ClientInfo) m).userID;
-              // AUTH MNÉMONIQUE (C1c) : en mode STRICT, le userID annoncé doit avoir une session authentifiée (défi-
-              // réponse validé via AuthService). Sinon → connexion NON liée (ni compte, ni BootData) = rejet. En mode
+              ClientInfo ci = (ClientInfo) m;
+              long uid = ci.userID;
+              // AUTH MNÉMONIQUE — LOGIN UNIQUE (C2a-2) : en mode STRICT, le client boote en userID=0 et RECOPIE le
+              // BILLET nominatif (loginRequestID, frappé par content_server /login → /auth/mint pour le compte que le
+              // launcher a authentifié) dans son ClientInfo. La SOURCE DE VÉRITÉ du compte est alors le BILLET, pas le
+              // userID annoncé (0). On RÉSOUT le userID depuis le billet via la SessionStore (partagée avec l'AuthService,
+              // même JVM). Sans cette résolution, uid=0 court-circuitait auth+chargement → compte PAR DÉFAUT servi SANS
+              // authentification (trou de sécurité + mauvais compte chargé — bug trouvé en vérif strict+avancé).
+              if (authRequired && uid <= 0 && sessions != null) {
+                long minted = sessions.authenticatedUser(ci.loginRequestID);
+                if (minted > 0) {
+                  uid = minted;
+                  System.out.println("[login] 🔐 login unique : userID résolu depuis le billet nominatif → " + uid);
+                }
+              }
+              // STRICT : un socket sans identité authentifiée (ni userID annoncé valide, ni billet) est REJETÉ — pas de
+              // repli sur le compte par défaut (ce serait un contournement de l'auth requise).
+              if (authRequired && uid <= 0) {
+                System.out.println("[login] ⛔ auth STRICT : aucun compte authentifié (userID=0 sans billet valide) → rejet (aucun BootData)");
+                return;
+              }
+              // AUTH MNÉMONIQUE (C1c) : en mode STRICT, le userID (annoncé ou résolu) doit avoir une session authentifiée
+              // (défi-réponse validé via AuthService). Sinon → connexion NON liée (ni compte, ni BootData) = rejet. En mode
               // permissif (défaut) authOk renvoie toujours true → comportement inchangé (pilotes DEV / compte défaut).
-              if (uid > 0 && !authOk(uid, (ClientInfo) m)) {
+              if (uid > 0 && !authOk(uid, ci)) {
                 System.out.println("[login] ⛔ auth : loginRequestID non authentifié pour userID=" + uid + " → rejet (aucun BootData)");
                 return;
               }

@@ -1,5 +1,58 @@
 # JOURNAL — journal détaillé des modifications
 
+## 2026-08-30 (g199) — VALIDATION du jeu GÉNÉRÉ : 4 combos EN JEU (permissif/strict × neuf/avancé) + CORRECTIF bug d'auth strict 🟢
+
+**Demande util. (bloquante)** : « faut s'assurer que le jeu généré fonctionne… vérifier qu'on oublie rien, as-tu réécrit
+ou réutilisé les fichiers du serveur qu'on utilise pour le dev… on ne peut pas passer à la suite tant qu'on n'a pas
+validé que tout soit OK, mode permissif ou strict, compte neuf/compte avancé. »
+
+**Réponse « réécrit vs réutilisé » — RÉUTILISÉ, rien réécrit** (vérifié dans `BuildManager`) : le bundle **serveur**
+(`packageServer`) copie `content_server.py` **verbatim**, recompile **les mêmes** sources `server/java/*` (dhserver+dhlauncher)
+en `dhserver.jar`, copie le **même** `game-data/` ; le bundle **client** (`packageClient`) embarque les **mêmes** `.so`
+(**md5 byte-identiques** au dev : libgdx64, libhostspine64, libspine-native), le **même** `game-logic-framed.jar`, les
+**mêmes** assets/resources de l'APK.
+
+**Le « ça ne rend pas » était un ARTEFACT DE HARNAIS DE VÉRIF, PAS un défaut du bundle** (⇒ correction de MEMORY g198 qui
+l'attribuait à tort à une « limite d'ENV : archive.org 502 + GL logiciel lent »). Deux causes de faux négatif :
+1. `run.sh` passait `DH_SHOT` **seul** ⇒ capture UNIQUE **à la sortie propre** (`DesktopLauncher` l.229) — mais le `timeout`
+   externe **SIGKILL** la JVM ⇒ la capture finale ne s'exécute jamais ⇒ 0 capture ⇒ faux « hang ».
+2. `nohup ./run.sh &` **pas totalement détaché** ⇒ le harnais tuait le process à la fin de l'appel outil ⇒ fausse « mort
+   silencieuse » à ~17 s.
+   ⇒ Avec `setsid` + capture **périodique** (`-Ddh.shotevery`), le bundle client rend le **hub complet**, comme le dev.
+
+**4 COMBOS VALIDÉS EN JEU (client bundle réel → serveur → persistance → rendu)** :
+- ✅ **permissif + neuf** (userID 0) → hub frais (CHOOSE NAME, 20💎).
+- ✅ **permissif + avancé** (`-Ddh.userid=<uid>`, TL200/5 héros semés) → hub peuplé (**5000💎**, 175/175, tuiles haut-TL).
+- ✅ **strict + avancé** (billet nominatif `/login`→`/auth/mint`, client boote userID 0) → hub peuplé **du bon compte**
+  (5000💎, BLACK MARKET/MEGA MART/RANKINGS/VIP/ENHANCEMENT) — **après correctif** (voir ci-dessous).
+- ✅ **strict + neuf** (phrase fraîche, compte jamais peuplé) → **tutoriel d'intro** (`IntroTutorialActV2`, Ralph &
+  Vanellope, « TAP TO CONTINUE ») = expérience nouveau joueur.
+
+**BUG RÉEL trouvé en strict+avancé, puis CORRIGÉ** (`server/java/dhserver/LoginServer.java`, handler `ClientInfo`) :
+en STRICT, le client boote en **userID=0** et recopie le **BILLET** nominatif (`loginRequestID`) dans son `ClientInfo`.
+Le serveur chargeait le compte depuis `ClientInfo.userID` (=0) et n'utilisait le billet que pour *valider* → la branche
+`if (uid > 0)` était **entièrement sautée** ⇒ (a) **mauvais compte** servi (le compte PAR DÉFAUT `LoginServer.this.user`,
+userID 1) et (b) **auth STRICT contournée** (aucune vérification pour userID 0). **Preuve DB** : la connexion strict
+rechargeait+resauvait userID **1** (`updatedAt` le plus récent), pas l'`uid` du billet (3701…267, resté intact à 5000💎).
+**Correctif (glue serveur, §3 « lire & exécuter » ; source de vérité = le billet)** : si `authRequired && uid<=0`, on
+**RÉSOUT** `uid` depuis `sessions.authenticatedUser(ci.loginRequestID)` (SessionStore partagée, même JVM que l'AuthService) ;
+si toujours `uid<=0` (ni userID valide ni billet) ⇒ **REJET** (pas de repli sur le compte par défaut = plus de contournement).
+Après correctif : `🔐 login unique : userID résolu depuis le billet → 3701…267` puis `connexion ← compte 3701…267` →
+hub à 5000💎.
+
+**Régression** : nouveau smoke ISOLÉ **`StrictSingleLoginTest`** (7 assertions, VRAIE pile LoginServer+SessionStore+
+UserStore+codec+ClientInfo/BootData) : (A) strict userID=0 + billet valide → BootData du compte minté (discriminé par
+`teamLevel=123`), (B) strict sans billet → rejet, (C) strict billet bidon → rejet, (D) **permissif** userID=0 → compte
+par défaut (TL=1) **inchangé**. Ajouté au tableau `TESTS` de `regression.sh` → **170/170**.
+
+**Méthodo (à retenir)** : lancer un bundle en tâche de fond **doit** utiliser `setsid nohup … </dev/null &` (sinon le
+harnais le tue au retour d'appel) ; pour PROUVER le rendu headless, passer `-Ddh.shotevery=N` (capture périodique),
+jamais `-Ddh.shot` seul sous un `timeout` externe. `pkill`/`kill` sortent 144 (SIGSTKFLT) mais **s'exécutent** ; ne PAS
+chaîner d'autres commandes après dans le même `&&`.
+
+**SUITE** = reprendre C2a (runtime embarqué JRE/python zéro-install ; passthrough `DH_SHOTEVERY` dans le `run.sh`
+généré pour le debug) ; patch APK ; C2b (front Tauri+React).
+
 ## 2026-08-30 (g198) — Phase 2 C2a-4b : build du BUNDLE CLIENT PC depuis l'APK + correctif SourceFile (1er lancement) 🟢
 
 Demande util. : « pas de partiel, pas de raccourci » — donc C2a-4b **complet** (build du port PC packagé).

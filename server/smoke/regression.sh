@@ -92,6 +92,7 @@ TESTS=(
   LauncherLoginTest
   LauncherServersTest
   AuthMintTest
+  StrictSingleLoginTest
   HostLifecycleTest
   BuildDataGenTest
   ServerBundleTest
