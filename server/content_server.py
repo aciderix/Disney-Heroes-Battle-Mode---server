@@ -79,20 +79,49 @@ class Handler(BaseHTTPRequestHandler):
         self._send(404, "text/plain", b"not found\n", head_only=False)
 
     def _serve_login(self):
-        # Le client POST des params device (form-encoded) puis attend un JSON :
+        # Le client POST des params device (form-encoded, dont `userID`) puis attend un JSON :
         #   {"status":"good","data":"<host>:<port>[:tls]","requestID":"..."}
         # `data` = adresse du serveur de JEU (TCP) vers lequel le client ouvre le socket
-        # (GruntNIOTCPServer / server/java/dhserver/LoginServer.java). On lit le corps pour ne
-        # pas casser la connexion, mais la réponse suffit (le serveur de jeu est authoritative).
+        # (GruntNIOTCPServer / server/java/dhserver/LoginServer.java). `requestID` = le BILLET que le client
+        # recopie dans son ClientInfo.loginRequestID (cf. GameMain). En mode STRICT (DH_AUTH_URL défini), on
+        # demande un billet NOMINATIF à l'AuthService (/auth/mint) pour le userID qui vient de s'authentifier via
+        # le launcher (défi-réponse) ; sinon requestID="" (permissif, comportement historique).
+        import json as _json
+        import os
+        from urllib.parse import parse_qs
+        user_id = None
         try:
             length = int(self.headers.get("Content-Length", "0"))
-            if length:
-                self.rfile.read(length)
+            raw = self.rfile.read(length) if length else b""
+            params = parse_qs(raw.decode("utf-8", "replace"))
+            vals = params.get("userID") or params.get("userId")
+            if vals:
+                user_id = vals[0]
         except Exception:
             pass
-        import json as _json
-        body = _json.dumps({"status": "good", "data": self.cfg.game_server, "requestID": ""}).encode("utf-8")
+        request_id = ""
+        auth_url = os.environ.get("DH_AUTH_URL")
+        if auth_url and user_id:
+            try:
+                request_id = self._mint_ticket(auth_url, user_id)
+            except Exception as e:
+                sys.stderr.write("[content] /auth/mint échec (userID=%s): %s\n" % (user_id, e))
+        body = _json.dumps({"status": "good", "data": self.cfg.game_server, "requestID": request_id}).encode("utf-8")
         self._send(200, "application/json", body, head_only=False)
+
+    def _mint_ticket(self, auth_url, user_id):
+        """Flux « Jouer » strict : demande un billet nominatif (loginRequestID) à l'AuthService. "" si non authentifié."""
+        import urllib.request, urllib.parse, json as _json
+        data = urllib.parse.urlencode({"userID": user_id}).encode("utf-8")
+        req = urllib.request.Request(auth_url.rstrip("/") + "/auth/mint", data=data,
+                                     headers={"Content-Type": "application/x-www-form-urlencoded"})
+        try:
+            with urllib.request.urlopen(req, timeout=3) as resp:
+                if resp.status == 200:
+                    return _json.loads(resp.read().decode("utf-8")).get("loginRequestID", "")
+        except urllib.error.HTTPError:
+            return ""   # 401 = joueur non authentifié → pas de billet
+        return ""
 
     def _serve(self, head_only: bool):
         path = self.path.split("?", 1)[0]
