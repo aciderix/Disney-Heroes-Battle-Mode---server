@@ -80,7 +80,10 @@ fi
 echo "[online] serveur de contenu+login :$HTTP_PORT ..."
 # DH_AUTH_URL : en mode auth STRICT, content_server appelle cet AuthService (/auth/mint) au /login pour rendre
 # un billet nominatif (loginRequestID) au client. Vide (défaut) → requestID="" = permissif (historique).
-DH_AUTH_URL="${DH_AUTH_URL:-}" python3 "$ROOT/server/content_server.py" --port "$HTTP_PORT" --rewrite-host "127.0.0.1:$HTTP_PORT" \
+# DH_MINT_USERID_FILE : LOGIN UNIQUE strict — le client boote toujours en userID=0, donc le content_server frappe
+# le billet pour le compte que le LAUNCHER a authentifié (écrit dans ce fichier par le bloc seed ci-dessous).
+MINT_FILE=/tmp/dh_mint_userid; : > "$MINT_FILE"
+DH_AUTH_URL="${DH_AUTH_URL:-}" DH_MINT_USERID_FILE="$MINT_FILE" python3 "$ROOT/server/content_server.py" --port "$HTTP_PORT" --rewrite-host "127.0.0.1:$HTTP_PORT" \
         --game-server "127.0.0.1:$GAME_PORT" >/tmp/dh_content.log 2>&1 &
 CONTENT_PID=$!
 
@@ -104,7 +107,10 @@ if [ -n "${DH_AUTH_SEED_PHRASE+x}" ]; then
   : > /tmp/dh_seed.log
   javac -cp "$CPF:$SRVOUT" -d "$SRVOUT" "$ROOT/server/smoke/StrictAuthSeed.java" 2>>/tmp/dh_seed.log || true
   SEED_UID=$(java -cp "$CPF:$SRVOUT" -Ddh.stats="$ROOT/game-data/stats" StrictAuthSeed "http://127.0.0.1:8082" ${DH_AUTH_SEED_PHRASE} 2>>/tmp/dh_seed.log)
-  if [ -n "$SEED_UID" ]; then export DH_USERID="$SEED_UID"; export DH_USERID_RELOGIN=1; echo "[online] auth strict : compte semé userID=$DH_USERID (phrase → billet nominatif ; voir /tmp/dh_seed.log)";
+  if [ -n "$SEED_UID" ]; then
+    export DH_USERID="$SEED_UID"          # BuildOptions.TEST_USER_ID (ClientInfo) → login UNIQUE
+    printf '%s' "$SEED_UID" > /tmp/dh_mint_userid   # le content_server frappe le billet pour CE compte
+    echo "[online] auth strict : compte semé userID=$DH_USERID (login unique ; billet nominatif ; voir /tmp/dh_seed.log)";
   else echo "[online] auth strict : SEED ÉCHOUÉ (voir /tmp/dh_seed.log)"; fi
 fi
 

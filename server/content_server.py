@@ -107,13 +107,31 @@ class Handler(BaseHTTPRequestHandler):
             pass
         request_id = ""
         auth_url = os.environ.get("DH_AUTH_URL")
-        if auth_url and user_id:
+        # STRICT — LOGIN UNIQUE : le client de jeu boote toujours avec LoadingScreen(userID=0) EN DUR, donc son
+        # /login porte userID=0. Dans le vrai jeu, l'identité est résolue par l'APPAREIL. Ici, c'est le LAUNCHER
+        # qui connaît le userID (dérivé de la phrase) et l'a authentifié auprès de l'AuthService ; il nous le
+        # fournit via DH_MINT_USERID → on frappe le billet nominatif pour CE compte (indépendant du userID=0 du
+        # /login). ⇒ login UNIQUE : le nouveau joueur déroule l'intro, l'avancé reprend, TOUS en mode strict.
+        # Le userID authentifié fourni par le launcher : soit en clair (DH_MINT_USERID), soit dans un FICHIER
+        # (DH_MINT_USERID_FILE) que le launcher écrit APRÈS avoir authentifié le compte (le content_server, lui,
+        # démarre avant de connaître le userID). Repli = le userID reçu dans le /login.
+        mint_id = os.environ.get("DH_MINT_USERID")
+        if not mint_id:
+            mint_file = os.environ.get("DH_MINT_USERID_FILE")
+            if mint_file:
+                try:
+                    with open(mint_file) as fh:
+                        mint_id = fh.read().strip()
+                except Exception:
+                    mint_id = None
+        mint_id = mint_id or user_id
+        if auth_url and mint_id:
             try:
-                request_id = self._mint_ticket(auth_url, user_id)
-                sys.stderr.write("[content] /login userID=%s → billet nominatif=%r (strict)\n"
-                                 % (user_id, request_id))
+                request_id = self._mint_ticket(auth_url, mint_id)
+                sys.stderr.write("[content] /login (userID reçu=%s → mint compte launcher=%s) → billet=%r (strict)\n"
+                                 % (user_id, mint_id, request_id))
             except Exception as e:
-                sys.stderr.write("[content] /auth/mint échec (userID=%s): %s\n" % (user_id, e))
+                sys.stderr.write("[content] /auth/mint échec (userID=%s): %s\n" % (mint_id, e))
         body = _json.dumps({"status": "good", "data": self.cfg.game_server, "requestID": request_id}).encode("utf-8")
         self._send(200, "application/json", body, head_only=False)
 

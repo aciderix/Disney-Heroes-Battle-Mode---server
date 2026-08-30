@@ -97,13 +97,12 @@ public final class DesktopLauncher {
         // AUTH (C2a-2 « play ») : dh.userid force le compte dès le LOGIN INITIAL via le hook NATIF du jeu
         // BuildOptions.TEST_USER_ID (champ public static Long ; le jeu écrase ClientInfo.userID par cette valeur
         // si non-null). Un SEUL login → flux nouveau joueur normal (intro tuto) OU reprise d'un compte avancé.
-        // ⚠️ RÉSERVÉ au mode PERMISSIF : en STRICT, un login de boot avec userID>0 non authentifié serait REJETÉ
-        // (le client resterait bloqué sur LoadingScreen), donc le strict passe par le re-login (dh.userid.relogin,
-        // ci-dessous) et NE pose PAS TEST_USER_ID (login de boot en userID=0 = autorisé à créer, puis re-login).
+        // Vaut pour PERMISSIF **et STRICT** : le client boote toujours avec LoadingScreen(userID=0) → son /login
+        // part en userID=0, mais le content_server frappe le billet pour le compte AUTHENTIFIÉ que le launcher lui
+        // fournit (DH_MINT_USERID), et TEST_USER_ID aligne ClientInfo.userID → le serveur strict accepte SANS
+        // re-login (donc l'intro d'un nouveau joueur se déroule proprement en strict). Aucune modif du jeu (§1).
         long bootUserID = Long.getLong("dh.userid", 0L);
-        String reloginBoot = System.getProperty("dh.userid.relogin");
-        boolean strictRelogin = reloginBoot != null && !"0".equals(reloginBoot) && !"false".equalsIgnoreCase(reloginBoot);
-        if (bootUserID > 0 && !strictRelogin) forceTestUserID(bootUserID);
+        if (bootUserID > 0) forceTestUserID(bootUserID);
 
         System.out.println("[launcher] game.create() ...");
         game.create();

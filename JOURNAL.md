@@ -1,5 +1,39 @@
 # JOURNAL — journal détaillé des modifications
 
+## 2026-08-30 (g193) — Mode STRICT pour TOUS (neuf + avancé) : LOGIN UNIQUE mnémonique → intro OU reprise
+
+Question utilisateur : le mode strict doit valoir autant pour un NOUVEAU joueur que pour un joueur AVANCÉ. Le hook
+g192 (re-login en strict) le faisait échouer pour un NOUVEAU joueur : le **double login** laissait le client sur le
+hub (0 `IntroTutorialActV2`) au lieu de dérouler l'intro. Corrigé par un **LOGIN UNIQUE** unifié.
+
+**Fait décisif (bytecode)** : `GameMain` construit au boot `LoadingScreen(GameMain, false, 0L, 0)` — userID **0 EN
+DUR**. Le `/login` de boot part donc TOUJOURS en `userID=0` ; dans le vrai jeu l'identité est résolue par l'APPAREIL
+(`uniqueIdentifier`). Notre launcher, lui, connaît le userID (dérivé de la phrase) et l'authentifie.
+
+**Solution LOGIN UNIQUE (aucune modif jeu §1)** — le launcher fournit l'identité, comme en prod :
+- **Client** : `BuildOptions.TEST_USER_ID` (hook natif, `public static Long`) posé AVANT `game.create()` → le jeu
+  écrase `ClientInfo.userID` par le compte authentifié. UN SEUL login (plus de re-login frame-120).
+- **content_server** : le `/login` arrive avec `userID=0` (boot en dur) ; on frappe le billet nominatif pour le
+  compte que le LAUNCHER a authentifié — fourni via `DH_MINT_USERID_FILE` (fichier écrit par le bloc seed APRÈS
+  l'auth, car le content_server démarre avant de connaître le userID). ⇒ billet valide pour CE compte.
+- **Serveur strict** : `ClientInfo.userID`=compte authentifié + `loginRequestID`=billet valide → **accepte** sans
+  rejet ni blocage. Le boot enchaîne LoadingScreen → (compte neuf) INTRO, ou (compte avancé) hub peuplé.
+
+**Vérifié EN JEU (§8), les DEUX cas, en STRICT, login unique** :
+- **Nouveau joueur** (phrase fraîche, compte neuf authentifié) : `/login userID=0 → mint compte launcher=4338… →
+  billet`, `connexion ← compte 4338…`, **`IntroTutorialActV2` ×10** → **intro déroulée** (capture `strictnew.png` :
+  cinématique d'ouverture Ralph/Vanellope). 0 rejet.
+- **Joueur avancé** (compte 7966 peuplé) : `mint compte launcher=7966…`, `connexion ← compte 7966…`, **IntroTuto=0**
+  (saute l'intro) → **hub PEUPLÉ TL 200** (capture `resume.png`).
+
+⇒ **le mode strict s'applique identiquement aux nouveaux ET aux avancés, en un seul login** — exactement le modèle
+de prod (le launcher authentifie puis fournit l'identité au client). Régression **166/166** (aucun code serveur
+touché). Fichiers : `dhdesktop/DesktopLauncher.java` (`TEST_USER_ID` toujours, re-login retiré), `server/content_
+server.py` (mint pour `DH_MINT_USERID`/`_FILE`), `desktop-port/run-online.sh` (fichier mint écrit par le seed),
+`docs/PHASE2_TRACKING.md`, `MEMORY.md`, `JOURNAL.md`. Captures : `strictnew.png` (neuf→intro), `resume.png`
+(avancé→hub). **SUITE = C2a-3 (host), C2a-4 (build APK), C2b (front — le launcher-core fournira `DH_MINT_USERID`
+au content_server, généralisant ce chemin).**
+
 ## 2026-08-30 (g192) — Preuve EN JEU : compte NEUF → TUTO D'INTRO lancé (+ hook userID mode-aware boot/relogin)
 
 Demande utilisateur : PROUVER (règles §8, preuve visuelle) qu'un **compte neuf lance bien le tuto** (pas besoin
