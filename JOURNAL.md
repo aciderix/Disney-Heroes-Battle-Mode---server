@@ -1,5 +1,44 @@
 # JOURNAL — journal détaillé des modifications
 
+## 2026-08-30 (g187) — Perf B5 ✅ + BASCULE `jni` par défaut (client) — chantier B (perf combat) BOUCLÉ
+
+Suite de « poursuit tout ça » : B5 (couverture écrans spine) + gaps pré-existants trouvés en combat, puis bascule.
+
+**B5a — audit couverture** : `javap` de `cspine.Native` = **47 méthodes natives**, TOUTES implémentées par
+`HostSpine`/`cspine_jni.c` (0 manquante → 0 crash de ce fait). Stubs restants : `setSlotEyeState` (renvoie false —
+FONCTIONNEL mais no-op ; tag des slots `eyeball`/`eye_reflection` par `SpineRenderable.updateSlotTags`),
+`getStats`/`getVertexWeightReport` (diag, **0 appelant jeu** trouvé). 
+
+**B5b — nav sweep EN JEU en `jni`** (pilotes `heroview` [HeroDetailScreen via `startBattleInner`-style `pushScreen`]
+ajouté ; `collectionscreen` existant) : **hub, chooser, combat, HeroDetail (MegaBot — YEUX rendus corrects), collection
+detail** → **tous rendus, 0 crash spine, 0 méthode manquante, 0 UnsatisfiedLink**. Les yeux rendent bien **malgré** le
+no-op `setSlotEyeState` (le tag est une indication native ; le rendu passe par le chemin d'attachment normal). Documenté
+`SHIMS.md`.
+
+**Gaps pré-existants trouvés (analysés, NON liés au spine)** :
+- `PatchTalent.PREDICTIVE_FORTIFICATION` (tab `patched_heroes_talent_assignments` row 159 EVIL_QUEEN) : **totalement
+  absent du code 12.1.0** (0 enum, 0 ability). Le `.tab` est **forward-compat** (data en avance sur le code). **§4 :
+  non implémentable** (rien à exécuter = inventer). Skip gracieux du jeu (`onStatError`) = correct. Idem
+  `cosmetic_collection` MUFASA_EMOJIS / `prime_badge` SAPPHIRE_4 / NUMBER_230…253.
+- 3 sons `glitch_glitch_in_1250_1/2/3` « not loaded » : les `.ogg` **EXISTENT** sur disque ; le log vient du **code
+  jeu** (pas notre backend audio) → hiccup de load paresseux sur 3 SFX (non systématique, 0 crash).
+- `NumberFormatException("")` : `GuildStats$PerkLevelStats.arrayInsert` parse un champ numérique **vide** d'un tab de
+  perks de guilde → toléré (`onStatError`), non-fatal (guild perks déjà vérifiés en jeu).
+- ⇒ tous **pré-existants, non-fatals, hors chantier spine** ; à traiter dans une passe data/audio dédiée si souhaité.
+
+**BASCULE `jni` PAR DÉFAUT (côté CLIENT)** — `run-desktop.sh` : `DH_SPINEBACKEND` défaut **`jni`** (spine natif ~50× /
+hors hot-path, fidélité B3/B5). **Repli AUTO** sur unidbg si `libhostspine64.so` absent (checkout sans build natif) ;
+**repli explicite** `DH_SPINEBACKEND=unidbg`. Bannière `[desktop] spine backend = jni`. **Le SERVEUR
+(`dhserver.LoginServer`) reste unidbg BIT-EXACT** pour l'AUTORITÉ (§3/§8) : `Native.java` lit une **propriété JVM**
+`dh.spinebackend` (pas l'env), et le serveur est lancé **sans** cette propriété → jamais affecté par la bascule client.
+**Vérifié EN JEU** : run sans `DH_SPINEBACKEND` → bannière `= jni`, hub rendu (unidbg=~3ms/58 appels = **particules**
+seules, pas le spine ; le spine natif = 0 appel unidbg). 
+
+**Fichiers** : `desktop-port/run-desktop.sh` (défaut jni + repli + bannière), `.../TutorialDriver.java` (`heroView`),
+`.../DesktopLauncher.java` (commande `heroview`), `docs/PERF_PLAN.md` (B5 + bascule), `docs/SHIMS.md`
+(`setSlotEyeState`). **⇒ Chantier B (perf combat) BOUCLÉ. SUITE = Phase 2 : C (launcher + login mnémonique), D
+(backend/admin), E (intégration APK), F (inter-machines), G (CI).**
+
 ## 2026-08-29 (g186) — Perf B4+B6 : COMBAT RENDU en spine natif `jni` ✅ EN JEU + résiduels expliqués
 
 Suite de g185 (héros parfaits au chooser). Réponse à 2 demandes : (a) les résiduels (imperceptibles + light-RGB)

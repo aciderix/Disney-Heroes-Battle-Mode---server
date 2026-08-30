@@ -485,6 +485,10 @@ public final class DesktopLauncher {
                     TutorialDriver.campStart(game);
                     continue;
                 }
+                if (low.startsWith("heroview")) {                // heroview → HeroDetailScreen (gros héros animé, yeux) : vérif B5 spine
+                    TutorialDriver.heroView(game);
+                    continue;
+                }
                 if (low.startsWith("buyavatar ")) {              // buyavatar <ITEM> → BUY_COLLECTION_AVATAR
                     String[] ba = ln.trim().split("[,;\\s]+");
                     if (ba.length >= 2) TutorialDriver.buyAvatar(game, ba[1].toUpperCase());

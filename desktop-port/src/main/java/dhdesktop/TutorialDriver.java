@@ -1239,6 +1239,21 @@ public final class TutorialDriver {
         } catch (Throwable t) { System.out.println("[campstart] échec: " + t); t.printStackTrace(); }
     }
 
+    /** DEV : ouvre HeroDetailScreen (gros héros animé, YEUX en gros plan) pour vérifier le rendu spine en jni —
+     *  test du stub setSlotEyeState (tags eyeball/eye_reflection). Invoqué via "heroview". Best-effort (try/catch). */
+    public static void heroView(GameMain game) {
+        try {
+            java.util.List<com.perblue.heroes.network.messages.UnitType> types = new java.util.ArrayList<>();
+            for (Object ho : game.getYourUser().getHeroes())
+                types.add(((com.perblue.heroes.game.objects.IHero) ho).getType());
+            if (types.isEmpty()) { System.out.println("[heroview] aucun héros possédé"); return; }
+            com.perblue.heroes.ui.herodetails.HeroDetailScreen s =
+                new com.perblue.heroes.ui.herodetails.HeroDetailScreen(0, types, null);
+            game.getScreenManager().pushScreen(s);
+            System.out.println("[heroview] HeroDetailScreen poussé (héros=" + types.get(0) + ")");
+        } catch (Throwable t) { System.out.println("[heroview] échec: " + t); t.printStackTrace(); }
+    }
+
     /** DEV : ACHÈTE un avatar de collection (mastery shop) — chemin client réel
      *  {@code ClientActionHelper.buyCollectionAvatar(itemType)} (Action BUY_COLLECTION_AVATAR ; le serveur ré-exécute
      *  buyCollectionAvatar : gate + débit MASTERY_TOKENS + don). Invoqué via "buyavatar &lt;ITEM&gt;". */

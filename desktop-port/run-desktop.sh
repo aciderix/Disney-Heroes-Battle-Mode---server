@@ -176,14 +176,21 @@ JOPTS="$JOPTS -Ddh.spinelib=$(cd .. && pwd)/native/reference/libspine-native.so"
 # au lieu d'unidbg. Le runtime Java (SkeletonBinary) exige DataInput.readString(), absent du stub 215o de
 # game-logic (dex2jar) : on fait gagner le DataInput COMPLET de gdx-1.9.7 en le déposant dans le dir de classes
 # (PREMIER sur le CP → ombrage le stub). Superset correct → inoffensif pour le chemin unidbg par défaut.
-if [ "${DH_SPINEBACKEND:-}" = "jni" ] || [ "${DH_SPINEBACKEND:-}" = "compare" ]; then
+# Backend spine du CLIENT : jni (spine natif) par DÉFAUT depuis 2026-08-30 (perf ~50× / spine hors du hot-path,
+# fidélité certifiée B3/B5 : V/U/dark/alpha bit-exacts, héros + combat rendus parfaitement EN JEU). Le SERVEUR
+# (dhserver.LoginServer, process SÉPARÉ sans -Ddh.spinebackend) reste sur unidbg BIT-EXACT pour l'AUTORITÉ de
+# combat (§3/§8). Repli explicite : DH_SPINEBACKEND=unidbg. Repli AUTO si la lib native manque (checkout sans build).
+DH_SPINEBACKEND="${DH_SPINEBACKEND:-jni}"
+HOSTLIB="$(cd .. && pwd)/native/build/libhostspine64.so"
+if { [ "$DH_SPINEBACKEND" = "jni" ] || [ "$DH_SPINEBACKEND" = "compare" ]; } && [ ! -f "$HOSTLIB" ]; then
+  echo "[desktop] WARN: $HOSTLIB introuvable → repli sur unidbg (build : native/build.sh puis native/build-hostspine.sh)"
+  DH_SPINEBACKEND=unidbg
+fi
+if [ "$DH_SPINEBACKEND" = "jni" ] || [ "$DH_SPINEBACKEND" = "compare" ]; then
   # jni : le VRAI spine-c officiel 3.6 (colle cspine_jni.c) compilé HÔTE x86-64, en JNI réel (pas d'émulation).
   # compare : harnais différentiel — le jeu tourne sur unidbg (oracle), le JNI tourne en parallèle et on diffe.
   # Les deux ont besoin de libhostspine64.so (classe HostSpine).
-  JOPTS="$JOPTS -Ddh.spinebackend=${DH_SPINEBACKEND}"
-  HOSTLIB="$(cd .. && pwd)/native/build/libhostspine64.so"
-  [ -f "$HOSTLIB" ] || echo "[desktop] WARN: $HOSTLIB introuvable (build : native/build.sh puis native/build-hostspine.sh)"
-  JOPTS="$JOPTS -Ddh.hostspine=$HOSTLIB"
+  JOPTS="$JOPTS -Ddh.spinebackend=${DH_SPINEBACKEND} -Ddh.hostspine=$HOSTLIB"
 elif [ "${DH_SPINEBACKEND:-}" = "java" ]; then
   JOPTS="$JOPTS -Ddh.spinebackend=java"
   # libGDX vient de game-logic.jar (PerBlue), STRIPPÉ par ProGuard : certaines classes utilitaires ont perdu
@@ -199,6 +206,7 @@ elif [ "${DH_SPINEBACKEND:-}" = "java" ]; then
   else echo "[desktop] WARN: gdx-1.9.7.jar (classes complètes) introuvable → backend java échouera"; fi
 fi
 
+echo "[desktop] spine backend = ${DH_SPINEBACKEND:-unidbg} (défaut jni ; serveur = unidbg bit-exact pour l'autorité)"
 echo "[desktop] lancement (GameMain via backend LWJGL3 maison) ..."
 set +e
 if [ -n "${DH_TIMEOUT:-}" ]; then

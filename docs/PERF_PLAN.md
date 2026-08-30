@@ -78,11 +78,23 @@ rapport **0 diff** (sommets/positions sous tolérance flottante). Documenter la 
 Vérifier que la scène combat COMPLÈTE (spine natif + particules unidbg + GL) tient le budget et que la **cohabitation des deux
 backends dans le même process** est stable (mémoire, chargement des libs, cycles de vie des handles).
 
-### B5 — Couverture au-delà du sous-ensemble COMBAT (Phase 0)
-`HostSpine` couvre le **sous-ensemble combat**. Or d'autres écrans utilisent cspine : **MainScreen (~12 persos)**, HeroView,
-vitrines… **Inventorier tous les écrans spine** et étendre le backend JNI pour les couvrir. Ajouter les méthodes omises au besoin :
-`setSlotEyeState` (expressions des yeux = fidélité cosmétique §4bis), `getStats`/`getVertexWeightReport` (diag). Sinon ces écrans
-resteraient sur unidbg (lents mais fonctionnels) — à trancher écran par écran.
+### B5 — Couverture au-delà du sous-ensemble COMBAT — ✅ VÉRIFIÉ (2026-08-30)
+**B5a (audit)** : les **47/47** méthodes natives de `cspine.Native` sont implémentées par `HostSpine`/`cspine_jni.c`
+(0 méthode manquante → 0 crash de ce fait). Seul stub FONCTIONNEL = **`setSlotEyeState`** (tag des slots
+`eyeball`/`eye_reflection`, appelé par `SpineRenderable.updateSlotTags` ; **cosmétique** — les yeux rendent via le
+chemin normal). `getStats`/`getVertexWeightReport` = diag, **0 appelant jeu**. **B5b (nav sweep EN JEU en `jni`)** :
+hub, chooser, **combat**, **HeroDetail (MegaBot, yeux corrects)**, collection detail → **tous rendus, 0 crash spine,
+0 méthode manquante, 0 UnsatisfiedLink** ; yeux corrects malgré le no-op `setSlotEyeState` (confirmé sur MegaBot +
+Merida/Belle/Jack). Les `SEVERE` vus au passage = **gaps tab data PRÉ-EXISTANTS** (forward-compat : `PatchTalent.PREDICTIVE_FORTIFICATION`
+absent du code 12.1.0, `cosmetic_collection` MUFASA_EMOJIS, `prime_badge` SAPPHIRE_4/NUMBER_*), **non-spine**,
+gérés gracieusement par le jeu (`onStatError`→skip) — §4 : non implémentables (rien à exécuter).
+
+### ⇒ BASCULE `jni` PAR DÉFAUT (2026-08-30)
+B3+B5 certifiés → le **CLIENT** desktop rend en **spine natif `jni` PAR DÉFAUT** (`run-desktop.sh` : `DH_SPINEBACKEND` défaut
+`jni`, repli auto sur unidbg si `libhostspine64.so` absent ; repli explicite `DH_SPINEBACKEND=unidbg`). Le **SERVEUR**
+(`dhserver.LoginServer`, process séparé **sans** propriété `-Ddh.spinebackend`) reste sur **unidbg BIT-EXACT** pour
+l'**AUTORITÉ** de combat (§3/§8) — `Native.java` lit une propriété JVM, pas l'env, donc le serveur n'est jamais affecté
+par la bascule côté client. Bannière au lancement : `[desktop] spine backend = jni`.
 
 ### B6 — Mesure fps EN JEU bout-en-bout (§8) → cible ≥ 30 fps
 Avec spine natif + particules unidbg + **GL réel**, mesurer le fps combat (`-Ddh.fps` : fps glissants + chrono unidbg vs reste).
