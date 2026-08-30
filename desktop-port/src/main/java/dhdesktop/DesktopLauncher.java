@@ -94,6 +94,17 @@ public final class DesktopLauncher {
         // exactes à confirmer par décompilation de GameMain (noms empruntés à DragonSoul).
         preseedConsent(new File(runDir, "prefs"));
 
+        // AUTH (C2a-2 « play ») : dh.userid force le compte dès le LOGIN INITIAL via le hook NATIF du jeu
+        // BuildOptions.TEST_USER_ID (champ public static Long ; le jeu écrase ClientInfo.userID par cette valeur
+        // si non-null). Un SEUL login → flux nouveau joueur normal (intro tuto) OU reprise d'un compte avancé.
+        // ⚠️ RÉSERVÉ au mode PERMISSIF : en STRICT, un login de boot avec userID>0 non authentifié serait REJETÉ
+        // (le client resterait bloqué sur LoadingScreen), donc le strict passe par le re-login (dh.userid.relogin,
+        // ci-dessous) et NE pose PAS TEST_USER_ID (login de boot en userID=0 = autorisé à créer, puis re-login).
+        long bootUserID = Long.getLong("dh.userid", 0L);
+        String reloginBoot = System.getProperty("dh.userid.relogin");
+        boolean strictRelogin = reloginBoot != null && !"0".equals(reloginBoot) && !"false".equalsIgnoreCase(reloginBoot);
+        if (bootUserID > 0 && !strictRelogin) forceTestUserID(bootUserID);
+
         System.out.println("[launcher] game.create() ...");
         game.create();
         System.out.println("[launcher] game.create() OK");
@@ -121,10 +132,19 @@ public final class DesktopLauncher {
         // vide le fichier. Une capture build/manual.ppm est écrite en continu → on VOIT le résultat de chaque
         // clic + on monitore le serveur. Off par défaut, aucun effet en prod.
         String clickFile = System.getProperty("dh.clickfile");
-        // AUTH MNÉMONIQUE (C2a-2 « play ») : dh.userid force le compte via l'API PUBLIQUE GameMain.switchUserAccount
-        // (aucune modif du jeu, §1). Appelée UNE fois après le boot → le jeu se reconnecte comme ce joueur ; son
-        // /login envoie ce userID, le serveur (strict) lui rend le billet nominatif (mint). 0 = off (compte défaut).
+        // AUTH MNÉMONIQUE (C2a-2 « play ») : dh.userid force le compte. Deux hooks (aucune modif du jeu, §1) :
+        //  (a) DÉFAUT — BuildOptions.TEST_USER_ID posé AVANT le boot (ci-dessus) → LOGIN UNIQUE comme ce compte
+        //      (ClientInfo.userID écrasé par le jeu). Le GET /login initial part avec userID=0 (mint vide) — OK en
+        //      mode PERMISSIF (billet non requis) ; un NOUVEAU joueur déroule alors l'intro proprement (login unique).
+        //  (b) dh.userid.relogin=1 (mode STRICT) — EN PLUS, re-login via l'API publique startInitialLogin(userID)
+        //      après le boot, pour que le GET /login reparte AVEC le userID → l'AuthService rend le billet nominatif
+        //      (mint) → le serveur strict accepte. Réservé au flux strict (double /login volontaire) : à ne PAS
+        //      activer pour l'intro nouveau-joueur (le re-login court-circuiterait le déroulé de l'intro).
         long forceUserID = Long.getLong("dh.userid", 0L);
+        // NB : Boolean.getBoolean n'accepte QUE "true" → on accepte toute valeur non "0"/"false" (cohérent
+        // avec dh.autotap/dh.autofight ; « dh.userid.relogin=1 » doit compter comme vrai).
+        String reloginProp = System.getProperty("dh.userid.relogin");
+        boolean reloginHook = reloginProp != null && !"0".equals(reloginProp) && !"false".equalsIgnoreCase(reloginProp);
         boolean userSwitched = false;
         // Pilotage headless : dh.autotap=N injecte un tap au centre toutes les N frames (0 = off).
         // Sert à FAIRE AVANCER le tutoriel (dialogues « tap to continue ») sans utilisateur, pour
@@ -176,7 +196,9 @@ public final class DesktopLauncher {
             app.drainRunnables();   // Gdx.app.postRunnable
             game.render();
             // AUTH (C2a-2 play) : une fois le boot initial passé, bascule sur le compte authentifié (une seule fois).
-            if (forceUserID > 0 && !userSwitched && frames > 120) userSwitched = switchUser(game, forceUserID);
+            // (C2a-2) userID au BOOT via BuildOptions.TEST_USER_ID (login unique). En STRICT (dh.userid.relogin=1),
+            // re-login pour que le GET /login reparte avec le userID (mint) → serveur strict accepte.
+            if (reloginHook && forceUserID > 0 && !userSwitched && frames > 120) userSwitched = switchUser(game, forceUserID);
             // DEV : spike Opt.2 — dès que le user a des héros (post-login), exécute UNE fois le vrai
             // HeadlessCombat et mesure (bloque le thread render le temps de la sim = attendu pour la mesure).
             if (combatSpike && frames > 200 && CombatSpikeDriver.tryRunOnce(game) && combatSpikeExit) {
@@ -684,6 +706,21 @@ public final class DesktopLauncher {
     /** AUTH (C2a-2 « play ») : bascule le client sur le compte {@code userID} via l'API PUBLIQUE
      *  {@code GameMain.switchUserAccount(long)} — le jeu se relance en se reconnectant comme ce joueur. AUCUNE modif
      *  du jeu (§1). Renvoie true (une seule tentative, même en cas d'échec, pour ne pas boucler). */
+    /** AUTH (C2a-2 « play ») : pose le hook NATIF du jeu {@code BuildOptions.TEST_USER_ID} (public static Long) →
+     *  le login initial du client s'effectue avec CE userID (le jeu écrase {@code ClientInfo.userID}). Login UNIQUE
+     *  (pas de restart, pas de double-login) → le nouveau joueur déroule l'intro, l'avancé reprend sa partie.
+     *  Aucune modif du jeu (§1) : on pose un champ de configuration prévu par le jeu. */
+    private static void forceTestUserID(long userID) {
+        try {
+            Class<?> bo = Class.forName("com.perblue.heroes.BuildOptions");
+            java.lang.reflect.Field f = bo.getField("TEST_USER_ID");
+            f.set(null, Long.valueOf(userID));
+            System.out.println("[launcher] BuildOptions.TEST_USER_ID=" + userID + " — login initial forcé sur le compte authentifié");
+        } catch (Throwable t) {
+            System.out.println("[launcher] forceTestUserID(" + userID + ") échec: " + t);
+        }
+    }
+
     private static boolean switchUser(GameMain game, long userID) {
         // startInitialLogin(userID, shardID) = démarre une (re)connexion comme ce joueur, SANS redémarrer l'appli
         // (contrairement à switchUserAccount→restart, qui NPE dans notre boucle headless pilotée à la main).

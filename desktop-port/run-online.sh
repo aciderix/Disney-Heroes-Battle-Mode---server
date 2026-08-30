@@ -104,7 +104,7 @@ if [ -n "${DH_AUTH_SEED_PHRASE+x}" ]; then
   : > /tmp/dh_seed.log
   javac -cp "$CPF:$SRVOUT" -d "$SRVOUT" "$ROOT/server/smoke/StrictAuthSeed.java" 2>>/tmp/dh_seed.log || true
   SEED_UID=$(java -cp "$CPF:$SRVOUT" -Ddh.stats="$ROOT/game-data/stats" StrictAuthSeed "http://127.0.0.1:8082" ${DH_AUTH_SEED_PHRASE} 2>>/tmp/dh_seed.log)
-  if [ -n "$SEED_UID" ]; then export DH_USERID="$SEED_UID"; echo "[online] auth strict : compte semé userID=$DH_USERID (phrase → billet nominatif ; voir /tmp/dh_seed.log)";
+  if [ -n "$SEED_UID" ]; then export DH_USERID="$SEED_UID"; export DH_USERID_RELOGIN=1; echo "[online] auth strict : compte semé userID=$DH_USERID (phrase → billet nominatif ; voir /tmp/dh_seed.log)";
   else echo "[online] auth strict : SEED ÉCHOUÉ (voir /tmp/dh_seed.log)"; fi
 fi
 
@@ -118,7 +118,7 @@ DH_SERVER="127.0.0.1:$HTTP_PORT" DH_TIMEOUT="${DH_TIMEOUT:-90}" DH_FRAMES="${DH_
     DH_COMBATSPIKE="${DH_COMBATSPIKE:-}" DH_COMBATSPIKE_EXIT="${DH_COMBATSPIKE_EXIT:-}" \
     DH_COMBATSPIKE_CH="${DH_COMBATSPIKE_CH:-}" DH_COMBATSPIKE_LV="${DH_COMBATSPIKE_LV:-}" \
     DH_COMBATSPIKE_N="${DH_COMBATSPIKE_N:-}" DH_COMBATSPIKE_SEED="${DH_COMBATSPIKE_SEED:-}" DH_CSPINEPROFILE="${DH_CSPINEPROFILE:-}" \
-    DH_SPINEBACKEND="${DH_SPINEBACKEND:-}" DH_DYNARMIC="${DH_DYNARMIC:-}" DH_USERID="${DH_USERID:-}" \
+    DH_SPINEBACKEND="${DH_SPINEBACKEND:-}" DH_DYNARMIC="${DH_DYNARMIC:-}" DH_USERID="${DH_USERID:-}" DH_USERID_RELOGIN="${DH_USERID_RELOGIN:-}" \
     DH_SHOT="${DH_SHOT:-build/online.ppm}" ./run-desktop.sh || true
 
 echo "=== log serveur de jeu (TCP) ==="; tail -15 /tmp/dh_game.log 2>/dev/null

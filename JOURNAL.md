@@ -1,5 +1,40 @@
 # JOURNAL — journal détaillé des modifications
 
+## 2026-08-30 (g192) — Preuve EN JEU : compte NEUF → TUTO D'INTRO lancé (+ hook userID mode-aware boot/relogin)
+
+Demande utilisateur : PROUVER (règles §8, preuve visuelle) qu'un **compte neuf lance bien le tuto** (pas besoin
+de le jouer entièrement) — pour valider qu'EN PROD un nouveau joueur joue normalement, ET qu'un joueur avancé
+reprend sa partie.
+
+**Preuve compte NEUF (permissif, login unique)** : userID FRAIS jamais vu (8888000000000001) forcé via le hook
+NATIF du jeu **`BuildOptions.TEST_USER_ID`** (champ `public static Long` ; le jeu écrase `ClientInfo.userID`),
+posé AVANT `game.create()` → **UN SEUL `/login`** → le serveur **crée** le compte (122 actes de tuto à step 0) →
+le client route vers **`IntroTutorialActV2`**. Logs client : `IntroTutorialActV2 onTutorialTransition` (étapes
+`NEW_COMBAT_STAGE_STARTED`→`SCREEN_WAIT`→`GATE_DIALOG_1_A` qui s'enchaînent), écran `CoreAttackScreen` (combat
+scripté d'intro), chargement du héros `kevin_flynn`. **Capture `desktop-port/build/intro.png`** : cinématique
+d'ouverture (Ralph & Vanellope devant le portail des mondes, réplique « I can't believe you talked me into
+this. », « TAP TO CONTINUE »). ⇒ **un nouveau joueur déroule le jeu normalement dès le départ.**
+
+**Preuve joueur AVANCÉ (reprise)** : déjà établie g191 (hub PEUPLÉ TL 200, ressources, nav — `strict2.png`).
+
+**Hook userID mode-aware (aucune modif jeu §1)** — 2 mécanismes, car `TEST_USER_ID` seul ne suffit pas au strict :
+- **PERMISSIF (défaut, ex. intro)** : `BuildOptions.TEST_USER_ID` posé au boot → login UNIQUE comme le compte.
+  Le `/login` initial part en `userID=0` (billet mint vide) — OK en permissif (billet non requis).
+- **STRICT (`dh.userid.relogin=1`, activé par run-online dans le bloc seed)** : on NE pose PAS `TEST_USER_ID`
+  (sinon le login de boot `userID>0` non authentifié serait REJETÉ → client bloqué sur LoadingScreen). Le boot
+  se fait en `userID=0` (autorisé à créer), puis **re-login** via `startInitialLogin(userID)` (frame>120) → le
+  `/login` repart AVEC le userID → `/auth/mint` billet nominatif → serveur strict **accepte**. Re-vérifié EN JEU
+  (compte 7966 : `startInitialLogin` → billet nominatif → `connexion ← compte 7966` → BootData).
+  ⚠️ Parsing : `dh.userid.relogin` accepté comme vrai pour toute valeur ≠ « 0 »/« false » (`Boolean.getBoolean`
+  n'accepte QUE « true » → « 1 » aurait été faux). `run-desktop.sh`/`run-online.sh` propagent `DH_USERID_RELOGIN`.
+
+Régression **166/166** (aucun code serveur touché — uniquement `DesktopLauncher` + scripts). Fichiers :
+`dhdesktop/DesktopLauncher.java` (`forceTestUserID` + gate mode-aware), `desktop-port/run-desktop.sh`,
+`desktop-port/run-online.sh` (`DH_USERID_RELOGIN=1` en strict), `docs/PHASE2_TRACKING.md`, `MEMORY.md`,
+`JOURNAL.md`. Captures : `intro.png` (compte neuf → intro), `strict2.png` (avancé → hub peuplé). **SUITE = C2a-3
+(host), C2a-4 (build APK), puis C2b (front + login UNIQUE au boot par pré-semis de préférence, plus propre que
+le re-login DEV).**
+
 ## 2026-08-30 (g191) — Phase 2 C2a-2 « play » : login mnémonique STRICT ✅ VÉRIFIÉ EN JEU (client réel → hub peuplé)
 
 Vérif EN JEU obligatoire (§8, exigée par l'utilisateur) du flux d'authentification STRICT de bout en bout, avec le
