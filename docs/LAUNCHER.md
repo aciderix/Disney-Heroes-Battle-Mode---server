@@ -21,14 +21,26 @@
     serveur (cf. `docs/DISTRIBUTION.md` §1) — `import-apk`, `build-client <win|linux>`, `build-server`.
   - **Jouer** : écrit la redirection `ServerType.LIVE` → serveur choisi (remplace le `127.0.0.1:8080` en dur) et lance
     le client Java (équivalent `run-desktop.sh`) avec la session authentifiée + les réglages (qualité spine, résolution…).
-  - **Interface** : exposé comme **CLI sous-commandes / protocole JSON** (stdin-stdout ou petit HTTP localhost) — c'est
-    ce que Tauri invoque.
-- **Tauri (Rust) + React (UI)** : présentation + orchestration uniquement. Les commandes Tauri **invoquent
-  launcher-core** (sous-process Java, protocole JSON). Binaire minuscule (webview système, pas d'Electron). **Zéro
-  crypto/logique jeu côté Rust/JS.**
+  - **Interface : DAEMON HTTP LOCAL** (décidé 2026-08-30). Le core tourne EN PERMANENCE (petit `HttpServer` JDK lié à
+    `127.0.0.1`), le front lui parle en HTTP/JSON. Choix vs « CLI jetable » : le launcher a besoin d'un **état vivant**
+    (serveur hébergé en cours, client de jeu lancé à surveiller, session authentifiée, progression de build streamée) —
+    impossible avec un process CLI neuf à chaque appel (JVM froide, sans mémoire). Le daemon garde l'état + JVM chaude.
+    ⚠️ **Deux services HTTP distincts** : le **launcher-core** = daemon sur la machine du JOUEUR (backend du front) ; il
+    APPELLE l'`AuthService` (`:8082`) du **serveur de jeu distant** pour s'authentifier. Le daemon écrit son port/token
+    dans le dossier de config local ; il n'accepte QUE `127.0.0.1` (+ token de session optionnel).
+- **Tauri (Rust) + React (UI)** : présentation + orchestration uniquement. Tauri **appelle le daemon launcher-core**
+  en HTTP local. Binaire minuscule (webview système, pas d'Electron). **Zéro crypto/logique jeu côté Rust/JS.**
 
 Raison du choix : meilleure UX web moderne pour le front livré, tout en gardant **une seule** implémentation
 (Ed25519/BIP39, extraction APK, gestion process) en Java — pas de second moteur crypto à maintenir en phase (§4).
+
+### 1bis. Emplacement de la config locale (machine du joueur)
+Dossier standard par OS (résolu par le core) : **Windows** `%APPDATA%\DisneyHeroesPort`, **Linux**
+`$XDG_CONFIG_HOME/disney-heroes-port` (défaut `~/.config/disney-heroes-port`), **macOS**
+`~/Library/Application Support/DisneyHeroesPort`. Contenu : `servers.json` (favoris), `settings.json` (résolution,
+qualité spine, langue, chemin APK), `daemon.json` (port + token du daemon), et — optionnel — un cache « se souvenir de
+moi » (phrase/clé) **chiffré** (par mot de passe local ; détail à la sous-étape correspondante). La **phrase en clair
+n'est jamais persistée** par défaut.
 
 ## 2. Contenu exact — écrans & flux
 
@@ -53,11 +65,24 @@ Raison du choix : meilleure UX web moderne pour le front livré, tout en gardant
 **Flux** : 1ᵉʳ run → Setup(APK) → Compte(Nouveau) → Serveurs(localhost/héberger) → Jouer. Retour → Compte(auto si « se
 souvenir ») → Serveurs → Jouer.
 
-## 3. Ordre de construction
+## 3. Ordre de construction & étapes planifiées
 
-1. **Login core headless d'abord** (chantiers **C1a ✅ → C1b → C1c → C1d**) : identité, vérifieur, défi-réponse au
-   `/login`, create/restore de bout en bout + EN JEU. **Tech-agnostique** (le launcher l'appellera tel quel).
-2. **launcher-core Java** : sous-commandes servers/session/host/build/play au-dessus de (1).
-3. **Shell Tauri+React** : les 6 écrans ci-dessus, appelant launcher-core.
+**Login core headless** — **C1a ✅ → C1b ✅ → C1c ✅ → C1d ✅ (headless)** : identité, vérifieur, défi-réponse,
+create/restore de bout en bout. Fait. La vérif EN JEU en mode strict est **débloquée par le launcher-core** (ci-dessous).
 
-**Statut** : archi + contenu **figés** ici. Implémentation UI = après le login core (C1b→C1d).
+**C2a — launcher-core (daemon HTTP local, Java)** — endpoints JSON sur `127.0.0.1` :
+
+| Sous-étape | Endpoints | But |
+|---|---|---|
+| **C2a-1** squelette daemon + **identité** | `GET /health` ; `POST /identity/generate` ; `POST /identity/login {phrase, serverAuthUrl}` (challenge→sign→verify → `{userID, loginRequestID}`) ; `POST /identity/register {phrase, serverAuthUrl}` | dérive/**signe** la clé (jamais transmise), appelle l'`AuthService` distant → session authentifiée. **Test headless** : daemon → vrai `AuthService` → login/register. |
+| **C2a-2** serveurs + **play** | `GET/POST/DELETE /servers` (favoris `servers.json`) ; `GET /servers/{id}/ping` ; `POST /play {serverId, loginRequestID}` | redirige `ServerType.LIVE` → serveur choisi + lance le client authentifié → **boucle la vérif EN JEU strict de C1d**. |
+| **C2a-3** **host** | `POST /host/start`, `POST /host/stop`, `GET /host/status` | lance/arrête le serveur local + `content_server.py` (process gérés par le daemon). |
+| **C2a-4** **build** depuis l'APK | `POST /build {apkPath, target}` (SSE progression) | encapsule `decompile/reframe/extract` + build client/serveur. |
+
+**C2b — front Tauri+React** : les 6 écrans (§2), appelant le daemon. Puis **vérif EN JEU strict de bout en bout**
+(login mnémonique → boot → jouer → restaurer sur client neuf → même compte).
+
+**Périmètre validé (utilisateur, 2026-08-30)** : 1ᵉʳ incrément = **identité + play + host** (C2a-1→C2a-3) → permet de
+JOUER authentifié en local et de boucler la vérif en jeu strict ; **build** (C2a-4) ensuite ; **front** (C2b) après.
+
+**Statut** : archi + protocole (**daemon HTTP local**) + étapes **figés**. En cours : **C2a-1**.

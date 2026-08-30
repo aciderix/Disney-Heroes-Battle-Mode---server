@@ -1,5 +1,33 @@
 # JOURNAL — journal détaillé des modifications
 
+## 2026-08-30 (g190) — Phase 2 C2a-1 : launcher-core = daemon HTTP local (identité) ✅
+
+Début du launcher (chantier C2). **Décision de protocole tranchée avec l'utilisateur** : le launcher-core est un
+**DAEMON HTTP LOCAL** (pas un CLI jetable). Raison : le launcher a besoin d'un **état vivant** (serveur hébergé en
+cours, client de jeu lancé à surveiller, session authentifiée, progression de build) — un process CLI neuf à chaque
+appel (JVM froide, sans mémoire) buterait dessus. Le daemon garde l'état + JVM chaude. Docs : `LAUNCHER.md` §1
+(archi daemon) + §1bis (config locale par OS) + §3 (étapes C2a-1→C2b planifiées).
+
+**`dhlauncher.LauncherDaemon`** — `HttpServer` JDK lié à **`127.0.0.1` uniquement** (jamais exposé au réseau), backend
+sur la machine du JOUEUR. Réutilise `MnemonicIdentity` (la clé privée reste locale, jamais transmise) et un
+`HttpClient` pour appeler l'`AuthService` du serveur de jeu DISTANT. Endpoints (C2a-1) :
+- `GET /health`.
+- `POST /identity/generate` → `{phrase, userID, publicKey}` (écran « Nouveau compte »).
+- `POST /identity/login {phrase, serverAuthUrl}` → challenge distant → **signe** le nonce → `/auth/verify` → renvoie
+  `{ok, userID, loginRequestID}` (le `loginRequestID` authentifié que le client de jeu présentera dans `ClientInfo`).
+- `POST /identity/register {phrase, serverAuthUrl}` → idem avec `/auth/register` (clé publique fournie).
+
+⚠️ **Deux services HTTP DISTINCTS** : le launcher-core (machine joueur) APPELLE l'`AuthService` (`:8082`, dans le
+process du serveur de jeu). Requêtes form-urlencoded, réponses JSON (base64url pour nonce/clé/signature).
+
+**`LauncherLoginTest`** (11 assert., **2 HttpServer réels : AuthService serveur + daemon**) : generate → login avant
+register refusé → register via daemon (compte créé côté serveur + session) → login via daemon (nouveau loginRequestID,
+session) → /health. **Régression 164/164.**
+
+**Fichiers** : `server/java/dhlauncher/LauncherDaemon.java`, `server/smoke/LauncherLoginTest.java`, `regression.sh`,
+docs (LAUNCHER/PHASE2_TRACKING/MEMORY/JOURNAL). **SUITE = C2a-2 (serveurs + play : redirige `ServerType.LIVE` + lance
+le client authentifié → boucle la vérif EN JEU strict de C1d), C2a-3 (host), C2a-4 (build APK), puis C2b (front).**
+
 ## 2026-08-30 (g189) — Phase 2 C1d : flux create/restore de compte de bout en bout ✅ (headless)
 
 Fin du login mnémonique headless (C1a→C1d).
