@@ -34,7 +34,14 @@ public final class DhNet implements Net {
         Thread t = new Thread(() -> {
             HttpURLConnection conn = null;
             try {
-                URL u = new URL(url);
+                // Fidélité libGDX (NetJavaImpl) : pour GET/DELETE, le `content` form-encodé n'est PAS un corps —
+                // il est appendu à l'URL en QUERY-STRING. Sans ça, les params (dont `userID` du /login) étaient
+                // silencieusement PERDUS pour un GET → indispensable au flux d'auth strict (billet nominatif).
+                boolean isGetLike = "GET".equalsIgnoreCase(method) || "DELETE".equalsIgnoreCase(method);
+                String actualUrl = url;
+                if (isGetLike && content != null && !content.isEmpty())
+                    actualUrl = url + (url.indexOf('?') >= 0 ? "&" : "?") + content;
+                URL u = new URL(actualUrl);
                 conn = (HttpURLConnection) u.openConnection();
                 conn.setRequestMethod(method);
                 conn.setInstanceFollowRedirects(request.getFollowRedirects());

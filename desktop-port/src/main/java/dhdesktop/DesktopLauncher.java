@@ -121,6 +121,11 @@ public final class DesktopLauncher {
         // vide le fichier. Une capture build/manual.ppm est écrite en continu → on VOIT le résultat de chaque
         // clic + on monitore le serveur. Off par défaut, aucun effet en prod.
         String clickFile = System.getProperty("dh.clickfile");
+        // AUTH MNÉMONIQUE (C2a-2 « play ») : dh.userid force le compte via l'API PUBLIQUE GameMain.switchUserAccount
+        // (aucune modif du jeu, §1). Appelée UNE fois après le boot → le jeu se reconnecte comme ce joueur ; son
+        // /login envoie ce userID, le serveur (strict) lui rend le billet nominatif (mint). 0 = off (compte défaut).
+        long forceUserID = Long.getLong("dh.userid", 0L);
+        boolean userSwitched = false;
         // Pilotage headless : dh.autotap=N injecte un tap au centre toutes les N frames (0 = off).
         // Sert à FAIRE AVANCER le tutoriel (dialogues « tap to continue ») sans utilisateur, pour
         // vérifier « tuto jouable de bout en bout » et observer ce que le client envoie ensuite.
@@ -170,6 +175,8 @@ public final class DesktopLauncher {
             input.drain();          // input synthétique (pilotage) sur le thread render
             app.drainRunnables();   // Gdx.app.postRunnable
             game.render();
+            // AUTH (C2a-2 play) : une fois le boot initial passé, bascule sur le compte authentifié (une seule fois).
+            if (forceUserID > 0 && !userSwitched && frames > 120) userSwitched = switchUser(game, forceUserID);
             // DEV : spike Opt.2 — dès que le user a des héros (post-login), exécute UNE fois le vrai
             // HeadlessCombat et mesure (bloque le thread render le temps de la sim = attendu pour la mesure).
             if (combatSpike && frames > 200 && CombatSpikeDriver.tryRunOnce(game) && combatSpikeExit) {
@@ -674,6 +681,23 @@ public final class DesktopLauncher {
     }
 
     private static boolean autoCombatLogged = false;
+    /** AUTH (C2a-2 « play ») : bascule le client sur le compte {@code userID} via l'API PUBLIQUE
+     *  {@code GameMain.switchUserAccount(long)} — le jeu se relance en se reconnectant comme ce joueur. AUCUNE modif
+     *  du jeu (§1). Renvoie true (une seule tentative, même en cas d'échec, pour ne pas boucler). */
+    private static boolean switchUser(GameMain game, long userID) {
+        // startInitialLogin(userID, shardID) = démarre une (re)connexion comme ce joueur, SANS redémarrer l'appli
+        // (contrairement à switchUserAccount→restart, qui NPE dans notre boucle headless pilotée à la main).
+        try {
+            game.getClass().getMethod("startInitialLogin", long.class, int.class).invoke(game, userID, 1);
+            System.out.println("[launcher] startInitialLogin(" + userID + ",1) — (re)connexion sur le compte authentifié");
+        } catch (Throwable t) {
+            Throwable c = (t instanceof java.lang.reflect.InvocationTargetException && t.getCause() != null) ? t.getCause() : t;
+            System.out.println("[launcher] startInitialLogin(" + userID + ") échec: " + c);
+            c.printStackTrace();
+        }
+        return true;
+    }
+
     private static void enableAutoCombat(GameMain game) {
         try {
             Object sm = game.getClass().getMethod("getScreenManager").invoke(game);

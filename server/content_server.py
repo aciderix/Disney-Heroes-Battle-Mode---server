@@ -88,12 +88,18 @@ class Handler(BaseHTTPRequestHandler):
         # le launcher (défi-réponse) ; sinon requestID="" (permissif, comportement historique).
         import json as _json
         import os
-        from urllib.parse import parse_qs
+        from urllib.parse import parse_qs, urlsplit
         user_id = None
         try:
-            length = int(self.headers.get("Content-Length", "0"))
-            raw = self.rfile.read(length) if length else b""
-            params = parse_qs(raw.decode("utf-8", "replace"))
+            # Le client du jeu émet un GET dont les params device (dont `userID`) sont dans la QUERY-STRING
+            # (libGDX `HttpRequestBuilder.formEncodedContent` sur un GET → query), PAS dans le corps. On lit
+            # donc la query d'abord, puis le corps en repli (POST éventuel).
+            params = parse_qs(urlsplit(self.path).query)
+            if not (params.get("userID") or params.get("userId")):
+                length = int(self.headers.get("Content-Length", "0"))
+                raw = self.rfile.read(length) if length else b""
+                if raw:
+                    params = parse_qs(raw.decode("utf-8", "replace"))
             vals = params.get("userID") or params.get("userId")
             if vals:
                 user_id = vals[0]
@@ -104,6 +110,8 @@ class Handler(BaseHTTPRequestHandler):
         if auth_url and user_id:
             try:
                 request_id = self._mint_ticket(auth_url, user_id)
+                sys.stderr.write("[content] /login userID=%s → billet nominatif=%r (strict)\n"
+                                 % (user_id, request_id))
             except Exception as e:
                 sys.stderr.write("[content] /auth/mint échec (userID=%s): %s\n" % (user_id, e))
         body = _json.dumps({"status": "good", "data": self.cfg.game_server, "requestID": request_id}).encode("utf-8")

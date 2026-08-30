@@ -1,5 +1,59 @@
 # JOURNAL — journal détaillé des modifications
 
+## 2026-08-30 (g191) — Phase 2 C2a-2 « play » : login mnémonique STRICT ✅ VÉRIFIÉ EN JEU (client réel → hub peuplé)
+
+Vérif EN JEU obligatoire (§8, exigée par l'utilisateur) du flux d'authentification STRICT de bout en bout, avec le
+VRAI client. Objectif : un compte identifié par PHRASE mnémonique se connecte comme SON userID, le serveur strict
+l'accepte, et refuse un userID non authentifié.
+
+**Chaîne complète prouvée** (client réel LIVE → serveur) :
+1. **Seed auth** (`StrictAuthSeed`, outil DEV) : `/auth/challenge` → **signe** le nonce (clé Ed25519 dérivée de la
+   phrase) → `/auth/register` → l'`AuthService` (:8082, même JVM que le `LoginServer`, `SessionStore` PARTAGÉE)
+   enregistre la clé publique + marque le userID « récemment authentifié » (`authed`).
+2. Le client émet un **GET `/login`** portant `userID`/`shardID` (via `GameMain.startInitialLogin(userID,1)` →
+   `connectToLoginServer`, API **publique**, aucune modif jeu §1).
+3. `content_server` lit `userID` et appelle `/auth/mint` → **billet nominatif** (`loginRequestID` frais, lié au
+   userID dans la `SessionStore`).
+4. Le client recopie ce `loginRequestID` dans `ClientInfo` → le `LoginServer` **STRICT** (`-Ddh.auth=on`) vérifie
+   `sessions.authenticatedUser(loginRequestID)==userID` → **accepte** : `connexion ← compte 7966… ` → BootData.
+5. **Hub RENDU** en spine natif jni (capture `desktop-port/build/strict2.png`) : barre de ressources (💎5 000 /
+   🪙5 M / stamina 120/7 935 / 175/175), nav complète (CAMPAIGN/CITY WATCH/CHALLENGES/CRATES/INVASION/SURGE/ARENA/
+   PORT…), avatar TL 200. 0 exception non-bénigne.
+
+**Cas négatif prouvé** (anti-triche) : `/auth/mint` pour un userID **jamais authentifié** → **HTTP 401**
+`not-authenticated` → `content_server` renvoie `requestID=""` → le `LoginServer` strict **rejette**
+(`loginRequestID non authentifié pour userID=… → rejet (aucun BootData)`, observé). Seul un userID>0 authentifié
+passe ; un userID=0 (nouveau joueur) est autorisé à CRÉER un compte (gate `uid>0` sautée, par conception).
+
+**2 correctifs de FIDÉLITÉ trouvés EN JEU** (§1/§4bis, `SHIMS.md`) :
+- **`dhbackend/DhNet.java`** : `sendHttpRequest` n'écrivait le `content` form-encodé que pour POST/PUT → pour un
+  **GET**, le content était **silencieusement PERDU** (ni URL ni corps). libGDX (`NetJavaImpl`) **appende le content
+  à l'URL en query-string** pour GET/DELETE. Sans ça, `userID` du `/login` n'atteignait jamais `content_server` →
+  auth strict impossible (le mode permissif ne s'en apercevait pas : `requestID=""`). Corrigé : GET/DELETE →
+  `url + ("?"|"&") + content` (réplique exacte de `NetJavaImpl`).
+- **`server/content_server.py`** `_serve_login` : lisait `userID` dans le **corps** (POST) alors que le client
+  envoie un **GET** (params en query). Corrigé : lit la query d'abord, corps en repli. + log `[content] /login
+  userID=… → billet nominatif=…`.
+
+**Hook userID côté client** : d'abord tenté `switchUserAccount(userID)` → **NPE** (`Cannot invoke Object.getClass()
+because <local2> is null`) car il déclenche `GameMain.restart()`, incompatible avec notre boucle de rendu headless
+pilotée à la main. Remplacé par `startInitialLogin(userID,1)` (relevé au bytecode : appelle simplement
+`connectToLoginServer(userID, shard, SERVER_TYPE, false)` = un `/login`, SANS restart) → propre, API publique.
+
+**Outils DEV** (non committés au régression, hors `TESTS`) : `StrictAuthSeed` (register+auth d'un compte par
+phrase contre l'`AuthService`) ; `StrictAuthAccount` (GARNIT le compte du userID dérivé d'une phrase — TL 200,
+5 héros JAUNE, chapitre 41, `ServerUser.completeAllTutorials`, ressources — car un compte fraîchement semé reste en
+état TUTORIEL → hub quasi vide ; à lancer serveur arrêté). `run-online.sh` : bloc seed strict
+(`DH_AUTH_SEED_PHRASE` défini → seed → `-Ddh.userid`), `DH_AUTH_URL` sur `content_server`. `run-desktop.sh` :
+`-Ddh.userid`. `DesktopLauncher` : hook `switchUser` (frame>120, une fois) → `startInitialLogin`.
+
+Régression **166/166** (le code serveur d'auth est inchangé ; seuls le backend client `DhNet`, `content_server`,
+les scripts et le hook `DesktopLauncher` ont bougé). Fichiers : `dhbackend/DhNet.java`, `server/content_server.py`,
+`dhdesktop/DesktopLauncher.java`, `desktop-port/run-online.sh`, `desktop-port/run-desktop.sh`,
+`server/smoke/StrictAuthSeed.java` (nouveau), `server/smoke/StrictAuthAccount.java` (nouveau), `docs/SHIMS.md`,
+`docs/PHASE2_TRACKING.md`, `MEMORY.md`, `JOURNAL.md`. **SUITE = C2a-3 (host), C2a-4 (build APK), puis C2b (front
+Tauri+React) + vérif EN JEU strict finale.**
+
 ## 2026-08-30 (g190) — Phase 2 C2a-1 : launcher-core = daemon HTTP local (identité) ✅
 
 Début du launcher (chantier C2). **Décision de protocole tranchée avec l'utilisateur** : le launcher-core est un
