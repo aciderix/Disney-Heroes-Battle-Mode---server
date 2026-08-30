@@ -40,11 +40,25 @@ Pourquoi (ce que ça « cadre ») :
   n'importe quel serveur/instance avec sa seule phrase (pas de « mot de passe oublié »).
 - **Cadre l'implémentation multi-serveur** : chaque serveur self-host applique la même règle de dérivation → cohérent.
 
-À DÉTAILLER lors de l'implémentation (Phase 2 D) — non figé ici, mais les axes :
-- **Wordlist & longueur** : liste de mots fixe (style BIP39, ~2048 mots) ; N mots (p. ex. 12) = entropie suffisante.
-- **Dérivation** : `seed phrase → (userID, clé)` par fonction de hachage déterministe (à spécifier) ; le `userID` reste l'entier
-  attendu par le protocole du jeu.
-- **Stockage serveur** : **jamais la phrase en clair** — seulement un dérivé vérifiable (hash) ; la phrase vit chez le joueur.
-- **Compat protocole** : s'insère dans le handshake existant (`ClientInfo` → `BootData`) sans réécrire la logique du jeu (§3).
+### Spécification FIGÉE (décidée 2026-08-30 avec l'utilisateur) + statut d'implémentation
+- **Wordlist** : **BIP-0039 anglaise** (2048 mots, standard public — sha256 `2f5eed…dbda`), embarquée via
+  `tools/gen_bip39.sh` → `server/java/dhserver/auth/Bip39Wordlist.java` (régénérable, §7). Mots familiers/interopérables.
+- **Longueur** : **8 mots** = 88 bits = **80 bits d'entropie** (10 octets) + 8 bits de checksum (détecte les fautes de
+  frappe). Octet-aligné, jeu-approprié (pas d'argent réel). Constante `MnemonicIdentity.WORDS` (dialable).
+- **Dérivation** : phrase → seed (**BIP39 PBKDF2-HMAC-SHA512**, salt `"mnemonic"`, 2048 iters) → **paire Ed25519
+  DÉTERMINISTE** (32 premiers octets = graine privée ; JDK 21 natif, 0 dépendance). `userID` (long positif du
+  protocole) = 8 octets de SHA-256(clé publique).
+- **Auth = DÉFI-RÉPONSE ASYMÉTRIQUE** (le mieux) : le serveur envoie un nonce, le launcher le **signe** (Ed25519), le
+  serveur vérifie avec la **clé publique** stockée. **Aucun secret côté serveur** (DB peut fuiter sans compromettre les
+  comptes) ; la clé privée ne quitte jamais le joueur ; rien de sensible ne transite → robuste **même sans TLS** (le TLS
+  du chantier F reste un complément). Anti-usurpation : impossible de réclamer un userID sans la phrase.
+- **Stockage serveur** : `userID → clé publique` (le vérifieur), **jamais la phrase** — cf. chantier C1b (table
+  `UserStore`).
+- **Compat protocole** : s'insère dans le handshake existant (`ClientInfo.loginRequestID` corrèle `/login` HTTP et le
+  socket ; `ClientInfo.userID`) **sans réécrire la logique du jeu** (§3) — auth au niveau plateforme (`/login` + table
+  de session ; `LoginServer` lie le socket à la session authentifiée). Cf. chantier C1c.
 
-**Statut** : décision de design **consignée**. Implémentation ultérieure (aucune ligne de login-mnémonique écrite à ce stade).
+**Statut** : **C1a ✅ IMPLÉMENTÉ & testé** (`MnemonicIdentity` + `MnemonicIdentityTest` = 13 assertions, dans
+`regression.sh` : déterminisme, checksum, sign/verify, **rejet d'usurpation**, 200 userIDs distincts). **Reste** : C1b
+(vérifieur `UserStore` + register/lookup), C1c (défi-réponse au `/login` + liaison socket), C1d (create/restore de bout
+en bout + EN JEU).
