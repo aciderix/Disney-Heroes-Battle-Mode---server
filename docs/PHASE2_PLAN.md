@@ -54,6 +54,11 @@
 - **Paramètres** : résolution, perfs (qualité spine), langue, redirection `ServerType.LIVE` → serveur choisi (aujourd'hui
   câblé en dur `127.0.0.1:8080` via `content_server.py`).
 - **UX d'onboarding** self-hosting : bouton « héberger » qui lance le serveur local + le launcher, guide pas à pas.
+- **CLÉ-EN-MAIN / one-click (incontournable, `docs/DISTRIBUTION.md`)** : toute cible générée depuis l'APK (serveur /
+  port PC / patch APK) est **packagée en bundle AUTONOME lançable** (jars+classes+`content_server.py`+`game-data`+script,
+  ou exécutable/AppImage/APK signé) — l'utilisateur lambda fournit l'APK une fois et **clique**, zéro assemblage manuel.
+  Chaque build se termine par une **étape de packaging** (C2a-4-pkg serveur, C2a-4b client). **Cloud = flux GUIDÉ**
+  (provision VM + ports/DNS/TLS = plus de manip) → relève de **F** + panneau opérateur **D**.
 
 ### D. BACKEND / FRONT-END d'HÉBERGEMENT & GESTION DE SERVEURS
 - **Panneau opérateur** (web ou CLI unifié) englobant les outils admin existants (`AdminClock`, `AdminWar`, `AdminInvasion`,
@@ -72,6 +77,9 @@
   vs unidbg sur desktop) — le serveur est agnostique (il ne rend rien).
 - **Versionnage** : gérer d'autres versions d'APK (le service multi-ère `content.<shard>.tab` + stat-sync ouvre la voie —
   cf. `docs/EXPLORATION.md` backlog « service multi-ère »).
+- **PATCH APK (cible de build « clé-en-main », `docs/DISTRIBUTION.md`)** : ré-empaqueter l'APK d'origine en y intégrant la
+  **découverte/redirection de serveur** (le jeu mobile pointe vers un serveur self-host) → APK signé installable. Nécessite
+  d'intégrer côté APK ce que le desktop fait par redirection `ServerType.LIVE`. **Ultérieur** (après serveur + client PC).
 
 ### F. TESTS EN CONDITIONS RÉELLES — SERVEURS INTER-MACHINES via INTERNET
 - **Réseau réel** : latence/perte/MTU (la « fenêtre de démarrage » qui perdait des messages est documentée `docs/SHIMS.md` —

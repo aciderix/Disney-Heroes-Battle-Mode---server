@@ -12,11 +12,26 @@ On livre **uniquement notre logiciel** (la couche plateforme + serveur + outilla
 *Disney Heroes: Battle Mode* dans **sa dernière version publiée** (qu'il télécharge de son côté). Le logiciel se charge alors
 de **générer à la demande**, à partir de CET APK, ce que l'utilisateur choisit :
 
-| Cible choisie | Ce que le logiciel génère (depuis l'APK fourni) |
-|---|---|
-| **Port desktop Windows** | `game.jar` (`tools/decompile.sh`) → reframe (`game-framed.jar` / `game-logic-framed.jar`) + `game-data/` (`tools/extract_game_data.sh`) + natifs → build du client desktop |
-| **Port desktop Linux** | idem, cible Linux |
-| **Serveur (self-host)** | `game-framed.jar` + `game-data/stats/*` + compilation `server/java` → serveur autoritatif prêt |
+| Cible choisie | Ce que le logiciel génère (depuis l'APK fourni) | Livrable clé-en-main |
+|---|---|---|
+| **Port desktop Windows** | `game.jar` (`tools/decompile.sh`) → reframe (`game-framed.jar` / `game-logic-framed.jar`) + `game-data/` (`tools/extract_game_data.sh`) + natifs → build du client desktop | **exécutable/bundle Windows** (double-clic) |
+| **Port desktop Linux** | idem, cible Linux | **bundle Linux** (script `run.sh` / AppImage) |
+| **Serveur (self-host)** | `game-framed.jar` + jars runtime + classes `dhserver` compilées + `content_server.py` + `game-data/stats/*` → serveur autoritatif prêt | **bundle serveur autonome** (`run.sh`/`run.bat`, lançable hors dev) |
+| **Patch APK (mobile)** — ULTÉRIEUR | ré-empaquette l'APK en y intégrant la **découverte/redirection de serveur** (pour que le jeu mobile d'origine pointe vers un serveur self-host) | **APK signé, installable** |
+
+**Principe CLÉ-EN-MAIN (one-click), incontournable pour la distribution** (demande utilisateur, 2026-08-30) : quelle
+que soit la cible (serveur / port PC / patch APK), le résultat doit être **directement exécutable par un utilisateur
+lambda** — « il n'y a plus qu'à cliquer ». L'utilisateur fournit son APK **une fois**, choisit la cible, et le logiciel
+**assemble un PACKAGE AUTONOME** (tout le nécessaire réuni : binaires/jars + données + script ou exécutable de
+lancement), pas juste des artefacts épars dans un arbre de dev. **Zéro assemblage manuel, zéro dépendance à installer à
+la main** (le runtime requis — JRE embarqué/vérifié, `python3` pour le content-server, etc. — est fourni ou détecté et
+guidé). Corollaire d'implémentation : chaque cible de build (C2a-4 serveur, C2a-4b client) se termine par une **étape de
+PACKAGING** qui produit ce bundle lançable.
+
+**Hébergement CLOUD (distinct du self-host, guidé plutôt que one-click)** : héberger sur un cloud/VPS demande par nature
+**plus de manipulations côté utilisateur** (provisionner une machine, ouvrir les ports / DNS / TLS, adresse publique).
+Le launcher fournira donc un **flux GUIDÉ** (assistant pas-à-pas + génération du bundle serveur + script de déploiement),
+pas un simple bouton. Relève du **chantier F** (réseau réel, NAT/TLS, multi-région) + panneau opérateur (**chantier D**).
 
 Principes tenus :
 - **§4 / §7** : ces artefacts sont **régénérés par script** depuis l'APK, **jamais committés/distribués** (cf. `.gitignore`,
@@ -26,8 +41,9 @@ Principes tenus :
   `game/disney-heroes-12.1.0.apk` — numérotation interne/build distincte du numéro public). L'utilisateur fournit la dernière
   version publiée au moment de l'installation ; le pipeline s'y adapte (d'éventuels écarts de schéma `.tab`/bytecode sont traités
   comme des faits à corriger, §8, jamais contournés).
-- **Ergonomie cible (chantier C, launcher)** : un assistant unique « fournis ton APK → choisis (Port PC / Port Linux / Serveur)
-  → le reste est généré » (encapsule `decompile.sh` / `reframe` / `extract_game_data.sh` / build).
+- **Ergonomie cible (chantier C, launcher)** : un assistant unique « fournis ton APK → choisis (Port PC / Port Linux /
+  Serveur / [Patch APK ultérieur]) → le reste est généré **ET packagé en bundle lançable** » (encapsule `decompile.sh` /
+  `reframe` / `extract_game_data.sh` / build + **packaging clé-en-main**). Cf. le principe one-click ci-dessus.
 
 ## 2. Identité & login joueur : phrase de MOTS ALÉATOIRES (mnémonique type crypto)
 
