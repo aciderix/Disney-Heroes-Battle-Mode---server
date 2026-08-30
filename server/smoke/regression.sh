@@ -90,6 +90,7 @@ TESTS=(
   AuthServiceTest
   AuthFlowTest
   LauncherLoginTest
+  LauncherServersTest
 )
 
 echo "[reg] compilation (serveur + ${#TESTS[@]} tests) ..."

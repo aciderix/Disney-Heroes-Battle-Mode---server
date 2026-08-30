@@ -32,6 +32,7 @@ import java.util.regex.Pattern;
 public final class LauncherDaemon {
     private final HttpServer http;
     private final HttpClient client = HttpClient.newHttpClient();
+    private final LauncherConfig config = new LauncherConfig();
 
     /** @param port port local (0 = éphémère, choisi par l'OS). Lié à loopback seulement. */
     public LauncherDaemon(int port) throws IOException {
@@ -40,6 +41,9 @@ public final class LauncherDaemon {
         http.createContext("/identity/generate", this::generate);
         http.createContext("/identity/login", ex -> auth(ex, false));
         http.createContext("/identity/register", ex -> auth(ex, true));
+        http.createContext("/servers", this::servers);          // GET (liste) | POST (ajout)
+        http.createContext("/servers/remove", this::serversRemove);
+        http.createContext("/servers/ping", this::serversPing);
         http.setExecutor(null);
     }
 
@@ -88,6 +92,48 @@ public final class LauncherDaemon {
 
             send(ex, 200, "{\"ok\":true,\"userID\":" + id.userID + ",\"loginRequestID\":\"" + loginRequestID + "\"}");
         } catch (Exception e) { send(ex, 500, "{\"ok\":false,\"error\":\"" + e.getClass().getSimpleName() + "\"}"); }
+    }
+
+    /** GET /servers → liste des favoris (JSON array) ; POST /servers {name, host, [contentPort, gamePort, authPort]} → ajout. */
+    private void servers(HttpExchange ex) throws IOException {
+        try {
+            if ("GET".equals(ex.getRequestMethod())) { send(ex, 200, config.toJsonArray()); return; }
+            if (!post(ex)) return;
+            Map<String, String> f = form(ex);
+            LauncherConfig.Server s = config.add(f.getOrDefault("name", ""), f.getOrDefault("host", ""),
+                    intOr(f, "contentPort", 8080), intOr(f, "gamePort", 8081), intOr(f, "authPort", 8082));
+            send(ex, 200, s.toJson());
+        } catch (IllegalArgumentException e) { send(ex, 400, "{\"error\":\"" + e.getMessage() + "\"}"); }
+        catch (Exception e) { send(ex, 500, "{\"error\":\"" + e.getClass().getSimpleName() + "\"}"); }
+    }
+
+    /** POST /servers/remove {id} → retire un favori. */
+    private void serversRemove(HttpExchange ex) throws IOException {
+        if (!post(ex)) return;
+        try {
+            boolean removed = config.remove(form(ex).getOrDefault("id", ""));
+            send(ex, removed ? 200 : 404, "{\"ok\":" + removed + "}");
+        } catch (Exception e) { send(ex, 500, "{\"error\":\"" + e.getClass().getSimpleName() + "\"}"); }
+    }
+
+    /** POST /servers/ping {host, port} → teste l'accessibilité TCP + latence (ms). */
+    private void serversPing(HttpExchange ex) throws IOException {
+        if (!post(ex)) return;
+        Map<String, String> f = form(ex);
+        String host = f.getOrDefault("host", "");
+        int port = intOr(f, "port", 8081);
+        long t0 = System.nanoTime();
+        try (java.net.Socket sock = new java.net.Socket()) {
+            sock.connect(new InetSocketAddress(host, port), 2000);
+            long ms = (System.nanoTime() - t0) / 1_000_000L;
+            send(ex, 200, "{\"reachable\":true,\"latencyMs\":" + ms + "}");
+        } catch (Exception e) {
+            send(ex, 200, "{\"reachable\":false}");
+        }
+    }
+
+    private static int intOr(Map<String, String> f, String k, int def) {
+        try { return Integer.parseInt(f.getOrDefault(k, "").trim()); } catch (Exception e) { return def; }
     }
 
     private HttpResponse<String> remote(String url, String body) throws Exception {
