@@ -26,6 +26,7 @@ public final class SessionStore {
     private final SecureRandom rnd = new SecureRandom();
     private final Map<String, Entry> pending  = new ConcurrentHashMap<>();  // nonce (base64) → challenge en attente
     private final Map<String, Entry> sessions = new ConcurrentHashMap<>();  // loginRequestID → session authentifiée
+    private final Map<Long, Long>    authed   = new ConcurrentHashMap<>();  // userID → expiry (joueur récemment authentifié)
     private final LongSupplier clock;
 
     public SessionStore() { this(System::currentTimeMillis); }
@@ -83,7 +84,24 @@ public final class SessionStore {
         return p != null && p.userID == userID && clock.getAsLong() <= p.expiry;
     }
     private void bind(String loginRequestID, long userID) {
-        sessions.put(loginRequestID, new Entry(userID, clock.getAsLong() + SESSION_TTL_MS));
+        long exp = clock.getAsLong() + SESSION_TTL_MS;
+        sessions.put(loginRequestID, new Entry(userID, exp));
+        authed.put(userID, exp);   // marque le joueur « récemment authentifié » → autorise mintForUser (flux /login play)
+    }
+
+    /**
+     * Le serveur « imprime un billet » (loginRequestID frais, lié) pour un joueur RÉCEMMENT AUTHENTIFIÉ par
+     * défi-réponse — appelé au {@code /login} (par {@code content_server}) dans le flux « Jouer » strict. Le client
+     * de jeu recopie ce {@code requestID} dans son {@code ClientInfo}. Renvoie le loginRequestID, ou {@code null}
+     * si le joueur n'est pas (ou plus) authentifié.
+     */
+    public String mintForUser(long userID) {
+        Long exp = authed.get(userID);
+        long t = clock.getAsLong();
+        if (exp == null || t > exp) { authed.remove(userID); return null; }
+        String loginRequestID = java.util.UUID.randomUUID().toString();
+        sessions.put(loginRequestID, new Entry(userID, t + SESSION_TTL_MS));
+        return loginRequestID;
     }
     private static boolean empty(String s) { return s == null || s.isEmpty(); }
 
@@ -101,6 +119,7 @@ public final class SessionStore {
         long t = clock.getAsLong();
         pending.entrySet().removeIf(e -> t > e.getValue().expiry);
         sessions.entrySet().removeIf(e -> t > e.getValue().expiry);
+        authed.entrySet().removeIf(e -> t > e.getValue());
     }
 
     private static String b64(byte[] b) { return Base64.getEncoder().encodeToString(b); }

@@ -36,6 +36,7 @@ public final class AuthService {
         http.createContext("/auth/challenge", this::handleChallenge);
         http.createContext("/auth/verify", this::handleVerify);
         http.createContext("/auth/register", this::handleRegister);
+        http.createContext("/auth/mint", this::handleMint);
         http.setExecutor(null); // exécuteur par défaut (suffisant : handlers courts, non bloquants)
     }
 
@@ -79,6 +80,23 @@ public final class AuthService {
             boolean ok = sessions.registerAndBind(uid, lrid, pub, nonce, sig, store);
             send(ex, ok ? 200 : 401, ok ? "{\"ok\":true,\"userID\":" + uid + "}" : "{\"ok\":false}");
         } catch (Exception e) { send(ex, 400, "{\"error\":\"bad-request\"}"); }
+    }
+
+    /**
+     * {@code POST /auth/mint} — champ {@code userID}. Appelé par {@code content_server} au {@code /login} du client
+     * (flux « Jouer » strict) : si le joueur a été RÉCEMMENT AUTHENTIFIÉ par le launcher (défi-réponse), imprime un
+     * {@code loginRequestID} frais lié → {@code {"loginRequestID":"..."}} ; sinon 401. Endpoint LOCAL (le serveur de
+     * jeu et content_server tournent ensemble) — à ne pas exposer publiquement.
+     */
+    private void handleMint(HttpExchange ex) throws IOException {
+        if (!"POST".equals(ex.getRequestMethod())) { ex.sendResponseHeaders(405, -1); ex.close(); return; }
+        Map<String, String> f = form(ex);
+        try {
+            long uid = Long.parseLong(f.getOrDefault("userID", "0"));
+            String lrid = sessions.mintForUser(uid);
+            if (lrid != null) send(ex, 200, "{\"loginRequestID\":\"" + lrid + "\"}");
+            else send(ex, 401, "{\"error\":\"not-authenticated\"}");
+        } catch (RuntimeException e) { send(ex, 400, "{\"error\":\"bad-request\"}"); }
     }
 
     // ---- utilitaires HTTP ----
