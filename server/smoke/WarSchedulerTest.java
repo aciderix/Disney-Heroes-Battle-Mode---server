@@ -23,18 +23,19 @@ public final class WarSchedulerTest {
     return m;
   }
 
-  /** Une guilde inscrite en file, avec son chef enregistré (pour recevoir les boîtes). */
-  static ServerGuild seed(UserStore store, long userID, String name, int mmr, int teamLevel)
+  /** Une guilde inscrite en file, avec son chef enregistré (pour recevoir les boîtes). {@code now} = horloge de
+   *  test FIXE (déterminisme : sinon la position dans le mois change les bascules de saison — cf. main). */
+  static ServerGuild seed(UserStore store, long userID, String name, int mmr, int teamLevel, long now)
       throws Exception {
     ServerUser u = ServerUser.newPlayer(userID, 1);
     u.giveResource(ResourceType.GOLD, 5000);
     u.basicInfo().teamLevel = teamLevel;
     ServerGuild g = u.createGuild(mk(name), store.nextGuildID(1));
-    ServerWar.rollOverSeason(g, ServerWar.seasonIDAt(com.perblue.heroes.util.TimeUtil.serverTimeNow()), 0);
+    ServerWar.rollOverSeason(g, ServerWar.seasonIDAt(now), 0);
     g.warMMR = mmr;
     g.warPromotionMask = ServerWar.markLeagueReached(0, ServerWar.leagueForMMR(mmr));
     g.setWarQueueState(WarQueueState.QUEUED_SINGLE);
-    g.warQueuedTime = com.perblue.heroes.util.TimeUtil.serverTimeNow();
+    g.warQueuedTime = now;
     store.saveGuild(g);
     store.save(u);
     return g;
@@ -42,7 +43,13 @@ public final class WarSchedulerTest {
 
   public static void main(String[] argv) throws Exception {
     ServerContext.init();
-    long now = com.perblue.heroes.util.TimeUtil.serverTimeNow();
+    // Horloge de test DÉTERMINISTE : on ancre `now` au DÉBUT d'un mois (1ᵉʳ à RESET_HOUR) + 6 h, à partir d'un
+    // timestamp FIXE — surtout PAS l'horloge réelle. Les saisons de guerre sont MENSUELLES (1ᵉʳ du mois) ; avec
+    // l'horloge réelle, si le test tourne en fin de mois (ex. le 30), les ticks d'appariement franchissent le mois
+    // suivant et font basculer la saison PLUS TÔT que prévu → la bascule attendue à l'étape 6 ne se produit plus
+    // (échec non déterministe observé le 2026-08-30). Ancrer tôt dans un mois rend le scénario stable et reproductible.
+    long anchorSrc = 1_750_000_000_000L; // ~2025-06-15 (valeur fixe : le résultat ne dépend d'aucune date réelle)
+    long now = ServerWar.seasonStartTime(ServerWar.seasonIDAt(anchorSrc)) + 6L * 3600_000L;
     java.io.File tmp = java.io.File.createTempFile("dh-war-sched", ".db");
     tmp.deleteOnExit();
 
@@ -63,9 +70,9 @@ public final class WarSchedulerTest {
       // ---------------------------------------------------------------------------------------
       // 2. APPARIEMENT — 3 guildes inscrites → 1 paire + 1 BYE, une seule fois par fenêtre.
       // ---------------------------------------------------------------------------------------
-      ServerGuild g1 = seed(store, 1L, "Alpha", 1000, 300);
-      ServerGuild g2 = seed(store, 2L, "Bravo", 990, 300);
-      ServerGuild g3 = seed(store, 3L, "Charlie", 500, 300);
+      ServerGuild g1 = seed(store, 1L, "Alpha", 1000, 300, now);
+      ServerGuild g2 = seed(store, 2L, "Bravo", 990, 300, now);
+      ServerGuild g3 = seed(store, 3L, "Charlie", 500, 300, now);
 
       // Un tour AVANT l'heure prévue n'apparie pas : l'appariement suit un CALENDRIER, il ne se déclenche
       // pas au premier tour venu. (Corollaire opérationnel : un shard neuf attend la prochaine occurrence
