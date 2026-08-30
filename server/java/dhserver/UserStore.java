@@ -90,6 +90,43 @@ public final class UserStore implements AutoCloseable {
       s.execute("CREATE TABLE IF NOT EXISTS user_war_boxes ("
           + "shardID INTEGER NOT NULL, userID INTEGER NOT NULL, data BLOB NOT NULL, "
           + "updatedAt INTEGER NOT NULL, PRIMARY KEY (shardID, userID))");
+      // IDENTITÉ MNÉMONIQUE (chantier C, docs/DISTRIBUTION.md §2) : le VÉRIFIEUR d'un compte = sa clé publique
+      // Ed25519 (encodage X.509). GLOBAL (pas par-shard) : l'identité est la même sur toutes les instances (le
+      // joueur restaure son compte partout avec sa phrase). On ne stocke JAMAIS la phrase — seulement la clé
+      // publique, qui suffit à vérifier une signature de challenge (auth défi-réponse asymétrique).
+      s.execute("CREATE TABLE IF NOT EXISTS accounts ("
+          + "userID INTEGER PRIMARY KEY, pubKey BLOB NOT NULL, createdAt INTEGER NOT NULL)");
+    }
+  }
+
+  /**
+   * IDENTITÉ MNÉMONIQUE (chantier C1b) — enregistre un compte à sa création : {@code userID → clé publique}.
+   *
+   * <p>Idempotent & sûr : si le {@code userID} existe déjà avec la MÊME clé publique → no-op (renvoie false = pas
+   * de nouvelle création). S'il existe avec une clé DIFFÉRENTE (collision de userID sur 64 bits ⇒ deux phrases
+   * distinctes visant le même id — astronomiquement rare, mais on ne l'accepte JAMAIS silencieusement) → lève.
+   *
+   * @return true si le compte vient d'être créé, false s'il existait déjà (même clé).
+   */
+  public synchronized boolean registerAccount(long userID, byte[] pubKey) throws SQLException {
+    byte[] existing = lookupPubKey(userID);
+    if (existing != null) {
+      if (!java.util.Arrays.equals(existing, pubKey))
+        throw new SQLException("collision de userID " + userID + " : clé publique différente déjà enregistrée");
+      return false;
+    }
+    try (PreparedStatement p = conn.prepareStatement("INSERT INTO accounts (userID, pubKey, createdAt) VALUES (?,?,?)")) {
+      p.setLong(1, userID); p.setBytes(2, pubKey); p.setLong(3, System.currentTimeMillis());
+      p.executeUpdate();
+    }
+    return true;
+  }
+
+  /** IDENTITÉ MNÉMONIQUE (chantier C1b) — clé publique (vérifieur) d'un compte, ou {@code null} si inconnu. */
+  public synchronized byte[] lookupPubKey(long userID) throws SQLException {
+    try (PreparedStatement p = conn.prepareStatement("SELECT pubKey FROM accounts WHERE userID = ?")) {
+      p.setLong(1, userID);
+      try (java.sql.ResultSet rs = p.executeQuery()) { return rs.next() ? rs.getBytes(1) : null; }
     }
   }
 

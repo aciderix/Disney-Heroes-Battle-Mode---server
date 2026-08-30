@@ -85,6 +85,7 @@ TESTS=(
   CodebaseTest
   ReleaseOffsetTest
   MnemonicIdentityTest
+  AccountStoreTest
 )
 
 echo "[reg] compilation (serveur + ${#TESTS[@]} tests) ..."
