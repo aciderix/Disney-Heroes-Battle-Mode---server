@@ -28,6 +28,7 @@ public final class BuildManager {
     private volatile String step = "";
     private volatile String outDir = "";
     private volatile Target target = Target.SERVER;
+    private volatile boolean doPackage = true;
     private final StringBuilder log = new StringBuilder();
     private Thread worker;
 
@@ -40,8 +41,14 @@ public final class BuildManager {
      * incréments à venir (refus HONNÊTE, pas de faux succès §2).
      */
     public synchronized String start(String apkPath, String out, Target tgt, boolean full) {
+        return start(apkPath, out, tgt, full, true);
+    }
+
+    /** @param pkg si {@code true} (défaut), assemble le BUNDLE autonome (packaging) ; {@code false} = données seules. */
+    public synchronized String start(String apkPath, String out, Target tgt, boolean full, boolean pkg) {
         if (state == State.RUNNING) return status();
         this.target = tgt == null ? Target.SERVER : tgt;
+        this.doPackage = pkg;
         synchronized (log) { log.setLength(0); }
         File apk = new File(apkPath == null ? "" : apkPath);
         if (apkPath == null || apkPath.isEmpty() || !apk.isFile()) {
@@ -78,6 +85,8 @@ public final class BuildManager {
                       + "java -cp \"$CLS:$ASM:" + projectDir + "/libs/game.jar\" ReframeJar "
                       + projectDir + "/libs/game.jar " + projectDir + "/libs/game-framed.jar"}, null, null);
             }
+            // 4) PACKAGING clé-en-main : assemble un serveur AUTONOME lançable hors dev (C2a-4-pkg).
+            if (doPackage) packageServer(new File(out));
             step = "done"; state = State.DONE;
         } catch (Exception e) {
             append("ÉCHEC (" + step + "): " + e.getMessage());
@@ -86,6 +95,100 @@ public final class BuildManager {
     }
 
     private String tool(String name) { return new File(projectDir, "tools/" + name).getPath(); }
+
+    /** Jars runtime du serveur (mêmes que le classpath de run-online.sh, hors classes serveur compilées). */
+    private static final String[] RUNTIME_JARS = {
+        "game-framed.jar", "commons-logging.jar", "sqlite-jdbc.jar", "slf4j-api.jar", "joda-time.jar"
+    };
+
+    /**
+     * PACKAGING (C2a-4-pkg) — assemble un BUNDLE serveur AUTONOME dans {@code out} : {@code lib/} (jars runtime +
+     * {@code dhserver.jar} = classes serveur compilées), {@code content_server.py}, {@code game-data/} (déjà extrait),
+     * {@code run.sh}/{@code run.bat}. Lançable hors de l'arbre de dev (clé-en-main, §DISTRIBUTION).
+     */
+    private void packageServer(File out) throws Exception {
+        step = "package"; append("=== étape package (bundle serveur autonome) ===");
+        File lib = new File(out, "lib"); lib.mkdirs();
+        new File(out, "data").mkdirs();
+        File libsSrc = new File(projectDir, "libs");
+
+        // 1) jars runtime
+        for (String j : RUNTIME_JARS) {
+            File src = new File(libsSrc, j);
+            if (!src.isFile()) throw new IllegalStateException("jar runtime absent: " + src
+                    + " (lancer un build 'full' pour générer game-framed.jar, ou vérifier libs/)");
+            java.nio.file.Files.copy(src.toPath(), new File(lib, j).toPath(),
+                    java.nio.file.StandardCopyOption.REPLACE_EXISTING);
+        }
+        append("jars runtime copiés (" + RUNTIME_JARS.length + ")");
+
+        // 2) compile les classes serveur (dhserver + dhlauncher) → lib/dhserver.jar
+        File cls = new java.io.File(out, "_classes"); cls.mkdirs();
+        String rtCp = String.join(File.pathSeparator, java.util.Arrays.stream(RUNTIME_JARS)
+                .map(j -> new File(lib, j).getPath()).toArray(String[]::new));
+        java.util.List<String> srcFiles = new java.util.ArrayList<>();
+        java.nio.file.Files.walk(new File(projectDir, "server/java").toPath())
+                .filter(p -> p.toString().endsWith(".java"))
+                .forEach(p -> srcFiles.add(p.toString()));
+        java.util.List<String> javac = new java.util.ArrayList<>(java.util.List.of(
+                javaBin("javac"), "-cp", rtCp, "-d", cls.getPath()));
+        javac.addAll(srcFiles);
+        runStep("compile-server", javac.toArray(new String[0]), null, null);
+        runStep("jar-server", new String[]{ javaBin("jar"), "cf", new File(lib, "dhserver.jar").getPath(),
+                "-C", cls.getPath(), "." }, null, null);
+        deleteRec(cls);
+
+        // 3) content_server.py
+        java.nio.file.Files.copy(new File(projectDir, "server/content_server.py").toPath(),
+                new File(out, "content_server.py").toPath(), java.nio.file.StandardCopyOption.REPLACE_EXISTING);
+
+        // 4) scripts de lancement (bundle-relatifs, self-contained)
+        writeExec(new File(out, "run.sh"), RUN_SH);
+        writeText(new File(out, "run.bat"), RUN_BAT);
+        append("bundle prêt : " + out.getPath() + " (run.sh / run.bat)");
+    }
+
+    private static String javaBin(String tool) {
+        String home = System.getProperty("java.home");
+        File f = new File(home, "bin/" + tool);
+        return f.isFile() ? f.getPath() : tool;   // repli PATH
+    }
+
+    private static void writeText(File f, String s) throws java.io.IOException {
+        java.nio.file.Files.write(f.toPath(), s.getBytes(StandardCharsets.UTF_8));
+    }
+    private static void writeExec(File f, String s) throws java.io.IOException {
+        writeText(f, s);
+        f.setExecutable(true, false);
+    }
+    private static void deleteRec(File f) {
+        File[] k = f.listFiles(); if (k != null) for (File c : k) deleteRec(c); f.delete();
+    }
+
+    private static final String RUN_SH =
+        "#!/usr/bin/env bash\n"
+      + "# Serveur Disney Heroes (self-host) — bundle autonome généré par le launcher. Lançable hors dev.\n"
+      + "set -uo pipefail\n"
+      + "DIR=\"$(cd \"$(dirname \"$0\")\" && pwd)\"\n"
+      + "CONTENT_PORT=\"${DH_CONTENT_PORT:-8080}\"; GAME_PORT=\"${DH_GAME_PORT:-8081}\"; AUTH_PORT=\"${DH_AUTH_PORT:-8082}\"\n"
+      + "mkdir -p \"$DIR/data\"\n"
+      + "python3 \"$DIR/content_server.py\" --port \"$CONTENT_PORT\" --rewrite-host \"127.0.0.1:$CONTENT_PORT\" \\\n"
+      + "        --game-server \"127.0.0.1:$GAME_PORT\" & CPID=$!\n"
+      + "trap 'kill $CPID 2>/dev/null' EXIT\n"
+      + "exec java -XX:TieredStopAtLevel=1 ${DH_SERVER_OPTS:-} -Ddh.db=\"$DIR/data/dh-server.db\" \\\n"
+      + "     -Ddh.stats=\"$DIR/game-data/stats\" -Ddh.auth.port=\"$AUTH_PORT\" \\\n"
+      + "     -cp \"$DIR/lib/*\" dhserver.LoginServer \"$GAME_PORT\"\n";
+
+    private static final String RUN_BAT =
+        "@echo off\r\n"
+      + "REM Serveur Disney Heroes (self-host) — bundle autonome. Lancable hors dev.\r\n"
+      + "set DIR=%~dp0\r\n"
+      + "if \"%DH_CONTENT_PORT%\"==\"\" set DH_CONTENT_PORT=8080\r\n"
+      + "if \"%DH_GAME_PORT%\"==\"\" set DH_GAME_PORT=8081\r\n"
+      + "if \"%DH_AUTH_PORT%\"==\"\" set DH_AUTH_PORT=8082\r\n"
+      + "if not exist \"%DIR%data\" mkdir \"%DIR%data\"\r\n"
+      + "start \"dh-content\" python \"%DIR%content_server.py\" --port %DH_CONTENT_PORT% --rewrite-host 127.0.0.1:%DH_CONTENT_PORT% --game-server 127.0.0.1:%DH_GAME_PORT%\r\n"
+      + "java -XX:TieredStopAtLevel=1 -Ddh.db=\"%DIR%data\\dh-server.db\" -Ddh.stats=\"%DIR%game-data\\stats\" -Ddh.auth.port=%DH_AUTH_PORT% -cp \"%DIR%lib\\*\" dhserver.LoginServer %DH_GAME_PORT%\r\n";
 
     private void runStep(String name, String[] cmd, String envKey, String envVal) throws Exception {
         step = name; append("=== étape " + name + " ===");

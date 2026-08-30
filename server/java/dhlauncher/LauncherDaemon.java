@@ -169,7 +169,8 @@ public final class LauncherDaemon {
         BuildManager.Target tgt;
         try { tgt = BuildManager.Target.valueOf(f.getOrDefault("target", "server").trim().toUpperCase()); }
         catch (Exception e) { send(ex, 400, "{\"error\":\"target invalide (server|client|apk)\"}"); return; }
-        send(ex, 200, build.start(f.getOrDefault("apkPath", ""), f.getOrDefault("outDir", ""), tgt, full));
+        boolean pkg = !("false".equalsIgnoreCase(f.getOrDefault("pkg", "true")) || "0".equals(f.getOrDefault("pkg", "")));
+        send(ex, 200, build.start(f.getOrDefault("apkPath", ""), f.getOrDefault("outDir", ""), tgt, full, pkg));
     }
 
     /** GET /build/status → état du build (state, step, outDir, tail du log). */

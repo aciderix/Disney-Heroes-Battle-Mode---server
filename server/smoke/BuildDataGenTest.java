@@ -35,8 +35,9 @@ public final class BuildDataGenTest {
             String cl = post(http, base + "/build/start", "apkPath=" + enc(apk) + "&target=client");
             ok(cl.contains("\"state\":\"FAILED\"") && cl.contains("venir"), "cible client → refus honnête (incrément à venir)");
 
-            // cible SERVER, extraction réelle vers le dossier de sortie
-            String st = post(http, base + "/build/start", "apkPath=" + enc(apk) + "&target=server&outDir=" + enc(out.getPath()));
+            // cible SERVER, extraction réelle vers le dossier de sortie (pkg=false = données seules, rapide ;
+            // le packaging complet du bundle est vérifié par ServerBundleTest, qui LANCE le bundle hors dev).
+            String st = post(http, base + "/build/start", "apkPath=" + enc(apk) + "&target=server&pkg=false&outDir=" + enc(out.getPath()));
             ok(st.contains("\"target\":\"SERVER\""), "start SERVER accepté");
 
             boolean done = false;

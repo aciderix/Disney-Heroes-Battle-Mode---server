@@ -94,6 +94,7 @@ TESTS=(
   AuthMintTest
   HostLifecycleTest
   BuildDataGenTest
+  ServerBundleTest
 )
 
 echo "[reg] compilation (serveur + ${#TESTS[@]} tests) ..."

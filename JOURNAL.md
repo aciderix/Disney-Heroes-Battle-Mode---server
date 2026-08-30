@@ -1,5 +1,31 @@
 # JOURNAL — journal détaillé des modifications
 
+## 2026-08-30 (g196) — Phase 2 C2a-4-pkg : PACKAGING serveur AUTONOME (clé-en-main) — lancé HORS dev 🟢
+
+Consigne util. (ajoutée au plan g195bis) : tout ce qu'on génère depuis l'APK doit être **clé-en-main** (bundle
+lançable par un lambda, « plus qu'à cliquer »). Cet incrément livre le **packaging du serveur autonome**.
+
+**`BuildManager.packageServer`** (étape `package` de la cible SERVER, glue §3) : assemble dans le dossier de sortie
+un **BUNDLE serveur self-contained** :
+- `lib/` = jars runtime (`game-framed`, `commons-logging`, `sqlite-jdbc`, `slf4j-api`, `joda-time`) **+ `dhserver.jar`**
+  (classes `server/java` compilées à la volée : `javac` → `jar`) ;
+- `content_server.py` (login/contenu HTTP) ;
+- `game-data/` (déjà extrait de l'APK) ;
+- **`run.sh` / `run.bat`** self-contained (chemins relatifs au bundle : lancent `content_server.py` + `java -cp
+  "lib/*" dhserver.LoginServer <port>`, ports surchargeables `DH_{CONTENT,GAME,AUTH}_PORT`, DB dans `<bundle>/data`).
+Flag `pkg` (défaut vrai) : `pkg=false` = données seules (chemin léger pour les checks API).
+
+**`ServerBundleTest`** (7/7, isolé) : génère le bundle → vérifie la structure (`lib/dhserver.jar`, `lib/game-framed.
+jar`, `content_server.py`, `run.sh`, `game-data/stats` peuplé) → **COPIE le bundle hors de l'arbre de dev** → le
+**LANCE via `run.sh`** → **le port de jeu écoute** (preuve : serveur autonome, self-contained). `BuildDataGenTest`
+repasse en `pkg=false` (rapide, checks API). Régression **169/169**.
+
+⇒ « générer → héberger → jouer » devient **clé-en-main** : le serveur généré est un **bundle lançable seul**, plus
+seulement des artefacts dans l'arbre de dev. Fichiers : `dhlauncher/BuildManager.java` (packageServer + run.sh/.bat +
+flag pkg), `LauncherDaemon.java` (param `pkg`), `server/smoke/ServerBundleTest.java` (nouveau), `BuildDataGenTest.java`,
+`regression.sh`, docs. **SUITE = C2a-4b (build CLIENT PC Win/Linux packagé), patch APK (ultérieur) ; puis C2b (front).**
+(Le serveur du bundle = même `LoginServer` déjà vérifié EN JEU ; run « client sur bundle » dispo à la demande.)
+
 ## 2026-08-30 (g195) — Phase 2 C2a-4 : GÉNÉRATION depuis l'APK — cible SERVEUR 🟢 (client/APK = incréments à venir)
 
 Précision util. : le launcher devra proposer **3 cibles de build** depuis l'APK fourni — **build PC** (Windows ou
