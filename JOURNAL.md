@@ -1,5 +1,35 @@
 # JOURNAL — journal détaillé des modifications
 
+## 2026-08-30 (g194) — Phase 2 C2a-3 : HÉBERGEMENT LOCAL (launcher-core /host/start,stop,status) 🟢
+
+Décision util. (périmètre) : C2a-3 = **hébergement local MINIMAL** (auto-héberger sur sa propre machine) — le
+panneau opérateur complet (ère de contenu, events, guerre, modération, monitoring) reste **chantier D** ; le cloud
++ sécurité réseau internet reste **chantier F**. (Les outils admin `Admin*`/`AdminRelease` existent déjà en CLI ;
+il leur manquera juste un panneau = D.)
+
+**`dhlauncher.HostManager`** (glue §3, aucune règle réécrite) : gère le CYCLE DE VIE d'un serveur de jeu hébergé
+sur la machine du joueur, en reproduisant EXACTEMENT le lancement de `desktop-port/run-online.sh` :
+- serveur de jeu `dhserver.LoginServer <gamePort>` (+ `AuthService` sur `-Ddh.auth.port`, strict via `-Ddh.auth=on`)
+  lancé en process (classpath = celui du daemon, qui embarque déjà dhserver + jars du jeu) ;
+- `content_server.py` (login/contenu HTTP) en process, avec `DH_AUTH_URL`/`DH_MINT_USERID_FILE` en mode strict ;
+- sorties redirigées vers `server/data/host-server.log` / `host-content.log`.
+Idempotent (re-start = renvoie l'état), `stop` = `destroy` puis `destroyForcibly` après 2 s.
+
+**`LauncherDaemon`** (endpoints, lié `127.0.0.1` uniquement) : `POST /host/start {contentPort,gamePort,authPort,
+strict}`, `POST /host/stop`, `GET /host/status` (running, `gamePortListening`, ports, PIDs, uptime).
+
+**`HostLifecycleTest`** (7/7, intégration RÉELLE, isolé) : status initial arrêté → start → poll status jusqu'à
+**RUNNING + port de jeu en écoute** → **connexion TCP directe au port de jeu OK** → start idempotent → stop →
+**arrêté + port fermé**. Ports hauts (18080/1/2) pour éviter les collisions.
+
+⇒ le launcher-core sait **héberger/arrêter/suivre un serveur LOCAL**. Le serveur hébergé est **identique** à celui
+de `run-online.sh` (déjà vérifié EN JEU de bout en bout tout au long du projet). Régression **167/167** (nouveau test
+isolé ajouté). Fichiers : `server/java/dhlauncher/HostManager.java` (nouveau), `LauncherDaemon.java` (endpoints
+`/host/*`), `server/smoke/HostLifecycleTest.java` (nouveau), `regression.sh`, `docs/LAUNCHER.md`,
+`docs/PHASE2_TRACKING.md`, `MEMORY.md`, `JOURNAL.md`. **SUITE = C2a-4 (build serveur/port depuis l'APK), puis C2b
+(front Tauri+React, 6 écrans) + vérif EN JEU strict finale.** (En jeu « client sur serveur hébergé par le daemon » :
+même pile que run-online — vérif dédiée dispo à la demande.)
+
 ## 2026-08-30 (g193) — Mode STRICT pour TOUS (neuf + avancé) : LOGIN UNIQUE mnémonique → intro OU reprise
 
 Question utilisateur : le mode strict doit valoir autant pour un NOUVEAU joueur que pour un joueur AVANCÉ. Le hook

@@ -33,6 +33,7 @@ public final class LauncherDaemon {
     private final HttpServer http;
     private final HttpClient client = HttpClient.newHttpClient();
     private final LauncherConfig config = new LauncherConfig();
+    private final HostManager host = new HostManager(System.getProperty("dh.launcher.projectdir", System.getProperty("user.dir", ".")));
 
     /** @param port port local (0 = éphémère, choisi par l'OS). Lié à loopback seulement. */
     public LauncherDaemon(int port) throws IOException {
@@ -44,6 +45,9 @@ public final class LauncherDaemon {
         http.createContext("/servers", this::servers);          // GET (liste) | POST (ajout)
         http.createContext("/servers/remove", this::serversRemove);
         http.createContext("/servers/ping", this::serversPing);
+        http.createContext("/host/start", this::hostStart);     // C2a-3 : héberger en local
+        http.createContext("/host/stop", this::hostStop);
+        http.createContext("/host/status", this::hostStatus);
         http.setExecutor(null);
     }
 
@@ -130,6 +134,27 @@ public final class LauncherDaemon {
         } catch (Exception e) {
             send(ex, 200, "{\"reachable\":false}");
         }
+    }
+
+    /** POST /host/start {[contentPort=8080], [gamePort=8081], [authPort=8082], [strict=false]} → héberge en local. */
+    private void hostStart(HttpExchange ex) throws IOException {
+        if (!post(ex)) return;
+        Map<String, String> f = form(ex);
+        boolean strict = "true".equalsIgnoreCase(f.getOrDefault("strict", "false")) || "1".equals(f.getOrDefault("strict", ""));
+        try {
+            send(ex, 200, host.start(intOr(f, "contentPort", 8080), intOr(f, "gamePort", 8081), intOr(f, "authPort", 8082), strict));
+        } catch (Exception e) { send(ex, 500, "{\"error\":\"" + e.getClass().getSimpleName() + "\"}"); }
+    }
+
+    /** POST /host/stop → arrête le serveur local hébergé. */
+    private void hostStop(HttpExchange ex) throws IOException {
+        if (!post(ex)) return;
+        send(ex, 200, host.stop());
+    }
+
+    /** GET /host/status → état du serveur local hébergé (running, écoute, ports, PIDs, uptime). */
+    private void hostStatus(HttpExchange ex) throws IOException {
+        send(ex, 200, host.status());
     }
 
     private static int intOr(Map<String, String> f, String k, int def) {
