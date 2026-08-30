@@ -65,5 +65,8 @@ Pourquoi (ce que ça « cadre ») :
   `loginRequestID→userID`) + `AuthService` HTTP (`:8082`, `/auth/challenge` + `/auth/verify`) + gate `LoginServer`
   (mode STRICT `-Ddh.auth=on`, **défaut permissif** = compat DEV) — `SessionAuthTest` (12) + `AuthServiceTest` (6,
   round-trip HTTP réel) ; boot vérifié (AuthService démarre, client boote en permissif, 0 régression).
-- **Reste** : **C1d** (endpoint register + flux create/restore de bout en bout, puis EN JEU en mode strict), puis le
-  launcher (chantier C2, cf. `docs/LAUNCHER.md`).
+- **C1d ✅ (headless)** : `/auth/register` (preuve de possession : userID doit dériver de la clé fournie + signature)
+  + flux **create/restore** de bout en bout (`AuthFlowTest`, 9 assert., HTTP réel — création, restauration par la
+  seule phrase [même userID déterministe], gardes de sécurité). La **vérif EN JEU en mode strict** est **gated sur le
+  launcher-core** (le client de jeu ne fait pas le défi-réponse — c'est le launcher qui l'orchestre).
+- **Reste** : le launcher (chantier C2 : core Java d'abord, cf. `docs/LAUNCHER.md`), qui débloquera la vérif en jeu.

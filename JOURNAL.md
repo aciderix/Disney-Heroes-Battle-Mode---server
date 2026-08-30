@@ -1,5 +1,29 @@
 # JOURNAL — journal détaillé des modifications
 
+## 2026-08-30 (g189) — Phase 2 C1d : flux create/restore de compte de bout en bout ✅ (headless)
+
+Fin du login mnémonique headless (C1a→C1d).
+
+- **`SessionStore.registerAndBind`** (CRÉATION d'un compte, clé FOURNIE) : exige (a) `userID == userIdOf(pubKey)`
+  (le userID DÉRIVE de la clé → interdit de réclamer un userID arbitraire) et (b) signature du nonce valide avec cette
+  clé (preuve de possession) ; puis `UserStore.registerAccount` (idempotent) + liaison de session. Nonce usage unique.
+  Refacto : `verifyAndBind` (login, clé stockée) + `registerAndBind` partagent `consumeNonce`/`bind`.
+- **`AuthService` `/auth/register`** : `POST {userID, loginRequestID, pubKey, nonce, signature}` (base64url) → 200
+  `{ok,userID}` / 401.
+- **`AuthFlowTest`** (9 assert., **round-trip HTTP réel**) : (1) création d'un compte depuis une phrase (challenge →
+  sign → register) → compte enregistré + session ; (2) **RESTAURATION** sur un « client neuf » : re-dériver la MÊME
+  phrase → **même userID déterministe** → login (`/auth/verify`) → session (⇒ mêmes données de compte, car
+  `UserStore.users` est clé par userID) ; (3) sécurité : réclamer un userID qui ne dérive pas de la clé → refus ;
+  (4) re-register même phrase → 200 (idempotent). Régression **163/163**.
+
+**Vérif EN JEU en mode strict = gated sur le launcher-core** : le client de jeu ne fait pas le défi-réponse tout seul,
+c'est le launcher qui l'orchestre (challenge → sign avec la clé dérivée de la phrase → verify → puis lance le client
+avec le `loginRequestID` authentifié). ⇒ ordre : **launcher-core (début C2) → boucler la vérif en jeu strict de C1d**.
+
+**Fichiers** : `SessionStore.java` (registerAndBind + refacto), `AuthService.java` (/auth/register),
+`AuthFlowTest.java`, `regression.sh`, docs (DISTRIBUTION/PHASE2_TRACKING/MEMORY/JOURNAL). **SUITE = C2 launcher (core
+Java d'abord, cf. `docs/LAUNCHER.md`).**
+
 ## 2026-08-30 (g188) — Phase 2 chantier C : login mnémonique C1a→C1c ✅ + régression 162/162 déterministe
 
 Démarrage du chantier C (front joueur). Décisions figées AVEC l'utilisateur : login « seed phrase » type wallet crypto

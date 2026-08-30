@@ -35,6 +35,7 @@ public final class AuthService {
         http = HttpServer.create(new InetSocketAddress(port), 0);
         http.createContext("/auth/challenge", this::handleChallenge);
         http.createContext("/auth/verify", this::handleVerify);
+        http.createContext("/auth/register", this::handleRegister);
         http.setExecutor(null); // exécuteur par défaut (suffisant : handlers courts, non bloquants)
     }
 
@@ -63,6 +64,20 @@ public final class AuthService {
             byte[] sig = unb64(f.getOrDefault("signature", ""));
             boolean ok = sessions.verifyAndBind(uid, lrid, nonce, sig, store);
             send(ex, ok ? 200 : 401, ok ? "{\"ok\":true}" : "{\"ok\":false}");
+        } catch (Exception e) { send(ex, 400, "{\"error\":\"bad-request\"}"); }
+    }
+
+    private void handleRegister(HttpExchange ex) throws IOException {
+        if (!"POST".equals(ex.getRequestMethod())) { ex.sendResponseHeaders(405, -1); ex.close(); return; }
+        Map<String, String> f = form(ex);
+        try {
+            long uid = Long.parseLong(f.getOrDefault("userID", "0"));
+            String lrid = f.getOrDefault("loginRequestID", "");
+            byte[] pub = unb64(f.getOrDefault("pubKey", ""));
+            byte[] nonce = unb64(f.getOrDefault("nonce", ""));
+            byte[] sig = unb64(f.getOrDefault("signature", ""));
+            boolean ok = sessions.registerAndBind(uid, lrid, pub, nonce, sig, store);
+            send(ex, ok ? 200 : 401, ok ? "{\"ok\":true,\"userID\":" + uid + "}" : "{\"ok\":false}");
         } catch (Exception e) { send(ex, 400, "{\"error\":\"bad-request\"}"); }
     }
 

@@ -308,10 +308,10 @@ Archi & contenu figés : `docs/LAUNCHER.md` (Tauri+React → launcher-core Java)
 | **C1a** identité (`MnemonicIdentity` : BIP39 EN, 8 mots, Ed25519 déterministe, sign/verify) | 🟢 headless | `MnemonicIdentityTest` (13 assert.) |
 | **C1b** vérifieur serveur (`UserStore.accounts` : userID→clé publique) | 🟢 headless | `AccountStoreTest` (12 assert.) |
 | **C1c** défi-réponse (`SessionStore` + `AuthService` HTTP :8082 + gate `LoginServer`, mode strict `-Ddh.auth=on`, défaut permissif) | 🟢 headless + boot vérifié | `SessionAuthTest` (12), `AuthServiceTest` (6, HTTP round-trip) ; serveur boote AuthService, client boote en permissif (0 régression) |
-| **C1d** create/restore compte de bout en bout | ⬜ | à faire (register + flux, puis EN JEU strict) |
-| **C2** launcher Tauri/React (6 écrans : Setup APK, Compte, Serveurs, Jouer, Réglages, Hébergement) | ⬜ | après C1d ; launcher-core Java d'abord |
+| **C1d** create/restore compte de bout en bout (`/auth/register` + flux) | 🟢 headless | `AuthFlowTest` (9 assert., HTTP réel) : création → restauration (même phrase→même userID) → sécurité (userID doit dériver de la clé ; register idempotent). **Vérif EN JEU strict = gated sur launcher-core** (le client de jeu ne fait pas le défi-réponse, c'est le launcher). |
+| **C2** launcher = **core Java** (backend : identité/process/APK/serveurs/login) puis **Tauri+React** (front, 6 écrans) | ⬜ | launcher-core d'abord → débloque la vérif EN JEU strict de C1d |
 
-Régression : **162/162 verte** (les 5 tests d'auth ajoutés + `WarSchedulerTest` rendu déterministe).
+Régression : **163/163 verte** (6 tests d'auth + `WarSchedulerTest` rendu déterministe).
 
 ---
 
