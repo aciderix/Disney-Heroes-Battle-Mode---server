@@ -182,41 +182,90 @@ class Handler(BaseHTTPRequestHandler):
         # Le jeu attend un manifeste texte ; type volontairement simple.
         self._send(200, "text/plain; charset=utf-8", body, head_only)
 
+    # verrou par-nom : si deux clients demandent le même zip en même temps, un seul le télécharge.
+    _dl_locks = {}
+    _dl_locks_guard = None
+
     def _serve_archive(self, name: str, head_only: bool):
+        rng = self.headers.get("Range")
         # 1) copie locale prioritaire (hébergeur autonome, sans dépendre d'archive.org)
         if self.cfg.cache_dir:
             local = os.path.join(self.cfg.cache_dir, name)
             if os.path.isfile(local):
-                size = os.path.getsize(local)
-                self.send_response(200)
-                self.send_header("Content-Type", "application/zip")
-                self.send_header("Content-Length", str(size))
-                self.send_header("Accept-Ranges", "bytes")
-                self.end_headers()
-                if not head_only:
-                    with open(local, "rb") as f:
-                        while True:
-                            chunk = f.read(1 << 16)
-                            if not chunk:
-                                break
-                            self.wfile.write(chunk)
-                return
-        # 2) sinon RELAIS depuis l'archive publique (archive.org). On NE redirige PAS : le CLIENT
-        #    (java.net du jeu) n'a pas de proxy sortant et ne peut pas joindre archive.org. Le serveur,
-        #    lui, le peut (via curl + le proxy sortant configuré) → on récupère côté serveur et on
-        #    streame au client, qui ne parle qu'à 127.0.0.1. Range transmis (reprise/segmentation).
-        target = f"{self.cfg.archive_base}/{name}"
-        rng = self.headers.get("Range")
-        cmd = ["curl", "-sS", "-L", "--fail", "--max-time", "1800", target]
+                return self._serve_local_file(local, head_only, rng)
+            # 2) PAS en cache → on TÉLÉCHARGE LE FICHIER COMPLET côté serveur (retries + reprise), on l'ENREGISTRE
+            #    dans le cache, PUIS on le sert. On ne streame JAMAIS un flux partiel : une coupure intermittente
+            #    d'archive.org donnerait sinon un zip TRONQUÉ au client (« Could not read local file header »).
+            #    Bénéfice turnkey : le cache = miroir local qui se construit → clients suivants servis en local.
+            import subprocess, threading
+            if Handler._dl_locks_guard is None:
+                Handler._dl_locks_guard = threading.Lock()
+            with Handler._dl_locks_guard:
+                lock = Handler._dl_locks.setdefault(name, threading.Lock())
+            with lock:
+                if not os.path.isfile(local):  # re-check : un autre thread a pu le télécharger pendant l'attente
+                    os.makedirs(self.cfg.cache_dir, exist_ok=True)
+                    part = local + ".part"
+                    target = f"{self.cfg.archive_base}/{name}"
+                    # -L suit la redirection archive.org ; --retry + -C - = robuste aux coupures intermittentes.
+                    cmd = ["curl", "-sS", "-L", "--fail", "--retry", "6", "--retry-delay", "2",
+                           "-C", "-", "--max-time", "3600", "-o", part, target]
+                    sys.stderr.write("[content] cache MISS %s → téléchargement archive.org (retries)…\n" % name)
+                    rc = subprocess.call(cmd)
+                    if rc != 0 or not os.path.isfile(part) or os.path.getsize(part) == 0:
+                        sys.stderr.write("[content] échec téléchargement %s (curl rc=%s)\n" % (name, rc))
+                        if os.path.isfile(part):
+                            try: os.remove(part)
+                            except OSError: pass
+                        return self._send(502, "text/plain", b"archive fetch failed\n", head_only)
+                    os.replace(part, local)  # atomique → jamais de fichier partiel visible sous son nom final
+                    sys.stderr.write("[content] cache RENSEIGNÉ %s (%d o)\n" % (name, os.path.getsize(local)))
+            return self._serve_local_file(local, head_only, rng)
+        # 3) sans cache : repli best-effort (streaming direct). Peut donner un partiel si archive.org coupe.
+        self._relay_stream(name, head_only, rng)
+
+    def _serve_local_file(self, local: str, head_only: bool, rng):
+        """Sert un fichier local COMPLET, avec support Range (206) pour la reprise côté client."""
+        size = os.path.getsize(local)
+        start, end = 0, size - 1
         if rng:
-            cmd += ["-r", rng.split("=", 1)[-1]]  # "bytes=0-1023" -> "0-1023"
+            try:
+                spec = rng.split("=", 1)[-1]
+                a, b = (spec.split("-") + [""])[:2]
+                start = int(a) if a else 0
+                end = int(b) if b else size - 1
+            except Exception:
+                start, end = 0, size - 1
+        length = max(0, end - start + 1)
+        self.send_response(206 if rng else 200)
+        self.send_header("Content-Type", "application/zip")
+        self.send_header("Accept-Ranges", "bytes")
+        self.send_header("Content-Length", str(length))
+        if rng:
+            self.send_header("Content-Range", f"bytes {start}-{end}/{size}")
+        self.end_headers()
+        if not head_only:
+            with open(local, "rb") as f:
+                f.seek(start)
+                remaining = length
+                while remaining > 0:
+                    chunk = f.read(min(1 << 16, remaining))
+                    if not chunk:
+                        break
+                    self.wfile.write(chunk)
+                    remaining -= len(chunk)
+
+    def _relay_stream(self, name: str, head_only: bool, rng):
+        target = f"{self.cfg.archive_base}/{name}"
+        cmd = ["curl", "-sS", "-L", "--fail", "--retry", "3", "--max-time", "1800", target]
+        if rng:
+            cmd += ["-r", rng.split("=", 1)[-1]]
         try:
             import subprocess
             proc = subprocess.Popen(cmd, stdout=subprocess.PIPE)
             first = proc.stdout.read(1 << 16)
             if proc.poll() not in (None, 0) and not first:
-                self._send(502, "text/plain", b"relay failed\n", head_only)
-                return
+                return self._send(502, "text/plain", b"relay failed\n", head_only)
             self.send_response(206 if rng else 200)
             self.send_header("Content-Type", "application/zip")
             self.send_header("Accept-Ranges", "bytes")
