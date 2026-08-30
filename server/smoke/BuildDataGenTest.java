@@ -31,9 +31,10 @@ public final class BuildDataGenTest {
             ok(post(http, base + "/build/start", "apkPath=/nope.apk&target=server").contains("apk-introuvable"),
                "APK introuvable → FAILED");
 
-            // cible non encore câblée → refus honnête (pas de faux succès)
-            String cl = post(http, base + "/build/start", "apkPath=" + enc(apk) + "&target=client");
-            ok(cl.contains("\"state\":\"FAILED\"") && cl.contains("venir"), "cible client → refus honnête (incrément à venir)");
+            // cible APK (patch mobile) non encore câblée → refus honnête (pas de faux succès). La cible CLIENT, elle,
+            // est câblée (build PC) mais LOURDE (gradle+assets) → non exercée ici ; cf. ClientBundleTest / vérif dédiée.
+            String ak = post(http, base + "/build/start", "apkPath=" + enc(apk) + "&target=apk");
+            ok(ak.contains("\"state\":\"FAILED\"") && ak.contains("venir"), "cible apk → refus honnête (incrément ultérieur)");
 
             // cible SERVER, extraction réelle vers le dossier de sortie (pkg=false = données seules, rapide ;
             // le packaging complet du bundle est vérifié par ServerBundleTest, qui LANCE le bundle hors dev).

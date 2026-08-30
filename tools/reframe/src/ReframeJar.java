@@ -92,10 +92,28 @@ public class ReframeJar {
             // INVOKEVIRTUAL n'est jamais touché (owner jamais une interface).
             ClassVisitor fix = new ClassVisitor(Opcodes.ASM9, cw) {
                 Set<String> itfs = java.util.Collections.emptySet();
+                String cname; boolean hasSource;
                 @Override public void visit(int v, int a, String n, String sig, String sup, String[] in) {
                     itfs = in == null ? java.util.Collections.emptySet()
                                       : new HashSet<>(java.util.Arrays.asList(in));
+                    cname = n; hasSource = false;
                     super.visit(v, a, n, sig, sup, in);
+                }
+                @Override public void visitSource(String source, String debug) {
+                    hasSource = source != null; super.visitSource(source, debug);
+                }
+                @Override public void visitEnd() {
+                    // dex2jar laisse souvent les classes SANS attribut SourceFile → getFileName() renvoie null, ce
+                    // qui fait NPE le code du jeu qui inspecte la stack (TagHelper.getTag → getFileName().replace),
+                    // notamment sur le chemin restart() du 1er lancement (téléchargement de contenu). On rétablit un
+                    // SourceFile synthétique = <NomSimple>.java. NON-SÉMANTIQUE (métadonnée de debug), §1
+                    // « correction d'attributs incohérents laissés par dex2jar ».
+                    if (!hasSource && cname != null) {
+                        String sn = cname.substring(cname.lastIndexOf('/') + 1);
+                        int d = sn.indexOf('$'); if (d > 0) sn = sn.substring(0, d);
+                        super.visitSource(sn + ".java", null);
+                    }
+                    super.visitEnd();
                 }
                 @Override public MethodVisitor visitMethod(int a, String n, String d, String s, String[] ex) {
                     MethodVisitor mv = super.visitMethod(a, n, d, s, ex);

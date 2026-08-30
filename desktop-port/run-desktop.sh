@@ -131,6 +131,24 @@ fi
 # $NATDIR sur le classpath → SharedLibraryLoader y trouve spine-native64.so.
 CP="$BUILD/classes/java/main:$FRAMED:$NATDIR:$ASSETS:$RESD:$RUNTIME_CP"
 
+# BUILD-ONLY (C2a-4b, packaging client) : tous les artefacts sont construits (game-logic-framed, gradle,
+# assets, ressources, natifs). On émet un MANIFESTE des chemins et on SORT sans lancer → le packager
+# (dhlauncher.BuildManager cible CLIENT) assemble un bundle autonome à partir de ça.
+if [ -n "${DH_BUILD_ONLY:-}" ]; then
+  ABS() { (cd "$(dirname "$1")" && printf '%s/%s' "$(pwd)" "$(basename "$1")"); }
+  { echo "RUNTIME_CP=$RUNTIME_CP"
+    echo "CLASSES=$(ABS "$BUILD/classes/java/main")"
+    echo "FRAMED=$(ABS "$FRAMED")"
+    echo "NATDIR=$(ABS "$NATDIR")"
+    echo "ASSETS=$(ABS "$ASSETS")"
+    echo "RESD=$(ABS "$RESD")"
+    echo "SPINE_LIB=$(ABS "$SPINE_LIB")"
+    echo "HOSTSPINE=$( [ -f "$(cd .. && pwd)/native/build/libhostspine64.so" ] && echo "$(cd .. && pwd)/native/build/libhostspine64.so" || echo "" )"
+  } > "$BUILD/client-manifest.env"
+  echo "[desktop] build-only : manifeste écrit ($BUILD/client-manifest.env)"
+  exit 0
+fi
+
 # Xvfb si pas d'affichage.
 if [ -z "${DISPLAY:-}" ]; then
   Xvfb :99 -screen 0 1280x720x24 >/tmp/xvfb.log 2>&1 &

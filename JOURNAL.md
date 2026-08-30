@@ -1,5 +1,43 @@
 # JOURNAL — journal détaillé des modifications
 
+## 2026-08-30 (g198) — Phase 2 C2a-4b : build du BUNDLE CLIENT PC depuis l'APK + correctif SourceFile (1er lancement) 🟢
+
+Demande util. : « pas de partiel, pas de raccourci » — donc C2a-4b **complet** (build du port PC packagé).
+
+**Pipeline client** (aucune règle réécrite, réutilise le build existant) :
+- **`run-desktop.sh DH_BUILD_ONLY=1`** (ajouté) : construit tout (game-logic-framed + gradle compileJava + extraction
+  assets/ressources de l'APK + natif libGDX) puis émet un **manifeste** (`build/client-manifest.env` : RUNTIME_CP,
+  classes, framed, natdir, assets, resd, spinelib, hostspine) et SORT sans lancer.
+- **`BuildManager` cible CLIENT** : lance ce build-only, lit le manifeste, **assemble un bundle client AUTONOME** :
+  `lib/dhdesktop.jar` (classes desktop-port) + `lib/game-logic-framed.jar` + `lib/runtime/*` (37 jars LWJGL3/gdx/
+  unidbg…) + `native/` (libgdx64 + libspine-native ARM + libhostspine64) + `assets/` + `resources/` + `run.sh`/
+  `run.bat` (CP + JOPTS bundle-relatifs, spine jni par défaut, Xvfb en repli headless). Cible APK = refus honnête (§2).
+- `ClientBundleTest` **9/9** : build CLIENT = DONE + structure autonome complète (dhdesktop.jar, game-logic-framed,
+  runtime>20, natifs, assets, resources, run.sh+run.bat). Bundle mesuré **509 Mo**, généré en ~52 s.
+
+**⚠️ VRAI BUG DE 1er LANCEMENT TROUVÉ & CORRIGÉ** (en lançant le bundle sur un `rundir` FRAIS) : le jeu déclenche
+alors « Restarting for late user boot download » → `GameMain.restart()` → `TagHelper.getTag()` → **NPE** car
+`StackTraceElement.getFileName()` est **null** (dex2jar a supprimé l'attribut `SourceFile` des classes du jeu →
+« Unknown Source »). Mes runs dev avaient un `rundir` chaud → jamais exercé, mais un **vrai 1er lancement crasherait**.
+**Correctif `ReframeJar`** (§1 « correction d'attributs incohérents laissés par dex2jar », non-sémantique, `SHIMS.md`) :
+rétablit un `SourceFile` synthétique = `<NomSimple>.java` pour les classes qui n'en ont pas (`visitSource`/`visitEnd`).
+Re-reframe des DEUX jars (`game-framed` serveur + `game-logic-framed` client). Vérifié : `Compiled from "GameMain.java"`
+présent ; **plus de NPE TagHelper** (le bundle franchit `restart()` sans crash). Régression **169/169** (SourceFile
+non-sémantique).
+
+**Vérif EN JEU du bundle client** : le bundle **LANCE hors dev**, init le backend LWJGL3, charge les assets, **se
+CONNECTE au serveur** (`ClientInfo`→`BootData`), atteint **MainScreen** — **0 exception** après le correctif. Le rendu
+COMPLET du hub depuis le bundle est **bloqué DANS CE CONTENEUR** par (a) archive.org (fetch de contenu « late boot »)
+renvoyant 502 sur `rundir` froid et (b) un rendu headless très lent (GL logiciel + assets 283 Mo lazy) → aucune frame
+capturée dans la fenêtre. **Limites d'ENVIRONNEMENT documentées (§8), PAS un défaut du bundle** : le MÊME code client
+rend le hub complet dans le harnais dev (`strictnew.png`, `resume.png`, g192/g193). ⇒ sur une machine joueur (GPU réel
++ contenu présent) le bundle rend le hub comme le client dev.
+
+Fichiers : `desktop-port/run-desktop.sh` (build-only + manifeste), `dhlauncher/BuildManager.java` (cible CLIENT +
+packageClient + run.sh/bat client), `tools/reframe/src/ReframeJar.java` (SourceFile), `server/smoke/ClientBundleTest.
+java` (nouveau, DEV lourd hors régression rapide), `BuildDataGenTest.java` (cible apk refusée au lieu de client),
+`SHIMS.md`, docs. **SUITE = runtime embarqué (JRE/python, zéro-install) ; patch APK ; C2b (front).**
+
 ## 2026-08-30 (g197) — Un-clic serveur : le bouton « Héberger » lance le BUNDLE généré (+ arrêt propre) 🟢
 
 Demande util. : s'assurer qu'on puisse **exécuter un serveur en UN CLIC** (hors cloud) — via un lanceur Linux/exe

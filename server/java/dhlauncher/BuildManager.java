@@ -55,15 +55,18 @@ public final class BuildManager {
             state = State.FAILED; step = "apk-introuvable"; append("APK introuvable: " + apkPath);
             return status();
         }
-        if (this.target != Target.SERVER) {
+        if (this.target == Target.APK) {
             state = State.FAILED; step = "cible-à-venir";
-            append("Cible '" + this.target + "' : incrément à venir (le build PC/APK sera ajouté ensuite). "
-                 + "Seule la cible SERVER (hébergement) est câblée pour l'instant.");
+            append("Cible APK (patch mobile) : incrément ULTÉRIEUR (intégrer la découverte/redirection serveur dans "
+                 + "l'APK). Cibles câblées : SERVER (hébergement), CLIENT (port PC).");
             return status();
         }
-        this.outDir = (out == null || out.isEmpty()) ? new File(projectDir, "build/generated-server").getPath() : out;
+        String def = this.target == Target.CLIENT ? "build/generated-client" : "build/generated-server";
+        this.outDir = (out == null || out.isEmpty()) ? new File(projectDir, def).getPath() : out;
         state = State.RUNNING; step = "démarrage";
-        worker = new Thread(() -> runPipeline(apk, this.outDir, full), "dh-build");
+        final Target t = this.target;
+        worker = new Thread(() -> { if (t == Target.CLIENT) runClientPipeline(apk, this.outDir);
+                                    else runPipeline(apk, this.outDir, full); }, "dh-build");
         worker.setDaemon(true);
         worker.start();
         return status();
@@ -95,6 +98,80 @@ public final class BuildManager {
     }
 
     private String tool(String name) { return new File(projectDir, "tools/" + name).getPath(); }
+
+    /**
+     * Pipeline CLIENT (C2a-4b) — construit le port PC (game-logic-framed + gradle + assets + natifs via
+     * {@code run-desktop.sh DH_BUILD_ONLY=1}), puis assemble un BUNDLE client AUTONOME (bundle-relatif) : lib/,
+     * assets/, resources/, native/, run.sh/run.bat lançant {@code dhdesktop.DesktopLauncher}.
+     */
+    private void runClientPipeline(File apk, String out) {
+        try {
+            new File(out).mkdirs();
+            // 1) build-only : game-logic-framed + gradle compile + extraction assets/ressources + natifs + manifeste
+            runStep("client-build", new String[]{"bash", new File(projectDir, "desktop-port/run-desktop.sh").getPath()},
+                    "DH_BUILD_ONLY", "1");
+            java.util.Map<String,String> m = new java.util.HashMap<>();
+            File manifest = new File(projectDir, "desktop-port/build/client-manifest.env");
+            for (String line : java.nio.file.Files.readAllLines(manifest.toPath())) {
+                int i = line.indexOf('='); if (i > 0) m.put(line.substring(0, i), line.substring(i + 1));
+            }
+            packageClient(new File(out), m);
+            step = "done"; state = State.DONE;
+        } catch (Exception e) {
+            append("ÉCHEC (" + step + "): " + e.getMessage()); state = State.FAILED;
+        }
+    }
+
+    /** Assemble le bundle client depuis le manifeste (chemins ABSOLUS des artefacts construits). */
+    private void packageClient(File out, java.util.Map<String,String> m) throws Exception {
+        step = "package-client"; append("=== étape package-client (bundle port PC autonome) ===");
+        File lib = new File(out, "lib"); lib.mkdirs();
+        File runtime = new File(lib, "runtime"); runtime.mkdirs();
+        File nat = new File(out, "native"); nat.mkdirs();
+        new File(out, "data").mkdirs();
+
+        // classes desktop-port → lib/dhdesktop.jar
+        String classes = req(m, "CLASSES");
+        runStep("jar-client", new String[]{ javaBin("jar"), "cf", new File(lib, "dhdesktop.jar").getPath(),
+                "-C", classes, "." }, null, null);
+        // game-logic-framed.jar (doit précéder les jars runtime → ombrage le game-logic original)
+        copyFile(new File(req(m, "FRAMED")), new File(lib, "game-logic-framed.jar"));
+        // jars runtime (LWJGL3, gdx, unidbg…) → lib/runtime/
+        for (String j : req(m, "RUNTIME_CP").split(File.pathSeparator)) {
+            j = j.trim(); if (j.isEmpty()) continue; File src = new File(j);
+            if (src.isFile()) copyFile(src, new File(runtime, src.getName()));
+        }
+        // natifs : libgdx64.so (NATDIR), libspine-native.so (ARM d'origine), libhostspine64.so (jni, optionnel)
+        File natdir = new File(req(m, "NATDIR"));
+        if (natdir.isDirectory()) for (File f : natdir.listFiles()) if (f.isFile()) copyFile(f, new File(nat, f.getName()));
+        File spineLib = new File(req(m, "SPINE_LIB")); if (spineLib.isFile()) copyFile(spineLib, new File(nat, spineLib.getName()));
+        String host = m.getOrDefault("HOSTSPINE", ""); if (!host.isEmpty() && new File(host).isFile()) copyFile(new File(host), new File(nat, "libhostspine64.so"));
+        // assets + ressources (accédés en chemins relatifs par le jeu ; sur le classpath)
+        append("copie des assets (~283 Mo) + ressources ...");
+        copyDir(new File(req(m, "ASSETS")).toPath(), new File(out, "assets").toPath());
+        copyDir(new File(req(m, "RESD")).toPath(), new File(out, "resources").toPath());
+        // scripts de lancement
+        writeExec(new File(out, "run.sh"), RUN_SH_CLIENT);
+        writeText(new File(out, "run.bat"), RUN_BAT_CLIENT);
+        append("bundle client prêt : " + out.getPath() + " (run.sh / run.bat)");
+    }
+
+    private static String req(java.util.Map<String,String> m, String k) {
+        String v = m.get(k); if (v == null || v.isEmpty()) throw new IllegalStateException("manifeste : clé absente " + k); return v;
+    }
+    private static void copyFile(File a, File b) throws java.io.IOException {
+        java.nio.file.Files.copy(a.toPath(), b.toPath(), java.nio.file.StandardCopyOption.REPLACE_EXISTING);
+    }
+    private static void copyDir(java.nio.file.Path src, java.nio.file.Path dst) throws java.io.IOException {
+        try (java.util.stream.Stream<java.nio.file.Path> w = java.nio.file.Files.walk(src)) {
+            for (java.nio.file.Path p : (Iterable<java.nio.file.Path>) w::iterator) {
+                java.nio.file.Path t = dst.resolve(src.relativize(p));
+                if (java.nio.file.Files.isDirectory(p)) java.nio.file.Files.createDirectories(t);
+                else { java.nio.file.Files.createDirectories(t.getParent());
+                       java.nio.file.Files.copy(p, t, java.nio.file.StandardCopyOption.REPLACE_EXISTING); }
+            }
+        }
+    }
 
     /** Jars runtime du serveur (mêmes que le classpath de run-online.sh, hors classes serveur compilées). */
     private static final String[] RUNTIME_JARS = {
@@ -181,6 +258,41 @@ public final class BuildManager {
       // que l'arrêt vienne d'un Ctrl-C (standalone) ou d'un SIGTERM (bouton « arrêter » du launcher).
       + "trap 'kill $CPID $JPID 2>/dev/null' TERM INT EXIT\n"
       + "wait $JPID\n";
+
+    private static final String RUN_SH_CLIENT =
+        "#!/usr/bin/env bash\n"
+      + "# Port PC Disney Heroes — bundle client autonome généré par le launcher. Lançable hors dev.\n"
+      + "set -uo pipefail\n"
+      + "DIR=\"$(cd \"$(dirname \"$0\")\" && pwd)\"\n"
+      + "export JAVA_TOOL_OPTIONS=\n"
+      + "export LIBGL_ALWAYS_SOFTWARE=\"${LIBGL_ALWAYS_SOFTWARE:-1}\"\n"
+      + "export LC_ALL=\"${LC_ALL:-C.utf8}\"\n"
+      + "SERVER=\"${DH_SERVER:-127.0.0.1:8080}\"\n"
+      + "CP=\"$DIR/lib/dhdesktop.jar:$DIR/lib/game-logic-framed.jar:$DIR/native:$DIR/assets:$DIR/resources:$DIR/lib/runtime/*\"\n"
+      + "JOPTS=\"-XX:TieredStopAtLevel=1 -Dorg.lwjgl.util.Debug=false -Ddh.rundir=$DIR/data/run\"\n"
+      + "JOPTS=\"$JOPTS -Ddh.spinelib=$DIR/native/libspine-native.so -Ddh.server=$SERVER\"\n"
+      + "[ -f \"$DIR/native/libgdx64.so\" ] && JOPTS=\"$JOPTS -Ddh.gdxnative=$DIR/native/libgdx64.so\"\n"
+      + "if [ -f \"$DIR/native/libhostspine64.so\" ] && [ \"${DH_SPINEBACKEND:-jni}\" != unidbg ]; then\n"
+      + "  JOPTS=\"$JOPTS -Ddh.spinebackend=jni -Ddh.hostspine=$DIR/native/libhostspine64.so\"; fi\n"
+      + "[ -n \"${DH_USERID:-}\" ] && JOPTS=\"$JOPTS -Ddh.userid=$DH_USERID\"\n"
+      + "[ -n \"${DH_FRAMES:-}\" ] && JOPTS=\"$JOPTS -Ddh.frames=$DH_FRAMES\"\n"
+      + "[ -n \"${DH_SHOT:-}\" ] && JOPTS=\"$JOPTS -Ddh.shot=$DH_SHOT\"\n"
+      + "if [ -z \"${DISPLAY:-}\" ] && command -v Xvfb >/dev/null; then\n"
+      + "  Xvfb :99 -screen 0 1280x720x24 >/tmp/dh_xvfb.log 2>&1 & XVFB=$!\n"
+      + "  trap 'kill $XVFB 2>/dev/null' EXIT; export DISPLAY=:99; sleep 1; fi\n"
+      + "if [ -n \"${DH_TIMEOUT:-}\" ]; then timeout \"$DH_TIMEOUT\" java $JOPTS -cp \"$CP\" dhdesktop.DesktopLauncher \"$@\"\n"
+      + "else java $JOPTS -cp \"$CP\" dhdesktop.DesktopLauncher \"$@\"; fi\n";
+
+    private static final String RUN_BAT_CLIENT =
+        "@echo off\r\n"
+      + "REM Port PC Disney Heroes — bundle client autonome. Lancable hors dev.\r\n"
+      + "set DIR=%~dp0\r\n"
+      + "if \"%DH_SERVER%\"==\"\" set DH_SERVER=127.0.0.1:8080\r\n"
+      + "set CP=%DIR%lib\\dhdesktop.jar;%DIR%lib\\game-logic-framed.jar;%DIR%native;%DIR%assets;%DIR%resources;%DIR%lib\\runtime\\*\r\n"
+      + "set JOPTS=-XX:TieredStopAtLevel=1 -Ddh.rundir=\"%DIR%data\\run\" -Ddh.spinelib=\"%DIR%native\\libspine-native.so\" -Ddh.server=%DH_SERVER%\r\n"
+      + "if exist \"%DIR%native\\libgdx64.so\" set JOPTS=%JOPTS% -Ddh.gdxnative=\"%DIR%native\\libgdx64.so\"\r\n"
+      + "if exist \"%DIR%native\\libhostspine64.so\" set JOPTS=%JOPTS% -Ddh.spinebackend=jni -Ddh.hostspine=\"%DIR%native\\libhostspine64.so\"\r\n"
+      + "java %JOPTS% -cp \"%CP%\" dhdesktop.DesktopLauncher %*\r\n";
 
     private static final String RUN_BAT =
         "@echo off\r\n"
