@@ -40,6 +40,18 @@ public final class LoginServer {
   private final ServerUser user;
   /** Persistance SQLite (octets wire des objets du jeu). */
   private final UserStore store;
+  /** AUTH MNÉMONIQUE (chantier C1c) — sessions partagées avec {@code AuthService} (même JVM). {@code authRequired}
+   *  = mode STRICT (rejette un {@code ClientInfo.userID} non authentifié). Défaut : OFF (permissif : compat pilotes
+   *  DEV / compte par défaut ; la bascule stricte s'active shard par shard via {@link #setAuth}). */
+  private volatile dhserver.auth.SessionStore sessions;
+  private volatile boolean authRequired;
+  public void setAuth(dhserver.auth.SessionStore sessions, boolean required) { this.sessions = sessions; this.authRequired = required; }
+  /** true si l'auth n'est pas requise, ou si {@code loginRequestID} a une session authentifiée pour {@code uid}. */
+  private boolean authOk(long uid, ClientInfo ci) {
+    if (!authRequired) return true;
+    dhserver.auth.SessionStore s = sessions;
+    return s != null && s.authenticatedUser(ci.loginRequestID) == uid;
+  }
   /** ARÈNE (vrai PvP) — source d'adversaires RÉELS (autres comptes du shard) adossée à la base. */
   private final ServerArena.OpponentSource oppSrc;
   /** MULTI-USER (#65) — compte résolu PAR CONNEXION (depuis {@code ClientInfo.userID}). Une entrée par socket. */
@@ -180,6 +192,13 @@ public final class LoginServer {
             ServerUser user = connUsers.getOrDefault(c, LoginServer.this.user);
             if (m instanceof ClientInfo) {
               long uid = ((ClientInfo) m).userID;
+              // AUTH MNÉMONIQUE (C1c) : en mode STRICT, le userID annoncé doit avoir une session authentifiée (défi-
+              // réponse validé via AuthService). Sinon → connexion NON liée (ni compte, ni BootData) = rejet. En mode
+              // permissif (défaut) authOk renvoie toujours true → comportement inchangé (pilotes DEV / compte défaut).
+              if (uid > 0 && !authOk(uid, (ClientInfo) m)) {
+                System.out.println("[login] ⛔ auth : loginRequestID non authentifié pour userID=" + uid + " → rejet (aucun BootData)");
+                return;
+              }
               if (uid > 0) {
                 try {
                   user = store.loadOrCreate(uid, LoginServer.this.user.shardID);
@@ -3149,7 +3168,22 @@ public final class LoginServer {
     ServerUser user = store.loadOrCreate(/*userID*/ 1L, /*shardID*/ 1);
     System.out.println("[login] compte id=1 chargé/créé (" + user.tutorialActCount()
         + " actes de tuto) — DB " + dbPath);
-    new LoginServer(port, user, store).start();
+    LoginServer server = new LoginServer(port, user, store);
+    // AUTH MNÉMONIQUE (C1c) : AuthService HTTP partage la SessionStore avec LoginServer (même JVM → session en
+    // mémoire commune). Mode STRICT via -Ddh.auth=on (défaut OFF = permissif : compat pilotes DEV / compte par
+    // défaut). Port via -Ddh.auth.port (défaut 8082). Le serveur reste opérationnel même si l'HTTP ne démarre pas.
+    try {
+      dhserver.auth.SessionStore sessions = new dhserver.auth.SessionStore();
+      int authPort = Integer.getInteger("dh.auth.port", 8082);
+      dhserver.auth.AuthService auth = new dhserver.auth.AuthService(authPort, sessions, store);
+      auth.start();
+      String flag = System.getProperty("dh.auth", "off");
+      boolean strict = "on".equalsIgnoreCase(flag) || "1".equals(flag) || "true".equalsIgnoreCase(flag);
+      server.setAuth(sessions, strict);
+      System.out.println("[login] 🔐 AuthService sur :" + authPort + " — mode "
+          + (strict ? "STRICT (auth requise)" : "permissif (auth optionnelle, défaut)"));
+    } catch (Exception e) { System.out.println("[login] ! AuthService non démarré : " + e); }
+    server.start();
     // GUILD WAR #68 — l'ordonnanceur : appariement à l'heure, avance des phases, clôture des guerres
     // échues, bascule de saison et distribution des boîtes. C'est ce que le backend faisait tourner tout
     // seul ; sans lui, aucune guerre ne démarre ni ne se termine jamais.

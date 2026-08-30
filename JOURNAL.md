@@ -1,5 +1,52 @@
 # JOURNAL — journal détaillé des modifications
 
+## 2026-08-30 (g188) — Phase 2 chantier C : login mnémonique C1a→C1c ✅ + régression 162/162 déterministe
+
+Démarrage du chantier C (front joueur). Décisions figées AVEC l'utilisateur : login « seed phrase » type wallet crypto
+— wordlist **BIP39 anglaise** (2048 mots), **8 mots** (~80 bits + checksum), auth **défi-réponse Ed25519 asymétrique**
+(aucun secret côté serveur) ; launcher **Tauri + React → launcher-core Java** (source unique de vérité). Docs :
+`docs/DISTRIBUTION.md` §2 (spec figée), `docs/LAUNCHER.md` (archi + 6 écrans), `docs/PHASE2_TRACKING.md` §C.
+
+**C1a — `MnemonicIdentity`** (`server/java/dhserver/auth/`) : phrase 8 mots → seed (BIP39 PBKDF2-HMAC-SHA512) → paire
+**Ed25519 DÉTERMINISTE** (32 premiers octets du seed = graine privée, dérivation pubkey correcte via `SecureRandom`
+déterministe — vérifié JDK 21 natif, 0 dépendance) → `userID` (long positif) = SHA-256(clé publique). Checksum BIP39
+(détecte les fautes). `tools/gen_bip39.sh` régénère `Bip39Wordlist.java` depuis la wordlist canonique (sha256 vérifié).
+Test `MnemonicIdentityTest` (13 assert.) : déterminisme, checksum, sign/verify, **rejet d'usurpation**, 200 userIDs
+distincts.
+
+**C1b — vérifieur serveur** : table `UserStore.accounts (userID PK, pubKey, createdAt)`, GLOBALE (identité identique
+sur toutes les instances). `registerAccount` (idempotent même clé ; rejette une clé différente pour un userID existant)
++ `lookupPubKey`. **Jamais la phrase** — seulement la clé publique. Test `AccountStoreTest` (12 assert.) :
+register/lookup/idempotence/collision/persistance + défi-réponse via la clé stockée.
+
+**C1c — défi-réponse au login + liaison socket** :
+- `SessionStore` : `issueChallenge` (nonce 32 o à usage unique, TTL 60 s) → `verifyAndBind` (vérifie la signature
+  Ed25519 contre la clé publique STOCKÉE, puis lie `loginRequestID → userID`, TTL session 5 min) → `authenticatedUser`
+  (consultée par `LoginServer`). Horloge injectable (test d'expiration). Test `SessionAuthTest` (12 assert.) :
+  nominal, usage unique (anti-rejeu), usurpation, mauvais userID pour le nonce, compte inconnu, EXPIRATION.
+- `AuthService` : `HttpServer` JDK (`:8082`, `-Ddh.auth.port`), `POST /auth/challenge` + `POST /auth/verify`
+  (form-urlencoded, base64url), fine glue au-dessus de `SessionStore`. Test `AuthServiceTest` (6 assert., **round-trip
+  HTTP réel** via `java.net.http.HttpClient`) : challenge→sign→verify OK, usurpation→401, compte inconnu→401.
+- `LoginServer` : champs `sessions`+`authRequired` + `setAuth` ; gate `authOk(uid, ClientInfo)` à la réception de
+  `ClientInfo` — en mode STRICT (`-Ddh.auth=on`), `loginRequestID` doit avoir une session authentifiée pour `uid`,
+  sinon **rejet** (ni compte, ni BootData). **Défaut PERMISSIF** (`authOk`→true) = comportement inchangé (pilotes DEV /
+  compte par défaut). Boot (`main`) : démarre `AuthService` + partage la `SessionStore` (même JVM) ; **le serveur reste
+  opérationnel même si l'HTTP ne démarre pas**.
+- **Vérifié EN JEU (boot)** : run par défaut → bannière `[login] 🔐 AuthService sur :8082 — mode permissif` ; le client
+  reçoit BootData et boote normalement → **0 régression** en permissif. (Le mode strict de bout en bout = C1d, quand le
+  launcher fera le défi-réponse — le client de jeu ne le fait pas nativement.)
+
+**Correctif régression — `WarSchedulerTest` déterministe** : basait tout sur `TimeUtil.serverTimeNow()`. Saisons de
+guerre MENSUELLES → en FIN de mois (observé le 2026-08-30) les ticks d'appariement franchissaient le mois → bascule de
+saison anticipée → l'assertion de l'étape 6 échouait (`seasonsRolled=0`). Fix : ancrer `now` au début d'un mois (1ᵉʳ à
+RESET_HOUR + 6 h) depuis un timestamp FIXE ; `seed()` prend `now`. Aucune modif de la logique d'ordonnancement.
+**Régression 162/162 verte** (5 tests d'auth + WarScheduler corrigé).
+
+**Fichiers** : `server/java/dhserver/auth/{MnemonicIdentity,Bip39Wordlist,SessionStore,AuthService}.java`,
+`server/java/dhserver/UserStore.java` (table accounts + register/lookup), `server/java/dhserver/LoginServer.java`
+(gate + boot AuthService), `tools/gen_bip39.sh`, 5 tests smoke + `regression.sh`, docs (DISTRIBUTION/LAUNCHER/
+PHASE2_TRACKING/MEMORY/JOURNAL). **SUITE = C1d (register + create/restore EN JEU strict) puis C2 (launcher Tauri/React).**
+
 ## 2026-08-30 (g187) — Perf B5 ✅ + BASCULE `jni` par défaut (client) — chantier B (perf combat) BOUCLÉ
 
 Suite de « poursuit tout ça » : B5 (couverture écrans spine) + gaps pré-existants trouvés en combat, puis bascule.

@@ -17,8 +17,8 @@
 | # | Chantier | Statut | Note |
 |---|---|---|---|
 | **A** | **Vérification globale & chasse aux oublis** | 🚧 **EN COURS** | audit auto 4 axes (ci-dessous) |
-| B | Performance du portage (non destructive) | ⬜ | combat unidbg = point chaud ; Opt.3 spine Java certifié oracle |
-| C | Front-end joueur (launcher : liste/join serveurs, login) | ⬜ | redirection `LIVE` aujourd'hui en dur 127.0.0.1 |
+| B | Performance du portage (non destructive) | ✅ **BOUCLÉ** | spine natif `jni` PAR DÉFAUT (client) ; combat rendu 0 crash, spine hors hot-path (60 fps sur GPU réel) ; serveur = unidbg bit-exact (autorité) — cf. `PERF_PLAN.md` |
+| C | Front-end joueur (launcher : liste/join serveurs, login) | 🚧 **EN COURS** | login mnémonique C1a→C1c ✅ headless ; reste C1d (create/restore EN JEU) + launcher Tauri/React (cf. `LAUNCHER.md`, `DISTRIBUTION.md`) |
 | D | Backend/front d'hébergement (panneau opérateur, multi-shard) | ⬜ | unifier AdminClock/War/Invasion/Mail/Events |
 | E | Tests & intégration APK mobile | ⬜ | même wire 12.1.0 ; vrai client Android → serveur |
 | F | Tests inter-machines réels (Internet, NAT/TLS, charge) | ⬜ | soak, multi-région, sécurité réseau |
@@ -280,6 +280,38 @@ Difficulty**, nœuds de chapitre (`CH_100_NODE_*`), exclusivités battle-pass, s
 l'ère (`ContentStats.getServerColumn(date)` ; `AdminClock`/`AdminSeason` décalent la date → change l'ère servie). **Piste
 admin (chantier D)** : surfacer ces données pour **choisir l'ère/release** à servir (et donc le plafond de contenu — chapitres,
 TL, raretés, difficultés) via le panneau opérateur, plutôt que par décalage de date brut. À planifier en D (panneau opérateur).
+
+---
+
+## CHANTIER B — PERFORMANCE DU PORTAGE ✅ BOUCLÉ (2026-08-30)
+
+Le rendu spine tourne en **natif JNI** (vrai spine-c 3.6 compilé, pas d'émulation) et non plus sous unidbg. Détail complet : `docs/PERF_PLAN.md`, `docs/SHIMS.md`.
+
+| Étape | Statut | Preuve |
+|---|---|---|
+| B1 étude + rebuild natif de-risqué | ✅ | `PERF_PLAN.md` |
+| B2 boot JNI-autonome (atlas + getVertices) | ✅ EN JEU | hub rendu |
+| B3 **fidélité mesh** (héros « éclatés ») — 4 causes (V×0.5 ETC1, packColor octets bruts, light droite, setTintBlack) | ✅ EN JEU | héros parfaits ; certif compare V/U/dark/alpha bit-exacts |
+| B4 scène combat combinée (spine natif + particules unidbg + GL) | ✅ EN JEU | 1465 frames, 0 crash |
+| B5 couverture écrans spine (47/47 méthodes ; nav sweep hub/chooser/combat/HeroDetail/collection) | ✅ EN JEU | 0 crash, 0 méthode manquante |
+| B6 fps combat | ✅ | `unidbg=0` (spine hors hot-path), borné GL logiciel → **60 fps sur GPU réel** |
+| **Bascule `jni` par défaut (client)** | ✅ | `run-desktop.sh` défaut jni (repli unidbg) ; **serveur = unidbg bit-exact** (autorité §3/§8) |
+
+Résiduels (light-RGB glow animé, x/y ~9e-5) = **artefacts de mesure ARM↔x86**, INEXISTANTS en production (§4bis). Gaps trouvés en jeu = **pré-existants non-spine** (forward-compat tab, sons glitch, NFE guild-perk).
+
+## CHANTIER C — FRONT-END JOUEUR (launcher + login mnémonique) 🚧
+
+Archi & contenu figés : `docs/LAUNCHER.md` (Tauri+React → launcher-core Java) + `docs/DISTRIBUTION.md` (login = seed phrase). Décidé avec l'utilisateur : wordlist **BIP39 EN**, **8 mots**, auth **défi-réponse Ed25519** (aucun secret serveur).
+
+| Sous-étape | Statut | Preuve |
+|---|---|---|
+| **C1a** identité (`MnemonicIdentity` : BIP39 EN, 8 mots, Ed25519 déterministe, sign/verify) | 🟢 headless | `MnemonicIdentityTest` (13 assert.) |
+| **C1b** vérifieur serveur (`UserStore.accounts` : userID→clé publique) | 🟢 headless | `AccountStoreTest` (12 assert.) |
+| **C1c** défi-réponse (`SessionStore` + `AuthService` HTTP :8082 + gate `LoginServer`, mode strict `-Ddh.auth=on`, défaut permissif) | 🟢 headless + boot vérifié | `SessionAuthTest` (12), `AuthServiceTest` (6, HTTP round-trip) ; serveur boote AuthService, client boote en permissif (0 régression) |
+| **C1d** create/restore compte de bout en bout | ⬜ | à faire (register + flux, puis EN JEU strict) |
+| **C2** launcher Tauri/React (6 écrans : Setup APK, Compte, Serveurs, Jouer, Réglages, Hébergement) | ⬜ | après C1d ; launcher-core Java d'abord |
+
+Régression : **162/162 verte** (les 5 tests d'auth ajoutés + `WarSchedulerTest` rendu déterministe).
 
 ---
 

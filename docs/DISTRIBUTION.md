@@ -58,7 +58,12 @@ Pourquoi (ce que ça « cadre ») :
   socket ; `ClientInfo.userID`) **sans réécrire la logique du jeu** (§3) — auth au niveau plateforme (`/login` + table
   de session ; `LoginServer` lie le socket à la session authentifiée). Cf. chantier C1c.
 
-**Statut** : **C1a ✅ IMPLÉMENTÉ & testé** (`MnemonicIdentity` + `MnemonicIdentityTest` = 13 assertions, dans
-`regression.sh` : déterminisme, checksum, sign/verify, **rejet d'usurpation**, 200 userIDs distincts). **Reste** : C1b
-(vérifieur `UserStore` + register/lookup), C1c (défi-réponse au `/login` + liaison socket), C1d (create/restore de bout
-en bout + EN JEU).
+**Statut** : **C1a ✅ + C1b ✅ + C1c ✅ (headless)**.
+- **C1a** `MnemonicIdentity` (`MnemonicIdentityTest`, 13 assert.).
+- **C1b** vérifieur `UserStore.accounts` userID→clé publique (`AccountStoreTest`, 12 assert.).
+- **C1c** `SessionStore` (défi-réponse : nonce usage unique, TTL, verify Ed25519 vs clé stockée, liaison
+  `loginRequestID→userID`) + `AuthService` HTTP (`:8082`, `/auth/challenge` + `/auth/verify`) + gate `LoginServer`
+  (mode STRICT `-Ddh.auth=on`, **défaut permissif** = compat DEV) — `SessionAuthTest` (12) + `AuthServiceTest` (6,
+  round-trip HTTP réel) ; boot vérifié (AuthService démarre, client boote en permissif, 0 régression).
+- **Reste** : **C1d** (endpoint register + flux create/restore de bout en bout, puis EN JEU en mode strict), puis le
+  launcher (chantier C2, cf. `docs/LAUNCHER.md`).

@@ -87,6 +87,7 @@ TESTS=(
   MnemonicIdentityTest
   AccountStoreTest
   SessionAuthTest
+  AuthServiceTest
 )
 
 echo "[reg] compilation (serveur + ${#TESTS[@]} tests) ..."
