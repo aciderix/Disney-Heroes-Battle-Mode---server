@@ -1,5 +1,16 @@
 # JOURNAL — journal détaillé des modifications
 
+## 2026-08-31 (g214) — CI « launcher-ui » : typecheck + build du front sur Linux + Windows 🟢
+
+Job CI `launcher-ui-ci.yml` (chantier G) : à chaque modif de `launcher-ui/`, vérifie que le front **compile et se build**
+sur **ubuntu-latest ET windows-latest** — `npm ci` (lockfile en phase) → `tsc --noEmit` (strict) → `vite build` → upload
+du bundle web. Web pur (aucun code de jeu, aucun secret) → rapide/déterministe. Vérifié localement : `npm ci` + `npm run
+build` (tsc+vite) passent. L'E2E Playwright (front↔daemon) reste une vérif locale (nécessite le daemon Java + un navigateur).
+
+⇒ **Le launcher (front C2b) est COMPLET** : 7 écrans (Jouer/Serveurs/Compte/Héberger/Générer/Admin/Réglages), chacun
+adossé à des endpoints RÉELS+testés (principe util. « pas de bouton futur ») ; E2E 9/9 ; build front vérifié en CI 2 OS ;
+le package launcher clé-en-main est déjà build+release par `launcher-release.yml` (JDK+Python embarqués, Linux+Windows).
+
 ## 2026-08-31 (g213) — C2b inc.6 : écran ADMIN (5 domaines) branché sur le backend Admin 🟢
 
 Front de l'administration : l'écran **Admin** consomme les endpoints `/admin/*` (tous livrés+testés g208→g212) via le

@@ -18,11 +18,11 @@
 |---|---|---|---|
 | **A** | **Vérification globale & chasse aux oublis** | 🚧 **EN COURS** | audit auto 4 axes (ci-dessous) |
 | B | Performance du portage (non destructive) | ✅ **BOUCLÉ** | spine natif `jni` PAR DÉFAUT (client) ; combat rendu 0 crash, spine hors hot-path (60 fps sur GPU réel) ; serveur = unidbg bit-exact (autorité) — cf. `PERF_PLAN.md` |
-| C | Front-end joueur (launcher : liste/join serveurs, login) | 🚧 **EN COURS** | login mnémonique C1a→C1c ✅ headless ; reste C1d (create/restore EN JEU) + launcher Tauri/React (cf. `LAUNCHER.md`, `DISTRIBUTION.md`) |
+| C | Front-end joueur (launcher : liste/join serveurs, login) | 🟢 **QUASI-BOUCLÉ** | login mnémonique C1a→C1d ✅ ; **launcher front COMPLET** (7 écrans Tauri/React, tous adossés endpoints réels+testés, E2E 9/9, CI build 2 OS). Reste : vérif EN JEU des actions admin ; admin distant (→F) |
 | **D** | Backend/front d'hébergement (panneau opérateur, multi-shard) | 🚧 **EN COURS** | **inc.6a monitoring livré** (`AdminService` serveur + jeton opérateur + proxy daemon `/admin/monitor` + `/host/logs` ; `AdminMonitorTest`/`AdminProxyTest`). Archi : admin DANS la JVM serveur (launcher game-free), daemon proxifie. Suite : ère/joueurs/events/**modération à construire** + UI Admin |
 | E | Tests & intégration APK mobile | ⬜ | même wire 12.1.0 ; vrai client Android → serveur |
 | F | Tests inter-machines réels (Internet, NAT/TLS, charge) | ⬜ | soak, multi-région, sécurité réseau |
-| G | Qualité/outillage transverse (CI, repro, doc self-hoster, légal) | ⬜ | CI = régression + WireCheck/ClientOracle |
+| G | Qualité/outillage transverse (CI, repro, doc self-hoster, légal) | 🚧 **EN COURS** | CI `launcher-release` (package clé-en-main 2 OS) + `launcher-ui-ci` (typecheck+build front 2 OS) livrés. Reste : CI régression serveur + WireCheck/ClientOracle ; doc self-hoster ; légal |
 
 ---
 

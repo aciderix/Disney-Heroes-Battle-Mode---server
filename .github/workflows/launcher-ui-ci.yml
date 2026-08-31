@@ -1,0 +1,52 @@
+name: launcher-ui-ci
+
+# CI du FRONT launcher (launcher-ui, Tauri+React+TS). Vérifie que le front COMPILE et se BUILD sur Linux ET Windows
+# (typecheck strict tsc + bundle Vite), à chaque modification de launcher-ui. Web pur (aucun code de jeu, aucun secret) →
+# rapide et déterministe. L'E2E Playwright (front↔daemon) reste une vérif locale (nécessite le daemon Java + un navigateur).
+
+on:
+  workflow_dispatch:
+  push:
+    paths:
+      - 'launcher-ui/**'
+      - '.github/workflows/launcher-ui-ci.yml'
+  pull_request:
+    paths:
+      - 'launcher-ui/**'
+      - '.github/workflows/launcher-ui-ci.yml'
+
+jobs:
+  build:
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [ubuntu-latest, windows-latest]
+    runs-on: ${{ matrix.os }}
+    defaults:
+      run:
+        working-directory: launcher-ui
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Set up Node.js 22
+        uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+          cache: npm
+          cache-dependency-path: launcher-ui/package-lock.json
+
+      - name: Install dependencies (npm ci)
+        run: npm ci
+
+      - name: Typecheck (tsc --noEmit, strict)
+        run: npx tsc --noEmit
+
+      - name: Build (Vite)
+        run: npx vite build
+
+      - name: Upload web bundle
+        uses: actions/upload-artifact@v4
+        with:
+          name: launcher-ui-dist-${{ matrix.os }}
+          path: launcher-ui/dist
+          if-no-files-found: error
