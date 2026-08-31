@@ -95,6 +95,7 @@ TESTS=(
   StrictSingleLoginTest
   HostLifecycleTest
   PlayLifecycleTest
+  SettingsLifecycleTest
   BuildDataGenTest
   ServerBundleTest
 )

@@ -3,7 +3,7 @@
 
 import { getDaemonPort, isTauri } from "./tauriBridge";
 import type {
-  Identity, AuthResult, Server, Ping, HostStatus, BuildStatus, PlayStatus,
+  Identity, AuthResult, Server, Ping, HostStatus, BuildStatus, PlayStatus, Settings,
   HostStartParams, BuildStartParams, PlayStartParams,
 } from "./types";
 
@@ -80,6 +80,10 @@ export const daemonClient = {
   playStart: (p: PlayStartParams) => post<PlayStatus>("/play", p as Record<string, unknown>),
   playStop: () => post<PlayStatus>("/play/stop"),
   playStatus: () => get<PlayStatus>("/play/status"),
+
+  // --- réglages locaux (persistés) ---
+  getSettings: () => get<Settings>("/settings"),
+  updateSettings: (patch: Partial<Settings>) => post<Settings>("/settings", patch as Record<string, unknown>),
 };
 
 export type DaemonClient = typeof daemonClient;

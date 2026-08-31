@@ -12,8 +12,8 @@ import { PathInput } from "../components/build";
 function fmt(ms: number): string { const s = Math.floor(ms / 1000); return s < 60 ? `${s} s` : `${Math.floor(s / 60)} min ${s % 60} s`; }
 
 export function Play() {
-  const { session, selectedServer } = useApp();
-  const [clientDir, setClientDir] = useState("");
+  const { session, selectedServer, settings } = useApp();
+  const [clientDir, setClientDir] = useState(settings.clientDir);
   const [status, setStatus] = useState<PlayStatus | null>(null);
   const [err, setErr] = useState<string | null>(null);
   const [busy, setBusy] = useState(false);

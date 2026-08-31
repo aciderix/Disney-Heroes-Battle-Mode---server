@@ -56,6 +56,13 @@ try {
   await page.locator("button.nav-item", { hasText: "Jouer" }).click();
   await page.waitForSelector("text=/Connecte-toi d'abord/i", { timeout: 10000 });
   ok((await page.getByRole("button", { name: /^JOUER$/ }).count()) === 0, "écran Jouer : pas de bouton JOUER sans session (gating)");
+
+  // 7) Réglages : changer la langue (/settings persisté) → i18n appliqué (nav passe en anglais)
+  await page.locator("button.nav-item", { hasText: "Réglages" }).click();
+  await page.waitForSelector("text=Langue", { timeout: 10000 });
+  await page.selectOption(".panel select", "en");
+  await page.waitForSelector("button.nav-item:has-text('Play')", { timeout: 10000 });
+  ok(true, "Réglages : langue → EN via /settings + i18n appliqué à la nav");
 } catch (e) {
   fails.push("exception: " + e.message);
   console.log("  ✗ exception:", e.message);

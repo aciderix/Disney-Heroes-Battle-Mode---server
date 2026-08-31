@@ -6,11 +6,13 @@ import { daemonClient } from "../api/daemonClient";
 import type { BuildStatus, BuildTarget } from "../api/types";
 import { Panel, Banner } from "../components";
 import { PathInput, StepProgress, LogConsole } from "../components/build";
+import { useApp } from "../state/store";
 
 export function Generate() {
-  const [apkPath, setApkPath] = useState("");
+  const { settings } = useApp();
+  const [apkPath, setApkPath] = useState(settings.apkPath);
   const [target, setTarget] = useState<Exclude<BuildTarget, "apk">>("server");
-  const [outDir, setOutDir] = useState("");
+  const [outDir, setOutDir] = useState(settings.outDir);
   const [full, setFull] = useState(false);
   const [pkg, setPkg] = useState(true);
   const [status, setStatus] = useState<BuildStatus | null>(null);

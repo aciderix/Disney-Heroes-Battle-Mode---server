@@ -1,5 +1,26 @@
 # JOURNAL — journal détaillé des modifications
 
+## 2026-08-31 (g207) — C2b inc.5 : écran Réglages (/settings) + persistance 🟢
+
+- **Backend `/settings`** (`SettingsManager.java`) : fichier `settings.txt` (key=value) dans le dossier de config par OS.
+  **Ensemble de clés FERMÉ** (validé, clés inconnues ignorées) : `language`, `disclaimerAcceptedVersion` (int),
+  `apkPath`, `outDir`, `clientDir`, `bundleDir`. Endpoints `GET /settings` (lecture) + `POST /settings` (merge des clés
+  connues + save + renvoi de l'état). Testé `SettingsLifecycleTest` (7 assertions : défauts, persistance disque,
+  round-trip du merge partiel, rejet des clés inconnues) — ajouté à `regression.sh`.
+- **Front Réglages** (`Settings.tsx`) — adossé UNIQUEMENT à `/settings` (principe « pas de bouton futur ») :
+  **Langue** (i18n fr/en, appliquée immédiatement à toute la nav), **Chemins par défaut** (préremplissent
+  Générer/Jouer/Héberger — `apkPath`/`outDir`/`clientDir`/`bundleDir`), **Relire l'avertissement** (remet
+  `disclaimerAcceptedVersion=0` → ré-ouvre le DisclaimerGate). Résolution/qualité spine NON proposées (non transmises
+  au lancement → pas de faux réglage).
+- **Câblage** : `store.tsx` restructuré (`AppStateProvider` prend `settings`+`onSettings`, expose `saveSettings`) ;
+  `App.tsx` charge `/settings` au boot (gate depuis `disclaimerAcceptedVersion`, langue depuis `settings.language`) ;
+  Générer/Jouer/Héberger préremplis depuis les chemins par défaut. `daemonClient` : `getSettings`/`updateSettings`
+  typés. `/settings` ajouté au proxy Vite (dev).
+- **Vérif** : `tsc --noEmit` + `vite build` OK ; **E2E Playwright 8/8** (+ Réglages : bascule langue → EN via `/settings`
+  → i18n appliqué à la nav) ; **régression 172/172** (avec `SettingsLifecycleTest`).
+- **Suite = BACKEND d'abord** : Admin exige `/admin/*` (monitoring `LoginServer.online` ; gestion joueurs `ServerUser` ;
+  ère `AdminRelease` — tous prêts à exposer ; **Modération à CONSTRUIRE**) → puis UI Admin → puis CI « build launcher-ui ».
+
 ## 2026-08-31 (g206) — C2b inc.4 : écran Jouer (/play) — front joueur COMPLET pour le backend existant 🟢
 
 - **Jouer** : `/play` (permissif : DH_USERID = compte) + polling `/play/status` (running, PID, serveur, uptime) +

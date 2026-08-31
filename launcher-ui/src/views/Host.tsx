@@ -5,6 +5,7 @@ import { daemonClient } from "../api/daemonClient";
 import type { HostStatus } from "../api/types";
 import { Panel, Banner, StatusDot } from "../components";
 import { PathInput } from "../components/build";
+import { useApp } from "../state/store";
 
 function fmtUptime(ms: number): string {
   if (!ms) return "—";
@@ -13,10 +14,11 @@ function fmtUptime(ms: number): string {
 }
 
 export function Host() {
+  const { settings } = useApp();
   const [status, setStatus] = useState<HostStatus | null>(null);
   const [err, setErr] = useState<string | null>(null);
   const [busy, setBusy] = useState(false);
-  const [bundleDir, setBundleDir] = useState("");
+  const [bundleDir, setBundleDir] = useState(settings.bundleDir);
   const [contentPort, setContentPort] = useState(8080);
   const [gamePort, setGamePort] = useState(8081);
   const [authPort, setAuthPort] = useState(8082);

@@ -37,6 +37,7 @@ public final class LauncherDaemon {
     private final HostManager host = new HostManager(projectDir);
     private final BuildManager build = new BuildManager(projectDir);
     private final PlayManager play = new PlayManager(projectDir);
+    private final SettingsManager settings = new SettingsManager();
 
     /** @param port port local (0 = éphémère, choisi par l'OS). Lié à loopback seulement. */
     public LauncherDaemon(int port) throws IOException {
@@ -56,6 +57,7 @@ public final class LauncherDaemon {
         http.createContext("/play", this::playStart);           // C2b : lancer le CLIENT sur le serveur choisi
         http.createContext("/play/stop", this::playStop);
         http.createContext("/play/status", this::playStatus);
+        http.createContext("/settings", this::settingsHandler); // C2b : réglages locaux (GET état | POST fusion)
         http.setExecutor(null);
     }
 
@@ -246,6 +248,15 @@ public final class LauncherDaemon {
     /** GET /play/status → état du client (running, pid, server, userID, strict, uptime). */
     private void playStatus(HttpExchange ex) throws IOException {
         send(ex, 200, play.status());
+    }
+
+    /** GET /settings → réglages locaux (JSON) ; POST /settings {clés connues} → fusionne + persiste + renvoie l'état. */
+    private void settingsHandler(HttpExchange ex) throws IOException {
+        try {
+            if ("GET".equals(ex.getRequestMethod())) { send(ex, 200, settings.toJson()); return; }
+            if (!post(ex)) return;
+            send(ex, 200, settings.update(form(ex)));
+        } catch (Exception e) { send(ex, 500, "{\"error\":\"" + e.getClass().getSimpleName() + "\"}"); }
     }
 
     private static int intOr(Map<String, String> f, String k, int def) {

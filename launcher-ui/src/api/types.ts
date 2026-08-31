@@ -25,6 +25,12 @@ export type PlayStatus = {
   running: boolean; pid: number; server: string; userID: number; strict: boolean; uptimeMs: number;
 };
 
+export type Settings = {
+  language: "fr" | "en";
+  disclaimerAcceptedVersion: number;
+  apkPath: string; outDir: string; clientDir: string; bundleDir: string;
+};
+
 // Paramètres d'appel (côté front → daemon).
 export type HostStartParams = { bundleDir?: string; contentPort?: number; gamePort?: number; authPort?: number; strict?: boolean };
 export type BuildStartParams = { apkPath: string; target?: BuildTarget; outDir?: string; full?: boolean; pkg?: boolean };
