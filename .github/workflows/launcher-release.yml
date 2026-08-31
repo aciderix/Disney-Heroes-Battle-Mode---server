@@ -1,17 +1,20 @@
 name: launcher-release
 
 # Construit le PACKAGE LAUNCHER clé-en-main (game-free, copyright-propre) sur Linux ET Windows,
-# embarque un JDK complet + un CPython relocatable (python-build-standalone), et le publie en RELEASE.
-# Le joueur télécharge le package de SON OS, le lance (run-launcher.sh/.bat) sans rien installer,
-# lui fournit SON APK, et génère/héberge le serveur + joue.
+# embarque un JDK complet + un CPython relocatable (python-build-standalone) + l'APPLI FENÊTRÉE Tauri
+# (exe qui ouvre une fenêtre avec les 7 écrans et démarre le daemon), et le publie en RELEASE.
+# Le joueur télécharge le package de SON OS, double-clique l'exe DisneyHeroesLauncher (fenêtre) — ou lance
+# run-launcher.sh/.bat (daemon HTTP seul) — sans rien installer, fournit son APK, génère/héberge, joue.
 #
-# Déclenche : manuellement (workflow_dispatch) ou sur push d'un tag `launcher-v*` (→ crée la Release).
+# Déclenche : manuellement (workflow_dispatch), sur push du fichier workflow (validation), ou sur tag `launcher-v*` (Release).
 
 on:
   workflow_dispatch:
   push:
     tags:
       - 'launcher-v*'
+    paths:
+      - '.github/workflows/launcher-release.yml'
 
 permissions:
   contents: write        # créer/attacher la Release
@@ -61,6 +64,51 @@ jobs:
           "$OUT/$PYEXE" --version   # PROUVE le python embarqué (Linux ET Windows)
           kill $LP 2>/dev/null || true
 
+      # --- APPLI FENÊTRÉE (Tauri) : buildée puis DÉPOSÉE dans le package, à côté de dhlauncher.jar + runtime/jdk
+      #     (main.rs les résout depuis le dossier de l'exe) → un seul téléchargement, double-clic = fenêtre. ---
+      - name: Install Linux WebView deps (Tauri)
+        if: matrix.oskind == 'linux'
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y \
+            libwebkit2gtk-4.1-dev build-essential curl wget file \
+            libxdo-dev libssl-dev libayatana-appindicator3-dev librsvg2-dev patchelf
+
+      - name: Set up Node.js 22
+        uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+          cache: npm
+          cache-dependency-path: launcher-ui/package-lock.json
+
+      - name: Set up Rust (stable)
+        uses: dtolnay/rust-toolchain@stable
+
+      - name: Cache Rust build
+        uses: swatinem/rust-cache@v2
+        with:
+          workspaces: 'launcher-ui/src-tauri -> target'
+
+      - name: Build windowed launcher (Tauri)
+        working-directory: launcher-ui
+        run: |
+          npm ci
+          npx tauri build
+
+      - name: Place windowed exe into the package
+        shell: bash
+        env:
+          OUT: ${{ github.workspace }}/build/launcher-${{ matrix.oskind }}
+        run: |
+          REL="launcher-ui/src-tauri/target/release"
+          if [ "${{ matrix.oskind }}" = windows ]; then
+            cp "$REL/disney-heroes-launcher.exe" "$OUT/DisneyHeroesLauncher.exe"
+          else
+            cp "$REL/disney-heroes-launcher" "$OUT/DisneyHeroesLauncher"
+            chmod +x "$OUT/DisneyHeroesLauncher"
+          fi
+          ls -la "$OUT"
+
       - name: Archive package
         shell: bash
         run: |
@@ -88,7 +136,9 @@ jobs:
           "$P/runtime/jdk/bin/java" -version
           "$P/runtime/jdk/bin/javac" -version    # outils de build présents (génération de bundles)
           "$P/$PYEXE" --version
-          echo "OK — package extrait autonome (JDK+Python réels)"
+          # l'exe fenêtré DOIT être dans le package extrait (à côté du jar + runtime) :
+          if [ "${{ matrix.oskind }}" = windows ]; then test -f "$P/DisneyHeroesLauncher.exe"; else test -f "$P/DisneyHeroesLauncher"; fi
+          echo "OK — package extrait autonome (JDK + Python + exe fenêtré réels)"
 
       - name: Upload build artifact
         uses: actions/upload-artifact@v4
@@ -103,5 +153,5 @@ jobs:
         env:
           GH_TOKEN: ${{ github.token }}
         run: |
-          gh release create "${GITHUB_REF_NAME}" --title "${GITHUB_REF_NAME}" --notes "Launcher clé-en-main (JDK + Python embarqués). Package par OS ; fournir son APK." || true
+          gh release create "${GITHUB_REF_NAME}" --title "${GITHUB_REF_NAME}" --notes "Launcher clé-en-main (JDK + Python embarqués + appli FENÊTRÉE). Package par OS : double-cliquer DisneyHeroesLauncher(.exe) pour la fenêtre, ou run-launcher.sh/.bat pour le daemon seul. Fournir son APK." || true
           gh release upload "${GITHUB_REF_NAME}" build/dh-launcher-${{ matrix.oskind }}.* --clobber
