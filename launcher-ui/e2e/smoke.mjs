@@ -51,6 +51,11 @@ try {
   await page.waitForSelector("text=Générer depuis l'APK", { timeout: 10000 });
   const options = await page.locator("select option").allInnerTexts();
   ok(!options.some((o) => /apk/i.test(o)), "écran Générer : aucune cible APK proposée (non implémenté)");
+
+  // 6) Jouer : gating honnête (non connecté → invite à se connecter, pas de bouton JOUER trompeur)
+  await page.locator("button.nav-item", { hasText: "Jouer" }).click();
+  await page.waitForSelector("text=/Connecte-toi d'abord/i", { timeout: 10000 });
+  ok((await page.getByRole("button", { name: /^JOUER$/ }).count()) === 0, "écran Jouer : pas de bouton JOUER sans session (gating)");
 } catch (e) {
   fails.push("exception: " + e.message);
   console.log("  ✗ exception:", e.message);

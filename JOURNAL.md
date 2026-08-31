@@ -1,5 +1,16 @@
 # JOURNAL — journal détaillé des modifications
 
+## 2026-08-31 (g206) — C2b inc.4 : écran Jouer (/play) — front joueur COMPLET pour le backend existant 🟢
+
+- **Jouer** : `/play` (permissif : DH_USERID = compte) + polling `/play/status` (running, PID, serveur, uptime) +
+  `/play/stop`. Nécessite session + serveur + dossier bundle CLIENT. Le **strict distant** (hook loginRequestID) n'est
+  pas livré → non proposé (principe). Endpoints testés `PlayLifecycleTest` + vérif bout-en-bout (g203).
+- **Front joueur COMPLET** pour la surface backend actuelle : 5 écrans (Jouer, Serveurs, Compte, Héberger, Générer),
+  chacun 100% adossé à des endpoints réels+testés. **E2E Playwright 7/7** (+ Jouer : gating sans session).
+- **Reste = BACKEND d'abord** (principe « pas de bouton futur ») : **Réglages** exige la persistance `settings.json`
+  (`GET/POST /settings`, §7) ; **Admin** exige les endpoints `/admin/*` (5 domaines, dont Modération à CONSTRUIRE, §7).
+  Ces écrans ne seront ajoutés qu'APRÈS livraison+test de leurs endpoints. Aussi à venir : job CI « build launcher-ui ».
+
 ## 2026-08-31 (g205) — C2b inc.3 : écrans Héberger + Générer (endpoints réels) + E2E étendu 🟢
 
 - **Héberger** : `/host/start` (bundleDir OU dev, ports, strict) / `/host/stop` / polling `/host/status` (running,

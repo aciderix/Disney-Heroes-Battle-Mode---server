@@ -8,6 +8,7 @@ import { Servers } from "./Servers";
 import { Account } from "./Account";
 import { Host } from "./Host";
 import { Generate } from "./Generate";
+import { Play } from "./Play";
 import { t, type Lang, type MsgKey } from "../i18n";
 
 type Section = { id: string; label: MsgKey; view: ReactNode };
@@ -15,6 +16,7 @@ type Section = { id: string; label: MsgKey; view: ReactNode };
 export function Shell({ lang }: { lang: Lang }) {
   const { session, selectedServer } = useApp();
   const sections: Section[] = [
+    { id: "play", label: "nav.play", view: <Play /> },
     { id: "servers", label: "nav.servers", view: <Servers /> },
     { id: "account", label: "nav.account", view: <Account /> },
     { id: "host", label: "nav.host", view: <Host /> },
