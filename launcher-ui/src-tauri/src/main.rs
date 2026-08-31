@@ -73,7 +73,7 @@ fn main() {
                 let state = window.state::<Daemon>();
                 if let Ok(mut guard) = state.child.lock() {
                     if let Some(mut c) = guard.take() { let _ = c.kill(); }
-                }
+                }; // ; = dropper les temporaires (MutexGuard) avant `state` (E0597)
             }
         })
         .run(tauri::generate_context!())
