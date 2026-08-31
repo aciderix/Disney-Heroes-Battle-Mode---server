@@ -26,11 +26,17 @@ lambda** — « il n'y a plus qu'à cliquer ». L'utilisateur fournit son APK **
 lancement), pas juste des artefacts épars dans un arbre de dev. **Zéro assemblage manuel, zéro dépendance à installer à
 la main** (le runtime requis — JRE embarqué/vérifié, `python3` pour le content-server, etc. — est fourni ou détecté et
 guidé). Corollaire d'implémentation : chaque cible de build (C2a-4 serveur, C2a-4b client) se termine par une **étape de
-PACKAGING** qui produit ce bundle lançable. **Statut** : bundle serveur ✅ (`run.sh`/`run.bat`, lancé hors dev +
-hébergé par le launcher via `HostManager.startBundle`, cf. `JOURNAL.md` g196/g197). **Reste pour le vrai « zéro-
-install » lambda** : embarquer un **JRE** (jlink) et **retirer/embarquer la dépendance `python3`** du content-server
-(aujourd'hui le bundle exige Java + python présents) → un lanceur natif (`.exe` / AppImage) qui ne réclame RIEN.
-Un-clic « Héberger » via le launcher OU double-clic du bundle standalone (machine headless) : les deux marchent.
+PACKAGING** qui produit ce bundle lançable. **Statut** : bundle serveur ✅ + bundle client ✅ (`run.sh`/`run.bat`,
+lancés hors dev + serveur hébergé par le launcher via `HostManager.startBundle`, cf. `JOURNAL.md` g196/g197).
+**JRE EMBARQUÉ ✅ (g200)** : `BuildManager.packageRuntime` **jlink** un JRE minimal (modules `JRE_MODULES`, ~69 Mo,
+dont `jdk.crypto.ec` pour l'Ed25519 de l'auth + `jdk.httpserver` pour l'AuthService) dans `<bundle>/runtime/jre` ;
+`run.sh`/`run.bat` **le préfèrent** (repli `java` système). Vérifié : bundle serveur lancé sur le JRE embarqué
+(`ServerBundleTest` 11/11) + **hub CLIENT rendu sur le JRE embarqué** (setsid + capture). ⇒ **le port CLIENT PC est
+100 % autonome** (aucun Java ni python requis). Le JRE est celui de l'**OS de build** (jlink ne cross-compile pas sans
+jmods de l'OS cible : bundle Linux → JRE Linux pour `run.sh` ; bundle Windows → JRE Windows via build sous Windows).
+**Reste pour le « zéro-install » lambda côté SERVEUR** : la dépendance **`python3`** du content-server (le port PC, lui,
+n'en a pas besoin) — options : embarquer python OU porter le content-server en Java (une seule runtime) ; puis un lanceur
+natif (`.exe` / AppImage). Un-clic « Héberger » via le launcher OU double-clic du bundle standalone : les deux marchent.
 
 **Hébergement CLOUD (distinct du self-host, guidé plutôt que one-click)** : héberger sur un cloud/VPS demande par nature
 **plus de manipulations côté utilisateur** (provisionner une machine, ouvrir les ports / DNS / TLS, adresse publique).

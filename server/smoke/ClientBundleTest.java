@@ -35,7 +35,8 @@ public final class ClientBundleTest {
             ok(assets.isDirectory() && assets.list().length > 3, "assets/ (extraits de l'APK)");
             ok(new File(out, "resources").isDirectory(), "resources/");
             ok(new File(out, "run.sh").isFile() && new File(out, "run.bat").isFile(), "run.sh + run.bat");
-        } finally {
+            // RUNTIME EMBARQUÉ (zéro-install) : le port PC devient 100% autonome (pas de python, pas de java système).
+            ok(new File(out, "runtime/jre/bin/java").isFile(), "runtime/jre/bin/java embarqué (jlink, port PC zéro-install)");
             deleteRec(out);
         }
         System.out.println("ClientBundleTest : " + passed + " ok, " + failed + " échec(s)");

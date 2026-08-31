@@ -36,6 +36,13 @@ public final class ServerBundleTest {
         ok(new File(gen, "run.sh").isFile(), "run.sh présent");
         File tabs = new File(gen, "game-data/stats");
         ok(tabs.isDirectory() && tabs.list().length > 50, "game-data/stats peuplé");
+        // RUNTIME EMBARQUÉ (zéro-install) : jlink doit avoir produit un JRE minimal utilisable, et run.sh doit le préférer.
+        File embJava = new File(gen, "runtime/jre/bin/java");
+        ok(embJava.isFile(), "runtime/jre/bin/java embarqué (jlink, zéro-install côté Java)");
+        try {
+            String rs = new String(java.nio.file.Files.readAllBytes(new File(gen, "run.sh").toPath()), java.nio.charset.StandardCharsets.UTF_8);
+            ok(rs.contains("runtime/jre/bin/java"), "run.sh préfère le JRE embarqué (repli `java` système)");
+        } catch (Exception e) { ok(false, "lecture run.sh : " + e); }
 
         // 3) COPIE le bundle HORS de l'arbre de dev, puis l'HÉBERGE via HostManager.startBundle — c.-à-d. le chemin
         //    « bouton Héberger du launcher lance le bundle généré » (même artefact que le double-clic standalone).

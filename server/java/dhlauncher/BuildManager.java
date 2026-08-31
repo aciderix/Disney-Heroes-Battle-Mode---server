@@ -150,6 +150,8 @@ public final class BuildManager {
         append("copie des assets (~283 Mo) + ressources ...");
         copyDir(new File(req(m, "ASSETS")).toPath(), new File(out, "assets").toPath());
         copyDir(new File(req(m, "RESD")).toPath(), new File(out, "resources").toPath());
+        // runtime JRE embarqué (zéro-install : le port PC n'a pas besoin de python)
+        packageRuntime(out);
         // scripts de lancement
         writeExec(new File(out, "run.sh"), RUN_SH_CLIENT);
         writeText(new File(out, "run.bat"), RUN_BAT_CLIENT);
@@ -219,7 +221,9 @@ public final class BuildManager {
         java.nio.file.Files.copy(new File(projectDir, "server/content_server.py").toPath(),
                 new File(out, "content_server.py").toPath(), java.nio.file.StandardCopyOption.REPLACE_EXISTING);
 
-        // 4) scripts de lancement (bundle-relatifs, self-contained)
+        // 4) runtime JRE embarqué (zéro-install côté Java ; le content-server exige encore python3, documenté)
+        packageRuntime(out);
+        // 5) scripts de lancement (bundle-relatifs, self-contained)
         writeExec(new File(out, "run.sh"), RUN_SH);
         writeText(new File(out, "run.bat"), RUN_BAT);
         append("bundle prêt : " + out.getPath() + " (run.sh / run.bat)");
@@ -229,6 +233,39 @@ public final class BuildManager {
         String home = System.getProperty("java.home");
         File f = new File(home, "bin/" + tool);
         return f.isFile() ? f.getPath() : tool;   // repli PATH
+    }
+
+    /** Modules JDK requis par le bundle (serveur + client). Superset VÉRIFIÉ : jdeps donne la base ; on AJOUTE
+     *  les modules chargés par réflexion/ServiceLoader que jdeps ne voit pas — notamment {@code jdk.crypto.ec}
+     *  (Ed25519 de l'auth mnémonique) et {@code jdk.httpserver} (AuthService {@code com.sun.net.httpserver}),
+     *  plus charsets/localedata/zipfs. jlink tire les dépendances transitives. */
+    private static final String JRE_MODULES =
+        "java.base,java.desktop,java.instrument,java.management,java.naming,java.prefs,java.rmi,java.sql,"
+      + "java.xml,java.logging,java.net.http,java.scripting,jdk.unsupported,jdk.httpserver,jdk.crypto.ec,"
+      + "jdk.crypto.cryptoki,jdk.charsets,jdk.localedata,jdk.zipfs,jdk.xml.dom";
+
+    /**
+     * RUNTIME EMBARQUÉ (zéro-install) — jlink un JRE MINIMAL dans {@code <out>/runtime/jre} (modules {@link #JRE_MODULES}).
+     * Le {@code run.sh}/{@code run.bat} l'utilise s'il est présent, sinon repli sur le {@code java} du système. Le JRE
+     * est celui de l'OS de build (jlink ne cross-compile pas sans jmods de l'OS cible) → un bundle Linux embarque un
+     * JRE Linux (utilisé par {@code run.sh}) ; un bundle Windows (build sous Windows) embarque un JRE Windows. Best-effort :
+     * si jlink est indisponible/échoue, on log et on continue (le bundle reste lançable avec le java système — §2 : pas
+     * de faux « OK », juste une capacité en moins, tracée). Le port CLIENT PC devient 100% autonome (pas besoin de python).
+     */
+    private void packageRuntime(File out) {
+        try {
+            File runtime = new File(out, "runtime"); runtime.mkdirs();
+            File jre = new File(runtime, "jre");
+            if (jre.exists()) deleteRec(jre);   // jlink EXIGE que le dossier de sortie soit absent
+            runStep("jlink-runtime", new String[]{ javaBin("jlink"),
+                "--add-modules", JRE_MODULES,
+                "--no-header-files", "--no-man-pages", "--strip-debug", "--compress", "zip-6",
+                "--output", jre.getPath() }, null, null);
+            append("runtime JRE embarqué (zéro-install, OS de build) : " + jre.getPath());
+        } catch (Exception e) {
+            append("runtime JRE NON embarqué (jlink indispo/échec : " + e.getMessage()
+                + ") — le bundle utilisera le `java` du système (repli).");
+        }
     }
 
     private static void writeText(File f, String s) throws java.io.IOException {
@@ -247,11 +284,14 @@ public final class BuildManager {
       + "# Serveur Disney Heroes (self-host) — bundle autonome généré par le launcher. Lançable hors dev.\n"
       + "set -uo pipefail\n"
       + "DIR=\"$(cd \"$(dirname \"$0\")\" && pwd)\"\n"
+      // JRE EMBARQUÉ (zéro-install) : si `runtime/jre` est présent (jlink, OS de build), on l'utilise ; sinon repli
+      // sur le `java` du système. Idem pour python : le content-server exige encore python3 (documenté).
+      + "JAVA=\"$DIR/runtime/jre/bin/java\"; [ -x \"$JAVA\" ] || JAVA=java\n"
       + "CONTENT_PORT=\"${DH_CONTENT_PORT:-8080}\"; GAME_PORT=\"${DH_GAME_PORT:-8081}\"; AUTH_PORT=\"${DH_AUTH_PORT:-8082}\"\n"
       + "mkdir -p \"$DIR/data\"\n"
       + "python3 \"$DIR/content_server.py\" --port \"$CONTENT_PORT\" --rewrite-host \"127.0.0.1:$CONTENT_PORT\" \\\n"
       + "        --game-server \"127.0.0.1:$GAME_PORT\" & CPID=$!\n"
-      + "java -XX:TieredStopAtLevel=1 ${DH_SERVER_OPTS:-} -Ddh.db=\"$DIR/data/dh-server.db\" \\\n"
+      + "\"$JAVA\" -XX:TieredStopAtLevel=1 ${DH_SERVER_OPTS:-} -Ddh.db=\"$DIR/data/dh-server.db\" \\\n"
       + "     -Ddh.stats=\"$DIR/game-data/stats\" -Ddh.auth.port=\"$AUTH_PORT\" \\\n"
       + "     -cp \"$DIR/lib/*\" dhserver.LoginServer \"$GAME_PORT\" & JPID=$!\n"
       // les deux en arrière-plan + wait : le trap survit (contrairement à exec) → arrêt PROPRE des DEUX process
@@ -267,6 +307,8 @@ public final class BuildManager {
       + "export JAVA_TOOL_OPTIONS=\n"
       + "export LIBGL_ALWAYS_SOFTWARE=\"${LIBGL_ALWAYS_SOFTWARE:-1}\"\n"
       + "export LC_ALL=\"${LC_ALL:-C.utf8}\"\n"
+      // JRE EMBARQUÉ (zéro-install) : le port PC n'a PAS besoin de python → avec `runtime/jre` il est 100% autonome.
+      + "JAVA=\"$DIR/runtime/jre/bin/java\"; [ -x \"$JAVA\" ] || JAVA=java\n"
       + "SERVER=\"${DH_SERVER:-127.0.0.1:8080}\"\n"
       + "CP=\"$DIR/lib/dhdesktop.jar:$DIR/lib/game-logic-framed.jar:$DIR/native:$DIR/assets:$DIR/resources:$DIR/lib/runtime/*\"\n"
       + "JOPTS=\"-XX:TieredStopAtLevel=1 -Dorg.lwjgl.util.Debug=false -Ddh.rundir=$DIR/data/run\"\n"
@@ -280,30 +322,34 @@ public final class BuildManager {
       + "if [ -z \"${DISPLAY:-}\" ] && command -v Xvfb >/dev/null; then\n"
       + "  Xvfb :99 -screen 0 1280x720x24 >/tmp/dh_xvfb.log 2>&1 & XVFB=$!\n"
       + "  trap 'kill $XVFB 2>/dev/null' EXIT; export DISPLAY=:99; sleep 1; fi\n"
-      + "if [ -n \"${DH_TIMEOUT:-}\" ]; then timeout \"$DH_TIMEOUT\" java $JOPTS -cp \"$CP\" dhdesktop.DesktopLauncher \"$@\"\n"
-      + "else java $JOPTS -cp \"$CP\" dhdesktop.DesktopLauncher \"$@\"; fi\n";
+      + "if [ -n \"${DH_TIMEOUT:-}\" ]; then timeout \"$DH_TIMEOUT\" \"$JAVA\" $JOPTS -cp \"$CP\" dhdesktop.DesktopLauncher \"$@\"\n"
+      + "else \"$JAVA\" $JOPTS -cp \"$CP\" dhdesktop.DesktopLauncher \"$@\"; fi\n";
 
     private static final String RUN_BAT_CLIENT =
         "@echo off\r\n"
       + "REM Port PC Disney Heroes — bundle client autonome. Lancable hors dev.\r\n"
       + "set DIR=%~dp0\r\n"
+      + "set JAVA=%DIR%runtime\\jre\\bin\\java.exe\r\n"
+      + "if not exist \"%JAVA%\" set JAVA=java\r\n"
       + "if \"%DH_SERVER%\"==\"\" set DH_SERVER=127.0.0.1:8080\r\n"
       + "set CP=%DIR%lib\\dhdesktop.jar;%DIR%lib\\game-logic-framed.jar;%DIR%native;%DIR%assets;%DIR%resources;%DIR%lib\\runtime\\*\r\n"
       + "set JOPTS=-XX:TieredStopAtLevel=1 -Ddh.rundir=\"%DIR%data\\run\" -Ddh.spinelib=\"%DIR%native\\libspine-native.so\" -Ddh.server=%DH_SERVER%\r\n"
       + "if exist \"%DIR%native\\libgdx64.so\" set JOPTS=%JOPTS% -Ddh.gdxnative=\"%DIR%native\\libgdx64.so\"\r\n"
       + "if exist \"%DIR%native\\libhostspine64.so\" set JOPTS=%JOPTS% -Ddh.spinebackend=jni -Ddh.hostspine=\"%DIR%native\\libhostspine64.so\"\r\n"
-      + "java %JOPTS% -cp \"%CP%\" dhdesktop.DesktopLauncher %*\r\n";
+      + "\"%JAVA%\" %JOPTS% -cp \"%CP%\" dhdesktop.DesktopLauncher %*\r\n";
 
     private static final String RUN_BAT =
         "@echo off\r\n"
       + "REM Serveur Disney Heroes (self-host) — bundle autonome. Lancable hors dev.\r\n"
       + "set DIR=%~dp0\r\n"
+      + "set JAVA=%DIR%runtime\\jre\\bin\\java.exe\r\n"
+      + "if not exist \"%JAVA%\" set JAVA=java\r\n"
       + "if \"%DH_CONTENT_PORT%\"==\"\" set DH_CONTENT_PORT=8080\r\n"
       + "if \"%DH_GAME_PORT%\"==\"\" set DH_GAME_PORT=8081\r\n"
       + "if \"%DH_AUTH_PORT%\"==\"\" set DH_AUTH_PORT=8082\r\n"
       + "if not exist \"%DIR%data\" mkdir \"%DIR%data\"\r\n"
       + "start \"dh-content\" python \"%DIR%content_server.py\" --port %DH_CONTENT_PORT% --rewrite-host 127.0.0.1:%DH_CONTENT_PORT% --game-server 127.0.0.1:%DH_GAME_PORT%\r\n"
-      + "java -XX:TieredStopAtLevel=1 -Ddh.db=\"%DIR%data\\dh-server.db\" -Ddh.stats=\"%DIR%game-data\\stats\" -Ddh.auth.port=%DH_AUTH_PORT% -cp \"%DIR%lib\\*\" dhserver.LoginServer %DH_GAME_PORT%\r\n";
+      + "\"%JAVA%\" -XX:TieredStopAtLevel=1 -Ddh.db=\"%DIR%data\\dh-server.db\" -Ddh.stats=\"%DIR%game-data\\stats\" -Ddh.auth.port=%DH_AUTH_PORT% -cp \"%DIR%lib\\*\" dhserver.LoginServer %DH_GAME_PORT%\r\n";
 
     private void runStep(String name, String[] cmd, String envKey, String envVal) throws Exception {
         step = name; append("=== étape " + name + " ===");

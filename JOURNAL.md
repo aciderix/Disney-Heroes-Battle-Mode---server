@@ -1,5 +1,43 @@
 # JOURNAL — journal détaillé des modifications
 
+## 2026-08-31 (g200) — RUNTIME JRE embarqué (zéro-install) : jlink dans le bundle + `run.sh` le préfère 🟢
+
+**Suite de la validation g199** (« poursuit ») — objectif clé-en-main : qu'un joueur lambda lance le bundle **sans
+installer Java**.
+
+**`BuildManager.packageRuntime`** : **jlink** un JRE MINIMAL dans `<bundle>/runtime/jre` (constante `JRE_MODULES`,
+~69 Mo). Le set de modules = base `jdeps` + les modules chargés par **réflexion/ServiceLoader** que jdeps ne voit pas,
+vérifiés empiriquement : notamment **`jdk.crypto.ec`** (Ed25519 de l'auth mnémonique) et **`jdk.httpserver`**
+(`com.sun.net.httpserver` de l'AuthService), + `jdk.charsets`/`jdk.localedata`/`jdk.zipfs`/`jdk.xml.dom`. Appelé dans
+`packageServer` ET `packageClient`. `run.sh`/`run.bat` (serveur + client) **préfèrent** `runtime/jre/bin/java` s'il
+existe, sinon repli sur le `java` du système (`JAVA="$DIR/runtime/jre/bin/java"; [ -x "$JAVA" ] || JAVA=java`).
+
+**Vérifs (FAITS, §8)** :
+- JRE embarqué (69 Mo) exécute le **serveur** : `AuthMintTest` OK (Ed25519 sign/verify + httpserver → `jdk.crypto.ec` +
+  `jdk.httpserver` présents), `ChestWireTest` OK (données `.tab` + LoginServer + codec + drop tables).
+- JRE embarqué exécute le **client LOURD** : bundle client lancé via `runtime/jre/bin/java` (setsid + `-Ddh.shotevery`) →
+  **hub COMPLET rendu** (LWJGL/unidbg/spine jni sur le JRE jlink'd) — capture `verify_jre.png`.
+- **`ServerBundleTest` 11/11** (was 9) : génère le bundle (jlink inclus) → copie hors dev → `run.sh` **lance le serveur
+  sur le JRE EMBARQUÉ** → port de jeu en écoute ; +2 assertions (JRE présent, run.sh le préfère). `ClientBundleTest`
+  (hors régression, lourd) : +1 assertion JRE.
+
+**Limite HONNÊTE (§2, tracée, pas un faux OK)** : jlink ne cross-compile pas sans les jmods de l'OS cible → le JRE
+embarqué est celui de l'**OS de build** (bundle Linux → JRE Linux pour `run.sh` ; un bundle Windows nécessite un build
+sous Windows pour un JRE Windows dans `run.bat`). Si jlink est indisponible/échoue, `packageRuntime` **log et continue**
+(bundle lançable avec le `java` système — capacité en moins, tracée). ⇒ **Le port CLIENT PC est 100 % autonome** (pas de
+python, pas de java système requis). **Reste côté SERVEUR** : la dépendance **`python3`** du content-server (options :
+embarquer python OU porter le content-server en Java — une seule runtime).
+
+**Correctif régression annexe (date-dépendance)** : `SigninMultiDayTest` échouait le **2026-08-31** (bord de mois) — il
+vérifie la PROGRESSION multi-jour sur l'horloge RÉELLE, or le calendrier du sign-in MENSUEL bascule le 31 (le « jour
+actif » ne « +1 » pas comme en milieu de mois). **Fix déterministe** (précédent `WarSchedulerTest`) : `pinClockToMidMonth`
+ancre `TimeUtil.serverTimeNow()` au **15 du mois** (champ privé `CLOCK_OFFSET`, même mécanique que
+`ServerContext.applyClockOffset`) → test date-indépendant, sémantique inchangée (le bord de mois relève de la logique
+calendaire du JEU, hors périmètre de ce test de progression). **Régression 170/170** (verte quelle que soit la date).
+
+**SUITE** = zéro-install SERVEUR (python : embarquer OU porter en Java) ; lanceur natif `.exe`/AppImage ; patch APK ;
+**C2b** (front Tauri+React).
+
 ## 2026-08-30 (g199) — VALIDATION du jeu GÉNÉRÉ : 4 combos EN JEU (permissif/strict × neuf/avancé) + CORRECTIF bug d'auth strict 🟢
 
 **Demande util. (bloquante)** : « faut s'assurer que le jeu généré fonctionne… vérifier qu'on oublie rien, as-tu réécrit

@@ -38,8 +38,27 @@ public final class SigninMultiDayTest {
     return su.applyAction(a);
   }
 
+  /** Ancre {@code TimeUtil.serverTimeNow()} au 15 du mois courant à 12h UTC (milieu de mois, hors bord de reset
+   *  mensuel) en posant le champ privé {@code CLOCK_OFFSET} — même mécanique que {@code ServerContext.applyClockOffset}. */
+  static void pinClockToMidMonth() throws Exception {
+    java.time.ZonedDateTime target = java.time.ZonedDateTime.now(java.time.ZoneOffset.UTC)
+        .withDayOfMonth(15).withHour(12).withMinute(0).withSecond(0).withNano(0);
+    long offset = System.currentTimeMillis() - target.toInstant().toEpochMilli();
+    java.lang.reflect.Field f = com.perblue.heroes.util.TimeUtil.class.getDeclaredField("CLOCK_OFFSET");
+    f.setAccessible(true);
+    f.setLong(null, offset);
+  }
+
   public static void main(String[] a) throws Exception {
     ServerContext.init();
+    // DÉTERMINISME (comme WarSchedulerTest, horloge fixe) : ce test vérifie la PROGRESSION multi-jour (réclamer
+    // jour N → jour N+1 réclamable après reset quotidien). En FIN DE MOIS (ex. le 31), le calendrier du sign-in
+    // MENSUEL bascule (le jour actif ne « +1 » pas comme en milieu de mois) → faux échec dépendant de la date
+    // (vert le 30, rouge le 31). On ANCRE donc l'horloge au **15 du mois courant** (milieu de mois, hors bord de
+    // reset mensuel) : serverTimeNow() = System.currentTimeMillis() − CLOCK_OFFSET, on pose CLOCK_OFFSET en
+    // conséquence (champ privé du jeu, comme ServerContext.applyClockOffset). Test date-indépendant, sémantique
+    // inchangée (le bord de mois relève de la logique calendaire du JEU, hors périmètre de ce test de progression).
+    pinClockToMidMonth();
     ServerUser su = ServerUser.newPlayer(1L, 1);
 
     long gold0 = gold(su.bootData());
