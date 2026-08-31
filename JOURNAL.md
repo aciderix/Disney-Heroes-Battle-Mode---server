@@ -13,6 +13,14 @@ produits : `dh-launcher-linux.tar.gz`, `dh-launcher-windows.zip`. (Le jeu comple
 d'écran — il tourne sur la machine du joueur.) L'étape « Attach to Release » ne s'exécute que sur un **tag `launcher-v*`**
 (skippée en dispatch) → pour une **Release téléchargeable**, pousser un tag `launcher-v*`.
 
+**Correctif suite à la vérif des assets de `launcher-v0.1.0`** (commit c9b7266) : l'asset **Linux (30 Mo) ne contenait
+PAS le JDK**. Cause : `$JAVA_HOME` du cache d'outils GitHub (Linux) est un **lien symbolique** → `cp -a` le préservait →
+`runtime/jdk` = lien mort à l'extraction (le smoke en VM passait car le lien se résout localement — d'où « vert » mais
+package cassé). Fix `build_launcher.sh` : `cp -RLp "$JAVA_HOME/."` (déréférence + contenu → vrais fichiers). + nouvelle
+étape CI **« Verify EXTRACTED package »** qui déballe l'archive et lance `java`/`javac`/`python` depuis la copie EXTRAITE
+(simule le poste du joueur → attrape un package incomplet). Windows (242 Mo) contenait déjà le JDK. ⇒ **re-tag requis**
+pour régénérer les assets de la Release.
+
 **Note d'env** : je (session bac-à-sable) ne peux ni créer de tag ni dispatcher un workflow (proxy git → 403, credentials
 scopés `claude/*`) ; un PAT collé ne contourne pas (le proxy impose les creds de session). ⇒ déclenchement/tag = côté
 utilisateur ; je garde le **suivi + correctifs** (push sur `claude/*`).
