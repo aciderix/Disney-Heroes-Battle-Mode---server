@@ -224,15 +224,23 @@ l'**administration live-ops** = §4.6.)
   - À **FAILED** : `step` + `log` mis en avant, bouton « réessayer ».
 - ⚠️ Réseau requis pendant la génération (téléchargement CPython + assets) → le signaler.
 
-### 4.6 ADMIN (administration du serveur hébergé — contenu défini par le code)
-**But** : piloter les **overrides live-ops** de l'opérateur (« events »), qui existent **dans le code** via
-`ServerEvents` (builders `SpecialEventInfo`) et sont **persistés dans `shard_state`**, chargés au boot par
-`LoginServer` (`installOperatorEvents`). Aujourd'hui pilotés par l'outil **`AdminEvents`** (spec JSON `{kind, …}` →
-`ServerEvents.fromJson`). **Le launcher n'expose PAS encore ces contrôles** → §4.6 **définit le CONTENU** de l'admin et
-requiert de **nouveaux endpoints** (`/admin/*`, **chantier D**, cf. §7). À présenter comme **section « Administration
-(avancé) »**, visible seulement pour un serveur qu'on héberge soi-même.
+### 4.6 ADMIN — PANNEAU OPÉRATEUR (chantier D) — visible seulement pour un serveur qu'on héberge soi-même
+**But** : administrer le serveur hébergé. C'est un **panneau à onglets** couvrant **5 domaines** ; chacun est mappé sur
+ce que le **code supporte réellement** (§8 : pas de faux « OK »). **Aucun n'a encore d'endpoint launcher** → tous
+requièrent de **nouveaux endpoints `/admin/*`** (§7). Statut par domaine :
 
-**Contenu exact (chaque « composant » = un `kind` de spec, source `ServerEvents`)** — un **éditeur d'events** :
+| Onglet Admin | Domaine | Capacité dans le code | Statut |
+|---|---|---|---|
+| **A. Events** | live-ops (remises, bonus, trials, contest, modes ouverts…) | ✅ `ServerEvents` (13 builders) + `shard_state` | **exposer** |
+| **B. Monitoring** | joueurs en ligne, connexions, uptime, logs | 🟡 `LoginServer.online` + `connectionsAccepted` + logs hôte | **exposer** |
+| **C. Joueurs** | éditer un compte (ressources, héros, TL, campagne, déblocages, tutos) | 🟡 `ServerUser.giveResource/grantHero/grantCampaignLevel/completeAllTutorials/SetTeamLevel/CodebaseUnlock` | **exposer** (autoritatif, à journaliser) |
+| **D. Ère de contenu** | choisir la **release** (R1…R102) = ancrer l'horloge du jeu à cette ère | 🟡 `docs/RELEASE_PICKER.md` + outil `AdminRelease` + ancre d'horloge (`ServerContext`) | **exposer** |
+| **E. Modération** | **ban / mute / kick** joueur | ❌ **ABSENT** (seul `KickFromGuild` = feature de jeu, pas opérateur) | **À CONSTRUIRE** |
+
+#### A. Events (live-ops) — un **éditeur d'events**
+`ServerEvents` (builders `SpecialEventInfo`) persistés dans `shard_state`, chargés au boot par `LoginServer`
+(`installOperatorEvents`) ; aujourd'hui pilotés par l'outil CLI **`AdminEvents`** (spec JSON `{kind,…}` →
+`ServerEvents.fromJson`). Chaque « composant » = un `kind` :
 une **liste d'overrides actifs** (avec fenêtre `start/end`) + un bouton **« Ajouter un event »** ouvrant un formulaire
 selon le `kind` choisi :
 
@@ -257,14 +265,41 @@ selon le `kind` choisi :
 par un endpoint `/admin/enums`, §7 — **ne pas coder en dur**). `start/end` = **sélecteurs date-heure**. Aperçu JSON de
 la spec (`{kind,…}`) avant application. Actions : **Appliquer** (persiste + `refresh`), **Retirer**, **Vider tout**.
 
-**Autres leviers opérateur présents dans le code** (à inclure dans Admin▸« Serveur ») :
-- **Mode strict** (auth) : ON/OFF (déjà via `hostStart strict`).
-- **Décalage d'horloge** `-Ddh.clock.offset.hours` (`ServerContext.applyClockOffset`) — utile pour **tester un mode
-  ouvert un jour précis** (ex. Invasion) → champ « avancer l'horloge (heures) » (mode test).
-- **Ports / shard** (lecture) : issus de `hostStatus`.
+#### B. Monitoring
+- **Joueurs en ligne** (liste userID + depuis quand) et **connexions acceptées** — source `LoginServer.online`
+  (`ConcurrentHashMap<userID,connexion>`) + `connectionsAccepted`. → endpoint `GET /admin/monitor`.
+- **État serveur** : ports, strict, uptime (déjà via `hostStatus`).
+- **Logs** : tail de `host-server.log` / `host-content.log` / `host.log` → endpoint `GET /host/logs?which=&tail=N`.
+- **Kick** (déconnecter un joueur en ligne) : faisable via la map `online` (fermer la connexion) — mais **à coder**
+  (recouvre la Modération E).
 
-> **Cadrage honnête** : §4.6 est la **cible** (chantier D). Ni `/admin/*` ni `/play` n'existent encore. Le front doit
-> afficher ces sections comme **« à venir »** tant que les endpoints ne sont pas livrés, et **jamais** simuler un effet.
+#### C. Gestion des joueurs (édition autoritative — À JOURNALISER)
+Rechercher un compte (par userID) puis appliquer des mutations qui **existent déjà** comme méthodes `ServerUser`
+(utilisées par les outils dev `CodebaseUnlock`/`SetTeamLevel`/`StrictAuthAccount`) :
+- **Ressources** : `giveResource(type, montant)` (or, diamants, énergie…).
+- **Héros** : `grantHero(type[, rareté, niveau, étoiles])`.
+- **Niveau d'équipe** : `SetTeamLevel` / resync TL.
+- **Campagne** : `grantCampaignLevel(type, chapitre, niveau, étoiles)`.
+- **Tutoriels** : `completeAllTutorials()`.
+- **Déblocage global** : `CodebaseUnlock` (chapitre 41 + roster + ressources).
+→ endpoints `POST /admin/player/{lookup,giveResource,grantHero,setTeamLevel,grantCampaign,completeTutorials,unlock}`.
+⚠️ Puissant (triche opérateur) → **confirmation + journalisation** obligatoires dans l'UI.
+
+#### D. Ère de contenu (release picker)
+Choisir une **release `R1…R102`** = **poser l'ancre d'horloge** du jeu à la date de début de cette ère (gouverne héros/
+objets disponibles, sorties, saisons — `content.<shard>.tab`/`ContentStats`, `patched_heroes*`, cf.
+`docs/RELEASE_PICKER.md`). Outil existant : **`AdminRelease`**. → endpoints `GET /admin/releases` (liste R1…R102 + date),
+`POST /admin/release {name}`. Inclut aussi le **décalage d'horloge** libre (`-Ddh.clock.offset.hours`, mode test).
+
+#### E. Modération — **À CONSTRUIRE** (n'existe pas dans le code)
+Aucun système de **ban / mute / kick opérateur** aujourd'hui (`KickFromGuild` = expulsion de guilde côté **jeu**, pas
+modération). À bâtir comme incrément serveur : **liste de bans** (rejet au login dans `LoginServer`, à côté de l'auth
+strict), **mute** (drapeau anti-chat), **kick** (fermer la connexion via `online`). → endpoints
+`GET/POST /admin/moderation/{bans,ban,unban,mute,kick}`. **Le front affiche cet onglet « à construire »**, pas simulé.
+
+> **Cadrage honnête** : §4.6 (A→E) est la **cible chantier D**. Seuls les **capacités sous-jacentes** existent (A/B/C/D) ;
+> **aucun endpoint `/admin/*` n'est encore livré**, et la **Modération (E) n'existe même pas** côté serveur. Le front
+> affiche chaque onglet **« à venir »/« à construire »** tant que l'endpoint n'existe pas, et **ne simule jamais** un effet.
 
 ### 4.7 RÉGLAGES
 **But** : préférences locales + entretien. (Persistance `settings.json` **à ajouter** — §7.)
@@ -312,9 +347,17 @@ Le front **ne doit pas** exposer ces fonctions tant que l'endpoint n'existe pas 
 5. **« Se souvenir de moi » chiffré** : `POST /identity/remember {phrase, localPassword}` / `POST /identity/forget` /
    déchiffrement au démarrage. (Aujourd'hui : absent ; la phrase n'est pas persistée.)
 6. **Tail des logs hôte** : `GET /host/logs?which=server|content|bundle&tail=N`. (Fichiers écrits mais pas servis.)
-7. **ADMIN (chantier D)** : `GET /admin/events`, `POST /admin/events` (spec `{kind,…}`), `POST /admin/events/remove`,
-   `POST /admin/events/clear`, `GET /admin/enums` (listes d'enums réelles), `POST /admin/clock {offsetHours}`.
-   S'appuie sur `ServerEvents.fromJson`/`setOperatorEvents` + persistance `shard_state`.
+7. **ADMIN — panneau opérateur (chantier D, 5 domaines §4.6)** :
+   - **A. Events** : `GET/POST /admin/events`, `/admin/events/remove`, `/admin/events/clear`, `GET /admin/enums`
+     (enums réelles). Base : `ServerEvents.fromJson`/`setOperatorEvents` + `shard_state`. *(capacité prête)*
+   - **B. Monitoring** : `GET /admin/monitor` (joueurs en ligne via `LoginServer.online`, connexions, uptime) ;
+     `GET /host/logs?which=&tail=N`. *(capacité prête)*
+   - **C. Joueurs** : `POST /admin/player/{lookup,giveResource,grantHero,setTeamLevel,grantCampaign,completeTutorials,unlock}`
+     (méthodes `ServerUser` existantes ; **journaliser**). *(capacité prête)*
+   - **D. Ère de contenu** : `GET /admin/releases`, `POST /admin/release {name}`, `POST /admin/clock {offsetHours}`
+     (`AdminRelease` + ancre d'horloge). *(capacité prête)*
+   - **E. Modération** : `GET/POST /admin/moderation/{bans,ban,unban,mute,kick}` — **à CONSTRUIRE côté serveur**
+     (liste de bans rejetée au login + mute + kick via `online`) ; **rien n'existe** aujourd'hui.
 8. **DELETE réel pour `/servers`** (aujourd'hui `POST /servers/remove`) — cosmétique ; garder tel quel côté client.
 
 *(Ces ajouts sont des incréments backend séparés ; le front C2b peut démarrer sur le périmètre EXISTANT :
