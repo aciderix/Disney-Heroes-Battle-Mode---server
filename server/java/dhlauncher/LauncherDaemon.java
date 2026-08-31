@@ -58,7 +58,7 @@ public final class LauncherDaemon {
         http.createContext("/play/stop", this::playStop);
         http.createContext("/play/status", this::playStatus);
         http.createContext("/settings", this::settingsHandler); // C2b : réglages locaux (GET état | POST fusion)
-        http.createContext("/admin/monitor", this::adminMonitor); // chantier D : proxy monitoring (jeton injecté)
+        http.createContext("/admin/", this::adminProxy);          // chantier D : proxy GÉNÉRIQUE de tout /admin/* (jeton injecté)
         http.createContext("/host/logs", this::hostLogs);         // chantier D : tail des logs hôte
         http.setExecutor(null);
     }
@@ -262,18 +262,26 @@ public final class LauncherDaemon {
     }
 
     /**
-     * ADMIN (chantier D) — GET /admin/monitor : PROXIFIE le monitoring vers l'{@code AdminService} du serveur LOCAL
+     * ADMIN (chantier D) — PROXY GÉNÉRIQUE de tout {@code /admin/*} vers l'{@code AdminService} du serveur LOCAL
      * hébergé (le daemon connaît son URL + jeton car c'est lui qui a démarré le serveur), en injectant le jeton
-     * opérateur. Le daemon reste GAME-FREE (simple relais HTTP). Aucun serveur local hébergé → 503 (pas de faux OK).
-     * (L'admin d'un serveur DISTANT/cloud — saisie URL+jeton — sera un incrément ultérieur, chantier F.)
+     * opérateur et en relayant méthode + chemin + query + corps. Le daemon reste GAME-FREE (simple relais HTTP).
+     * Aucun serveur local hébergé → 503 (pas de faux OK). Générique → les futurs endpoints admin (joueurs, events,
+     * modération) passent sans modif ici. (L'admin d'un serveur DISTANT/cloud = incrément ultérieur, chantier F.)
      */
-    private void adminMonitor(HttpExchange ex) throws IOException {
-        if (!"GET".equals(ex.getRequestMethod())) { ex.sendResponseHeaders(405, -1); ex.close(); return; }
+    private void adminProxy(HttpExchange ex) throws IOException {
         String baseUrl = host.adminBaseUrl();
         String tok = host.adminToken();
         if (baseUrl == null || tok == null) { send(ex, 503, "{\"error\":\"admin indisponible (aucun serveur local hébergé)\"}"); return; }
+        String path = ex.getRequestURI().getRawPath();
+        String q = ex.getRequestURI().getRawQuery();
+        String url = baseUrl + path + (q != null && !q.isEmpty() ? "?" + q : "");
+        byte[] body = ex.getRequestBody().readAllBytes();
         try {
-            HttpResponse<String> r = remoteGet(baseUrl + "/admin/monitor", tok);
+            HttpRequest.Builder b = HttpRequest.newBuilder(URI.create(url)).header("X-Admin-Token", tok);
+            if ("POST".equals(ex.getRequestMethod())) {
+                b.header("Content-Type", "application/x-www-form-urlencoded").POST(HttpRequest.BodyPublishers.ofByteArray(body));
+            } else { b.GET(); }
+            HttpResponse<String> r = client.send(b.build(), HttpResponse.BodyHandlers.ofString());
             send(ex, r.statusCode(), r.body());
         } catch (Exception e) { send(ex, 502, "{\"error\":\"" + e.getClass().getSimpleName() + "\"}"); }
     }
@@ -299,11 +307,6 @@ public final class LauncherDaemon {
             m.put(dec(i < 0 ? kv : kv.substring(0, i)), i < 0 ? "" : dec(kv.substring(i + 1)));
         }
         return m;
-    }
-
-    private HttpResponse<String> remoteGet(String url, String token) throws Exception {
-        HttpRequest req = HttpRequest.newBuilder(URI.create(url)).header("X-Admin-Token", token).GET().build();
-        return client.send(req, HttpResponse.BodyHandlers.ofString());
     }
 
     private HttpResponse<String> remote(String url, String body) throws Exception {

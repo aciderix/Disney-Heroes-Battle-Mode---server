@@ -24,26 +24,20 @@ import dhserver.UserStore;
  */
 public final class AdminRelease {
 
-  @SuppressWarnings("unchecked")
+  // Logique déléguée à dhserver.admin.ContentEra (SOURCE UNIQUE, partagée avec l'AdminService — zéro divergence §3).
   static java.util.List<com.perblue.heroes.game.data.content.ContentStats.ContentColumn> columns(int shard) {
-    com.perblue.heroes.game.data.content.ContentHelper.get().setShardID(shard, new java.util.HashMap<>());
-    return (java.util.List<com.perblue.heroes.game.data.content.ContentStats.ContentColumn>)
-        (java.util.List<?>) com.perblue.heroes.game.data.content.ContentHelper.getRawStats().getColumns();
+    return dhserver.admin.ContentEra.columns(shard);
   }
 
-  static String fmt(long ms) {
-    return new org.joda.time.DateTime(ms, com.perblue.heroes.util.TimeUtil.getServerDateTimeZone()).toString("yyyy-MM-dd");
-  }
+  static String fmt(long ms) { return dhserver.admin.ContentEra.fmt(ms); }
 
   static String name(com.perblue.heroes.game.data.content.ContentStats.ContentColumn c) {
-    try { return String.valueOf(c.getContentUpdate()); } catch (Throwable t) { return "?"; }
+    return dhserver.admin.ContentEra.name(c);
   }
 
   /** L'ère courante = colonne à (serverTimeNow + offset de contenu) — timers restent sur serverTimeNow. */
   static com.perblue.heroes.game.data.content.ContentStats.ContentColumn currentEra(int shard) {
-    columns(shard);   // installe le shard
-    long eraTime = com.perblue.heroes.util.TimeUtil.serverTimeNow() + ServerContext.contentOffsetMillis();
-    return com.perblue.heroes.game.data.content.ContentHelper.getRawStats().getColumn(eraTime);
+    return dhserver.admin.ContentEra.currentEra(shard);
   }
 
   static void list(int shard) {
@@ -92,33 +86,21 @@ public final class AdminRelease {
       if (doList) { list(shard); return; }
 
       if (reset) {
-        store.setMetaLong("content_offset_ms", 0L);
-        ServerContext.setContentOffsetMillis(0L);
+        dhserver.admin.ContentEra.resetRelease(store);
         System.out.println("[release] ère RÉINITIALISÉE à la date réelle (offset 0, persisté). Redémarrer le serveur.");
       }
 
       if (setRel) {
-        java.util.List<com.perblue.heroes.game.data.content.ContentStats.ContentColumn> cols = columns(shard);
         String sel = opt.get("set-release");
-        com.perblue.heroes.game.data.content.ContentStats.ContentColumn target = null;
-        if (sel.startsWith("#")) {
-          int idx = Integer.parseInt(sel.substring(1));
-          if (idx >= 1 && idx <= cols.size()) target = cols.get(idx - 1);
-        } else {
-          for (com.perblue.heroes.game.data.content.ContentStats.ContentColumn c : cols)
-            if (name(c).equalsIgnoreCase(sel)) { target = c; break; }
-        }
+        com.perblue.heroes.game.data.content.ContentStats.ContentColumn target = dhserver.admin.ContentEra.resolve(shard, sel);
         if (target == null) {
           System.out.println("[release] release introuvable : '" + sel + "' (utilise --list). Aucun changement.");
           return;
         }
-        // offset de CONTENU tel que serverTimeNow() + offset = date de début de la release. serverTimeNow n'est PAS touché
-        // → les timers/cooldowns/sauvegardes restent à l'heure réelle. C'est le découplage voulu.
-        long off = target.startTime - com.perblue.heroes.util.TimeUtil.serverTimeNow();
-        store.setMetaLong("content_offset_ms", off);
-        ServerContext.setContentOffsetMillis(off);
+        // offset de CONTENU découplé (serverTimeNow non touché → timers/cooldowns/sauvegardes à l'heure réelle).
+        dhserver.admin.ContentEra.applyRelease(store, target);
         System.out.println("[release] ère réglée sur " + name(target) + " (" + fmt(target.startTime)
-            + ", Max TL " + target.getMaxTeamLevel() + ") — offset de contenu " + off + " ms persisté.");
+            + ", Max TL " + target.getMaxTeamLevel() + ") — offset persisté.");
         System.out.println("[release] ✅ timers/cooldowns/sauvegardes INCHANGÉS (offset découplé de l'horloge). Redémarrer le serveur.");
       }
 

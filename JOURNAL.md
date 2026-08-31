@@ -1,5 +1,27 @@
 # JOURNAL — journal détaillé des modifications
 
+## 2026-08-31 (g209) — Admin inc.6b : ère de contenu (releases + horloge) + proxy daemon GÉNÉRIQUE 🟢
+
+Domaine D « ère de contenu » exposé via l'AdminService, **sans réécrire la logique** (§3) : nouveau helper
+`dhserver.admin.ContentEra` = **SOURCE UNIQUE** de la formule d'offset, réutilisé par l'AdminService (à chaud) ET le
+CLI `AdminRelease` (refactoré pour déléguer → zéro divergence).
+
+- **`ContentEra`** : `columns/name/fmt/currentEra/resolve/applyRelease/resetRelease` + JSON `listJson`/`statusJson`.
+  Offset d'ère DÉCOUPLÉ (`ServerContext.setContentOffsetMillis`, persisté `content_offset_ms`) → régler l'ère ne touche
+  NI sauvegardes NI timers. Dans la JVM serveur → applique à CHAUD (prochain BootData), pas de redémarrage (avantage vs CLI).
+- **AdminService** (endpoints, jeton requis) : `GET /admin/releases` (liste R1…Rn : nom, date, Max TL, courante) ;
+  `POST /admin/release {name|#idx|reset}` (règle l'ère, 404 si introuvable, renvoie l'état) ; `GET|POST /admin/clock`
+  ({offsetHours} → décale l'HORLOGE ENTIÈRE — ère + timers, mode test, distinct du release-picker). Shard 1 (mono-shard).
+- **Daemon** : le proxy `/admin/*` devient **GÉNÉRIQUE** (`/admin/` préfixe → relaie méthode+chemin+query+corps avec le
+  jeton injecté ; 503 hors hébergement). ⇒ les incréments admin suivants (joueurs, events, modération) passent SANS modif
+  du daemon. Reste GAME-FREE.
+- **CLI `AdminRelease`** refactoré : délègue à `ContentEra` (mêmes messages, une seule formule d'offset).
+- **Vérif** : compile game-free OK ; `AdminMonitorTest` 15 (+ releases servie/gardée par jeton) ; `AdminProxyTest` 16
+  (+ ère proxifiée GET, release POST #1 → offset≠0, reset → 0, clock GET/POST 0, 404 relayé) ; **régression 174/174**.
+  🟢 headless (vérif EN JEU = via l'UI Admin).
+- **Suite** : inc.6c joueurs (`/admin/player/*`, journalisé) → inc.6d events (`/admin/events`, `/admin/enums`) →
+  inc.6e **modération à CONSTRUIRE** → UI Admin + CI « build launcher-ui ».
+
 ## 2026-08-31 (g208) — Admin inc.6a : AdminService (serveur) + jeton + proxy daemon + monitoring 🟢
 
 Début du **chantier D** (panneau opérateur, `docs/LAUNCHER_UI.md` §4.6). **Architecture tranchée par le code** : le

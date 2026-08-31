@@ -58,6 +58,12 @@ public final class AdminMonitorTest {
             // jetons aléatoires distincts et non vides
             String a = AdminService.randomToken(), b = AdminService.randomToken();
             ok(a != null && !a.isEmpty() && !a.equals(b), "randomToken() non vide et distinct");
+
+            // ère de contenu : la liste des releases est servie (gardée par le jeton) et non vide
+            ok(get(http, base + "/admin/releases", null, null).statusCode() == 401, "releases sans jeton → 401");
+            HttpResponse<String> rel = get(http, base + "/admin/releases", "X-Admin-Token", tok);
+            ok(rel.statusCode() == 200 && rel.body().contains("\"releases\":["), "releases : liste servie");
+            ok(rel.body().contains("\"maxTeamLevel\":"), "releases : Max TL présent par release");
         } finally {
             admin.stop();
         }

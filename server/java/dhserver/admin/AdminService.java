@@ -3,6 +3,7 @@ package dhserver.admin;
 import com.sun.net.httpserver.HttpExchange;
 import com.sun.net.httpserver.HttpServer;
 import dhserver.LoginServer;
+import dhserver.ServerContext;
 import dhserver.UserStore;
 
 import java.io.IOException;
@@ -40,6 +41,8 @@ public final class AdminService {
     private final byte[] tokenBytes;
     private final LoginServer server;
     private final UserStore store;
+    /** Shard du serveur hébergé (mono-shard pour l'auto-hébergement ; multi-shard = chantier D ultérieur). */
+    private static final int SHARD = 1;
 
     public AdminService(String bind, int port, String token, LoginServer server, UserStore store) throws IOException {
         if (token == null || token.isEmpty()) throw new IllegalArgumentException("jeton admin requis");
@@ -51,6 +54,9 @@ public final class AdminService {
         http = HttpServer.create(new InetSocketAddress(InetAddress.getByName(host), port), 0);
         http.createContext("/admin/ping", guarded(this::handlePing));
         http.createContext("/admin/monitor", guarded(this::handleMonitor));
+        http.createContext("/admin/releases", guarded(this::handleReleases)); // ère de contenu : liste R1…Rn
+        http.createContext("/admin/release", guarded(this::handleSetRelease)); // POST {name|#idx|reset} → règle l'ère
+        http.createContext("/admin/clock", guarded(this::handleClock));        // GET état | POST {offsetHours} → décale l'horloge
         http.setExecutor(null); // handlers courts, non bloquants
     }
 
@@ -97,7 +103,67 @@ public final class AdminService {
         send(ex, 200, server.monitorSnapshotJson());
     }
 
+    /** GET /admin/releases → liste des releases R1…Rn (nom, date, Max TL, courante) + offset d'ère courant. */
+    private void handleReleases(HttpExchange ex) throws IOException {
+        if (!"GET".equals(ex.getRequestMethod())) { send(ex, 405, "{\"error\":\"method\"}"); return; }
+        send(ex, 200, ContentEra.listJson(SHARD));
+    }
+
+    /**
+     * POST /admin/release {@code {name}} — règle l'ÈRE de contenu (découplée : ne touche NI sauvegardes NI timers).
+     * {@code name} = nom de release ({@code R50}) ou {@code #index} ; {@code reset}/vide → ère = date réelle.
+     * Applique à CHAUD (prochain BootData) + persiste ({@code content_offset_ms}). Renvoie l'état d'ère.
+     */
+    private void handleSetRelease(HttpExchange ex) throws IOException {
+        if (!"POST".equals(ex.getRequestMethod())) { send(ex, 405, "{\"error\":\"method\"}"); return; }
+        String sel = form(ex).getOrDefault("name", "").trim();
+        try {
+            if (sel.isEmpty() || "reset".equalsIgnoreCase(sel)) {
+                ContentEra.resetRelease(store);
+            } else {
+                var target = ContentEra.resolve(SHARD, sel);
+                if (target == null) { send(ex, 404, "{\"error\":\"release introuvable\"}"); return; }
+                ContentEra.applyRelease(store, target);
+            }
+            send(ex, 200, ContentEra.statusJson(SHARD));
+        } catch (Exception e) { send(ex, 500, "{\"error\":\"" + e.getClass().getSimpleName() + "\"}"); }
+    }
+
+    /**
+     * GET /admin/clock → état horloge ({@code offsetMs}, dates jeu/réelle). POST {@code {offsetHours}} → décale
+     * l'HORLOGE ENTIÈRE (ère + tous les timers), persiste ({@code clock_offset_ms}). ⚠️ Puissant (mode test) :
+     * distinct du release-picker qui, lui, ne touche que l'ère. {@code offsetHours} positif = avancer le temps de jeu.
+     */
+    private void handleClock(HttpExchange ex) throws IOException {
+        try {
+            if ("POST".equals(ex.getRequestMethod())) {
+                double hours = 0;
+                try { hours = Double.parseDouble(form(ex).getOrDefault("offsetHours", "0").trim()); }
+                catch (NumberFormatException e) { send(ex, 400, "{\"error\":\"offsetHours\"}"); return; }
+                long offsetMs = Math.round(-hours * 3600_000d); // serverTimeNow = now − OFFSET → positif d'heures = avance
+                store.setMetaLong("clock_offset_ms", offsetMs);
+                ServerContext.setClockOffsetMillis(offsetMs);
+            } else if (!"GET".equals(ex.getRequestMethod())) { send(ex, 405, "{\"error\":\"method\"}"); return; }
+            long off = ServerContext.clockOffsetMillis();
+            send(ex, 200, "{\"offsetMs\":" + off
+                    + ",\"gameDate\":" + ContentEra.jsonStr(ContentEra.fmt(com.perblue.heroes.util.TimeUtil.serverTimeNow()))
+                    + ",\"realDate\":" + ContentEra.jsonStr(ContentEra.fmt(System.currentTimeMillis())) + "}");
+        } catch (Exception e) { send(ex, 500, "{\"error\":\"" + e.getClass().getSimpleName() + "\"}"); }
+    }
+
     // ---- utilitaires HTTP ----
+    private static java.util.Map<String, String> form(HttpExchange ex) throws IOException {
+        java.util.Map<String, String> m = new java.util.HashMap<>();
+        for (String kv : new String(ex.getRequestBody().readAllBytes(), StandardCharsets.UTF_8).split("&")) {
+            if (kv.isEmpty()) continue;
+            int i = kv.indexOf('=');
+            String k = i < 0 ? kv : kv.substring(0, i);
+            String v = i < 0 ? "" : kv.substring(i + 1);
+            m.put(java.net.URLDecoder.decode(k, StandardCharsets.UTF_8), java.net.URLDecoder.decode(v, StandardCharsets.UTF_8));
+        }
+        return m;
+    }
+
     private static void send(HttpExchange ex, int code, String body) throws IOException {
         byte[] b = body.getBytes(StandardCharsets.UTF_8);
         ex.getResponseHeaders().set("Content-Type", "application/json");

@@ -356,8 +356,10 @@ Le front **ne doit pas** exposer ces fonctions tant que l'endpoint n'existe pas 
      PROXIFIE `/admin/monitor` (jeton injecté ; 503 si aucun serveur hébergé). `AdminMonitorTest`/`AdminProxyTest`.
    - **C. Joueurs** : `POST /admin/player/{lookup,giveResource,grantHero,setTeamLevel,grantCampaign,completeTutorials,unlock}`
      (méthodes `ServerUser` existantes ; **journaliser**). *(capacité prête)*
-   - **D. Ère de contenu** : `GET /admin/releases`, `POST /admin/release {name}`, `POST /admin/clock {offsetHours}`
-     (`AdminRelease` + ancre d'horloge). *(capacité prête)*
+   - **D. Ère de contenu** : ✅ **LIVRÉ (inc.6b, g209)** — `GET /admin/releases`, `POST /admin/release {name|#idx|reset}`,
+     `GET|POST /admin/clock {offsetHours}`. Helper `dhserver.admin.ContentEra` (source unique, réutilisée par le CLI
+     `AdminRelease`). Ère découplée (ne touche ni sauvegardes ni timers), appliquée à chaud. Proxy daemon générique.
+     `AdminMonitorTest`/`AdminProxyTest`.
    - **E. Modération** : `GET/POST /admin/moderation/{bans,ban,unban,mute,kick}` — **à CONSTRUIRE côté serveur**
      (liste de bans rejetée au login + mute + kick via `online`) ; **rien n'existe** aujourd'hui.
 8. **DELETE réel pour `/servers`** (aujourd'hui `POST /servers/remove`) — cosmétique ; garder tel quel côté client.

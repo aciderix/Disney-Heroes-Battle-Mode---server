@@ -45,6 +45,27 @@ public final class AdminProxyTest {
             ok(mon.body().contains("\"connectionsAccepted\":"), "monitor : connexions acceptées présentes");
             ok(mon.body().contains("\"online\":"), "monitor : liste online présente");
 
+            // ère de contenu proxifiée (GET) : la liste des releases traverse le proxy générique + le jeton
+            HttpResponse<String> rel = get(http, base + "/admin/releases");
+            ok(rel.statusCode() == 200 && rel.body().contains("\"releases\":["), "admin/releases proxifié → liste");
+
+            // POST proxifié (corps relayé) : régler l'ère sur la 1re release (la plus ancienne) → offset ≠ 0
+            HttpResponse<String> set = post(http, base + "/admin/release", "name=%231"); // %231 = "#1"
+            ok(set.statusCode() == 200 && set.body().contains("\"eraName\":"), "admin/release POST #1 → ère réglée");
+            ok(set.body().contains("\"offsetMs\":") && !set.body().contains("\"offsetMs\":0,"), "admin/release : offset d'ère ≠ 0");
+
+            // reset → offset 0 (date réelle)
+            HttpResponse<String> rst = post(http, base + "/admin/release", "name=reset");
+            ok(rst.statusCode() == 200 && rst.body().contains("\"offsetMs\":0,"), "admin/release reset → offset 0");
+
+            // horloge : GET état puis POST offset 0 (ne décale rien)
+            ok(get(http, base + "/admin/clock").statusCode() == 200, "admin/clock GET → 200");
+            HttpResponse<String> clk = post(http, base + "/admin/clock", "offsetHours=0");
+            ok(clk.statusCode() == 200 && clk.body().contains("\"offsetMs\":0,"), "admin/clock POST 0 → offset 0");
+
+            // release introuvable → 404 relayé
+            ok(post(http, base + "/admin/release", "name=NOPE").statusCode() == 404, "admin/release inconnue → 404 relayé");
+
             // tail des logs hôte (fichier écrit par le serveur au boot)
             HttpResponse<String> logs = get(http, base + "/host/logs?which=server&tail=50");
             ok(logs.statusCode() == 200 && logs.body().contains("\"lines\":"), "host/logs (server) → JSON lines");
