@@ -1,5 +1,22 @@
 # JOURNAL — journal détaillé des modifications
 
+## 2026-08-31 (g218) — Launcher FENÊTRÉ : build Tauri ✅ VERT sur Windows + Linux (exe/msi/deb/rpm produits)
+
+Run CI `launcher-tauri` **#4 VERT sur les 2 OS** (itérations #1-#3 = corrections guidées par les logs CI, ma seule
+« compilation » Tauri ne pouvant se faire ici sans webkit2gtk système) :
+- #1 : setup validé (deps WebView apt, Rust, npm ci) ; manquaient capabilities + plugin-dialog → ajoutés.
+- #2 : `use tauri::Manager;` (Window::state) + jeu d'icônes (`tauri icon`, source neutre « DH », aucune imagerie Disney).
+- #3 : borrow-checker E0597 (dropper le MutexGuard avant `state`) → **crate COMPILE**, .deb/.rpm produits ; AppImage
+  panique (« square icon », bug bundler).
+- #4 : cibles = deb/rpm (Linux) + nsis/msi (Windows), AppImage retiré + `bundle.icon` explicite → **✅ 2 OS VERTS**.
+**Artefacts** : `launcher-tauri-windows-latest` (.exe NSIS + .msi + `disney-heroes-launcher.exe`) ;
+`launcher-tauri-ubuntu-latest` (.deb + .rpm + binaire portable). ⇒ **l'appli fenêtrée du launcher se build et se
+distribue** : un exécutable qui OUVRE une fenêtre (7 écrans, dont Admin) et démarre le daemon Java.
+**Reste (dernier maillon pour un one-download 100% autonome)** : déposer `dhlauncher.jar` + `runtime/jdk` À CÔTÉ de l'exe
+(main.rs les cherche là, repli `java` du PATH) — càd fusionner l'exe Tauri dans le package `launcher-release`. AppImage
+Linux à re-brancher (icône) si voulu.
+
+
 ## 2026-08-31 (g217) — Launcher FENÊTRÉ : build Tauri (exe/AppImage) en CI + capabilities + dialog
 
 Choix util. : l'exe fenêtré d'abord. La release ne buildait que le DAEMON HTTP (sans fenêtre) → tout le front (7 écrans,
