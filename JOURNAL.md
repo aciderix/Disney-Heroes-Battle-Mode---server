@@ -1,6 +1,6 @@
 # JOURNAL — journal détaillé des modifications
 
-## 2026-08-31 (g219) — launcher-release : FUSION de l'exe fenêtré dans le package (one-download) 🟡 à valider par l'util.
+## 2026-08-31 (g219) — launcher-release : FUSION de l'exe fenêtré dans le package (one-download) ✅ RELEASE launcher-v0.2.0 publiée
 
 `launcher-release.yml` étendu : après le package daemon (jar + runtime/jdk + python + tooling), il BUILD l'appli
 fenêtrée Tauri (mêmes étapes que `launcher-tauri`, prouvées vertes) et DÉPOSE le binaire `DisneyHeroesLauncher[.exe]` à
@@ -13,6 +13,11 @@ valider + obtenir le package combiné : soit **Actions → launcher-release → 
 **pousser un tag `launcher-v0.2.0`** (build les 2 OS + publie la Release téléchargeable avec l'exe fenêtré inclus).
 Sous-parties déjà prouvées : `launcher-tauri` vert ×2 OS ; package daemon vert (runs précédents). Nouveau = la copie du
 binaire (glue triviale), à confirmer par le run combiné.
+
+**✅ VALIDÉ (util. a poussé le tag `launcher-v0.2.0`)** : run `launcher-release` #5 VERT sur les 2 OS ; l'étape « vérif du
+package EXTRAIT » (dont `test -f DisneyHeroesLauncher[.exe]`) est passée → **l'exe fenêtré est bien dans le package**.
+Release **`launcher-v0.2.0` publiée** avec `dh-launcher-windows.zip` (245 Mo) + `dh-launcher-linux.tar.gz` (292 Mo),
+chacun = daemon (jar+JDK+Python+tooling) **+ exe fenêtré** `DisneyHeroesLauncher`. ⇒ launcher fenêtré autonome distribué.
 
 
 ## 2026-08-31 (g218) — Launcher FENÊTRÉ : build Tauri ✅ VERT sur Windows + Linux (exe/msi/deb/rpm produits)
