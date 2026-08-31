@@ -39,6 +39,18 @@ try {
   await page.waitForSelector("text=/aucune récupération/i", { timeout: 10000 });
   const wordCells = await page.locator(".panel strong").count();
   ok(wordCells >= 8, `phrase générée via /identity/generate (${wordCells} éléments mot)`);
+
+  // 4) Héberger : la vue rend + poll /host/status (serveur arrêté)
+  await page.locator("button.nav-item", { hasText: "Héberger" }).click();
+  await page.waitForSelector("text=État du serveur", { timeout: 10000 });
+  await page.waitForSelector("text=arrêté", { timeout: 10000 });
+  ok(true, "écran Héberger : /host/status poll → « arrêté »");
+
+  // 5) Générer : la vue rend (cibles Serveur/Client uniquement, pas d'APK)
+  await page.locator("button.nav-item", { hasText: "Générer" }).click();
+  await page.waitForSelector("text=Générer depuis l'APK", { timeout: 10000 });
+  const options = await page.locator("select option").allInnerTexts();
+  ok(!options.some((o) => /apk/i.test(o)), "écran Générer : aucune cible APK proposée (non implémenté)");
 } catch (e) {
   fails.push("exception: " + e.message);
   console.log("  ✗ exception:", e.message);

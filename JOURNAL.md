@@ -1,5 +1,17 @@
 # JOURNAL — journal détaillé des modifications
 
+## 2026-08-31 (g205) — C2b inc.3 : écrans Héberger + Générer (endpoints réels) + E2E étendu 🟢
+
+- **Héberger** : `/host/start` (bundleDir OU dev, ports, strict) / `/host/stop` / polling `/host/status` (running,
+  port de jeu en écoute, ports, strict, PIDs, uptime formaté). Testés `HostLifecycleTest`/`ServerBundleTest`.
+- **Générer** : `/build/start` (APK → **SERVER | CLIENT uniquement** ; APK non implémenté → NON proposé, principe) +
+  polling `/build/status` (StepProgress = état+étape réels ; LogConsole tail auto-scroll ; à DONE : chemin de sortie).
+  Testés `BuildDataGenTest`/bundles. Composants `PathInput` (Parcourir natif Tauri / saisie manuelle), `StepProgress`,
+  `LogConsole`.
+- Coquille : 4 sections livrées (Serveurs, Compte, Héberger, Générer). **E2E Playwright étendu (6/6)** : + Héberger
+  (poll `/host/status` → « arrêté ») + Générer (aucune cible APK). `tsc`+`vite build` OK.
+- **Suite** : inc.4 Jouer (`/play`, déjà backé) → inc.5 Réglages (persistance §7 à ajouter) → inc.6 Admin (endpoints §7) ; CI front.
+
 ## 2026-08-31 (g204) — C2b inc.2 : écrans Serveurs + Compte (adossés endpoints réels) + E2E Playwright 🟢
 
 Principe posé par l'utilisateur : **tout ce que l'UI affiche = un endpoint réellement implémenté ET testé ; pas de

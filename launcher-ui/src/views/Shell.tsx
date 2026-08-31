@@ -6,6 +6,8 @@ import { useApp } from "../state/store";
 import { StatusDot } from "../components";
 import { Servers } from "./Servers";
 import { Account } from "./Account";
+import { Host } from "./Host";
+import { Generate } from "./Generate";
 import { t, type Lang, type MsgKey } from "../i18n";
 
 type Section = { id: string; label: MsgKey; view: ReactNode };
@@ -15,6 +17,8 @@ export function Shell({ lang }: { lang: Lang }) {
   const sections: Section[] = [
     { id: "servers", label: "nav.servers", view: <Servers /> },
     { id: "account", label: "nav.account", view: <Account /> },
+    { id: "host", label: "nav.host", view: <Host /> },
+    { id: "generate", label: "nav.generate", view: <Generate /> },
   ];
   const [active, setActive] = useState("servers");
   const current = sections.find((s) => s.id === active) ?? sections[0];
