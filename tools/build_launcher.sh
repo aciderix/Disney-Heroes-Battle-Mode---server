@@ -53,8 +53,11 @@ rm -rf "$CLS"
 
 # --- 2) embarque un JDK COMPLET (javac/jlink/jar requis pour générer les bundles) ---
 # On copie le JDK de build (même OS). jlink ne peut pas produire un JDK ; on copie donc l'arbre complet.
+# ⚠️ `$JAVA_HOME` peut être un LIEN SYMBOLIQUE (cache d'outils GitHub sous Linux) : `cp -a` préserverait le lien
+# → package sans le JDK (lien mort à l'extraction). On DÉRÉFÉRENCE (`-L`) et on copie le CONTENU (`/.`) → vrais fichiers.
 echo "== embarque le JDK ($JAVA_HOME) =="
-cp -a "$JAVA_HOME" "$OUT/runtime/jdk"
+mkdir -p "$OUT/runtime/jdk"
+cp -RLp "$JAVA_HOME/." "$OUT/runtime/jdk/"
 
 # --- 3) embarque un CPython relocatable (content_server pur-stdlib) ---
 echo "== télécharge python-build-standalone $PY_VER ($PY_TRIPLE) =="

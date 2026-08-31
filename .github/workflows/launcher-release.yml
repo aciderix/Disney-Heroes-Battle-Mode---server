@@ -72,6 +72,24 @@ jobs:
           fi
           ls -la
 
+      - name: Verify EXTRACTED package (simule le poste du joueur — attrape JDK/py manquants)
+        shell: bash
+        env:
+          PYEXE: ${{ matrix.pyexe }}
+        run: |
+          cd build && rm -rf _verify && mkdir _verify && cd _verify
+          if [ "${{ matrix.oskind }}" = windows ]; then
+            7z x "../dh-launcher-${{ matrix.oskind }}.zip" >/dev/null
+          else
+            tar -xzf "../dh-launcher-${{ matrix.oskind }}.tar.gz"
+          fi
+          P="launcher-${{ matrix.oskind }}"
+          # java DOIT être un vrai binaire dans le package extrait (pas un lien mort) :
+          "$P/runtime/jdk/bin/java" -version
+          "$P/runtime/jdk/bin/javac" -version    # outils de build présents (génération de bundles)
+          "$P/$PYEXE" --version
+          echo "OK — package extrait autonome (JDK+Python réels)"
+
       - name: Upload build artifact
         uses: actions/upload-artifact@v4
         with:
