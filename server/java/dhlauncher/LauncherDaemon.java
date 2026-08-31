@@ -36,6 +36,7 @@ public final class LauncherDaemon {
     private final String projectDir = System.getProperty("dh.launcher.projectdir", System.getProperty("user.dir", "."));
     private final HostManager host = new HostManager(projectDir);
     private final BuildManager build = new BuildManager(projectDir);
+    private final PlayManager play = new PlayManager(projectDir);
 
     /** @param port port local (0 = éphémère, choisi par l'OS). Lié à loopback seulement. */
     public LauncherDaemon(int port) throws IOException {
@@ -52,6 +53,9 @@ public final class LauncherDaemon {
         http.createContext("/host/status", this::hostStatus);
         http.createContext("/build/start", this::buildStart);   // C2a-4 : générer le serveur depuis l'APK
         http.createContext("/build/status", this::buildStatus);
+        http.createContext("/play", this::playStart);           // C2b : lancer le CLIENT sur le serveur choisi
+        http.createContext("/play/stop", this::playStop);
+        http.createContext("/play/status", this::playStatus);
         http.setExecutor(null);
     }
 
@@ -203,6 +207,45 @@ public final class LauncherDaemon {
     /** GET /build/status → état du build (state, step, outDir, tail du log). */
     private void buildStatus(HttpExchange ex) throws IOException {
         send(ex, 200, build.status());
+    }
+
+    /**
+     * POST /play {clientDir, serverId | serverHost[+contentPort], [userID], [strict]} → lance le CLIENT (port PC) du
+     * bundle {@code clientDir} contre le serveur choisi. Le serveur est résolu soit par {@code serverId} (favori,
+     * → host:contentPort), soit par {@code serverHost}/{@code contentPort} directs. En permissif, {@code userID}
+     * précise le compte joué (DH_USERID) ; en strict, le billet est frappé côté serveur (login unique).
+     */
+    private void playStart(HttpExchange ex) throws IOException {
+        if (!post(ex)) return;
+        Map<String, String> f = form(ex);
+        try {
+            String clientDir = f.getOrDefault("clientDir", "");
+            if (clientDir.isEmpty()) { send(ex, 400, "{\"error\":\"clientDir requis\"}"); return; }
+            boolean strict = "true".equalsIgnoreCase(f.getOrDefault("strict", "false")) || "1".equals(f.getOrDefault("strict", ""));
+            long userID = 0L; try { userID = Long.parseLong(f.getOrDefault("userID", "0").trim()); } catch (Exception ignore) {}
+            String serverProp;
+            String serverId = f.getOrDefault("serverId", "");
+            if (!serverId.isEmpty()) {
+                LauncherConfig.Server s = config.get(serverId);
+                if (s == null) { send(ex, 404, "{\"error\":\"serverId inconnu\"}"); return; }
+                serverProp = s.serverProp();
+            } else {
+                String hostName = f.getOrDefault("serverHost", "127.0.0.1");
+                serverProp = hostName + ":" + intOr(f, "contentPort", 8080);
+            }
+            send(ex, 200, play.start(clientDir, serverProp, userID, strict));
+        } catch (Exception e) { send(ex, 500, "{\"error\":\"" + e.getClass().getSimpleName() + "\"}"); }
+    }
+
+    /** POST /play/stop → arrête le client lancé. */
+    private void playStop(HttpExchange ex) throws IOException {
+        if (!post(ex)) return;
+        send(ex, 200, play.stop());
+    }
+
+    /** GET /play/status → état du client (running, pid, server, userID, strict, uptime). */
+    private void playStatus(HttpExchange ex) throws IOException {
+        send(ex, 200, play.status());
     }
 
     private static int intOr(Map<String, String> f, String k, int def) {

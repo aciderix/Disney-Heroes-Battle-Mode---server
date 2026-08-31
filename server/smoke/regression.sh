@@ -94,6 +94,7 @@ TESTS=(
   AuthMintTest
   StrictSingleLoginTest
   HostLifecycleTest
+  PlayLifecycleTest
   BuildDataGenTest
   ServerBundleTest
 )

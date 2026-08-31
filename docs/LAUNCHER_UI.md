@@ -14,7 +14,7 @@
 ## 0. Principes d'architecture UI (non négociables)
 
 1. **Front/back découplés par UN SEUL point de contact** : le front NE connaît QUE le module **`daemonClient`**
-   (§1) — un wrapper typé des 12 endpoints HTTP du daemon local (`127.0.0.1:<port>`). Aucun composant visuel ne
+   (§1) — un wrapper typé des 15 endpoints HTTP du daemon local (`127.0.0.1:<port>`). Aucun composant visuel ne
    fait de `fetch` direct. ⇒ on peut refaire toute l'esthétique sans toucher à la logique, et inversement.
 2. **Couches** : `daemonClient` (I/O) → `stores` (état: session, hostStatus, buildStatus, servers, settings) →
    `views` (écrans) → `components` (briques réutilisables, sans logique réseau). Voir **§8 Arborescence**.
@@ -49,6 +49,9 @@ Réponses : JSON. **Table intégrale** (source : `LauncherDaemon.java`) :
 | `hostStatus()` | `GET /host/status` | — | `{running, gamePortListening, contentPort, gamePort, authPort, strict, serverPid, contentPid, uptimeMs}` | Héberger (polling) |
 | `buildStart({apkPath, target?, outDir?, full?, pkg?})` | `POST /build/start` | `apkPath, target=server\|client\|apk, outDir, full=false, pkg=true` | **buildStatus** | Générer |
 | `buildStatus()` | `GET /build/status` | — | `{state:IDLE\|RUNNING\|DONE\|FAILED, target, step, outDir, log}` | Générer (polling + tail log) |
+| `playStart({clientDir, serverId?, serverHost?, contentPort?, userID?, strict?})` | `POST /play` | `clientDir, serverId \| serverHost+contentPort=8080, userID=0, strict=false` | **playStatus** | Jouer |
+| `playStop()` | `POST /play/stop` | — | **playStatus** | Jouer |
+| `playStatus()` | `GET /play/status` | — | `{running, pid, server, userID, strict, uptimeMs}` | Jouer (polling) |
 
 **Types TS dérivés** (`types.ts`) :
 ```ts
@@ -60,6 +63,7 @@ export type HostStatus  = { running: boolean; gamePortListening: boolean; conten
                             authPort: number; strict: boolean; serverPid: number; contentPid: number; uptimeMs: number };
 export type BuildState  = "IDLE" | "RUNNING" | "DONE" | "FAILED";
 export type BuildStatus = { state: BuildState; target: "SERVER"|"CLIENT"|"APK"; step: string; outDir: string; log: string };
+export type PlayStatus  = { running: boolean; pid: number; server: string; userID: number; strict: boolean; uptimeMs: number };
 ```
 
 > **Conventions de ports** (défaut, `LauncherConfig`) : content **8080**, jeu **8081**, auth **8082**.
@@ -102,12 +106,11 @@ l'app.
 > Ce projet existe à des fins **d'étude, d'archivage et d'usage personnel** entre particuliers. Si un ayant droit le
 > demande, l'auteur cessera la distribution.
 >
+> **Auteur** : Aciderix — **contact / retrait sur demande** : fromthenext77@gmail.com
+>
 > En cochant la case ci-dessous, vous déclarez **avoir lu et compris** cet avertissement et **l'accepter intégralement**.
 >
 > ☐ *J'ai lu et j'accepte l'intégralité de cet avertissement.*    **[ Refuser et quitter ]  [ J'ai lu et j'accepte ]**
-
-*(Champs à confirmer avec l'utilisateur : nom de l'auteur/pseudo à afficher, éventuel e-mail de contact « retrait sur
-demande », langue par défaut.)*
 
 ---
 
@@ -179,12 +182,15 @@ Après le gate, **app à barre latérale** (sidebar) + zone principale. Regroupe
 ### 4.3 JOUER
 **But** : lancer le **client** (port PC) sur le serveur sélectionné avec le compte authentifié.
 - Récap : **compte** (userID), **serveur** (nom, latence via ping), **mode** (permissif/strict selon le serveur).
-- **Gros bouton « JOUER »**.
-- ⚠️ **Manque backend CRITIQUE (§7)** : **il n'existe PAS d'endpoint `/play`** dans le daemon. Le lancement du client
-  (client bundle, `-Ddh.server=<host:contentPort>`, identité, spine jni/unidbg) **doit être ajouté** au launcher-core
-  (`POST /play {serverId, loginRequestID}` + `GET /play/status`). Tant qu'il n'existe pas, le bouton Jouer est **désactivé
-  avec une info-bulle « bientôt »**, ou (transitoire) affiche la **commande `run.sh` à copier**. Le front ne simule pas.
-- États souhaités (quand `/play` existera) : `lancement… | en cours (PID, temps) | fermé | erreur (tail log)`.
+- **Gros bouton « JOUER »** → `playStart({clientDir, serverId | serverHost+contentPort, [userID], [strict]})`
+  (**endpoint LIVRÉ**, `PlayManager`). Le client bundle est lancé avec `DH_SERVER=host:contentPort` (redirige
+  `ServerType.LIVE`) et, en **permissif**, `DH_USERID=<userID>`.
+- **Polling `playStatus()`** → `{running, pid, server, userID, strict, uptimeMs}` : `lancement… | en cours (PID, temps)
+  | fermé`. Bouton **« Arrêter »** → `playStop()`.
+- Le **`clientDir`** (dossier du bundle port PC) vient de Générer (dernier build CLIENT) ou de Réglages.
+- ⚠️ **Strict vers un serveur DISTANT** : couvert seulement pour le serveur hébergé **en local** (le billet est frappé
+  côté serveur). L'injection du `loginRequestID` dans le `ClientInfo` pour un **serveur distant strict** = incrément
+  séparé (hook client) — cf. §7. En attendant : permissif (DH_USERID) partout, strict en local.
 
 ### 4.4 HÉBERGER (auto-hébergement local — panneau minimal)
 **But** : démarrer/arrêter un serveur de jeu **sur la machine du joueur** et voir son état. (Panneau **minimal** ;
@@ -294,8 +300,9 @@ callbacks en props.
 
 Le front **ne doit pas** exposer ces fonctions tant que l'endpoint n'existe pas (§8 « pas de faux OK ») :
 
-1. **`POST /play {serverId, loginRequestID}` + `GET /play/status`** — **lancer le client** (bundle CLIENT,
-   `-Ddh.server`, identité, spine). **Bloquant pour l'écran Jouer.** (Aujourd'hui : absent.)
+1. ~~`POST /play` + `GET /play/status`~~ — **LIVRÉ** (`PlayManager`, endpoints `/play`, `/play/stop`, `/play/status` ;
+   `PlayLifecycleTest`). Reste : **hook client `loginRequestID`** pour le **strict DISTANT** (aujourd'hui : permissif
+   partout + strict local ok).
 2. **`GET /status` côté SERVEUR de jeu** (ou via content_server) exposant **version** + **nb joueurs en ligne** →
    pour les cartes Serveurs. (Aujourd'hui : `ping` ne donne que TCP + latence.)
 3. **`POST /identity/validate {phrase}` → `{valid, checksum}`** (ou validation BIP39 embarquée côté front) — retour
@@ -321,7 +328,7 @@ Compte + Serveurs + Héberger + Générer, avec Jouer/Admin marqués « à venir
 launcher-ui/                      (Tauri + React ; AUCUN code de jeu)
 ├─ src/
 │  ├─ api/
-│  │   ├─ daemonClient.ts         ← SEUL fichier qui parle au daemon (les 12 endpoints + à venir)
+│  │   ├─ daemonClient.ts         ← SEUL fichier qui parle au daemon (les 15 endpoints + à venir)
 │  │   └─ types.ts                ← types §1
 │  ├─ stores/                     ← état (§6), sans JSX
 │  ├─ views/                      ← 1 fichier par écran (§4), consomment stores + components
