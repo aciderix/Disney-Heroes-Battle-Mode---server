@@ -1,5 +1,33 @@
 # JOURNAL — journal détaillé des modifications
 
+## 2026-08-31 (g215) — Panneau ADMIN ✅ VÉRIFIÉ EN JEU (client réel → AdminService) + point son/affichage
+
+Vérif §8 du panneau opérateur : pile complète `run-online.sh` (serveur `LoginServer` + `content_server` + **vrai client**
+sous Xvfb). L'`AdminService` démarre sur le vrai serveur (`127.0.0.1:8083`, jeton généré). Piloté par curl (le proxy
+daemon fait pareil en injectant le jeton) :
+- **Monitoring** : `/admin/monitor` = `onlineCount:0` avant connexion → **`onlineCount:1, online:[{userID:1}]`** dès que
+  le client se connecte (log serveur « connexion ← compte 1, 1 en ligne » + BootData rendu). Lit l'état VIVANT. ✅
+- **Joueurs** : `giveResource GOLD +123456` sur le compte réel (or **57 905 290 → 58 028 746**, exact) ; `lookup` =
+  compte vivant (TL 300, 348 héros, guilde 1). ✅
+- **Modération** : `kick userID=1` (client EN LIGNE) → **`{"kicked":true}`** (vs `false` en headless) → le client affiche
+  **« Reconnecting… »** (capture) puis se reconnecte (`connectionsAccepted` 1→2). ✅
+- **Events** : `MODES_OPEN INVASION` **rejeté** (`spec invalide` : INVASION n'est pas un `GameMode` → validation OK) ;
+  `MODES_OPEN PORT_DOCKS` **accepté** (count 1). ✅
+- **Ère** : `release R59` servie en direct (ère 2023-02-01, Max TL 350 ; offset persisté vérifié ensuite au CLI). ✅
+- **Audit** : trail horodaté (giveResource/kick=true/eventAdd) relu via `/admin/audit`. ✅
+⇒ **Panneau Admin des 5 domaines vérifié de bout en bout EN JEU** (headless g208-g213 → ✅). État de dev remis au propre
+(ère R102, events vidés).
+
+**AFFICHAGE (question util.)** : le hub REND (capture 1280×720 `desktop-port/build/online.ppm` : décor de ville, barres
+de ressources, nav — PAS un écran noir) sous Xvfb + OpenGL logiciel. ⇒ **le pipeline d'affichage FONCTIONNE** dans notre
+env. Le « cmd sans fenêtre » observé sur une machine réelle est un point de **fenêtrage GLFW côté desktop réel**
+(distinct : notre rendu Xvfb prouve la pile de rendu ; à investiguer sur le bundle CLIENT Windows si besoin).
+
+**SON (question util.)** : `DhBackend.DhAudio` est un **backend NO-OP ASSUMÉ ET DOCUMENTÉ** (audio DIFFÉRÉ, vrai backend
+OpenAL/OGG à porter depuis DragonSoul `DsAudio`). Le log confirme `create: SoundManager` + « Checking file for SOUND …
+**Not Missing SOUND** » → les `.ogg` **sont présents et trouvés**, mais `newSound/newMusic` renvoient des no-op → **« pas
+de son » = backend non porté, PAS des assets manquants ni un bug**. C'est une tâche à part entière (non commencée), tracée.
+
 ## 2026-08-31 (g214) — CI « launcher-ui » : typecheck + build du front sur Linux + Windows 🟢
 
 Job CI `launcher-ui-ci.yml` (chantier G) : à chaque modif de `launcher-ui/`, vérifie que le front **compile et se build**
