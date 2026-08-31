@@ -7,6 +7,8 @@
 # Decompiled bytecode (regenerable via tools/decompile.sh)
 libs/*.jar
 classes*.jar
+# Outils de patch APK (baksmali/smali/uber-apk-signer) — téléchargés par tools/patch_apk.sh (regenerable, §7)
+libs/apktools/
 # EXCEPTION : jar décompilé + dépendance committés (évite re-décompilation, lente, après reset)
 !/libs/game.jar
 !/libs/commons-logging.jar

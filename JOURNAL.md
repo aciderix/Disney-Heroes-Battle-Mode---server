@@ -1,5 +1,33 @@
 # JOURNAL — journal détaillé des modifications
 
+## 2026-08-31 (g226) — PATCH APK brique 4a : redirection ServerType + re-signature — CHAÎNE PROUVÉE sur l'APK 12.1.0 ✅
+
+Première brique du côté MOBILE de l'explorateur : prouver qu'on peut **rediriger l'APK vers un serveur auto-hébergé** puis
+le **re-signer** (installable hors store). C'était le maillon à dé-risquer (outils Android + resignature). **FAIT & PROUVÉ.**
+
+- **Découverte (bytecode)** : le client résout son serveur via `ServerType.LIVE` — constructeur `(name, ordinal, protocole,
+  hôte, port, contenu)` : `gameHost = protocole+hôte`, `gamePort = port`, `contentLocation = contenu` ; URL de login émise =
+  `gameHost + ":" + gamePort + "/login"`. Pour LIVE : `https://` + `login.disneyheroesgame.com` + port `443` + content
+  `http://content.disneyheroesgame.com/live/index.txt` (dans `classes4.dex`).
+- **Outils** (téléchargés, gitignorés `libs/apktools/`, §7) : **baksmali/smali** 2.5.2 (dé/ré-assemble le dex ciblé, sans
+  toucher aux ressources) + **uber-apk-signer** 1.3.0 (zipalign + signature, clé debug intégrée).
+- **`tools/apk_redirect_smali.py`** : patch ROBUSTE de `ServerType.smali` — repère l'appel constructeur de LIVE et son
+  mapping REGISTRE→PARAMÈTRE (pas de numéros de ligne en dur), réécrit les 4 valeurs (protocole→`http://`, hôte, port,
+  URL de contenu). Vérifié : LIVE patché, **STAGING/LOCAL intacts**.
+- **`tools/patch_apk.sh`** : pipeline complet `<in.apk> <host> <port> [out.apk]` — repère le dex ServerType → baksmali →
+  patch → smali → remplace le dex + retire l'ancienne signature → **zipalign + re-signe** → **vérifie** (hôte patché présent,
+  ancien absent, signature v2/v3 vérifiée).
+- **✅ PROUVÉ END-TO-END** sur `game/disney-heroes-12.1.0.apk` : `patch_apk.sh … 192.168.1.42 8080` → APK 97 Mo
+  **signé (v2+v3 verified)**, `ServerType.LIVE` → `http://192.168.1.42:8080`, ancien hôte disparu. La chaîne
+  patch+resignature fonctionne sur le vrai APK.
+- **Modèle (§7 copyright)** : on NE redistribue PAS l'APK — le JOUEUR patche le SIEN (comme les bundles serveur/client) ;
+  l'APK re-signé s'installe **hors Play Store** (sources inconnues).
+- **Suite** : 4b = câbler ce pipeline dans le launcher (cible « apk » de `BuildManager` + écran Générer, refus « à venir »
+  levé) ; 4c = écran de CHOIX de serveur DANS l'appli au lancement (injection smali/UI = Option C, le gros morceau).
+
+Fichiers : `tools/patch_apk.sh` (+), `tools/apk_redirect_smali.py` (+), `.gitignore` (libs/apktools/), `docs/SERVER_EXPLORER.md`,
+`docs/PHASE2_TRACKING.md`, `JOURNAL.md`, `MEMORY.md`.
+
 ## 2026-08-31 (g225) — ANNUAIRE : packaging — le launcher distribué embarque la config d'annuaire (directory.env) 🟢
 
 Pour que le launcher **distribué** lise l'annuaire sans réglage manuel, sans mettre de clé dans le dépôt :

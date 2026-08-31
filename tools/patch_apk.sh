@@ -1,0 +1,71 @@
+#!/usr/bin/env bash
+# PATCH APK (brique 4a) — redirige un APK Disney Heroes 12.1.0 vers un serveur AUTO-HÉBERGÉ, puis le RE-SIGNE.
+# Chirurgical (dex seul, pas de reconstruction de ressources) : on ne touche QUE la redirection ServerType.LIVE
+# (protocole/hôte/port/URL de contenu), via tools/apk_redirect_smali.py. Aucune règle de jeu modifiée (§1).
+#
+# ⚠️ L'APK patché est RE-SIGNÉ avec une clé (debug par défaut) → à installer HORS Play Store (side-load). On NE
+#    redistribue PAS l'APK : le JOUEUR fournit et patche le SIEN (comme pour les bundles serveur/client, §7 copyright).
+#
+# Usage : tools/patch_apk.sh <in.apk> <host> <port> [out.apk]
+#   ex.  tools/patch_apk.sh mon.apk 192.168.1.20 8080  →  mon-dh-<host>.apk
+set -uo pipefail
+IN="${1:?usage: patch_apk.sh <in.apk> <host> <port> [out.apk]}"
+HOST="${2:?host requis}"
+PORT="${3:?port requis}"
+OUT="${4:-${IN%.apk}-dh-${HOST}.apk}"
+ROOT="$(cd "$(dirname "$0")/.." && pwd)"
+CACHE="$ROOT/libs/apktools"      # jars d'outils (gitignorés, régénérables — §7)
+mkdir -p "$CACHE"
+export JAVA_TOOL_OPTIONS=
+
+# --- 0) outils (téléchargés une fois, comme dex2jar dans decompile.sh) ---
+fetch() { # <url> <dest>
+  [ -s "$2" ] && return 0
+  echo "[apk] téléchargement $(basename "$2") ..."
+  curl -sSL --retry 3 --max-time 180 -o "$2" "$1" || { echo "[apk] ✖ échec téléchargement $1"; exit 1; }
+}
+fetch "https://github.com/baksmali/smali/releases/download/v2.5.2/baksmali-2.5.2.jar"        "$CACHE/baksmali.jar"
+fetch "https://github.com/baksmali/smali/releases/download/v2.5.2/smali-2.5.2.jar"            "$CACHE/smali.jar"
+fetch "https://github.com/patrickfav/uber-apk-signer/releases/download/v1.3.0/uber-apk-signer-1.3.0.jar" "$CACHE/signer.jar"
+
+WORK="$(mktemp -d)"; trap 'rm -rf "$WORK"' EXIT
+cp "$IN" "$WORK/app.apk"
+
+# --- 1) repérer le dex qui contient la redirection LIVE ---
+echo "[apk] recherche du dex ServerType ..."
+unzip -o -q "$WORK/app.apk" 'classes*.dex' -d "$WORK/dex"
+DEX=""
+for d in "$WORK"/dex/classes*.dex; do
+  if grep -aql "login.disneyheroesgame.com" "$d"; then DEX="$d"; break; fi
+done
+[ -n "$DEX" ] || { echo "[apk] ✖ ServerType (login.disneyheroesgame.com) introuvable dans les dex — APK non reconnu."; exit 1; }
+DEXNAME="$(basename "$DEX")"
+echo "[apk] ServerType dans $DEXNAME"
+
+# --- 2) désassembler CE dex, patcher ServerType.LIVE, réassembler ---
+java -jar "$CACHE/baksmali.jar" disassemble "$DEX" -o "$WORK/smali" >/dev/null 2>&1 || { echo "[apk] ✖ baksmali"; exit 1; }
+ST="$WORK/smali/com/perblue/heroes/ServerType.smali"
+[ -f "$ST" ] || { echo "[apk] ✖ ServerType.smali absent après baksmali"; exit 1; }
+python3 "$ROOT/tools/apk_redirect_smali.py" "$ST" "$HOST" "$PORT" "http://$HOST:$PORT/live/index.txt" || exit 1
+java -jar "$CACHE/smali.jar" assemble "$WORK/smali" -o "$WORK/$DEXNAME" >/dev/null 2>&1 || { echo "[apk] ✖ smali (réassemblage)"; exit 1; }
+grep -aql "$HOST" "$WORK/$DEXNAME" || { echo "[apk] ✖ l'hôte patché est absent du dex réassemblé"; exit 1; }
+
+# --- 3) remplacer le dex dans l'apk + retirer l'ancienne signature ---
+( cd "$WORK" && zip -q app.apk "$DEXNAME" && zip -qd app.apk 'META-INF/*.RSA' 'META-INF/*.SF' 'META-INF/*.MF' >/dev/null 2>&1 || true )
+
+# --- 4) zipalign + re-signer (clé debug intégrée ; le signer vérifie lui-même la signature à la fin) ---
+echo "[apk] zipalign + signature ..."
+SIGLOG="$(java -jar "$CACHE/signer.jar" --apks "$WORK/app.apk" --overwrite 2>&1)" || { echo "[apk] ✖ signature"; echo "$SIGLOG" | tail -5; exit 1; }
+echo "$SIGLOG" | grep -aiE 'signature verified|zipalign (success|verified)' | sed 's/^/[apk]   /'
+echo "$SIGLOG" | grep -aiq 'signature verified' || { echo "[apk] ✖ signature non vérifiée par le signer"; exit 1; }
+cp "$WORK/app.apk" "$OUT"   # --overwrite a réécrit l'apk signé sur place
+
+# --- 5) vérification de la redirection dans l'APK signé final ---
+V="$WORK/verify"; mkdir -p "$V"; unzip -o -q "$OUT" "$DEXNAME" -d "$V"
+if grep -aql "$HOST" "$V/$DEXNAME" && ! grep -aql "login.disneyheroesgame.com" "$V/$DEXNAME"; then
+  echo "[apk] ✅ redirection OK dans l'APK signé (nouvel hôte présent, ancien absent)"
+else
+  echo "[apk] ✖ vérification de la redirection échouée"; exit 1
+fi
+echo "[apk] ✅ APK patché prêt : $OUT"
+echo "[apk]   → installer HORS store (autoriser les sources inconnues) ; le jeu se connectera à http://$HOST:$PORT"
