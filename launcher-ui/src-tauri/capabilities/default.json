@@ -1,0 +1,9 @@
+{
+  "identifier": "default",
+  "description": "Permissions du launcher : appel des commandes coeur (get_daemon_port) + dialogues fichiers natifs (choix APK/dossiers). Aucun accès système au-delà.",
+  "windows": ["main"],
+  "permissions": [
+    "core:default",
+    "dialog:default"
+  ]
+}

@@ -1,0 +1,74 @@
+name: launcher-tauri
+
+# Construit l'APPLI FENÊTRÉE du launcher (Tauri v2) : un exécutable natif qui OUVRE UNE FENÊTRE avec le front (7 écrans,
+# dont Admin) et démarre le daemon Java local. Produit les bundles par OS : Windows (.exe/.msi/NSIS), Linux (.AppImage/.deb).
+# Web pur embarqué (aucun code de jeu, aucun secret). Le shell natif = src-tauri/main.rs (démarre `dhlauncher.LauncherDaemon`).
+#
+# ⚠️ Pour FONCTIONNER une fois lancé, l'exe cherche `dhlauncher.jar` + `runtime/jdk` À CÔTÉ de lui (sinon repli `java` du
+# PATH) — c.-à-d. déposé dans le package produit par `launcher-release` (JDK+tooling embarqués). L'intégration en UN SEUL
+# téléchargement (exe DANS le package) est l'étape suivante ; ici on prouve d'abord que l'appli fenêtrée se BUILD sur 2 OS.
+#
+# Déclenche : manuellement (workflow_dispatch) ou sur tag `launcher-v*`.
+
+on:
+  workflow_dispatch:
+  push:
+    # Valide le build fenêtré quand la partie Tauri (shell natif, deps, workflow) change — pas à chaque tweak du front.
+    paths:
+      - 'launcher-ui/src-tauri/**'
+      - 'launcher-ui/package.json'
+      - 'launcher-ui/package-lock.json'
+      - '.github/workflows/launcher-tauri.yml'
+
+jobs:
+  tauri:
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [ubuntu-latest, windows-latest]
+    runs-on: ${{ matrix.os }}
+    steps:
+      - uses: actions/checkout@v4
+
+      # Dépendances système du WebView (Linux uniquement ; Windows utilise WebView2, géré par Tauri).
+      - name: Install Linux WebView deps
+        if: matrix.os == 'ubuntu-latest'
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y \
+            libwebkit2gtk-4.1-dev build-essential curl wget file \
+            libxdo-dev libssl-dev libayatana-appindicator3-dev librsvg2-dev patchelf
+
+      - name: Set up Node.js 22
+        uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+          cache: npm
+          cache-dependency-path: launcher-ui/package-lock.json
+
+      - name: Set up Rust (stable)
+        uses: dtolnay/rust-toolchain@stable
+
+      - name: Cache Rust build
+        uses: swatinem/rust-cache@v2
+        with:
+          workspaces: 'launcher-ui/src-tauri -> target'
+
+      - name: Install front dependencies (npm ci)
+        working-directory: launcher-ui
+        run: npm ci
+
+      # `tauri build` exécute beforeBuildCommand (npm run build = tsc --noEmit && vite build) puis empaquette la fenêtre native.
+      - name: Build Tauri app (windowed)
+        working-directory: launcher-ui
+        run: npx tauri build
+
+      - name: Upload Tauri bundles
+        uses: actions/upload-artifact@v4
+        with:
+          name: launcher-tauri-${{ matrix.os }}
+          path: |
+            launcher-ui/src-tauri/target/release/bundle/**
+            launcher-ui/src-tauri/target/release/disney-heroes-launcher
+            launcher-ui/src-tauri/target/release/disney-heroes-launcher.exe
+          if-no-files-found: warn

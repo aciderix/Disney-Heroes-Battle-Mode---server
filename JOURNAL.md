@@ -1,5 +1,24 @@
 # JOURNAL — journal détaillé des modifications
 
+## 2026-08-31 (g217) — Launcher FENÊTRÉ : build Tauri (exe/AppImage) en CI + capabilities + dialog
+
+Choix util. : l'exe fenêtré d'abord. La release ne buildait que le DAEMON HTTP (sans fenêtre) → tout le front (7 écrans,
+dont Admin) n'était pas ouvrable depuis la release. Ajout du build de l'appli fenêtrée Tauri v2 :
+- **`.github/workflows/launcher-tauri.yml`** : sur ubuntu + windows — deps WebView Linux (libwebkit2gtk-4.1 + ayatana +
+  rsvg + patchelf), Rust stable + cache, `npm ci`, `npx tauri build` (→ beforeBuildCommand = tsc+vite, front embarqué),
+  upload des bundles (.AppImage/.deb + .exe/.msi + binaire brut). Déclenché sur `push` (chemins Tauri) + dispatch.
+- **`src-tauri/capabilities/default.json`** (MANQUAIT — bloquant fonctionnel) : sans capabilities v2, la webview ne peut
+  appeler AUCUNE commande (même `get_daemon_port`) ni les dialogues. Accordé `core:default` + `dialog:default` à la
+  fenêtre `main`.
+- **`@tauri-apps/plugin-dialog`** ajouté aux deps JS (le côté Rust `tauri-plugin-dialog` était là, pas le JS) → les
+  sélecteurs de fichiers natifs (Parcourir APK/dossiers) fonctionnent. `npm ci` + build re-vérifiés.
+- `main.rs` (déjà présent) démarre le daemon Java (`dhlauncher.jar` + `runtime/jdk` à côté de l'exe, repli `java` PATH),
+  expose le port au front, tue le daemon à la fermeture.
+Ne pouvant pas builder Tauri ici (webkit2gtk système absent, pas d'apt), la validation = le run CI GitHub.
+**Reste (suite immédiate)** : intégrer le daemon (jar+jdk+tooling) DANS le package de l'exe (Tauri resources OU déposer
+l'exe dans le package `launcher-release`) → un seul téléchargement fonctionnel autonome.
+
+
 ## 2026-08-31 (g216) — Fix affichage : le bundle CLIENT lance la fenêtre VISIBLE (cause du « cmd sans fenêtre »)
 
 Cause racine du souci util. « la console s'ouvre mais pas de fenêtre de jeu » TROUVÉE : `DesktopLauncher.java:50` crée la
