@@ -1,5 +1,29 @@
 # JOURNAL — journal détaillé des modifications
 
+## 2026-08-31 (g224) — ANNUAIRE brique 3 : navigateur de serveurs communautaires dans le launcher PC 🟢
+
+Le côté VISIBLE de l'annuaire : l'écran Serveurs du launcher liste les serveurs communautaires, **re-vérifie chaque fiche
+en direct** (signature + serveur vivant), et « Ajouter & sélectionner » branche le flux Jouer existant.
+
+- **Daemon (game-free)** : `GET /directory` (proxy de LECTURE de la table Supabase, clé anon publique ; **503** si l'annuaire
+  n'est pas configuré → pas de fausse liste) ; `POST /directory/verify {infoUrl}` → `ServerInfoVerifier` interroge le `/info`
+  avec un défi frais et **vérifie la signature** (200 = fiche prouvée+vivante, 502 = à écarter). Config résolue depuis l'env
+  (`DH_DIRECTORY_URL`/`PROJECT_URL` ; `DH_DIRECTORY_ANON_KEY`/`ANON_PUBLIC`/`PUBLISHABLE_KEY`).
+- **Front** (`Servers.tsx`) : panneau « Serveurs communautaires » — charge `/directory`, affiche nom/mode/version/en-ligne/
+  adresse, bouton **Vérifier** (badge ✅ vérifié + en-ligne réel / ⚠️ injoignable), bouton **Ajouter & sélectionner** (ajoute
+  en favori dédupliqué + sélectionne → l'utilisateur va dans Jouer). `daemonClient.directoryList/Verify` + types + proxy Vite
+  `/directory`. Gating honnête si annuaire non configuré (« Annuaire non configuré »).
+- **Vérif** : (a) **chemin de données LIVE** (`DirectoryBrowseProbe`, DEV) — un serveur `/info` réel est INSCRIT dans
+  l'annuaire → apparaît dans le `GET /directory` du daemon → **vérifié** via `/directory/verify` (fiche présente + verified) ;
+  URL morte → 502 ; lignes de sonde nettoyées. (b) **E2E navigateur RÉEL** (`e2e/smoke.mjs`, Chromium + vrai daemon + Vite) :
+  le panneau communautaire **rend** et applique le gating honnête (`/directory` 503) → **10/10**. Front `tsc`+`vite build` OK ;
+  **régression 177/177**. Launcher game-free compile OK.
+- **Suite** : brique 4 = patch APK (écran de choix au lancement). Indépendant : `GetServers` natif (shard picker).
+
+Fichiers : `server/java/dhlauncher/LauncherDaemon.java` (endpoints /directory*), `server/smoke/DirectoryBrowseProbe.java` (+, DEV),
+`launcher-ui/src/views/Servers.tsx`, `launcher-ui/src/api/{daemonClient,types}.ts`, `launcher-ui/vite.config.ts`,
+`launcher-ui/e2e/smoke.mjs`, `docs/SERVER_EXPLORER.md`, `docs/PHASE2_TRACKING.md`, `JOURNAL.md`, `MEMORY.md`.
+
 ## 2026-08-31 (g223) — ANNUAIRE brique 2 : table Supabase + inscription SIGNÉE + keep-alive — prouvé LIVE ✅
 
 Deuxième brique de l'explorateur communautaire : l'**annuaire** où les serveurs s'inscrivent et que le launcher/APK lira.

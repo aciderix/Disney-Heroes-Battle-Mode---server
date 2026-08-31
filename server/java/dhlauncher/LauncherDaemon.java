@@ -53,6 +53,14 @@ public final class LauncherDaemon {
     private volatile String adminRemoteToken;
     /** Client HTTP épinglé (TLS) pour une cible HTTPS distante ; {@code null} = client par défaut (local ou http/CA). */
     private volatile HttpClient adminRemoteHttp;
+    /** ANNUAIRE (brique 3) — URL + clé anon (PUBLIQUE) de l'annuaire communautaire (Supabase). Résolus depuis l'env
+     *  (DH_DIRECTORY_URL/PROJECT_URL ; DH_DIRECTORY_ANON_KEY/ANON_PUBLIC/PUBLISHABLE_KEY). {@code null} = annuaire non
+     *  configuré → /directory renvoie 503 (pas de faux OK). */
+    private final String directoryUrl = firstNonBlank(System.getProperty("dh.directory.url"),
+            System.getenv("DH_DIRECTORY_URL"), System.getenv("PROJECT_URL"));
+    private final String directoryKey = firstNonBlank(System.getProperty("dh.directory.anonkey"),
+            System.getenv("DH_DIRECTORY_ANON_KEY"), System.getenv("ANON_PUBLIC"), System.getenv("PUBLISHABLE_KEY"));
+    private final ServerInfoVerifier verifier = new ServerInfoVerifier();
 
     /** @param port port local (0 = éphémère, choisi par l'OS). Lié à loopback seulement. */
     public LauncherDaemon(int port) throws IOException {
@@ -64,6 +72,8 @@ public final class LauncherDaemon {
         http.createContext("/servers", this::servers);          // GET (liste) | POST (ajout)
         http.createContext("/servers/remove", this::serversRemove);
         http.createContext("/servers/ping", this::serversPing);
+        http.createContext("/directory/verify", this::directoryVerify); // ANNUAIRE (brique 3) — vérifie 1 fiche via /info
+        http.createContext("/directory", this::directoryList);          // ANNUAIRE (brique 3) — liste communautaire (Supabase)
         http.createContext("/host/start", this::hostStart);     // C2a-3 : héberger en local
         http.createContext("/host/stop", this::hostStop);
         http.createContext("/host/status", this::hostStatus);
@@ -370,6 +380,47 @@ public final class LauncherDaemon {
 
     private static int intOr(Map<String, String> f, String k, int def) {
         try { return Integer.parseInt(f.getOrDefault(k, "").trim()); } catch (Exception e) { return def; }
+    }
+
+    /**
+     * ANNUAIRE (brique 3) — GET /directory → liste des serveurs communautaires (proxy de lecture de la table Supabase,
+     * clé anon PUBLIQUE). 503 si l'annuaire n'est pas configuré (pas de faux OK). La liste renvoyée est BRUTE (issue de
+     * la table) ; le launcher DOIT re-vérifier chaque fiche via {@code POST /directory/verify} avant de faire confiance.
+     */
+    private void directoryList(HttpExchange ex) throws IOException {
+        if (!"GET".equals(ex.getRequestMethod())) { ex.sendResponseHeaders(405, -1); ex.close(); return; }
+        if (directoryUrl == null || directoryKey == null) {
+            send(ex, 503, "{\"error\":\"annuaire non configuré (DH_DIRECTORY_URL / DH_DIRECTORY_ANON_KEY)\"}"); return;
+        }
+        try {
+            String url = trimSlash(directoryUrl) + "/rest/v1/servers?select=pub_key,name,mode,game_version,"
+                + "server_version,address,info_url,online,max_online,open_time,updated_at&order=updated_at.desc";
+            HttpResponse<String> r = client.send(HttpRequest.newBuilder(URI.create(url))
+                    .header("apikey", directoryKey).header("Authorization", "Bearer " + directoryKey).GET().build(),
+                    HttpResponse.BodyHandlers.ofString());
+            send(ex, r.statusCode(), r.body());
+        } catch (Exception e) { send(ex, 502, "{\"error\":\"annuaire injoignable (" + e.getClass().getSimpleName() + ")\"}"); }
+    }
+
+    /**
+     * ANNUAIRE (brique 3) — POST /directory/verify {infoUrl} → interroge le {@code /info} du serveur avec un défi frais
+     * et VÉRIFIE la signature (game-free {@link ServerInfoVerifier}). 200 = fiche prouvée + vivante (JSON vérifié) ;
+     * 502 = injoignable ou signature invalide (fiche à écarter). C'est ce qui empêche de faire confiance à la table seule.
+     */
+    private void directoryVerify(HttpExchange ex) throws IOException {
+        if (!post(ex)) return;
+        Map<String, String> f = form(ex);
+        String infoUrl = f.getOrDefault("infoUrl", "").trim();
+        if (infoUrl.isEmpty()) { send(ex, 400, "{\"error\":\"infoUrl requis\"}"); return; }
+        try {
+            ServerInfoVerifier.Verified v = verifier.verify(infoUrl);
+            send(ex, 200, v.toJson());
+        } catch (Exception e) { send(ex, 502, "{\"reachable\":false,\"error\":" + jstr(e.getMessage() == null ? e.getClass().getSimpleName() : e.getMessage()) + "}"); }
+    }
+
+    private static String firstNonBlank(String... v) {
+        if (v != null) for (String s : v) if (s != null && !s.isBlank()) return s.trim();
+        return null;
     }
 
     /** Parse une query-string {@code a=b&c=d} en map (valeurs url-décodées). */

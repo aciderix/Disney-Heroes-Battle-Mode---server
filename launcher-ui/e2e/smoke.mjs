@@ -33,6 +33,12 @@ try {
   // sélectionner le serveur
   await page.locator('input[name="srv"]').first().check();
 
+  // 2b) ANNUAIRE (brique 3) : le panneau « Serveurs communautaires » rend et appelle /directory. Le daemon E2E n'a pas
+  // d'annuaire configuré → 503 → gating honnête « Annuaire non configuré » (pas de fausse liste).
+  await page.waitForSelector("text=Serveurs communautaires", { timeout: 10000 });
+  await page.waitForSelector("text=/Annuaire non configuré/i", { timeout: 10000 });
+  ok(true, "écran Serveurs : panneau communautaire rend + gating honnête (/directory 503)");
+
   // 3) Compte : Générer une phrase (/identity/generate) → 8 mots affichés
   await page.getByRole("button", { name: /^Compte$/ }).click();
   await page.getByRole("button", { name: /Générer une phrase/i }).click();

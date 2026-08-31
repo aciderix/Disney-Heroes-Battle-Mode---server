@@ -16,7 +16,7 @@ nom/mode côté Héberger ; navigateur côté Serveurs ; adresse d'annuaire modi
 |---|---|---|
 | **1** | Identité serveur **signée** + `GET /info` vérifiable (`ServerIdentity`/`ServerInfo`/`AuthService /info`/`ServerInfoVerifier`) | 🟢 **FAIT** (g222, `ServerInfoTest` 10/10, régression 177/177) — vérif stack réelle à la brique 3 |
 | **2** | Table **Supabase** : inscription signée par le serveur + lecture + **keep-alive** GitHub Action | 🟢 **FAIT** (g223, prouvé LIVE `DirectoryProbe` : register 200 / read 200 / faux 401) |
-| **3** | **Navigateur de serveurs** dans le launcher PC (lit l'annuaire, vérifie la signature, ping, Jouer) | ⬜ à faire (suivant) |
+| **3** | **Navigateur de serveurs** dans le launcher PC (lit l'annuaire, vérifie la signature, ping, Jouer) | 🟢 **FAIT** (g224 : daemon `/directory` + `/directory/verify` ; front panneau communautaire ; E2E 10/10 + chemin LIVE prouvé) |
 | **4** | **Patch APK** : écran de choix de serveur au lancement → Jouer connecté | ⬜ à faire (toolchain apktool/apksigner) |
 | indép. | Brancher le `GetServers` natif = sélecteur de **SHARD** in-game (Niveau 2) | ⬜ optionnel |
 

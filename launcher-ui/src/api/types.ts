@@ -11,6 +11,17 @@ export type Server = {
 };
 export type Ping = { reachable: boolean; latencyMs?: number };
 
+// ANNUAIRE (brique 3) — une fiche BRUTE de la table Supabase (à re-vérifier via /info avant de faire confiance).
+export type DirectoryServer = {
+  pub_key: string; name: string; mode: string; game_version: string; server_version: string;
+  address: string; info_url: string; online: number; max_online: number; open_time: number; updated_at: string;
+};
+// ANNUAIRE — fiche VÉRIFIÉE en direct (signature prouvée + serveur vivant).
+export type VerifiedServer = {
+  serverId: number; name: string; mode: string; gameVersion: string; serverVersion: string;
+  online: number; maxOnline: number; full: boolean; openTime: number; pubKey: string; verified: boolean;
+};
+
 export type HostStatus = {
   running: boolean; gamePortListening: boolean;
   contentPort: number; gamePort: number; authPort: number;

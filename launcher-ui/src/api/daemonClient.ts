@@ -7,6 +7,7 @@ import type {
   HostStartParams, BuildStartParams, PlayStartParams,
   AdminMonitor, HostLogs, AdminReleases, AdminEraStatus, AdminClock, PlayerSummary,
   AdminEvents, AdminEnums, Moderation, AuditLog, AdminTarget,
+  DirectoryServer, VerifiedServer,
 } from "./types";
 
 let baseUrlCache: string | null = null;
@@ -68,6 +69,9 @@ export const daemonClient = {
     post<Server>("/servers", { name, host, contentPort, gamePort, authPort }),
   serverRemove: (id: string) => post<{ ok: boolean }>("/servers/remove", { id }),
   serverPing: (host: string, port = 8081) => post<Ping>("/servers/ping", { host, port }),
+  // ANNUAIRE (brique 3) — navigateur de serveurs communautaires
+  directoryList: () => get<DirectoryServer[]>("/directory"),
+  directoryVerify: (infoUrl: string) => post<VerifiedServer>("/directory/verify", { infoUrl }),
 
   // --- hébergement local ---
   hostStart: (p: HostStartParams) => post<HostStatus>("/host/start", p as Record<string, unknown>),
