@@ -46,6 +46,30 @@ public final class LoginServer {
   private volatile dhserver.auth.SessionStore sessions;
   private volatile boolean authRequired;
   public void setAuth(dhserver.auth.SessionStore sessions, boolean required) { this.sessions = sessions; this.authRequired = required; }
+  /**
+   * ADMIN (monitoring, lecture seule) — instantané de l'état VIVANT du serveur, sérialisé JSON pour l'{@code AdminService}
+   * (qui tourne dans la même JVM). Ne divulgue que des méta d'exploitation : nombre en ligne + userID/ancienneté de chaque
+   * joueur connecté, connexions acceptées depuis le boot, uptime, et le mode (strict/permissif). État réel, rien d'inventé.
+   */
+  public String monitorSnapshotJson() {
+    long now = System.currentTimeMillis();
+    StringBuilder sb = new StringBuilder(128);
+    sb.append("{\"onlineCount\":").append(online.size())
+      .append(",\"connectionsAccepted\":").append(connectionsAccepted.get())
+      .append(",\"uptimeMs\":").append(now - startedAtMs)
+      .append(",\"strict\":").append(authRequired)
+      .append(",\"online\":[");
+    boolean first = true;
+    for (java.util.Map.Entry<Long, Long> e : onlineSince.entrySet()) {
+      if (!online.containsKey(e.getKey())) continue;
+      if (!first) sb.append(',');
+      first = false;
+      sb.append("{\"userID\":").append(e.getKey())
+        .append(",\"sinceMs\":").append(Math.max(0, now - e.getValue())).append('}');
+    }
+    sb.append("]}");
+    return sb.toString();
+  }
   /** true si l'auth n'est pas requise, ou si {@code loginRequestID} a une session authentifiée pour {@code uid}. */
   private boolean authOk(long uid, ClientInfo ci) {
     if (!authRequired) return true;
@@ -61,6 +85,11 @@ public final class LoginServer {
    *  et toute livraison temps réel aux autres membres). Rempli à ClientInfo, vidé à onClose. */
   private final java.util.concurrent.ConcurrentHashMap<Long, GruntConnection> online =
       new java.util.concurrent.ConcurrentHashMap<>();
+  /** ADMIN (monitoring) — instant de connexion par userID en ligne (pour l'ancienneté affichée). Miroir d'{@link #online}. */
+  private final java.util.concurrent.ConcurrentHashMap<Long, Long> onlineSince =
+      new java.util.concurrent.ConcurrentHashMap<>();
+  /** ADMIN (monitoring) — instant de démarrage du serveur (uptime). */
+  private final long startedAtMs = System.currentTimeMillis();
   /**
    * Nombre de connexions ACCEPTÉES depuis le démarrage (observabilité).
    *
@@ -224,6 +253,7 @@ public final class LoginServer {
                   user = store.loadOrCreate(uid, LoginServer.this.user.shardID);
                   connUsers.put(c, user);
                   online.put(uid, c);
+                  onlineSince.put(uid, System.currentTimeMillis());
                   System.out.println("[login] connexion ← compte " + uid + " (multi-user, "
                       + online.size() + " en ligne)");
                 } catch (Exception e) { System.out.println("[login]     ! loadOrCreate(" + uid + "): " + e); }
@@ -2798,7 +2828,10 @@ public final class LoginServer {
       public void onClose(GruntConnection conn) {
         // MULTI-USER (#65) — désenregistre la connexion des deux registres (compte par socket + en ligne).
         connUsers.remove(conn);
-        online.values().remove(conn);
+        online.entrySet().removeIf(e -> {
+          if (e.getValue() == conn) { onlineSince.remove(e.getKey()); return true; }
+          return false;
+        });
         System.out.println("[login] onClose " + conn + " (" + online.size() + " en ligne)");
       }
 
@@ -3203,6 +3236,22 @@ public final class LoginServer {
       System.out.println("[login] 🔐 AuthService sur :" + authPort + " — mode "
           + (strict ? "STRICT (auth requise)" : "permissif (auth optionnelle, défaut)"));
     } catch (Exception e) { System.out.println("[login] ! AuthService non démarré : " + e); }
+    // ADMIN (chantier D) — panneau opérateur HTTP dans CETTE JVM (accès à l'état vivant : online/connexions, puis
+    // édition comptes/events/modération). Jeton opérateur OBLIGATOIRE (-Ddh.admin.token / DH_ADMIN_TOKEN ; généré +
+    // imprimé si absent). Liaison 127.0.0.1 par défaut (option A, même PC) ; -Ddh.admin.bind=0.0.0.0 pour le cloud
+    // (option C, toujours protégé par le jeton). Port via -Ddh.admin.port (défaut 8083). Non bloquant si l'HTTP échoue.
+    try {
+      int adminPort = Integer.getInteger("dh.admin.port", 8083);
+      String adminBind = System.getProperty("dh.admin.bind", "127.0.0.1");
+      String adminTok = System.getProperty("dh.admin.token", System.getenv("DH_ADMIN_TOKEN"));
+      if (adminTok == null || adminTok.isEmpty()) {
+        adminTok = dhserver.admin.AdminService.randomToken();
+        System.out.println("[admin] 🔑 jeton opérateur généré (aucun -Ddh.admin.token fourni) : " + adminTok);
+      }
+      dhserver.admin.AdminService admin = new dhserver.admin.AdminService(adminBind, adminPort, adminTok, server, store);
+      admin.start();
+      System.out.println("[admin] 🛠 AdminService sur " + adminBind + ":" + admin.port() + " (jeton requis)");
+    } catch (Exception e) { System.out.println("[admin] ! AdminService non démarré : " + e); }
     server.start();
     // GUILD WAR #68 — l'ordonnanceur : appariement à l'heure, avance des phases, clôture des guerres
     // échues, bascule de saison et distribution des boîtes. C'est ce que le backend faisait tourner tout

@@ -58,6 +58,8 @@ public final class LauncherDaemon {
         http.createContext("/play/stop", this::playStop);
         http.createContext("/play/status", this::playStatus);
         http.createContext("/settings", this::settingsHandler); // C2b : réglages locaux (GET état | POST fusion)
+        http.createContext("/admin/monitor", this::adminMonitor); // chantier D : proxy monitoring (jeton injecté)
+        http.createContext("/host/logs", this::hostLogs);         // chantier D : tail des logs hôte
         http.setExecutor(null);
     }
 
@@ -259,8 +261,49 @@ public final class LauncherDaemon {
         } catch (Exception e) { send(ex, 500, "{\"error\":\"" + e.getClass().getSimpleName() + "\"}"); }
     }
 
+    /**
+     * ADMIN (chantier D) — GET /admin/monitor : PROXIFIE le monitoring vers l'{@code AdminService} du serveur LOCAL
+     * hébergé (le daemon connaît son URL + jeton car c'est lui qui a démarré le serveur), en injectant le jeton
+     * opérateur. Le daemon reste GAME-FREE (simple relais HTTP). Aucun serveur local hébergé → 503 (pas de faux OK).
+     * (L'admin d'un serveur DISTANT/cloud — saisie URL+jeton — sera un incrément ultérieur, chantier F.)
+     */
+    private void adminMonitor(HttpExchange ex) throws IOException {
+        if (!"GET".equals(ex.getRequestMethod())) { ex.sendResponseHeaders(405, -1); ex.close(); return; }
+        String baseUrl = host.adminBaseUrl();
+        String tok = host.adminToken();
+        if (baseUrl == null || tok == null) { send(ex, 503, "{\"error\":\"admin indisponible (aucun serveur local hébergé)\"}"); return; }
+        try {
+            HttpResponse<String> r = remoteGet(baseUrl + "/admin/monitor", tok);
+            send(ex, r.statusCode(), r.body());
+        } catch (Exception e) { send(ex, 502, "{\"error\":\"" + e.getClass().getSimpleName() + "\"}"); }
+    }
+
+    /** GET /host/logs?which=server|content&tail=N → N dernières lignes du log hôte (lecture fichier locale, game-free). */
+    private void hostLogs(HttpExchange ex) throws IOException {
+        if (!"GET".equals(ex.getRequestMethod())) { ex.sendResponseHeaders(405, -1); ex.close(); return; }
+        Map<String, String> q = query(ex.getRequestURI().getRawQuery());
+        send(ex, 200, host.tailLog(q.getOrDefault("which", "server"), intOr(q, "tail", 200)));
+    }
+
     private static int intOr(Map<String, String> f, String k, int def) {
         try { return Integer.parseInt(f.getOrDefault(k, "").trim()); } catch (Exception e) { return def; }
+    }
+
+    /** Parse une query-string {@code a=b&c=d} en map (valeurs url-décodées). */
+    private static Map<String, String> query(String raw) {
+        Map<String, String> m = new HashMap<>();
+        if (raw == null || raw.isEmpty()) return m;
+        for (String kv : raw.split("&")) {
+            if (kv.isEmpty()) continue;
+            int i = kv.indexOf('=');
+            m.put(dec(i < 0 ? kv : kv.substring(0, i)), i < 0 ? "" : dec(kv.substring(i + 1)));
+        }
+        return m;
+    }
+
+    private HttpResponse<String> remoteGet(String url, String token) throws Exception {
+        HttpRequest req = HttpRequest.newBuilder(URI.create(url)).header("X-Admin-Token", token).GET().build();
+        return client.send(req, HttpResponse.BodyHandlers.ofString());
     }
 
     private HttpResponse<String> remote(String url, String body) throws Exception {

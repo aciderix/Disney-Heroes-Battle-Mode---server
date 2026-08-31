@@ -350,8 +350,10 @@ Le front **ne doit pas** exposer ces fonctions tant que l'endpoint n'existe pas 
 7. **ADMIN — panneau opérateur (chantier D, 5 domaines §4.6)** :
    - **A. Events** : `GET/POST /admin/events`, `/admin/events/remove`, `/admin/events/clear`, `GET /admin/enums`
      (enums réelles). Base : `ServerEvents.fromJson`/`setOperatorEvents` + `shard_state`. *(capacité prête)*
-   - **B. Monitoring** : `GET /admin/monitor` (joueurs en ligne via `LoginServer.online`, connexions, uptime) ;
-     `GET /host/logs?which=&tail=N`. *(capacité prête)*
+   - **B. Monitoring** : ✅ **LIVRÉ (inc.6a, g208)** — `GET /admin/monitor` (joueurs en ligne via `LoginServer.online`,
+     connexions, uptime, strict) + `GET /host/logs?which=server|content&tail=N`. Archi : `dhserver.admin.AdminService`
+     (dans la JVM serveur, jeton opérateur obligatoire, bind 127.0.0.1 par défaut / exposable réseau) ; le daemon
+     PROXIFIE `/admin/monitor` (jeton injecté ; 503 si aucun serveur hébergé). `AdminMonitorTest`/`AdminProxyTest`.
    - **C. Joueurs** : `POST /admin/player/{lookup,giveResource,grantHero,setTeamLevel,grantCampaign,completeTutorials,unlock}`
      (méthodes `ServerUser` existantes ; **journaliser**). *(capacité prête)*
    - **D. Ère de contenu** : `GET /admin/releases`, `POST /admin/release {name}`, `POST /admin/clock {offsetHours}`

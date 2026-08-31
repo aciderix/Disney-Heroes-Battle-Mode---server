@@ -1,5 +1,33 @@
 # JOURNAL — journal détaillé des modifications
 
+## 2026-08-31 (g208) — Admin inc.6a : AdminService (serveur) + jeton + proxy daemon + monitoring 🟢
+
+Début du **chantier D** (panneau opérateur, `docs/LAUNCHER_UI.md` §4.6). **Architecture tranchée par le code** : le
+launcher-core est GAME-FREE → il ne peut pas exécuter les opérations admin (elles ont besoin des classes du jeu :
+`LoginServer.online`, `ServerUser`, `ServerEvents`, `AdminRelease`). ⇒ **`AdminService` HTTP DANS la JVM du serveur de
+jeu** (à côté de l'`AuthService`), et le **daemon PROXIFIE `/admin/*`** (comme content_server proxifie `/login`).
+
+- **Sécurité (choix util. « A et/ou C, toujours sécurisé »)** : **jeton opérateur OBLIGATOIRE** sur chaque requête
+  (`Authorization: Bearer` ou `X-Admin-Token`, comparé en temps constant → 401 sinon) ; **liaison configurable**
+  `127.0.0.1` par défaut (option A, même PC), exposable réseau via `-Ddh.admin.bind=0.0.0.0` (option C, cloud) — toujours
+  sous jeton. Port `-Ddh.admin.port` (défaut 8083). Jeton fourni (`-Ddh.admin.token`/`DH_ADMIN_TOKEN`) ou généré+imprimé.
+- **`dhserver.admin.AdminService`** (nouveau, JDK HttpServer) : `GET /admin/ping` (vérif jeton), `GET /admin/monitor`
+  (état vivant : joueurs en ligne [userID+ancienneté], connexions acceptées, uptime, mode strict). `LoginServer` :
+  `monitorSnapshotJson()` + suivi `onlineSince` (miroir d'`online`, posé/retiré aux mêmes points) + `startedAtMs`.
+  Démarré dans `LoginServer.main` après l'AuthService.
+- **Daemon** (reste GAME-FREE — simple relais) : `HostManager` GÉNÈRE le jeton et le passe au serveur dev
+  (`-Ddh.admin.*`, adminPort=authPort+1) → il le connaît sans lire les logs ; expose `adminBaseUrl()`/`adminToken()`
+  + `tailLog(which,n)`. `LauncherDaemon` : `GET /admin/monitor` (proxifie vers l'AdminService local, injecte le jeton ;
+  **503 si aucun serveur hébergé** — pas de faux OK) + `GET /host/logs?which=server|content&tail=N`. Admin d'un serveur
+  DISTANT (saisie URL+jeton) + mode bundle = incréments ultérieurs (le run.sh généré ne relaie pas encore `DH_ADMIN_*`).
+- **Vérif** : compile GAME-FREE OK (daemon inchangé côté propreté) ; `AdminMonitorTest` (12 : garde de jeton 401/200 via
+  les deux en-têtes, JSON monitoring, `randomToken`) + `AdminProxyTest` (9 : 503 hors hébergement → start → proxy monitor
+  0 en ligne → tail logs → stop → 503) ; **régression 174/174**. 🟢 headless — la vérif EN JEU (un vrai client apparaît
+  dans `online`) viendra avec l'écran Admin du front.
+- **Suite** : inc.6b ère de contenu (`/admin/releases`, `/admin/release`, `/admin/clock`) → inc.6c joueurs
+  (`/admin/player/*`, journalisé) → inc.6d events (`/admin/events`, `/admin/enums`) → inc.6e **modération à CONSTRUIRE**
+  (bans au login + mute + kick) → UI Admin + CI « build launcher-ui ».
+
 ## 2026-08-31 (g207) — C2b inc.5 : écran Réglages (/settings) + persistance 🟢
 
 - **Backend `/settings`** (`SettingsManager.java`) : fichier `settings.txt` (key=value) dans le dossier de config par OS.

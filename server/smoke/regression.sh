@@ -96,6 +96,8 @@ TESTS=(
   HostLifecycleTest
   PlayLifecycleTest
   SettingsLifecycleTest
+  AdminMonitorTest
+  AdminProxyTest
   BuildDataGenTest
   ServerBundleTest
 )

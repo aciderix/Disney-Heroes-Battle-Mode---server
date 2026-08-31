@@ -24,6 +24,9 @@ public final class HostManager {
     private Process content;
     private long startedAt;
     private int contentPort, gamePort, authPort;
+    private int adminPort;        // ADMIN (chantier D) : port de l'AdminService du serveur (0 = indisponible)
+    private String adminToken;    // ADMIN : jeton opérateur généré par le daemon, passé au serveur (proxifié par /admin/*)
+    private File dataDir;         // dossier des logs hôte (host-server.log / host-content.log ou host.log en bundle)
     private boolean strict;
     private boolean bundleMode;   // true = un seul process (run.sh du bundle, qui lance content+serveur en interne)
 
@@ -49,6 +52,8 @@ public final class HostManager {
         if (!script.isFile()) throw new IOException("bundle invalide (run script absent): " + script);
         this.contentPort = contentPort; this.gamePort = gamePort; this.authPort = authPort;
         this.strict = strict; this.bundleMode = true; this.content = null;
+        // ADMIN indisponible en mode BUNDLE pour l'instant : le run.sh généré ne relaie pas encore DH_ADMIN_* (à venir).
+        this.adminPort = 0; this.adminToken = null; this.dataDir = dir;
 
         ProcessBuilder pb = new ProcessBuilder(win
                 ? new java.util.ArrayList<>(List.of("cmd", "/c", script.getPath()))
@@ -74,11 +79,16 @@ public final class HostManager {
         stopQuiet();
         this.contentPort = contentPort; this.gamePort = gamePort; this.authPort = authPort; this.strict = strict;
         this.bundleMode = false;
+        // ADMIN : le daemon GÉNÈRE le jeton opérateur et le passe au serveur → il le connaît sans lire les logs (le
+        // proxy /admin/* l'injecte). Port = authPort+1 (127.0.0.1 par défaut). Cf. AdminService (option A locale).
+        this.adminPort = authPort + 1;
+        this.adminToken = java.util.UUID.randomUUID().toString().replace("-", "");
 
         String java = System.getProperty("java.home") + File.separator + "bin" + File.separator + "java";
         String cp = System.getProperty("java.class.path");   // le daemon embarque déjà dhserver + les jars du jeu
         File dataDir = new File(projectDir, "server/data");
         dataDir.mkdirs();
+        this.dataDir = dataDir;
         String db = new File(dataDir, "dh-server.db").getPath();
         String stats = new File(projectDir, "game-data/stats").getPath();
         File mintFile = new File(dataDir, "host-mint-userid");   // pont identité launcher → content_server (strict)
@@ -86,7 +96,8 @@ public final class HostManager {
 
         // 1) serveur de jeu TCP + AuthService (miroir exact de run-online.sh)
         List<String> srv = new ArrayList<>(List.of(java, "-XX:TieredStopAtLevel=1",
-                "-Ddh.db=" + db, "-Ddh.stats=" + stats, "-Ddh.auth.port=" + authPort));
+                "-Ddh.db=" + db, "-Ddh.stats=" + stats, "-Ddh.auth.port=" + authPort,
+                "-Ddh.admin.port=" + adminPort, "-Ddh.admin.bind=127.0.0.1", "-Ddh.admin.token=" + adminToken));
         if (strict) srv.add("-Ddh.auth=on");
         srv.add("-cp"); srv.add(cp);
         srv.add("dhserver.LoginServer"); srv.add(String.valueOf(gamePort));
@@ -131,6 +142,61 @@ public final class HostManager {
             if (server != null && !server.waitFor(2, java.util.concurrent.TimeUnit.SECONDS)) server.destroyForcibly();
         } catch (InterruptedException e) { Thread.currentThread().interrupt(); }
         server = null; content = null; startedAt = 0;
+        adminPort = 0; adminToken = null;
+    }
+
+    /** ADMIN — base de l'AdminService du serveur hébergé (proxy {@code /admin/*}), ou {@code null} si indisponible
+     *  (arrêté, ou mode bundle non encore câblé). Loopback : le serveur écoute {@code 127.0.0.1:adminPort}. */
+    public synchronized String adminBaseUrl() {
+        if (!isRunning() || bundleMode || adminPort <= 0) return null;
+        return "http://127.0.0.1:" + adminPort;
+    }
+
+    /** ADMIN — jeton opérateur à injecter dans les requêtes proxifiées vers l'AdminService, ou {@code null}. */
+    public synchronized String adminToken() {
+        return (isRunning() && !bundleMode) ? adminToken : null;
+    }
+
+    /**
+     * MONITORING — {@code n} dernières lignes d'un log hôte. {@code which} = {@code server} (host-server.log) ou
+     * {@code content} (host-content.log) en mode dev ; en mode bundle, un seul {@code host.log}. Renvoie du JSON
+     * {@code {"which":..,"lines":[..]}} ({@code lines} vide si le fichier n'existe pas encore).
+     */
+    public synchronized String tailLog(String which, int n) {
+        String file = bundleMode ? "host.log" : ("content".equalsIgnoreCase(which) ? "host-content.log" : "host-server.log");
+        File f = (dataDir != null) ? new File(dataDir, file) : null;
+        java.util.List<String> lines = new java.util.ArrayList<>();
+        if (f != null && f.isFile()) {
+            try {
+                java.util.List<String> all = java.nio.file.Files.readAllLines(f.toPath(), java.nio.charset.StandardCharsets.UTF_8);
+                int from = Math.max(0, all.size() - Math.max(1, Math.min(n, 1000)));
+                lines = all.subList(from, all.size());
+            } catch (IOException ignore) { /* fichier en cours d'écriture : renvoie ce qu'on a */ }
+        }
+        StringBuilder sb = new StringBuilder("{\"which\":\"").append("content".equalsIgnoreCase(which) ? "content" : "server")
+                .append("\",\"lines\":[");
+        for (int i = 0; i < lines.size(); i++) {
+            if (i > 0) sb.append(',');
+            sb.append(jsonStr(lines.get(i)));
+        }
+        return sb.append("]}").toString();
+    }
+
+    /** Échappe une chaîne pour l'inclure dans du JSON (guillemets, backslash, caractères de contrôle). */
+    private static String jsonStr(String s) {
+        StringBuilder b = new StringBuilder(s.length() + 2).append('"');
+        for (int i = 0; i < s.length(); i++) {
+            char c = s.charAt(i);
+            switch (c) {
+                case '"':  b.append("\\\""); break;
+                case '\\': b.append("\\\\"); break;
+                case '\n': b.append("\\n");  break;
+                case '\r': b.append("\\r");  break;
+                case '\t': b.append("\\t");  break;
+                default: if (c < 0x20) b.append(String.format("\\u%04x", (int) c)); else b.append(c);
+            }
+        }
+        return b.append('"').toString();
     }
 
     /** Le port de jeu TCP accepte-t-il des connexions ? (le process peut être vivant mais pas encore en écoute). */
