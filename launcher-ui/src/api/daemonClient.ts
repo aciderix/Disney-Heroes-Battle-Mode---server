@@ -93,7 +93,8 @@ export const daemonClient = {
   hostLogs: (which: "server" | "content", tail = 200) => get<HostLogs>(`/host/logs?which=${which}&tail=${tail}`),
   // Cible d'administration : serveur LOCAL hébergé (défaut) ou DISTANT (cloud, URL + jeton, validé par ping)
   adminTargetGet: () => get<AdminTarget>("/admin/target"),
-  adminTargetSet: (adminUrl: string, token: string) => post<AdminTarget>("/admin/target", { adminUrl, token }),
+  adminTargetSet: (adminUrl: string, token: string, caFingerprint?: string) =>
+    post<AdminTarget>("/admin/target", caFingerprint ? { adminUrl, token, caFingerprint } : { adminUrl, token }),
   adminTargetClear: () => post<AdminTarget>("/admin/target/clear"),
   // Ère de contenu
   adminReleases: () => get<AdminReleases>("/admin/releases"),

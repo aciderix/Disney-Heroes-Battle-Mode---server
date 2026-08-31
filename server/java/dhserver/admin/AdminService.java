@@ -50,13 +50,26 @@ public final class AdminService {
     private static final int SHARD = 1;
 
     public AdminService(String bind, int port, String token, LoginServer server, UserStore store) throws IOException {
+        this(bind, port, token, server, store, null);
+    }
+
+    /** @param ssl si non-null → l'AdminService sert en HTTPS (jeton chiffré, chantier F) ; sinon HTTP (local loopback). */
+    public AdminService(String bind, int port, String token, LoginServer server, UserStore store,
+                        javax.net.ssl.SSLContext ssl) throws IOException {
         if (token == null || token.isEmpty()) throw new IllegalArgumentException("jeton admin requis");
         this.token = token;
         this.tokenBytes = token.getBytes(StandardCharsets.UTF_8);
         this.server = server;
         this.store = store;
         String host = (bind == null || bind.isEmpty()) ? "127.0.0.1" : bind;
-        http = HttpServer.create(new InetSocketAddress(InetAddress.getByName(host), port), 0);
+        InetSocketAddress addr = new InetSocketAddress(InetAddress.getByName(host), port);
+        if (ssl != null) {
+            com.sun.net.httpserver.HttpsServer https = com.sun.net.httpserver.HttpsServer.create(addr, 0);
+            https.setHttpsConfigurator(new com.sun.net.httpserver.HttpsConfigurator(ssl));
+            http = https;
+        } else {
+            http = HttpServer.create(addr, 0);
+        }
         http.createContext("/admin/ping", guarded(this::handlePing));
         http.createContext("/admin/monitor", guarded(this::handleMonitor));
         http.createContext("/admin/releases", guarded(this::handleReleases)); // ère de contenu : liste R1…Rn
@@ -89,6 +102,7 @@ public final class AdminService {
     public void start() { http.start(); }
     public void stop()  { http.stop(0); }
     public int port()   { return http.getAddress().getPort(); }
+    public boolean isTls() { return http instanceof com.sun.net.httpserver.HttpsServer; }
 
     /** Génère un jeton opérateur aléatoire (128 bits, URL-safe) quand l'hébergeur n'en fournit pas. */
     public static String randomToken() {

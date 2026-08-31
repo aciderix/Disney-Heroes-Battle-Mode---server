@@ -99,6 +99,7 @@ TESTS=(
   AdminMonitorTest
   AdminProxyTest
   AdminRemoteTargetTest
+  AdminTlsTest
   BuildDataGenTest
   ServerBundleTest
 )

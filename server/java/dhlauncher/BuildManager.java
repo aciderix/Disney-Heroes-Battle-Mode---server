@@ -353,8 +353,10 @@ public final class BuildManager {
       + "CONTENT_PORT=\"${DH_CONTENT_PORT:-8080}\"; GAME_PORT=\"${DH_GAME_PORT:-8081}\"; AUTH_PORT=\"${DH_AUTH_PORT:-8082}\"\n"
       // ADMIN DISTANT (chantier F) : par défaut l'AdminService écoute 127.0.0.1 avec un jeton aléatoire imprimé. Pour
       // administrer CE serveur depuis un autre poste (cloud), exporter DH_ADMIN_BIND=0.0.0.0 + DH_ADMIN_TOKEN=<secret>
-      // (LoginServer lit DH_ADMIN_TOKEN en env ; on ne le met PAS sur la ligne de commande → absent de `ps`). ⚠ TLS non
-      // encore en place : exposer l'admin sur Internet = via tunnel SSH/VPN pour l'instant.
+      // (LoginServer lit DH_ADMIN_TOKEN en env ; on ne le met PAS sur la ligne de commande → absent de `ps`).
+      // TLS (recommandé pour Internet) : fournir DH_ADMIN_TLS_KEYSTORE=<chemin .p12> + DH_ADMIN_TLS_PASS=<mdp> — le jeton
+      // transite alors CHIFFRÉ, et le serveur imprime au boot l'empreinte SHA-256 à épingler dans le launcher (héritées
+      // par le process via getenv). Sinon (http clair) : exposer l'admin via tunnel SSH/VPN.
       + "ADMIN_OPTS=\"\"\n"
       + "[ -n \"${DH_ADMIN_BIND:-}\" ] && ADMIN_OPTS=\"$ADMIN_OPTS -Ddh.admin.bind=$DH_ADMIN_BIND\"\n"
       + "[ -n \"${DH_ADMIN_PORT:-}\" ] && ADMIN_OPTS=\"$ADMIN_OPTS -Ddh.admin.port=$DH_ADMIN_PORT\"\n"
@@ -426,7 +428,8 @@ public final class BuildManager {
       + "if \"%DH_GAME_PORT%\"==\"\" set DH_GAME_PORT=8081\r\n"
       + "if \"%DH_AUTH_PORT%\"==\"\" set DH_AUTH_PORT=8082\r\n"
       // ADMIN DISTANT (chantier F) : DH_ADMIN_BIND=0.0.0.0 + DH_ADMIN_TOKEN=<secret> pour exposer l'admin (cloud).
-      // LoginServer lit DH_ADMIN_TOKEN en env ; bind/port via -D. TLS non encore en place → tunnel pour Internet.
+      // LoginServer lit DH_ADMIN_TOKEN en env ; bind/port via -D. TLS (recommandé Internet) : DH_ADMIN_TLS_KEYSTORE=<.p12>
+      // + DH_ADMIN_TLS_PASS=<mdp> → jeton chiffré + empreinte SHA-256 imprimée au boot (à épingler). Sinon tunnel SSH/VPN.
       + "set ADMIN_OPTS=\r\n"
       + "if not \"%DH_ADMIN_BIND%\"==\"\" set ADMIN_OPTS=%ADMIN_OPTS% -Ddh.admin.bind=%DH_ADMIN_BIND%\r\n"
       + "if not \"%DH_ADMIN_PORT%\"==\"\" set ADMIN_OPTS=%ADMIN_OPTS% -Ddh.admin.port=%DH_ADMIN_PORT%\r\n"

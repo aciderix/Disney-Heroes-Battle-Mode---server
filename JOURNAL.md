@@ -1,5 +1,41 @@
 # JOURNAL — journal détaillé des modifications
 
+## 2026-08-31 (g221) — Chantier F : TLS pour l'admin distant — jeton CHIFFRÉ + certificat ÉPINGLÉ 🟢
+
+Fermeture du dernier trou de sécurité de l'admin distant (g220 laissait le jeton en clair HTTP). Le jeton opérateur peut
+maintenant transiter **chiffré** vers un serveur cloud, sans PKI ni autorité de certification (auto-signé + épinglage).
+
+- **Serveur** — `dhserver.admin.AdminTls` (nouveau) : charge un keystore **PKCS12** (créé une fois avec `keytool`, pas au
+  runtime) → `SSLContext` serveur (KeyManager) + `fingerprintSha256` (empreinte du cert feuille). `AdminService` accepte un
+  `SSLContext` (constructeur 6-arg) → sert en **HTTPS** (`HttpsServer`) au lieu de HTTP ; `isTls()`. `LoginServer.main` lit
+  `dh.admin.tls.keystore`/`DH_ADMIN_TLS_KEYSTORE` (+ `…pass`/`DH_ADMIN_TLS_PASS`), construit le `SSLContext`, **imprime au
+  boot l'empreinte SHA-256** (à épingler) et passe le contexte à l'`AdminService`.
+- **Launcher (game-free)** — `dhlauncher.PinnedTls` (nouveau) : `X509TrustManager` qui n'accepte la chaîne QUE si
+  `SHA-256(cert feuille) == empreinte épinglée` (sinon `CertificateException`). `LauncherDaemon.adminTarget` accepte un champ
+  `caFingerprint` ; si l'URL est `https://` + empreinte fournie → **client HTTP épinglé** (`pinnedClient`) ; le `/admin/ping`
+  de validation ET tout le proxy `/admin/*` passent par ce client. **Épinglage = plus fort que la vérif de nom d'hôte**, que
+  le JDK force malgré tout (JDK-8213311) → neutralisée par `jdk.internal.httpclient.disableHostnameVerification` (bloc statique
+  du daemon ; SANS RISQUE : daemon dédié, aucun HTTPS non épinglé — cf. `docs/SHIMS.md`).
+- **Bug corrigé** au passage : le proxy `/admin/*` envoyait avec le client PAR DÉFAUT (`client`) au lieu du client épinglé
+  résolu (`hc`) → la cible distante était bien validée mais les requêtes suivantes échouaient en TLS. Corrigé (`hc.send`).
+- **Bundle serveur** — `run.sh`/`run.bat` : les env `DH_ADMIN_TLS_KEYSTORE`/`DH_ADMIN_TLS_PASS` sont hérités par le process
+  (LoginServer les lit via `getenv`) → un opérateur cloud lance `DH_ADMIN_BIND=0.0.0.0 DH_ADMIN_TOKEN=… DH_ADMIN_TLS_KEYSTORE=…
+  DH_ADMIN_TLS_PASS=… ./run.sh`. Commentaires des scripts mis à jour (TLS n'est plus « à venir »).
+- **Front** — la barre « Serveur à administrer » accepte une **empreinte SHA-256** (champ affiché quand l'URL est `https://`),
+  passée à `adminTargetSet` ; le badge affiche 🔒 « TLS épinglé » quand la cible distante est chiffrée. Aide mise à jour.
+- **Vérif** : `AdminTlsTest` (nouveau, ISOLÉ) — keystore PKCS12 généré via `keytool`, `AdminService` HTTPS + daemon :
+  **empreinte fausse→502, HTTPS auto-signé sans épinglage→502, bonne empreinte→200 `tls:true` + monitor proxifié via TLS,
+  clear→local** (6/6). Ajouté à `regression.sh` → **régression 176/176**. Front `tsc`+`vite build` OK. 🟢 (vérif EN JEU =
+  pilotable une fois un serveur exposé avec keystore ; endpoints déjà prouvés).
+- ⇒ **Chantier F « admin distant sécurisé » : le jeton ne transite plus jamais en clair** dès qu'un keystore est fourni.
+  Reste F (durcissement) : rate-limit, NAT/UPnP, soak/charge.
+
+Fichiers : `server/java/dhserver/admin/AdminTls.java` (+), `server/java/dhlauncher/PinnedTls.java` (+),
+`server/smoke/AdminTlsTest.java` (+), `server/java/dhserver/admin/AdminService.java`, `server/java/dhserver/LoginServer.java`,
+`server/java/dhlauncher/LauncherDaemon.java`, `server/java/dhlauncher/BuildManager.java`, `server/smoke/regression.sh`,
+`launcher-ui/src/api/{daemonClient,types}.ts`, `launcher-ui/src/views/Admin.tsx`, `docs/SHIMS.md`, `docs/PHASE2_TRACKING.md`,
+`JOURNAL.md`, `MEMORY.md`.
+
 ## 2026-08-31 (g220) — Chantier F : ADMIN DISTANT / CLOUD (le launcher administre un serveur hébergé ailleurs) 🟢
 
 Le panneau Admin peut désormais cibler un serveur DISTANT (cloud), pas seulement le serveur local hébergé.

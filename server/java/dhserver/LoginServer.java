@@ -3271,9 +3271,21 @@ public final class LoginServer {
         adminTok = dhserver.admin.AdminService.randomToken();
         System.out.println("[admin] 🔑 jeton opérateur généré (aucun -Ddh.admin.token fourni) : " + adminTok);
       }
-      dhserver.admin.AdminService admin = new dhserver.admin.AdminService(adminBind, adminPort, adminTok, server, store);
+      // TLS (chantier F) : si un keystore PKCS12 est fourni (-Ddh.admin.tls.keystore / DH_ADMIN_TLS_KEYSTORE +
+      // pass), l'AdminService sert en HTTPS (jeton chiffré) et imprime l'EMPREINTE SHA-256 à épingler dans le launcher.
+      javax.net.ssl.SSLContext adminSsl = null;
+      String ksPath = System.getProperty("dh.admin.tls.keystore", System.getenv("DH_ADMIN_TLS_KEYSTORE"));
+      if (ksPath != null && !ksPath.isEmpty()) {
+        String ksPass = System.getProperty("dh.admin.tls.pass", System.getenv("DH_ADMIN_TLS_PASS"));
+        java.io.File ksFile = new java.io.File(ksPath);
+        adminSsl = dhserver.admin.AdminTls.serverSslContext(ksFile, ksPass == null ? new char[0] : ksPass.toCharArray());
+        System.out.println("[admin] 🔒 TLS activé — empreinte cert SHA-256 (à épingler) : "
+            + dhserver.admin.AdminTls.fingerprintSha256(ksFile, ksPass == null ? new char[0] : ksPass.toCharArray()));
+      }
+      dhserver.admin.AdminService admin = new dhserver.admin.AdminService(adminBind, adminPort, adminTok, server, store, adminSsl);
       admin.start();
-      System.out.println("[admin] 🛠 AdminService sur " + adminBind + ":" + admin.port() + " (jeton requis)");
+      System.out.println("[admin] 🛠 AdminService sur " + (admin.isTls() ? "https" : "http") + "://" + adminBind + ":"
+          + admin.port() + " (jeton requis" + (admin.isTls() ? ", TLS" : "") + ")");
     } catch (Exception e) { System.out.println("[admin] ! AdminService non démarré : " + e); }
     server.start();
     // GUILD WAR #68 — l'ordonnanceur : appariement à l'heure, avance des phases, clôture des guerres

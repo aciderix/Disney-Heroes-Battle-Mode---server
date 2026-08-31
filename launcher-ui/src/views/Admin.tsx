@@ -78,13 +78,15 @@ function TargetBar({ target, onChange }: { target: AdminTarget | null; onChange:
   const [open, setOpen] = useState(false);
   const [url, setUrl] = useState("");
   const [token, setToken] = useState("");
+  const [fingerprint, setFingerprint] = useState("");
   const [err, setErr] = useState<string | null>(null);
   const [busy, setBusy] = useState(false);
   const remote = target?.mode === "remote";
+  const isHttps = url.trim().toLowerCase().startsWith("https://");
 
   async function connect() {
     setErr(null); setBusy(true);
-    try { await daemonClient.adminTargetSet(url.trim(), token.trim()); setOpen(false); setToken(""); onChange(); }
+    try { await daemonClient.adminTargetSet(url.trim(), token.trim(), fingerprint.trim() || undefined); setOpen(false); setToken(""); setFingerprint(""); onChange(); }
     catch (e) { setErr(errText(e)); } finally { setBusy(false); }
   }
   async function backToLocal() { setErr(null); try { await daemonClient.adminTargetClear(); onChange(); } catch (e) { setErr(errText(e)); } }
@@ -95,7 +97,7 @@ function TargetBar({ target, onChange }: { target: AdminTarget | null; onChange:
       <div className="row" style={{ justifyContent: "space-between", flexWrap: "wrap", gap: 8 }}>
         <div className="row">
           <StatusDot state={remote ? "ok" : "warn"} />
-          <span>{remote ? <>Distant : <strong>{target?.baseUrl}</strong></> : <>Serveur <strong>local</strong> hébergé</>}</span>
+          <span>{remote ? <>Distant : <strong>{target?.baseUrl}</strong>{target?.tls ? <> 🔒 <span className="muted">(TLS épinglé)</span></> : null}</> : <>Serveur <strong>local</strong> hébergé</>}</span>
         </div>
         <div className="row" style={{ gap: 6 }}>
           {remote && <button onClick={backToLocal}>Revenir au local</button>}
@@ -105,12 +107,20 @@ function TargetBar({ target, onChange }: { target: AdminTarget | null; onChange:
       {open && (
         <div className="stack" style={{ gap: 6 }}>
           <div className="muted" style={{ fontSize: 12 }}>
-            URL de l'AdminService du serveur distant (ex. <code>http://mon-serveur:8083</code>) + jeton opérateur.
-            Le serveur doit être lancé avec <code>DH_ADMIN_BIND=0.0.0.0</code> + <code>DH_ADMIN_TOKEN=…</code>.
-            ⚠ Le jeton transite en clair : pour un serveur exposé sur Internet, passe par un tunnel SSH/VPN (TLS à venir).
+            URL de l'AdminService du serveur distant + jeton opérateur. Le serveur est lancé avec
+            <code>DH_ADMIN_BIND=0.0.0.0</code> + <code>DH_ADMIN_TOKEN=…</code>.
+            {" "}<strong>Recommandé (Internet)</strong> : ajouter <code>DH_ADMIN_TLS_KEYSTORE=…</code> + <code>DH_ADMIN_TLS_PASS=…</code>
+            côté serveur → URL en <code>https://</code> et coller ici l'<strong>empreinte SHA-256</strong> que le serveur
+            imprime au démarrage → le jeton transite <strong>chiffré</strong> (certificat épinglé).
+            {isHttps && !fingerprint.trim() && <> <em>Sans empreinte, un certificat auto-signé sera refusé.</em></>}
+            {!isHttps && <> En <code>http://</code> clair, passe par un tunnel SSH/VPN.</>}
           </div>
-          <label className="stack" style={{ gap: 4 }}>URL<input value={url} onChange={(e) => setUrl(e.target.value)} placeholder="http://mon-serveur:8083" /></label>
+          <label className="stack" style={{ gap: 4 }}>URL<input value={url} onChange={(e) => setUrl(e.target.value)} placeholder="https://mon-serveur:8083" /></label>
           <label className="stack" style={{ gap: 4 }}>Jeton<input value={token} onChange={(e) => setToken(e.target.value)} type="password" /></label>
+          {isHttps && (
+            <label className="stack" style={{ gap: 4 }}>Empreinte SHA-256 du certificat (TLS épinglé)
+              <input value={fingerprint} onChange={(e) => setFingerprint(e.target.value)} placeholder="ex. e347ec8fcc3023ca078b… (imprimée par le serveur au boot)" /></label>
+          )}
           <div className="row"><button className="primary" disabled={busy || !url.trim() || !token.trim()} onClick={connect}>Connecter</button></div>
         </div>
       )}

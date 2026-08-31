@@ -30,6 +30,15 @@ import java.util.regex.Pattern;
  * Requêtes {@code application/x-www-form-urlencoded}, réponses JSON. <b>C2a-1</b> : identité (generate/login/register).
  */
 public final class LauncherDaemon {
+    static {
+        // ADMIN DISTANT TLS (chantier F) — on ÉPINGLE l'empreinte SHA-256 exacte du certificat distant (cf. PinnedTls),
+        // ce qui est STRICTEMENT plus fort que la vérification du nom d'hôte. Le HttpClient du JDK force pourtant celle-ci
+        // (endpointIdentificationAlgorithm=HTTPS, non désactivable par SSLParameters — JDK-8213311). On la neutralise via
+        // cette propriété : SANS RISQUE ici car ce daemon (game-free, dédié) ne fait AUCUN appel HTTPS non épinglé (le
+        // serveur de contenu/jeu local est en HTTP clair ; les cibles admin distantes sont toutes épinglées). Doc SHIMS.md.
+        System.setProperty("jdk.internal.httpclient.disableHostnameVerification", "true");
+    }
+
     private final HttpServer http;
     private final HttpClient client = HttpClient.newHttpClient();
     private final LauncherConfig config = new LauncherConfig();
@@ -42,6 +51,8 @@ public final class LauncherDaemon {
      *  serveur DISTANT (cloud). Base URL de son AdminService (ex. {@code http://1.2.3.4:8083}) + jeton opérateur. */
     private volatile String adminRemoteUrl;
     private volatile String adminRemoteToken;
+    /** Client HTTP épinglé (TLS) pour une cible HTTPS distante ; {@code null} = client par défaut (local ou http/CA). */
+    private volatile HttpClient adminRemoteHttp;
 
     /** @param port port local (0 = éphémère, choisi par l'OS). Lié à loopback seulement. */
     public LauncherDaemon(int port) throws IOException {
@@ -280,8 +291,9 @@ public final class LauncherDaemon {
         // Cible : DISTANTE si définie (/admin/target), sinon le serveur LOCAL hébergé.
         String remote = adminRemoteUrl;
         String baseUrl, tok;
-        if (remote != null) { baseUrl = remote; tok = adminRemoteToken; }
-        else { baseUrl = host.adminBaseUrl(); tok = host.adminToken(); }
+        HttpClient hc;
+        if (remote != null) { baseUrl = remote; tok = adminRemoteToken; hc = adminRemoteHttp != null ? adminRemoteHttp : client; }
+        else { baseUrl = host.adminBaseUrl(); tok = host.adminToken(); hc = client; }
         if (baseUrl == null || tok == null) { send(ex, 503, "{\"error\":\"admin indisponible (héberge un serveur local, ou définis une cible distante via /admin/target)\"}"); return; }
         String path = ex.getRequestURI().getRawPath();
         String q = ex.getRequestURI().getRawQuery();
@@ -292,7 +304,7 @@ public final class LauncherDaemon {
             if ("POST".equals(ex.getRequestMethod())) {
                 b.header("Content-Type", "application/x-www-form-urlencoded").POST(HttpRequest.BodyPublishers.ofByteArray(body));
             } else { b.GET(); }
-            HttpResponse<String> r = client.send(b.build(), HttpResponse.BodyHandlers.ofString());
+            HttpResponse<String> r = hc.send(b.build(), HttpResponse.BodyHandlers.ofString());
             send(ex, r.statusCode(), r.body());
         } catch (Exception e) { send(ex, 502, "{\"error\":\"" + e.getClass().getSimpleName() + "\"}"); }
     }
@@ -300,8 +312,10 @@ public final class LauncherDaemon {
     /**
      * ADMIN DISTANT (chantier F) — GET /admin/target → cible courante ({@code {mode:"local"}} ou
      * {@code {mode:"remote",baseUrl:...}}). POST {@code {adminUrl, token}} → bascule sur un serveur DISTANT, VALIDÉ par
-     * un {@code /admin/ping} authentifié (rejette une URL/jeton faux → 502). ⚠️ Le jeton transite en clair (HTTP) :
-     * jusqu'au durcissement TLS (chantier F), passer par un tunnel SSH / VPN pour un serveur exposé sur Internet.
+     * un {@code /admin/ping} authentifié (rejette une URL/jeton faux → 502). Si {@code adminUrl} est en {@code https://}
+     * ET qu'une {@code caFingerprint} (SHA-256 du cert, imprimée par le serveur au boot) est fournie, le jeton transite
+     * CHIFFRÉ via un client TLS ÉPINGLÉ (cf. {@link #pinnedClient}) — recommandé pour un serveur exposé sur Internet.
+     * En {@code http://} clair, passer par un tunnel SSH / VPN.
      */
     private void adminTarget(HttpExchange ex) throws IOException {
         if ("GET".equals(ex.getRequestMethod())) {
@@ -312,25 +326,39 @@ public final class LauncherDaemon {
         Map<String, String> f = form(ex);
         String u = trimSlash(f.getOrDefault("adminUrl", "").trim());
         String t = f.getOrDefault("token", "").trim();
+        String fp = f.getOrDefault("caFingerprint", "").trim();   // empreinte SHA-256 à épingler (HTTPS auto-signé)
         if (u.isEmpty() || t.isEmpty()) { send(ex, 400, "{\"error\":\"adminUrl|token requis\"}"); return; }
+        HttpClient hc = client;
+        if (u.startsWith("https://") && !fp.isEmpty()) {
+            try { hc = pinnedClient(fp); }
+            catch (Exception e) { send(ex, 400, "{\"error\":\"empreinte TLS invalide\"}"); return; }
+        }
         try {
-            HttpResponse<String> r = adminGet(u + "/admin/ping", t);
+            HttpResponse<String> r = adminGet(hc, u + "/admin/ping", t);
             if (r.statusCode() != 200) { send(ex, 502, "{\"error\":\"ping distant → HTTP " + r.statusCode() + " (URL ou jeton invalide)\"}"); return; }
-        } catch (Exception e) { send(ex, 502, "{\"error\":\"serveur distant injoignable\"}"); return; }
-        adminRemoteUrl = u; adminRemoteToken = t;
-        send(ex, 200, "{\"mode\":\"remote\",\"baseUrl\":" + jstr(u) + "}");
+        } catch (Exception e) { send(ex, 502, "{\"error\":\"serveur distant injoignable ou TLS non épinglé (" + e.getClass().getSimpleName() + ")\"}"); return; }
+        adminRemoteUrl = u; adminRemoteToken = t; adminRemoteHttp = (hc != client ? hc : null);
+        send(ex, 200, "{\"mode\":\"remote\",\"baseUrl\":" + jstr(u) + ",\"tls\":" + u.startsWith("https://") + "}");
     }
 
     /** POST /admin/target/clear → repli sur le serveur LOCAL hébergé. */
     private void adminTargetClear(HttpExchange ex) throws IOException {
         if (!post(ex)) return;
-        adminRemoteUrl = null; adminRemoteToken = null;
+        adminRemoteUrl = null; adminRemoteToken = null; adminRemoteHttp = null;
         send(ex, 200, "{\"mode\":\"local\"}");
     }
 
-    private HttpResponse<String> adminGet(String url, String token) throws Exception {
-        return client.send(HttpRequest.newBuilder(URI.create(url)).header("X-Admin-Token", token).GET().build(),
+    private HttpResponse<String> adminGet(HttpClient hc, String url, String token) throws Exception {
+        return hc.send(HttpRequest.newBuilder(URI.create(url)).header("X-Admin-Token", token).GET().build(),
                 HttpResponse.BodyHandlers.ofString());
+    }
+
+    /** Client HTTP épinglé sur l'empreinte SHA-256 d'un cert (HTTPS auto-signé du serveur distant), vérif hôte désactivée. */
+    private HttpClient pinnedClient(String fingerprint) throws Exception {
+        javax.net.ssl.SSLContext ctx = PinnedTls.pinning(fingerprint);
+        javax.net.ssl.SSLParameters p = ctx.getDefaultSSLParameters();
+        p.setEndpointIdentificationAlgorithm(null);   // on épingle le cert exact → pas de vérif de nom d'hôte
+        return HttpClient.newBuilder().sslContext(ctx).sslParameters(p).build();
     }
 
     /** GET /host/logs?which=server|content&tail=N → N dernières lignes du log hôte (lecture fichier locale, game-free). */

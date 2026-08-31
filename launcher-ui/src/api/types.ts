@@ -49,7 +49,7 @@ export type AdminEvents = { count: number; events: Record<string, unknown>[] };
 export type AdminEnums = Record<string, string[]>;
 export type Moderation = { bans: number[]; mutes: number[] };
 export type AuditLog = { lines: string[] };
-export type AdminTarget = { mode: "local" | "remote"; baseUrl?: string };
+export type AdminTarget = { mode: "local" | "remote"; baseUrl?: string; tls?: boolean };
 
 // Paramètres d'appel (côté front → daemon).
 export type HostStartParams = { bundleDir?: string; contentPort?: number; gamePort?: number; authPort?: number; strict?: boolean };
