@@ -1,5 +1,47 @@
 # JOURNAL — journal détaillé des modifications
 
+## 2026-08-31 (g201) — PYTHON embarqué + content_server pur-stdlib + LAUNCHER distribuable (GitHub Action release) 🟢
+
+Suite g200 (« il faut embarquer python et s'assurer que ça marche Linux/Windows ; le launcher a-t-il des
+dépendances ? sera-t-il build via GitHub Action pour être distribué en release ? »).
+
+**1) `content_server.py` → PUR STDLIB (plus de `curl`)** : les 2 appels `curl` (download-to-cache + relay) remplacés
+par `urllib` (nouveau `_download_to_file` : reprise Range + retries + suit la redirection 302 ; `_relay_stream` idem).
+VÉRIFIÉ : `/login` OK, asset caché servi en Range (206) ; `urllib` atteint archive.org **via le proxy** (suit le 302).
+⇒ un CPython **stdlib-only** suffit (aucune dépendance système en plus de python).
+
+**2) PYTHON embarqué (`BuildManager.packagePython`)** : télécharge un CPython **relocatable** (python-build-standalone,
+astral-sh, version épinglée 3.11.9/tag 20240814) pour l'OS de build → `<bundle>/runtime/python` ; `run.sh`/`run.bat`
+**préfèrent** `runtime/python/bin/python3` (Windows `runtime\python\python.exe`), repli `python3`/`python` système.
+Best-effort (§2, tracé) : réseau requis à la génération (comme le DL des assets) ; échec → repli système. Le
+téléchargement réel se prouve **en CI** (GitHub Action, ubuntu+windows). `ServerBundleTest` **12/12** (+1 assertion :
+run.sh préfère le python embarqué ; le DL 403 dans CE conteneur → repli, le serveur démarre quand même).
+
+**3) LAUNCHER DISTRIBUABLE — dépendances & CI/release** :
+- **Le launcher-core compile GAME-FREE** (prouvé) : `dhlauncher/*` + `dhserver.auth.MnemonicIdentity`/`Bip39Wordlist`
+  seulement — **aucun `com.perblue`**, aucun `game.jar`, aucun APK. ⇒ **distribuable & copyright-propre** ; CI peut le
+  compiler. (`HostManager` référence `dhserver.LoginServer` en STRING pour lancer un sous-process, pas au compile.)
+- **`main()` ajouté à `LauncherDaemon`** (il n'en avait pas) : `--port` (défaut 8090) / `--project <tooling>` ; daemon
+  loopback-only. VÉRIFIÉ local : `/health` → `{"ok":true}`, `/identity/generate` → phrase mnémonique + userID + pubkey Ed25519.
+- **Dépendances du launcher** = un **JDK** (pas juste un JRE) : `BuildManager` fait `javac`/`jlink`/`jar` pour GÉNÉRER les
+  bundles → le package launcher embarque un **JDK complet** (`runtime/jdk`) + le **CPython** embarqué + le **tooling repo**
+  (`server/`, `desktop-port/`, `tools/`, via `git ls-files` → sans game-data/APK gitignorés) + `run-launcher.sh/.bat`.
+- **`tools/build_launcher.sh`** (bash cross-OS) assemble ce package : compile game-free → `dhlauncher.jar`, copie le JDK,
+  télécharge+déballe le CPython (`tar`), copie le tooling, écrit les scripts. `bash -n` OK.
+- **`.github/workflows/launcher-release.yml`** : matrice **ubuntu-latest + windows-latest**, JDK 21 Temurin, lance
+  `build_launcher.sh`, **smoke** (`/health` + `/identity/generate` + `python --version` du python embarqué → PROUVE
+  Linux+Windows), archive (tar.gz / zip), upload artifact, et **attache à une Release** sur tag `launcher-v*` (gh CLI).
+  ⇒ le launcher **sera bien build par GitHub Action et distribué en release**, un package par OS.
+
+**Modèle de distribution (confirmé)** : la **Release GitHub = le LAUNCHER** (game-free, JDK+python embarqués). Le joueur
+télécharge le package de son OS, le lance (zéro-install), fournit **son** APK → le launcher **génère** les bundles
+serveur/client (JRE jlink + python embarqués) puis **héberge** (local via `HostManager`) et lance le **jeu**. On ne
+distribue JAMAIS de code/données du jeu (copyright).
+
+**Reste / à décider** : (a) **front C2b** (Tauri+React) = l'UI clic-bouton par-dessus le daemon (aujourd'hui HTTP/curl) ;
+(b) **cloud** (héberger le serveur sur un cloud + le manager) = chantier F (le launcher gère aujourd'hui le LOCAL) ;
+(c) certificats TLS du CPython embarqué pour archive.org en HTTPS (sinon repli HTTP archive.org). **Régression 170/170.**
+
 ## 2026-08-31 (g200) — RUNTIME JRE embarqué (zéro-install) : jlink dans le bundle + `run.sh` le préfère 🟢
 
 **Suite de la validation g199** (« poursuit ») — objectif clé-en-main : qu'un joueur lambda lance le bundle **sans

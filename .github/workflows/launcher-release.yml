@@ -1,0 +1,89 @@
+name: launcher-release
+
+# Construit le PACKAGE LAUNCHER clé-en-main (game-free, copyright-propre) sur Linux ET Windows,
+# embarque un JDK complet + un CPython relocatable (python-build-standalone), et le publie en RELEASE.
+# Le joueur télécharge le package de SON OS, le lance (run-launcher.sh/.bat) sans rien installer,
+# lui fournit SON APK, et génère/héberge le serveur + joue.
+#
+# Déclenche : manuellement (workflow_dispatch) ou sur push d'un tag `launcher-v*` (→ crée la Release).
+
+on:
+  workflow_dispatch:
+  push:
+    tags:
+      - 'launcher-v*'
+
+permissions:
+  contents: write        # créer/attacher la Release
+
+jobs:
+  build:
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - os: ubuntu-latest
+            oskind: linux
+            pyexe: runtime/python/bin/python3
+          - os: windows-latest
+            oskind: windows
+            pyexe: runtime/python/python.exe
+    runs-on: ${{ matrix.os }}
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Set up JDK 21 (Temurin)
+        uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: '21'
+
+      - name: Build launcher package
+        shell: bash
+        env:
+          OSKIND: ${{ matrix.oskind }}
+          OUT: ${{ github.workspace }}/build/launcher-${{ matrix.oskind }}
+        run: bash tools/build_launcher.sh
+
+      - name: Smoke — launcher runs game-free (identity + health) + python embarqué
+        shell: bash
+        env:
+          OUT: ${{ github.workspace }}/build/launcher-${{ matrix.oskind }}
+          PYEXE: ${{ matrix.pyexe }}
+        run: |
+          "$OUT/runtime/jdk/bin/java" -cp "$OUT/dhlauncher.jar" dhlauncher.LauncherDaemon --port 8090 --project "$OUT/tooling" &
+          LP=$!
+          for i in $(seq 1 30); do
+            curl -fsS "http://127.0.0.1:8090/health" >/dev/null 2>&1 && break || sleep 1
+          done
+          curl -fsS "http://127.0.0.1:8090/health"; echo " <- /health OK"
+          curl -fsS -X POST "http://127.0.0.1:8090/identity/generate" | head -c 200; echo " <- /identity/generate OK"
+          "$OUT/$PYEXE" --version   # PROUVE le python embarqué (Linux ET Windows)
+          kill $LP 2>/dev/null || true
+
+      - name: Archive package
+        shell: bash
+        run: |
+          cd build
+          if [ "${{ matrix.oskind }}" = windows ]; then
+            7z a -tzip "dh-launcher-${{ matrix.oskind }}.zip" "launcher-${{ matrix.oskind }}" >/dev/null
+          else
+            tar -czf "dh-launcher-${{ matrix.oskind }}.tar.gz" "launcher-${{ matrix.oskind }}"
+          fi
+          ls -la
+
+      - name: Upload build artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: dh-launcher-${{ matrix.oskind }}
+          path: build/dh-launcher-${{ matrix.oskind }}.*
+          retention-days: 7
+
+      - name: Attach to Release (on tag)
+        if: startsWith(github.ref, 'refs/tags/launcher-v')
+        shell: bash
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          gh release create "${GITHUB_REF_NAME}" --title "${GITHUB_REF_NAME}" --notes "Launcher clé-en-main (JDK + Python embarqués). Package par OS ; fournir son APK." || true
+          gh release upload "${GITHUB_REF_NAME}" build/dh-launcher-${{ matrix.oskind }}.* --clobber

@@ -59,6 +59,28 @@ public final class LauncherDaemon {
     public void stop()  { http.stop(0); }
     public int port()   { return http.getAddress().getPort(); }
 
+    /**
+     * POINT D'ENTRÉE du launcher distribué (package clé-en-main, cf. {@code tools/build_launcher.sh} +
+     * {@code .github/workflows/launcher-release.yml}). Args : {@code --port <n>} (défaut 8090, ou
+     * {@code -Ddh.launcher.port}) ; {@code --project <dir>} (racine du tooling embarqué → pose
+     * {@code dh.launcher.projectdir} AVANT construction). Lié à loopback uniquement. Le front (Tauri/React, C2b)
+     * s'y connecte en HTTP local ; en attendant, les endpoints sont utilisables tels quels (curl / tests).
+     */
+    public static void main(String[] args) throws Exception {
+        int port = 8090;
+        for (int i = 0; i + 1 < args.length; i++) {
+            if ("--port".equals(args[i]))    { try { port = Integer.parseInt(args[i + 1]); } catch (Exception ignore) {} }
+            else if ("--project".equals(args[i])) { System.setProperty("dh.launcher.projectdir", args[i + 1]); }
+        }
+        port = Integer.getInteger("dh.launcher.port", port);
+        LauncherDaemon d = new LauncherDaemon(port);       // lit dh.launcher.projectdir posé ci-dessus
+        d.start();
+        System.out.println("[launcher] daemon local sur http://127.0.0.1:" + d.port()
+            + " (projectDir=" + System.getProperty("dh.launcher.projectdir", System.getProperty("user.dir", ".")) + ")");
+        System.out.println("[launcher] endpoints : /health /identity/* /servers* /host/* /build/*  (loopback only)");
+        Thread.currentThread().join();                     // garde le process vivant (daemon)
+    }
+
     /** Génère une nouvelle phrase + dérive l'identité (pour l'écran « Nouveau compte » — à noter par le joueur). */
     private void generate(HttpExchange ex) throws IOException {
         if (!post(ex)) return;

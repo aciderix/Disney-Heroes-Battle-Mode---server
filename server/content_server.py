@@ -197,7 +197,7 @@ class Handler(BaseHTTPRequestHandler):
             #    dans le cache, PUIS on le sert. On ne streame JAMAIS un flux partiel : une coupure intermittente
             #    d'archive.org donnerait sinon un zip TRONQUÉ au client (« Could not read local file header »).
             #    Bénéfice turnkey : le cache = miroir local qui se construit → clients suivants servis en local.
-            import subprocess, threading
+            import threading
             if Handler._dl_locks_guard is None:
                 Handler._dl_locks_guard = threading.Lock()
             with Handler._dl_locks_guard:
@@ -207,13 +207,12 @@ class Handler(BaseHTTPRequestHandler):
                     os.makedirs(self.cfg.cache_dir, exist_ok=True)
                     part = local + ".part"
                     target = f"{self.cfg.archive_base}/{name}"
-                    # -L suit la redirection archive.org ; --retry + -C - = robuste aux coupures intermittentes.
-                    cmd = ["curl", "-sS", "-L", "--fail", "--retry", "6", "--retry-delay", "2",
-                           "-C", "-", "--max-time", "3600", "-o", part, target]
-                    sys.stderr.write("[content] cache MISS %s → téléchargement archive.org (retries)…\n" % name)
-                    rc = subprocess.call(cmd)
-                    if rc != 0 or not os.path.isfile(part) or os.path.getsize(part) == 0:
-                        sys.stderr.write("[content] échec téléchargement %s (curl rc=%s)\n" % (name, rc))
+                    # Téléchargement STDLIB (urllib) — plus de dépendance `curl` (zéro-install). urllib suit la
+                    # redirection 302 d'archive.org ; reprise (Range) + retries = robuste aux coupures intermittentes.
+                    sys.stderr.write("[content] cache MISS %s → téléchargement archive.org (stdlib, reprise+retries)…\n" % name)
+                    ok = self._download_to_file(target, part)
+                    if not ok or not os.path.isfile(part) or os.path.getsize(part) == 0:
+                        sys.stderr.write("[content] échec téléchargement %s\n" % name)
                         if os.path.isfile(part):
                             try: os.remove(part)
                             except OSError: pass
@@ -255,26 +254,54 @@ class Handler(BaseHTTPRequestHandler):
                     self.wfile.write(chunk)
                     remaining -= len(chunk)
 
+    def _download_to_file(self, url: str, part: str, retries: int = 6) -> bool:
+        """Télécharge `url` → fichier `part` en STDLIB (urllib) — plus de `curl`. REPRISE : si `part` existe déjà,
+        on demande un Range depuis sa taille (append sur 206 ; restart sur 200). Retries avec backoff. urllib suit
+        les redirections (302 archive.org). Renvoie True si le transfert s'est terminé sans exception."""
+        import urllib.request, time
+        for attempt in range(1, retries + 1):
+            have = os.path.getsize(part) if os.path.isfile(part) else 0
+            req = urllib.request.Request(url, headers={"User-Agent": "dh-content/1.0"})
+            if have:
+                req.add_header("Range", "bytes=%d-" % have)
+            try:
+                with urllib.request.urlopen(req, timeout=120) as resp:
+                    code = getattr(resp, "status", None) or resp.getcode()
+                    # 206 = le serveur honore la reprise → on APPEND ; sinon (200) on repart de zéro.
+                    if have and code == 206:
+                        mode = "ab"
+                    else:
+                        mode, have = "wb", 0
+                    with open(part, mode) as f:
+                        while True:
+                            chunk = resp.read(1 << 16)
+                            if not chunk:
+                                break
+                            f.write(chunk)
+                    return True
+            except Exception as e:
+                sys.stderr.write("[content]   tentative %d/%d échouée (%s)\n" % (attempt, retries, e))
+                time.sleep(min(2 * attempt, 10))
+        return False
+
     def _relay_stream(self, name: str, head_only: bool, rng):
+        import urllib.request
         target = f"{self.cfg.archive_base}/{name}"
-        cmd = ["curl", "-sS", "-L", "--fail", "--retry", "3", "--max-time", "1800", target]
+        req = urllib.request.Request(target, headers={"User-Agent": "dh-content/1.0"})
         if rng:
-            cmd += ["-r", rng.split("=", 1)[-1]]
+            req.add_header("Range", "bytes=" + rng.split("=", 1)[-1])
         try:
-            import subprocess
-            proc = subprocess.Popen(cmd, stdout=subprocess.PIPE)
-            first = proc.stdout.read(1 << 16)
-            if proc.poll() not in (None, 0) and not first:
-                return self._send(502, "text/plain", b"relay failed\n", head_only)
-            self.send_response(206 if rng else 200)
-            self.send_header("Content-Type", "application/zip")
-            self.send_header("Accept-Ranges", "bytes")
-            self.end_headers()
-            if not head_only:
-                while first:
-                    self.wfile.write(first)
-                    first = proc.stdout.read(1 << 16)
-            proc.stdout.close(); proc.wait()
+            with urllib.request.urlopen(req, timeout=120) as resp:
+                self.send_response(206 if rng else 200)
+                self.send_header("Content-Type", "application/zip")
+                self.send_header("Accept-Ranges", "bytes")
+                self.end_headers()
+                if not head_only:
+                    while True:
+                        chunk = resp.read(1 << 16)
+                        if not chunk:
+                            break
+                        self.wfile.write(chunk)
         except Exception as e:
             try: self._send(502, "text/plain", f"relay error: {e}\n".encode(), head_only)
             except Exception: pass

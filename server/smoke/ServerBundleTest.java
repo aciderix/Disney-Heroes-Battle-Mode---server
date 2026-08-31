@@ -42,6 +42,9 @@ public final class ServerBundleTest {
         try {
             String rs = new String(java.nio.file.Files.readAllBytes(new File(gen, "run.sh").toPath()), java.nio.charset.StandardCharsets.UTF_8);
             ok(rs.contains("runtime/jre/bin/java"), "run.sh préfère le JRE embarqué (repli `java` système)");
+            // PYTHON embarqué : run.sh doit préférer runtime/python (le DL réel du CPython relocatable se fait au build,
+            // réseau requis → best-effort ; en CI hors-ligne il retombe sur python3 système, d'où on n'exige que la LOGIQUE).
+            ok(rs.contains("runtime/python/bin/python3"), "run.sh préfère le Python embarqué (repli `python3` système)");
         } catch (Exception e) { ok(false, "lecture run.sh : " + e); }
 
         // 3) COPIE le bundle HORS de l'arbre de dev, puis l'HÉBERGE via HostManager.startBundle — c.-à-d. le chemin

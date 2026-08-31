@@ -221,8 +221,10 @@ public final class BuildManager {
         java.nio.file.Files.copy(new File(projectDir, "server/content_server.py").toPath(),
                 new File(out, "content_server.py").toPath(), java.nio.file.StandardCopyOption.REPLACE_EXISTING);
 
-        // 4) runtime JRE embarqué (zéro-install côté Java ; le content-server exige encore python3, documenté)
+        // 4) runtimes embarqués (zéro-install) : JRE (jlink) pour le serveur Java + Python (relocatable) pour le
+        //    content-server (désormais pur stdlib, sans `curl`). Best-effort : repli sur les runtimes système sinon.
         packageRuntime(out);
+        packagePython(out);
         // 5) scripts de lancement (bundle-relatifs, self-contained)
         writeExec(new File(out, "run.sh"), RUN_SH);
         writeText(new File(out, "run.bat"), RUN_BAT);
@@ -243,6 +245,66 @@ public final class BuildManager {
         "java.base,java.desktop,java.instrument,java.management,java.naming,java.prefs,java.rmi,java.sql,"
       + "java.xml,java.logging,java.net.http,java.scripting,jdk.unsupported,jdk.httpserver,jdk.crypto.ec,"
       + "jdk.crypto.cryptoki,jdk.charsets,jdk.localedata,jdk.zipfs,jdk.xml.dom";
+
+    /** python-build-standalone (astral-sh) — build RELOCATABLE de CPython, un par OS/arch. Version ÉPINGLÉE (§7
+     *  reproductibilité). Le tarball « install_only » se déballe en `python/` (avec `bin/python3` ou `python.exe`). */
+    private static final String PY_TAG = "20240814";
+    private static final String PY_VER = "3.11.9";
+    private static final String PY_BASE =
+        "https://github.com/astral-sh/python-build-standalone/releases/download/" + PY_TAG + "/cpython-" + PY_VER + "+" + PY_TAG + "-";
+
+    /** Triplet python-build-standalone pour l'OS/arch de build (jlink et py-standalone = OS de build). null si non géré. */
+    private static String pyTriple() {
+        String os = System.getProperty("os.name", "").toLowerCase();
+        String arch = System.getProperty("os.arch", "").toLowerCase();
+        boolean a64 = arch.contains("aarch64") || arch.contains("arm64");
+        if (os.contains("linux"))   return a64 ? "aarch64-unknown-linux-gnu"  : "x86_64-unknown-linux-gnu";
+        if (os.contains("win"))     return "x86_64-pc-windows-msvc";                 // py-standalone ne publie pas arm64-windows
+        if (os.contains("mac") || os.contains("darwin")) return a64 ? "aarch64-apple-darwin" : "x86_64-apple-darwin";
+        return null;
+    }
+
+    /**
+     * PYTHON EMBARQUÉ (zéro-install) — télécharge un CPython RELOCATABLE (python-build-standalone) pour l'OS de build
+     * dans {@code <out>/runtime/python}, pour que le {@code content_server.py} (désormais PUR STDLIB, sans `curl`)
+     * tourne SANS python système. `run.sh`/`run.bat` préfèrent ce python (repli `python3`/`python` système). Best-effort
+     * (§2, tracé) : si le téléchargement/extraction échoue (réseau, OS non géré), on log et on continue. Réseau requis
+     * au moment de la GÉNÉRATION du bundle (comme le DL des assets) — en CI (GitHub Action) et sur la machine du joueur.
+     */
+    private void packagePython(File out) {
+        try {
+            String triple = pyTriple();
+            if (triple == null) { append("python embarqué : OS non géré → repli python système."); return; }
+            File runtime = new File(out, "runtime"); runtime.mkdirs();
+            File pyDir = new File(runtime, "python");
+            if (pyDir.exists()) deleteRec(pyDir);
+            String url = PY_BASE + triple + "-install_only.tar.gz";
+            File tgz = new File(runtime, "python-standalone.tar.gz");
+            append("téléchargement python-build-standalone " + PY_VER + " (" + triple + ") …");
+            downloadTo(url, tgz);
+            // Extraction via `tar` (Linux/macOS natif ; Windows 10+ fournit tar.exe/bsdtar). Le tarball se déballe en `python/`.
+            runStep("untar-python", new String[]{ "tar", "-xzf", tgz.getPath(), "-C", runtime.getPath() }, null, null);
+            tgz.delete();
+            File probe = new File(pyDir, "bin/python3");
+            File probeWin = new File(pyDir, "python.exe");
+            append("python embarqué : " + pyDir.getPath() + (probe.isFile() || probeWin.isFile() ? " ✓" : " (structure inattendue)"));
+        } catch (Exception e) {
+            append("python NON embarqué (téléchargement/extraction échoué : " + e.getMessage()
+                + ") — le bundle utilisera le `python3`/`python` du système (repli).");
+        }
+    }
+
+    /** Télécharge {@code url} → {@code dst} (java.net.http, suit les redirections ; respecte le proxy système). */
+    private static void downloadTo(String url, File dst) throws Exception {
+        java.net.http.HttpClient cli = java.net.http.HttpClient.newBuilder()
+            .followRedirects(java.net.http.HttpClient.Redirect.NORMAL)
+            .connectTimeout(java.time.Duration.ofSeconds(30)).build();
+        java.net.http.HttpRequest req = java.net.http.HttpRequest.newBuilder(java.net.URI.create(url))
+            .header("User-Agent", "dh-launcher/1.0").GET().build();
+        java.net.http.HttpResponse<java.nio.file.Path> resp =
+            cli.send(req, java.net.http.HttpResponse.BodyHandlers.ofFile(dst.toPath()));
+        if (resp.statusCode() / 100 != 2) throw new IllegalStateException("HTTP " + resp.statusCode() + " sur " + url);
+    }
 
     /**
      * RUNTIME EMBARQUÉ (zéro-install) — jlink un JRE MINIMAL dans {@code <out>/runtime/jre} (modules {@link #JRE_MODULES}).
@@ -287,9 +349,10 @@ public final class BuildManager {
       // JRE EMBARQUÉ (zéro-install) : si `runtime/jre` est présent (jlink, OS de build), on l'utilise ; sinon repli
       // sur le `java` du système. Idem pour python : le content-server exige encore python3 (documenté).
       + "JAVA=\"$DIR/runtime/jre/bin/java\"; [ -x \"$JAVA\" ] || JAVA=java\n"
+      + "PY=\"$DIR/runtime/python/bin/python3\"; [ -x \"$PY\" ] || PY=python3\n"
       + "CONTENT_PORT=\"${DH_CONTENT_PORT:-8080}\"; GAME_PORT=\"${DH_GAME_PORT:-8081}\"; AUTH_PORT=\"${DH_AUTH_PORT:-8082}\"\n"
       + "mkdir -p \"$DIR/data\"\n"
-      + "python3 \"$DIR/content_server.py\" --port \"$CONTENT_PORT\" --rewrite-host \"127.0.0.1:$CONTENT_PORT\" \\\n"
+      + "\"$PY\" \"$DIR/content_server.py\" --port \"$CONTENT_PORT\" --rewrite-host \"127.0.0.1:$CONTENT_PORT\" \\\n"
       + "        --game-server \"127.0.0.1:$GAME_PORT\" & CPID=$!\n"
       + "\"$JAVA\" -XX:TieredStopAtLevel=1 ${DH_SERVER_OPTS:-} -Ddh.db=\"$DIR/data/dh-server.db\" \\\n"
       + "     -Ddh.stats=\"$DIR/game-data/stats\" -Ddh.auth.port=\"$AUTH_PORT\" \\\n"
@@ -344,11 +407,13 @@ public final class BuildManager {
       + "set DIR=%~dp0\r\n"
       + "set JAVA=%DIR%runtime\\jre\\bin\\java.exe\r\n"
       + "if not exist \"%JAVA%\" set JAVA=java\r\n"
+      + "set PY=%DIR%runtime\\python\\python.exe\r\n"
+      + "if not exist \"%PY%\" set PY=python\r\n"
       + "if \"%DH_CONTENT_PORT%\"==\"\" set DH_CONTENT_PORT=8080\r\n"
       + "if \"%DH_GAME_PORT%\"==\"\" set DH_GAME_PORT=8081\r\n"
       + "if \"%DH_AUTH_PORT%\"==\"\" set DH_AUTH_PORT=8082\r\n"
       + "if not exist \"%DIR%data\" mkdir \"%DIR%data\"\r\n"
-      + "start \"dh-content\" python \"%DIR%content_server.py\" --port %DH_CONTENT_PORT% --rewrite-host 127.0.0.1:%DH_CONTENT_PORT% --game-server 127.0.0.1:%DH_GAME_PORT%\r\n"
+      + "start \"dh-content\" \"%PY%\" \"%DIR%content_server.py\" --port %DH_CONTENT_PORT% --rewrite-host 127.0.0.1:%DH_CONTENT_PORT% --game-server 127.0.0.1:%DH_GAME_PORT%\r\n"
       + "\"%JAVA%\" -XX:TieredStopAtLevel=1 -Ddh.db=\"%DIR%data\\dh-server.db\" -Ddh.stats=\"%DIR%game-data\\stats\" -Ddh.auth.port=%DH_AUTH_PORT% -cp \"%DIR%lib\\*\" dhserver.LoginServer %DH_GAME_PORT%\r\n";
 
     private void runStep(String name, String[] cmd, String envKey, String envVal) throws Exception {
