@@ -62,6 +62,19 @@ public final class ServerInfoTest {
         ok(!MnemonicIdentity.verify(idA.publicKey, tampered.canonical(nonce), sig), "ALTÉRATION rejetée (un champ modifié)");
         ok(!MnemonicIdentity.verify(idA.publicKey, info.canonical("autre-nonce"), sig), "REJEU rejeté (nonce différent)");
 
+        // (4) INSCRIPTION annuaire (brique 2) — la charge signée se vérifie (garde le format canonique côté Java ;
+        // la parité Java↔Deno est prouvée par la sonde réseau DirectoryProbe contre l'Edge Function).
+        ok("REG1".equals(dhserver.directory.ServerRegistration.REG), "format d'inscription = REG1");
+        long issuedAt = 1_700_000_000_000L;
+        byte[] regCanon = dhserver.directory.ServerRegistration.canonical(
+            Base64.getUrlEncoder().withoutPadding().encodeToString(idA.publicKey), info, "1.2.3.4:8080", "http://1.2.3.4:8082", issuedAt);
+        byte[] regSig = MnemonicIdentity.sign(idA.keyPair.getPrivate(), regCanon);
+        ok(MnemonicIdentity.verify(idA.publicKey, regCanon, regSig), "inscription signée vérifiable (canonique stable)");
+        ok(!MnemonicIdentity.verify(idA.publicKey,
+            dhserver.directory.ServerRegistration.canonical(
+                Base64.getUrlEncoder().withoutPadding().encodeToString(idA.publicKey), info, "9.9.9.9:8080", "http://1.2.3.4:8082", issuedAt),
+            regSig), "inscription : adresse altérée → signature rejetée");
+
         System.out.println("ServerInfoTest : " + passed + " ok, " + failed + " échec(s)");
         if (failed > 0) System.exit(1);
     }

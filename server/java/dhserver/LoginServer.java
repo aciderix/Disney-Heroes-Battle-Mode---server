@@ -3297,6 +3297,39 @@ public final class LoginServer {
       System.out.println("[login] 🔐 AuthService sur :" + authPort + " — mode "
           + (strict ? "STRICT (auth requise)" : "permissif (auth optionnelle, défaut)")
           + (fId != null ? " — /info signé (annuaire) « " + srvName + " », serverId " + fId.serverId() : ""));
+
+      // ANNUAIRE (brique 2) — PUBLICATION dans l'annuaire communautaire (Supabase), OPT-IN (`dh.server.publish`/
+      // DH_SERVER_PUBLISH). L'hébergeur fournit l'adresse PUBLIQUE de connexion + celle du /info + l'URL/clé de l'annuaire
+      // (clé anon PUBLIQUE, sans danger — le launcher les passera). Le serveur SIGNE sa fiche ; l'Edge Function vérifie la
+      // signature avant d'écrire (aucune écriture directe possible). Inscription au boot + rafraîchissement périodique
+      // (garde `online`/`last_seen` à jour). Best-effort : jamais bloquant, jamais fatal.
+      boolean publish = "1".equals(System.getProperty("dh.server.publish", System.getenv("DH_SERVER_PUBLISH")))
+          || "true".equalsIgnoreCase(System.getProperty("dh.server.publish", System.getenv("DH_SERVER_PUBLISH")));
+      final String dirUrl = System.getProperty("dh.directory.url", System.getenv("DH_DIRECTORY_URL"));
+      final String dirKey = System.getProperty("dh.directory.anonkey", System.getenv("DH_DIRECTORY_ANON_KEY"));
+      final String pubAddress = System.getProperty("dh.server.address", System.getenv("DH_SERVER_ADDRESS"));
+      final String pubInfoUrl = System.getProperty("dh.server.infourl", System.getenv("DH_SERVER_INFO_URL"));
+      if (publish && fId != null && dirUrl != null && dirKey != null && pubAddress != null && pubInfoUrl != null) {
+        final dhserver.directory.ServerIdentity pId = fId;
+        final int refreshMin = Integer.getInteger("dh.directory.refresh.minutes",
+            parseIntOr(System.getenv("DH_DIRECTORY_REFRESH_MINUTES"), 10));
+        Thread t = new Thread(() -> {
+          while (true) {
+            try {
+              dhserver.directory.ServerInfo info = new dhserver.directory.ServerInfo(srvName, srvMode,
+                  DH_GAME_VERSION, DH_SERVER_VERSION, srv.onlineCount(), srvMaxOnline, srvOpenTime);
+              int rc = dhserver.directory.ServerRegistration.register(dirUrl, dirKey, pId, info, pubAddress, pubInfoUrl);
+              System.out.println("[login] 📡 annuaire : inscription « " + srvName + " » → HTTP " + rc);
+            } catch (Exception e) { System.out.println("[login] ! annuaire (inscription) : " + e); }
+            try { Thread.sleep(Math.max(1, refreshMin) * 60_000L); } catch (InterruptedException ie) { return; }
+          }
+        }, "dh-directory-publish");
+        t.setDaemon(true);
+        t.start();
+      } else if (publish) {
+        System.out.println("[login] ! annuaire : publication demandée mais config incomplète "
+            + "(DH_DIRECTORY_URL/DH_DIRECTORY_ANON_KEY/DH_SERVER_ADDRESS/DH_SERVER_INFO_URL requis)");
+      }
     } catch (Exception e) { System.out.println("[login] ! AuthService non démarré : " + e); }
     // ADMIN (chantier D) — panneau opérateur HTTP dans CETTE JVM (accès à l'état vivant : online/connexions, puis
     // édition comptes/events/modération). Jeton opérateur OBLIGATOIRE (-Ddh.admin.token / DH_ADMIN_TOKEN ; généré +

@@ -1,0 +1,29 @@
+# ANNUAIRE (brique 2) — KEEP-ALIVE. Le plan gratuit Supabase met le projet en PAUSE après ~1 semaine d'inactivité.
+# Ce job lit la table `servers` tous les 3 jours (+ déclenchable à la main) → maintient le projet ACTIF.
+# Secrets requis (Settings → Secrets and variables → Actions) :
+#   SUPABASE_URL       = l'URL du projet (ex. https://xxxx.supabase.co) — publique
+#   SUPABASE_ANON_KEY  = la clé anon/publishable — PUBLIQUE (jamais la service_role)
+# ⚠️ GitHub désactive un workflow programmé après 60 j SANS activité du dépôt ; l'activité normale du repo l'évite.
+name: directory-keepalive
+
+on:
+  schedule:
+    - cron: "17 6 */3 * *"   # tous les 3 jours à 06:17 UTC
+  workflow_dispatch: {}
+
+jobs:
+  ping:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Ping Supabase REST (garde le projet actif)
+        run: |
+          set -e
+          if [ -z "${{ secrets.SUPABASE_URL }}" ] || [ -z "${{ secrets.SUPABASE_ANON_KEY }}" ]; then
+            echo "Secrets SUPABASE_URL / SUPABASE_ANON_KEY absents — configure-les dans les secrets du dépôt."; exit 1
+          fi
+          code=$(curl -s -o /dev/null -w '%{http_code}' \
+            -H "apikey: ${{ secrets.SUPABASE_ANON_KEY }}" \
+            -H "Authorization: Bearer ${{ secrets.SUPABASE_ANON_KEY }}" \
+            "${{ secrets.SUPABASE_URL }}/rest/v1/servers?select=pub_key&limit=1")
+          echo "REST /servers → HTTP $code"
+          test "$code" = "200"

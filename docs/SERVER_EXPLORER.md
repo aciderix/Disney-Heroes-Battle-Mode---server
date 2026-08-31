@@ -15,10 +15,30 @@ nom/mode côté Héberger ; navigateur côté Serveurs ; adresse d'annuaire modi
 | Brique | Contenu | Statut |
 |---|---|---|
 | **1** | Identité serveur **signée** + `GET /info` vérifiable (`ServerIdentity`/`ServerInfo`/`AuthService /info`/`ServerInfoVerifier`) | 🟢 **FAIT** (g222, `ServerInfoTest` 10/10, régression 177/177) — vérif stack réelle à la brique 3 |
-| **2** | Table **Supabase** : inscription signée par le serveur + lecture + **keep-alive** GitHub Action | ⬜ à faire (attend le rechargement conteneur → vrai projet Supabase) |
-| **3** | **Navigateur de serveurs** dans le launcher PC (lit l'annuaire, vérifie la signature, ping, Jouer) | ⬜ à faire |
+| **2** | Table **Supabase** : inscription signée par le serveur + lecture + **keep-alive** GitHub Action | 🟢 **FAIT** (g223, prouvé LIVE `DirectoryProbe` : register 200 / read 200 / faux 401) |
+| **3** | **Navigateur de serveurs** dans le launcher PC (lit l'annuaire, vérifie la signature, ping, Jouer) | ⬜ à faire (suivant) |
 | **4** | **Patch APK** : écran de choix de serveur au lancement → Jouer connecté | ⬜ à faire (toolchain apktool/apksigner) |
 | indép. | Brancher le `GetServers` natif = sélecteur de **SHARD** in-game (Niveau 2) | ⬜ optionnel |
+
+## Annuaire Supabase — schéma technique (brique 2, LIVRÉ)
+
+- **Projet** : Supabase « Dhbm » (org perso). **Table `public.servers`** — clé `pub_key` (clé publique Ed25519 base64url) ;
+  colonnes `name, mode, game_version, server_version, address` (host:port de connexion), `info_url` (base du `/info`),
+  `online, max_online, open_time, issued_at, signature, created_at, updated_at`.
+- **RLS** : `SELECT` public (clé anon) ; **aucune** policy d'écriture → écriture directe impossible.
+- **Edge Function `register-server`** (Deno, `verify_jwt=false`) : SEUL écrivain. Vérifie la **signature Ed25519** de la
+  charge (chaîne canonique `REG1␟pubKey␟name␟mode␟gameVersion␟serverVersion␟address␟infoUrl␟online␟maxOnline␟openTime␟issuedAt`,
+  US 0x1F) + fraîcheur `issuedAt` (±5 min), puis **upsert** (service role). Charge invalide → 400/401.
+- **Côté serveur** (`dhserver.directory.ServerRegistration`, game-free) : `register()` signe la charge et la POST. Publication
+  **opt-in** dans `LoginServer.main` : `dh.server.publish=1` (ou `DH_SERVER_PUBLISH=1`) + `DH_DIRECTORY_URL` +
+  `DH_DIRECTORY_ANON_KEY` (clé **publique**) + `DH_SERVER_ADDRESS` + `DH_SERVER_INFO_URL` → thread démon inscrit/rafraîchit
+  (`dh.directory.refresh.minutes`, défaut 10).
+- **Lecture** (launcher/APK, brique 3-4) : `GET <url>/rest/v1/servers?select=*&order=updated_at.desc` avec l'en-tête
+  `apikey: <clé anon>`. Puis **re-vérifier chaque fiche** via `/info` (brique 1) avant de l'afficher (ne jamais faire
+  confiance à la table seule).
+- **Keep-alive** : `.github/workflows/directory-keepalive.yml` (secrets `SUPABASE_URL` + `SUPABASE_ANON_KEY`), tous les 3 j.
+- **Secrets** : `service_role` et la chaîne de connexion directe NE sont JAMAIS committées ni exposées ; le runtime n'utilise
+  que l'URL projet + la clé **anon/publishable** (publiques par conception). Le setup DB a été fait via le connecteur MCP.
 
 ## 0. Ce que veut l'utilisateur
 

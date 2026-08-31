@@ -13,7 +13,7 @@ public final class ServerInfo {
     /** Version du format de fiche/signature. Incrémenter si {@link #canonical} change (compat launcher). */
     public static final int PROTOCOL = 1;
     /** Séparateur d'unité (US, 0x1F) — hors du jeu de caractères des champs affichables → délimiteur non ambigu. */
-    private static final char SEP = '';
+    private static final char SEP = '\u001F';
 
     public final String name;          // nom affiché du serveur (choisi par l'hébergeur)
     public final String mode;          // "strict" (login mnémonique requis) | "open" (permissif)

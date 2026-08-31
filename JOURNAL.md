@@ -1,5 +1,40 @@
 # JOURNAL — journal détaillé des modifications
 
+## 2026-08-31 (g223) — ANNUAIRE brique 2 : table Supabase + inscription SIGNÉE + keep-alive — prouvé LIVE ✅
+
+Deuxième brique de l'explorateur communautaire : l'**annuaire** où les serveurs s'inscrivent et que le launcher/APK lira.
+Support = **Supabase** (projet perso « Dhbm »). Sécurité = **écriture uniquement via une Edge Function qui vérifie la
+signature Ed25519** (le rôle secret reste côté Supabase) ; **lecture publique** ; le launcher re-vérifie en direct via `/info`.
+
+- **Table `public.servers`** (migration `create_servers_directory`) : 1 ligne/serveur, clé = `pub_key` (clé publique). RLS :
+  **SELECT public** (clé anon) ; **AUCUNE policy d'écriture** → écriture directe refusée. Index `updated_at desc`.
+- **Edge Function `register-server`** (Deno, `verify_jwt=false` car auth = signature, pas JWT) : reçoit la charge, **vérifie
+  la signature Ed25519** (WebCrypto, clé SPKI 44 o), contrôle `issuedAt` (±5 min, anti-rejeu), puis **upsert avec le service
+  role** (bypass RLS). Charge invalide → 400/401, jamais écrite. La chaîne canonique Deno = **identique bit à bit** à celle
+  du Java (`REG1␟pubKey␟name␟…␟issuedAt`, séparateur US 0x1F).
+- **`dhserver.directory.ServerRegistration`** (game-free) : `canonical(...)` (= la Deno) + `register(directoryUrl, anonKey,
+  identité, fiche, address, infoUrl)` → signe + POST à la fonction. `address` = host:port de connexion (redirige
+  `ServerType.LIVE`) ; `infoUrl` = base du `/info`.
+- **`LoginServer.main`** : **publication OPT-IN** (`dh.server.publish`/`DH_SERVER_PUBLISH`) — si activée + config présente
+  (`DH_DIRECTORY_URL`/`DH_DIRECTORY_ANON_KEY` [clé PUBLIQUE] + `DH_SERVER_ADDRESS` + `DH_SERVER_INFO_URL`), un thread démon
+  **inscrit + rafraîchit** la fiche (défaut 10 min → `online`/`last_seen` à jour). Best-effort, jamais bloquant.
+- **Keep-alive** : `.github/workflows/directory-keepalive.yml` — lit la table tous les 3 j (curl REST, secrets
+  `SUPABASE_URL`/`SUPABASE_ANON_KEY`) → évite la mise en pause du projet gratuit.
+- **✅ PROUVÉ LIVE** (sonde DEV `DirectoryProbe` contre le vrai projet Supabase) : (1) inscription signée → **HTTP 200** ;
+  (2) relecture REST publique → **fiche présente** ; (3) **signature falsifiée → HTTP 401 refusée**. La parité canonique
+  Java↔Deno est ainsi prouvée (sinon l'inscription légitime aurait été rejetée). Ligne de sonde nettoyée ensuite.
+- **Garde offline** (regression) : `ServerInfoTest` +3 assertions (REG1, inscription signée vérifiable, adresse altérée →
+  rejet) → **13 ok**. **Régression 177/177**. Serveur + game-free compile OK.
+- **Clés** : `SERVICE_ROLE`/`DIRECT_CONNEXION_STRING` = SECRÈTES, jamais exposées/committées ; le runtime n'utilise que
+  l'URL + la clé **anon/publishable** (publiques). Setup DB fait via le connecteur MCP (aucune clé collée).
+- **Suite** : brique 3 = navigateur de serveurs dans le launcher PC (lit la table + vérifie via `/info` + Jouer) ;
+  brique 4 = patch APK.
+
+Fichiers : `server/java/dhserver/directory/ServerRegistration.java` (+), `server/smoke/DirectoryProbe.java` (+, DEV),
+Supabase (table `servers` + RLS + Edge Function `register-server`), `.github/workflows/directory-keepalive.yml` (+),
+`server/java/dhserver/LoginServer.java`, `server/java/dhserver/directory/ServerInfo.java` (SEP → ``),
+`server/smoke/ServerInfoTest.java`, `docs/SERVER_EXPLORER.md`, `docs/PHASE2_TRACKING.md`, `JOURNAL.md`, `MEMORY.md`.
+
 ## 2026-08-31 (g222) — ANNUAIRE brique 1 : identité serveur SIGNÉE + `GET /info` (fiche vérifiable) 🟢
 
 Première brique de l'**explorateur de serveurs communautaires** (cf. `docs/SERVER_EXPLORER.md`). But : qu'un serveur
