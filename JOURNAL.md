@@ -1,5 +1,25 @@
 # JOURNAL — journal détaillé des modifications
 
+## 2026-08-31 (g212) — Admin inc.6e : MODÉRATION (bans/mutes/kick) — CONSTRUITE → backend Admin COMPLET 🟢
+
+Dernier domaine du panneau opérateur (chantier D E). N'existait PAS dans le jeu (`KickFromGuild` = expulsion de guilde,
+pas modération) → **construit** comme sous-système serveur minimal, faithful (§2 : shim RÉEL, pas de faux OK).
+
+- **`dhserver.admin.Moderation`** (nouveau) : sets statiques BANS/MUTES, persistés dans `shard_state/moderation`
+  (`{"bans":[…],"mutes":[…]}`), chargés au BOOT par `LoginServer`. `isBanned`/`isMuted` (consultés par le serveur) +
+  `addBan/removeBan/addMute/removeMute` (persistent + renvoient la liste).
+- **`LoginServer`** (3 hooks) : **BAN** = rejet au login (à côté de l'auth stricte : userID banni → aucun BootData) ;
+  **MUTE** = un `SendChat` d'un userID muté est ignoré (ni archivé ni diffusé) ; **KICK** = méthode `kick(uid)` qui ferme
+  la connexion vive (`online.get(uid).close()`, `GruntConnection.close()`), non persistant. Chargement modération au boot.
+- **AdminService** (jeton requis) : `GET /admin/moderation` (bans+mutes) ; `POST /admin/moderation/{ban,unban,mute,unmute,
+  kick}` — ban kicke aussi immédiatement si en ligne. Tout journalisé (`AdminAudit`). Daemon inchangé (proxy générique).
+- **Vérif** : compile game-free OK ; `AdminMonitorTest` 36 (liste vide, ban 42 → `isBanned` true, mute 7 → `isMuted` true,
+  kick hors-ligne → false, unban → vide, garde jeton) + `AdminProxyTest` 26 (liste/ban/kick/unban proxifiés) ;
+  **régression 174/174**. 🟢 headless (vérif EN JEU = via l'UI Admin : bannir un vrai client le déconnecte/rejette).
+- **⇒ BACKEND ADMIN COMPLET** (5 domaines : monitoring, ère, joueurs, events, modération), tous derrière l'AdminService
+  (jeton opérateur, bind configurable) + proxy daemon générique. **Suite** : **UI Admin** dans le launcher (écran Admin
+  branché sur ces endpoints) + job CI « build launcher-ui ».
+
 ## 2026-08-31 (g211) — Admin inc.6d : events live-ops (liste/ajout validé/retrait/clear) + enums réelles 🟢
 
 Domaine D « events » exposé via l'AdminService, en RÉUTILISANT le format de config du jeu-glue existant (§3, même

@@ -235,7 +235,7 @@ requièrent de **nouveaux endpoints `/admin/*`** (§7). Statut par domaine :
 | **B. Monitoring** | joueurs en ligne, connexions, uptime, logs | 🟡 `LoginServer.online` + `connectionsAccepted` + logs hôte | **exposer** |
 | **C. Joueurs** | éditer un compte (ressources, héros, TL, campagne, déblocages, tutos) | 🟡 `ServerUser.giveResource/grantHero/grantCampaignLevel/completeAllTutorials/SetTeamLevel/CodebaseUnlock` | **exposer** (autoritatif, à journaliser) |
 | **D. Ère de contenu** | choisir la **release** (R1…R102) = ancrer l'horloge du jeu à cette ère | 🟡 `docs/RELEASE_PICKER.md` + outil `AdminRelease` + ancre d'horloge (`ServerContext`) | **exposer** |
-| **E. Modération** | **ban / mute / kick** joueur | ❌ **ABSENT** (seul `KickFromGuild` = feature de jeu, pas opérateur) | **À CONSTRUIRE** |
+| **E. Modération** | **ban / mute / kick** joueur | ✅ **LIVRÉ (inc.6e)** — `dhserver.admin.Moderation` (construit) | **fait** |
 
 #### A. Events (live-ops) — un **éditeur d'events**
 `ServerEvents` (builders `SpecialEventInfo`) persistés dans `shard_state`, chargés au boot par `LoginServer`
@@ -364,8 +364,10 @@ Le front **ne doit pas** exposer ces fonctions tant que l'endpoint n'existe pas 
      `GET|POST /admin/clock {offsetHours}`. Helper `dhserver.admin.ContentEra` (source unique, réutilisée par le CLI
      `AdminRelease`). Ère découplée (ne touche ni sauvegardes ni timers), appliquée à chaud. Proxy daemon générique.
      `AdminMonitorTest`/`AdminProxyTest`.
-   - **E. Modération** : `GET/POST /admin/moderation/{bans,ban,unban,mute,kick}` — **à CONSTRUIRE côté serveur**
-     (liste de bans rejetée au login + mute + kick via `online`) ; **rien n'existe** aujourd'hui.
+   - **E. Modération** : ✅ **LIVRÉ (inc.6e, g212 — CONSTRUITE)** — `GET /admin/moderation` (bans+mutes) ;
+     `POST /admin/moderation/{ban,unban,mute,unmute,kick}`. `dhserver.admin.Moderation` (sets persistés
+     `shard_state/moderation`, chargés au boot) ; `LoginServer` : BAN=rejet au login, MUTE=`SendChat` ignoré,
+     KICK=ferme la connexion (`online`). `AdminMonitorTest`/`AdminProxyTest`. **⇒ backend Admin des 5 domaines COMPLET.**
 8. **DELETE réel pour `/servers`** (aujourd'hui `POST /servers/remove`) — cosmétique ; garder tel quel côté client.
 
 *(Ces ajouts sont des incréments backend séparés ; le front C2b peut démarrer sur le périmètre EXISTANT :

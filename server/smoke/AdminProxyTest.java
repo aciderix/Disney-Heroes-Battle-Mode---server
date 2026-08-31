@@ -79,6 +79,12 @@ public final class AdminProxyTest {
             ok(get(http, base + "/admin/events").body().contains("\"count\":"), "admin/events proxifié → liste");
             ok(post(http, base + "/admin/events/clear", "").body().contains("\"count\":0"), "admin/events/clear proxifié → 0");
 
+            // modération proxifiée : liste + ban/kick/unban
+            ok(get(http, base + "/admin/moderation").body().contains("\"bans\":"), "admin/moderation proxifié → liste");
+            ok(post(http, base + "/admin/moderation/ban", "userID=999").body().contains("999"), "ban 999 proxifié");
+            ok(post(http, base + "/admin/moderation/kick", "userID=1").body().contains("\"kicked\":false"), "kick 1 (hors ligne) → false");
+            ok(!post(http, base + "/admin/moderation/unban", "userID=999").body().contains("999"), "unban 999 → retiré");
+
             // tail des logs hôte (fichier écrit par le serveur au boot)
             HttpResponse<String> logs = get(http, base + "/host/logs?which=server&tail=50");
             ok(logs.statusCode() == 200 && logs.body().contains("\"lines\":"), "host/logs (server) → JSON lines");

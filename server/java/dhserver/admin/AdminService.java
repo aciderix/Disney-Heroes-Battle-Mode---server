@@ -76,6 +76,13 @@ public final class AdminService {
         http.createContext("/admin/events/clear", guarded(this::handleEventClear));   // POST → tout retirer
         http.createContext("/admin/events", guarded(this::handleEvents));             // GET liste | POST {spec}
         http.createContext("/admin/enums", guarded(this::handleEnums));               // GET listes d'enums réelles
+        // MODÉRATION (chantier D E — CONSTRUITE) — bans (rejet login) / mutes (anti-chat) / kick (ferme la connexion)
+        http.createContext("/admin/moderation/ban", guarded(this::handleBan));
+        http.createContext("/admin/moderation/unban", guarded(this::handleUnban));
+        http.createContext("/admin/moderation/mute", guarded(this::handleMute));
+        http.createContext("/admin/moderation/unmute", guarded(this::handleUnmute));
+        http.createContext("/admin/moderation/kick", guarded(this::handleKick));
+        http.createContext("/admin/moderation", guarded(this::handleModeration));     // GET bans+mutes
         http.setExecutor(null); // handlers courts, non bloquants
     }
 
@@ -322,6 +329,62 @@ public final class AdminService {
     private void handleEnums(HttpExchange ex) throws Exception {
         if (!"GET".equals(ex.getRequestMethod())) { send(ex, 405, "{\"error\":\"method\"}"); return; }
         send(ex, 200, EventsAdmin.enumsJson());
+    }
+
+    // ─── MODÉRATION (bans / mutes / kick) ────────────────────────────────────────────────────────────────────────
+    /** GET /admin/moderation → {bans:[…],mutes:[…]}. */
+    private void handleModeration(HttpExchange ex) throws Exception {
+        if (!"GET".equals(ex.getRequestMethod())) { send(ex, 405, "{\"error\":\"method\"}"); return; }
+        send(ex, 200, Moderation.listJson());
+    }
+
+    /** POST /admin/moderation/ban {userID} → bannit (rejet au login) + kick immédiat si en ligne. */
+    private void handleBan(HttpExchange ex) throws Exception {
+        long uid = requireUid(ex); if (uid <= 0) return;
+        String res = Moderation.addBan(store, SHARD, uid);
+        boolean kicked = server.kick(uid);
+        AdminAudit.log("ban", "uid=" + uid, "kicked=" + kicked);
+        send(ex, 200, res);
+    }
+
+    /** POST /admin/moderation/unban {userID}. */
+    private void handleUnban(HttpExchange ex) throws Exception {
+        long uid = requireUid(ex); if (uid <= 0) return;
+        String res = Moderation.removeBan(store, SHARD, uid);
+        AdminAudit.log("unban", "uid=" + uid, "ok");
+        send(ex, 200, res);
+    }
+
+    /** POST /admin/moderation/mute {userID} → interdit le chat. */
+    private void handleMute(HttpExchange ex) throws Exception {
+        long uid = requireUid(ex); if (uid <= 0) return;
+        String res = Moderation.addMute(store, SHARD, uid);
+        AdminAudit.log("mute", "uid=" + uid, "ok");
+        send(ex, 200, res);
+    }
+
+    /** POST /admin/moderation/unmute {userID}. */
+    private void handleUnmute(HttpExchange ex) throws Exception {
+        long uid = requireUid(ex); if (uid <= 0) return;
+        String res = Moderation.removeMute(store, SHARD, uid);
+        AdminAudit.log("unmute", "uid=" + uid, "ok");
+        send(ex, 200, res);
+    }
+
+    /** POST /admin/moderation/kick {userID} → ferme la connexion vive (non persistant). */
+    private void handleKick(HttpExchange ex) throws Exception {
+        long uid = requireUid(ex); if (uid <= 0) return;
+        boolean kicked = server.kick(uid);
+        AdminAudit.log("kick", "uid=" + uid, "kicked=" + kicked);
+        send(ex, 200, "{\"kicked\":" + kicked + "}");
+    }
+
+    /** Parse+valide {userID} (POST). Envoie 405/400 et renvoie 0 si invalide (l'appelant s'arrête alors). */
+    private long requireUid(HttpExchange ex) throws Exception {
+        if (!"POST".equals(ex.getRequestMethod())) { send(ex, 405, "{\"error\":\"method\"}"); return 0; }
+        long uid = uid(form(ex));
+        if (uid <= 0) { send(ex, 400, "{\"error\":\"userID\"}"); return 0; }
+        return uid;
     }
 
     private static long uid(java.util.Map<String, String> f) {

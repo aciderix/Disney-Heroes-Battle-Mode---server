@@ -51,6 +51,15 @@ public final class LoginServer {
    * (qui tourne dans la même JVM). Ne divulgue que des méta d'exploitation : nombre en ligne + userID/ancienneté de chaque
    * joueur connecté, connexions acceptées depuis le boot, uptime, et le mode (strict/permissif). État réel, rien d'inventé.
    */
+  /** ADMIN — MODÉRATION (kick) : ferme la connexion vive du joueur en ligne. {@code true} si un socket a été fermé
+   *  ({@code false} = pas en ligne). Non persistant (le joueur peut se reconnecter s'il n'est pas banni). */
+  public boolean kick(long uid) {
+    GruntConnection c = online.get(uid);
+    if (c == null) return false;
+    try { c.close(); } catch (Throwable ignore) {}
+    return true;
+  }
+
   public String monitorSnapshotJson() {
     long now = System.currentTimeMillis();
     StringBuilder sb = new StringBuilder(128);
@@ -246,6 +255,11 @@ public final class LoginServer {
               // permissif (défaut) authOk renvoie toujours true → comportement inchangé (pilotes DEV / compte défaut).
               if (uid > 0 && !authOk(uid, ci)) {
                 System.out.println("[login] ⛔ auth : loginRequestID non authentifié pour userID=" + uid + " → rejet (aucun BootData)");
+                return;
+              }
+              // MODÉRATION (chantier D E) — un userID BANNI est rejeté au login (aucun BootData), à côté de l'auth stricte.
+              if (uid > 0 && dhserver.admin.Moderation.isBanned(uid)) {
+                System.out.println("[login] ⛔ modération : userID=" + uid + " BANNI → rejet (aucun BootData)");
                 return;
               }
               if (uid > 0) {
@@ -2556,7 +2570,10 @@ public final class LoginServer {
               com.perblue.heroes.network.messages.ChatRoomType room = sc.room;
               boolean guildRoom = room == com.perblue.heroes.network.messages.ChatRoomType.GUILD;
               ServerGuild g = guildRoom ? currentGuild(user) : null;
-              if (!guildRoom) {
+              if (dhserver.admin.Moderation.isMuted(user.userID)) {
+                // MODÉRATION (chantier D E) — un joueur MUTÉ ne peut pas parler : SendChat ignoré (ni archivé ni diffusé).
+                System.out.println("[login]     ⛔ modération : userID=" + user.userID + " MUTÉ → SendChat ignoré");
+              } else if (!guildRoom) {
                 System.out.println("[login]     ~ SendChat salon " + room + " ignoré (seul GUILD est natif ici)");
               } else if (g == null) {
                 System.out.println("[login]     ⛔ SendChat GUILD REFUSÉ : joueur sans guilde");
@@ -3218,6 +3235,12 @@ public final class LoginServer {
       System.out.println("[login] événements opérateur chargés : " + ops.size()
           + (ops.isEmpty() ? " (rotation par défaut du jeu)" : " override(s) live-ops"));
     } catch (Exception e) { System.out.println("[login] ! événements opérateur : " + e); }
+    // MODÉRATION (chantier D E) — bans (rejet au login) + mutes (anti-chat), chargés depuis shard_state dans les sets
+    // statiques que ce serveur consulte. Défaut = aucun. Réglés par l'opérateur via l'AdminService (/admin/moderation/*).
+    try {
+      dhserver.admin.Moderation.loadFrom(store, /*shardID*/ 1);
+      System.out.println("[login] modération chargée : " + dhserver.admin.Moderation.listJson());
+    } catch (Exception e) { System.out.println("[login] ! modération : " + e); }
     ServerUser user = store.loadOrCreate(/*userID*/ 1L, /*shardID*/ 1);
     System.out.println("[login] compte id=1 chargé/créé (" + user.tutorialActCount()
         + " actes de tuto) — DB " + dbPath);

@@ -108,6 +108,17 @@ public final class AdminMonitorTest {
                     .statusCode() == 400, "events : spec invalide → 400 (non persistée)");
             HttpResponse<String> rm = post(http, base + "/admin/events/remove", tok, "index=0");
             ok(rm.statusCode() == 200 && rm.body().contains("\"count\":0"), "events : retrait index 0 → count 0");
+
+            // MODÉRATION : bans (gate login) / mutes (anti-chat) / kick (connexion vive)
+            ok(get(http, base + "/admin/moderation", "X-Admin-Token", tok).body().contains("\"bans\":[]"), "modération : vide au départ");
+            ok(post(http, base + "/admin/moderation/ban", null, "userID=42").statusCode() == 401, "ban sans jeton → 401");
+            HttpResponse<String> ban = post(http, base + "/admin/moderation/ban", tok, "userID=42");
+            ok(ban.statusCode() == 200 && ban.body().contains("[42]"), "ban 42 → présent dans bans");
+            ok(dhserver.admin.Moderation.isBanned(42L), "Moderation.isBanned(42) = true (consulté par le gate login)");
+            HttpResponse<String> mute = post(http, base + "/admin/moderation/mute", tok, "userID=7");
+            ok(mute.body().contains("\"mutes\":[7]") && dhserver.admin.Moderation.isMuted(7L), "mute 7 → anti-chat actif");
+            ok(post(http, base + "/admin/moderation/kick", tok, "userID=42").body().contains("\"kicked\":false"), "kick 42 (hors ligne) → kicked:false");
+            ok(post(http, base + "/admin/moderation/unban", tok, "userID=42").body().contains("\"bans\":[]"), "unban 42 → bans vide");
         } finally {
             admin.stop();
         }
