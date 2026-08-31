@@ -1,5 +1,22 @@
 # JOURNAL — journal détaillé des modifications
 
+## 2026-08-31 (g202) — CI launcher VERTE sur Linux + Windows (VM GitHub) : build + exécution smoke prouvés ✅
+
+Le workflow `launcher-release` (g201) a été **déclenché par l'utilisateur** (workflow_dispatch). Run #1 :
+**ubuntu ✅**, **windows ❌** — `tar (child): Cannot connect to D: resolve failed` (GNU tar de Git Bash prend un
+chemin `-f D:\…` pour un hôte distant). **Fix** `tools/build_launcher.sh` (commit 97ad9c7) : extraction du CPython
+en **chemin RELATIF** (`cd runtime/ && tar -xzf python.tar.gz`, pas de deux-points) → local, cross-OS. **Run #2 :
+les DEUX jobs ✅** (ubuntu + windows). Chaque job = **VM GitHub-hosted neuve** ; l'étape *smoke* **EXÉCUTE** le launcher
+dans la VM (`java -cp dhlauncher.jar LauncherDaemon` → `/health` + `/identity/generate`) **et** le python embarqué
+(`python --version` / `python.exe --version`) → **JDK + Python embarqués prouvés sur Linux ET Windows**. Artifacts
+produits : `dh-launcher-linux.tar.gz`, `dh-launcher-windows.zip`. (Le jeu complet n'est PAS exécuté en CI : pas d'APK ni
+d'écran — il tourne sur la machine du joueur.) L'étape « Attach to Release » ne s'exécute que sur un **tag `launcher-v*`**
+(skippée en dispatch) → pour une **Release téléchargeable**, pousser un tag `launcher-v*`.
+
+**Note d'env** : je (session bac-à-sable) ne peux ni créer de tag ni dispatcher un workflow (proxy git → 403, credentials
+scopés `claude/*`) ; un PAT collé ne contourne pas (le proxy impose les creds de session). ⇒ déclenchement/tag = côté
+utilisateur ; je garde le **suivi + correctifs** (push sur `claude/*`).
+
 ## 2026-08-31 (g201) — PYTHON embarqué + content_server pur-stdlib + LAUNCHER distribuable (GitHub Action release) 🟢
 
 Suite g200 (« il faut embarquer python et s'assurer que ça marche Linux/Windows ; le launcher a-t-il des
