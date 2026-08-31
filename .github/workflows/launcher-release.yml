@@ -6,15 +6,13 @@ name: launcher-release
 # Le joueur télécharge le package de SON OS, double-clique l'exe DisneyHeroesLauncher (fenêtre) — ou lance
 # run-launcher.sh/.bat (daemon HTTP seul) — sans rien installer, fournit son APK, génère/héberge, joue.
 #
-# Déclenche : manuellement (workflow_dispatch), sur push du fichier workflow (validation), ou sur tag `launcher-v*` (Release).
+# Déclenche : manuellement (workflow_dispatch) ou sur tag `launcher-v*` (→ crée la Release téléchargeable).
 
 on:
   workflow_dispatch:
   push:
     tags:
       - 'launcher-v*'
-    paths:
-      - '.github/workflows/launcher-release.yml'
 
 permissions:
   contents: write        # créer/attacher la Release
