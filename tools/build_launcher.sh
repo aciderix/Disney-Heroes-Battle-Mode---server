@@ -59,9 +59,9 @@ cp -a "$JAVA_HOME" "$OUT/runtime/jdk"
 # --- 3) embarque un CPython relocatable (content_server pur-stdlib) ---
 echo "== télécharge python-build-standalone $PY_VER ($PY_TRIPLE) =="
 PY_URL="https://github.com/astral-sh/python-build-standalone/releases/download/$PY_TAG/cpython-$PY_VER+$PY_TAG-$PY_TRIPLE-install_only.tar.gz"
-curl -fsSL "$PY_URL" -o "$OUT/runtime/python.tar.gz"
-tar -xzf "$OUT/runtime/python.tar.gz" -C "$OUT/runtime"     # se déballe en runtime/python/
-rm -f "$OUT/runtime/python.tar.gz"
+# Extraction en CHEMIN RELATIF (cd dans runtime/) : sur Windows/Git Bash, un `-f D:\…` est pris par GNU tar
+# pour un hôte distant (« Cannot connect to D: »). En relatif (pas de deux-points) → local, cross-OS. Se déballe en python/.
+( cd "$OUT/runtime" && curl -fsSL "$PY_URL" -o python.tar.gz && tar -xzf python.tar.gz && rm -f python.tar.gz )
 echo "== smoke python embarqué =="
 "$OUT/runtime/python/$PY_EXE" --version
 
