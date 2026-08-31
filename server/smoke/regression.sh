@@ -100,6 +100,7 @@ TESTS=(
   AdminProxyTest
   AdminRemoteTargetTest
   AdminTlsTest
+  ServerInfoTest
   BuildDataGenTest
   ServerBundleTest
 )

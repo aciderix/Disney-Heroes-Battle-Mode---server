@@ -60,6 +60,22 @@ public final class LoginServer {
     return true;
   }
 
+  /** ANNUAIRE (brique 1) — version du JEU servie (APK 12.1.0, FAIT §4) + version du LOGICIEL serveur (notre port). */
+  static final String DH_GAME_VERSION = "12.1.0";
+  static final String DH_SERVER_VERSION = "0.2.0";
+
+  /** ANNUAIRE (brique 1) — nombre de joueurs connectés à l'instant (fiche /info vivante). */
+  public int onlineCount() { return online.size(); }
+
+  /** Nettoie un nom de serveur : retire les caractères de contrôle (dont US 0x1F, qui casserait la signature) et borne à 60. */
+  static String sanitizeServerName(String s) {
+    if (s == null || s.trim().isEmpty()) return "Serveur Disney Heroes";
+    String c = s.replaceAll("[\\x00-\\x1F]", " ").trim();
+    if (c.length() > 60) c = c.substring(0, 60).trim();
+    return c.isEmpty() ? "Serveur Disney Heroes" : c;
+  }
+  static int parseIntOr(String s, int def) { try { return Integer.parseInt(s.trim()); } catch (Exception e) { return def; } }
+
   public String monitorSnapshotJson() {
     long now = System.currentTimeMillis();
     StringBuilder sb = new StringBuilder(128);
@@ -3251,13 +3267,36 @@ public final class LoginServer {
     try {
       dhserver.auth.SessionStore sessions = new dhserver.auth.SessionStore();
       int authPort = Integer.getInteger("dh.auth.port", 8082);
-      dhserver.auth.AuthService auth = new dhserver.auth.AuthService(authPort, sessions, store);
-      auth.start();
       String flag = System.getProperty("dh.auth", "off");
       boolean strict = "on".equalsIgnoreCase(flag) || "1".equals(flag) || "true".equalsIgnoreCase(flag);
+      // ANNUAIRE (brique 1) — fiche publique SIGNÉE. Identité du serveur persistée à côté de la DB (fichier phrase
+      // mnémonique, généré au 1er boot) ; nom/capacité paramétrables par l'hébergeur (via le launcher : -D ou env).
+      // Le mode reflète l'auth (strict/open). Sert GET /info signé sur le port auth (game-free, public, sans jeton).
+      dhserver.directory.ServerIdentity srvId = null;
+      try {
+        String idPath = System.getProperty("dh.server.identity",
+            System.getenv().getOrDefault("DH_SERVER_IDENTITY",
+                new java.io.File(new java.io.File(dbPath).getAbsoluteFile().getParentFile(), "server-identity.txt").getPath()));
+        srvId = dhserver.directory.ServerIdentity.loadOrCreate(java.nio.file.Paths.get(idPath));
+      } catch (Exception e) { System.out.println("[login] ! identité serveur (annuaire) non chargée : " + e); }
+      final dhserver.directory.ServerIdentity fId = srvId;
+      final String srvName = sanitizeServerName(System.getProperty("dh.server.name",
+          System.getenv().getOrDefault("DH_SERVER_NAME", "Serveur Disney Heroes")));
+      final String srvMode = strict ? "strict" : "open";
+      final int srvMaxOnline = Integer.getInteger("dh.server.maxonline",
+          parseIntOr(System.getenv("DH_SERVER_MAXONLINE"), 0));
+      final long srvOpenTime = System.currentTimeMillis();
+      final LoginServer srv = server;
+      dhserver.auth.AuthService auth = (fId != null)
+          ? new dhserver.auth.AuthService(authPort, sessions, store, fId,
+              () -> new dhserver.directory.ServerInfo(srvName, srvMode, DH_GAME_VERSION, DH_SERVER_VERSION,
+                        srv.onlineCount(), srvMaxOnline, srvOpenTime))
+          : new dhserver.auth.AuthService(authPort, sessions, store);
+      auth.start();
       server.setAuth(sessions, strict);
       System.out.println("[login] 🔐 AuthService sur :" + authPort + " — mode "
-          + (strict ? "STRICT (auth requise)" : "permissif (auth optionnelle, défaut)"));
+          + (strict ? "STRICT (auth requise)" : "permissif (auth optionnelle, défaut)")
+          + (fId != null ? " — /info signé (annuaire) « " + srvName + " », serverId " + fId.serverId() : ""));
     } catch (Exception e) { System.out.println("[login] ! AuthService non démarré : " + e); }
     // ADMIN (chantier D) — panneau opérateur HTTP dans CETTE JVM (accès à l'état vivant : online/connexions, puis
     // édition comptes/events/modération). Jeton opérateur OBLIGATOIRE (-Ddh.admin.token / DH_ADMIN_TOKEN ; généré +

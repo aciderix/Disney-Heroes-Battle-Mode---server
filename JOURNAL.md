@@ -1,5 +1,42 @@
 # JOURNAL — journal détaillé des modifications
 
+## 2026-08-31 (g222) — ANNUAIRE brique 1 : identité serveur SIGNÉE + `GET /info` (fiche vérifiable) 🟢
+
+Première brique de l'**explorateur de serveurs communautaires** (cf. `docs/SERVER_EXPLORER.md`). But : qu'un serveur
+publie une **fiche** (nom, mode, versions, joueurs en ligne) **signée** cryptographiquement, pour qu'un annuaire (table
+Supabase à venir) la relaie et que le launcher/APK la **vérifie sans faire confiance à l'annuaire** — un pirate ne peut
+pas usurper une fiche sans la clé privée du serveur. **Réutilise EXACTEMENT la crypto des comptes (§3)** : Ed25519 via
+`MnemonicIdentity`, aucune nouvelle crypto.
+
+- **`dhserver.directory.ServerIdentity`** (game-free) : identité Ed25519 du serveur = phrase mnémonique persistée dans un
+  fichier local (`server-identity.txt` à côté de la DB, générée au 1er boot, `0600` best-effort). Expose `publicKeyB64`,
+  `serverId` (dérivé de la clé pub, comme un userID), `sign(défi)`.
+- **`dhserver.directory.ServerInfo`** (game-free, immuable) : la fiche + **`canonical(nonce)`** = la chaîne EXACTE signée
+  (champs figés séparés par US 0x1F + nonce). `gameVersion="12.1.0"` (FAIT, l'APK — §4, pas inventé), `serverVersion="0.2.0"`.
+- **`AuthService`** : nouveau **`GET /info` PUBLIC** (aucun jeton) qui renvoie la fiche **signée**. Le vérifieur passe un
+  **défi frais** `?nonce=…` → la signature couvre {fiche + nonce} (anti-rejeu). Constructeur 5-arg (identité + fournisseur
+  de fiche vivante) ; l'ancien 3-arg délègue (pas de /info sans identité). `nonce` borné/assaini (anti-abus).
+- **`dhlauncher.ServerInfoVerifier`** (game-free) : interroge `<baseUrl>/info?nonce=<aléa>`, **recompose la canonique**
+  depuis les champs renvoyés + le nonce envoyé, et **vérifie la signature** (`MnemonicIdentity.verify`) contre la clé
+  publique annoncée + cohérence `serverId == dérivé(pubKey)`. Un champ altéré / une autre clé / un nonce rejoué → **rejet**.
+- **`LoginServer.main`** : charge/crée l'identité serveur, câble `/info` sur le port auth. Paramétrable par l'hébergeur
+  (donc par le launcher) : `-Ddh.server.name`/`DH_SERVER_NAME`, `-Ddh.server.maxonline`/`DH_SERVER_MAXONLINE`,
+  `-Ddh.server.identity`/`DH_SERVER_IDENTITY` ; le **mode** (strict/open) reflète `dh.auth`. Nom assaini (pas de contrôle).
+- **`build_launcher.sh`** : ajoute `dhserver/directory/{ServerIdentity,ServerInfo}` au jeu de sources **game-free** (le
+  vérifieur en dépend) — compile game-free VÉRIFIÉE.
+- **Vérif** : `ServerInfoTest` (nouveau, ISOLÉ) — persistance de l'identité (même clé au reload) ; **bout-en-bout HTTP réel**
+  AuthService `/info` → vérifieur (fiche vérifiée, champs exacts) ; **la signature protège** (usurpation/altération/rejeu
+  → rejet). 10/10. **Régression 177/177**. Launcher game-free compile OK. 🟢 (vérif « stack réelle » = quand le launcher
+  affichera l'annuaire, brique 3).
+- **Suite** (annuaire) : brique 2 = table Supabase (inscription signée + lecture) + keep-alive GitHub Action ; brique 3 =
+  navigateur de serveurs dans le launcher PC (lit l'annuaire, vérifie, ping, Jouer) ; brique 4 = patch APK (écran au
+  lancement). Indépendant : brancher le `GetServers` natif (sélecteur de SHARD in-game).
+
+Fichiers : `server/java/dhserver/directory/ServerIdentity.java` (+), `server/java/dhserver/directory/ServerInfo.java` (+),
+`server/java/dhlauncher/ServerInfoVerifier.java` (+), `server/smoke/ServerInfoTest.java` (+),
+`server/java/dhserver/auth/AuthService.java`, `server/java/dhserver/LoginServer.java`, `tools/build_launcher.sh`,
+`server/smoke/regression.sh`, `docs/SERVER_EXPLORER.md`, `docs/PHASE2_TRACKING.md`, `JOURNAL.md`, `MEMORY.md`.
+
 ## 2026-08-31 (g221) — Chantier F : TLS pour l'admin distant — jeton CHIFFRÉ + certificat ÉPINGLÉ 🟢
 
 Fermeture du dernier trou de sécurité de l'admin distant (g220 laissait le jeton en clair HTTP). Le jeton opérateur peut

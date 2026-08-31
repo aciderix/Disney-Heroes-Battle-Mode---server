@@ -47,7 +47,9 @@ CLS="$OUT/.cls"; mkdir -p "$CLS"
 "$JAVA_HOME/bin/javac" -d "$CLS" \
   server/java/dhlauncher/*.java \
   server/java/dhserver/auth/MnemonicIdentity.java \
-  server/java/dhserver/auth/Bip39Wordlist.java
+  server/java/dhserver/auth/Bip39Wordlist.java \
+  server/java/dhserver/directory/ServerIdentity.java \
+  server/java/dhserver/directory/ServerInfo.java
 "$JAVA_HOME/bin/jar" cf "$OUT/dhlauncher.jar" -C "$CLS" .
 rm -rf "$CLS"
 

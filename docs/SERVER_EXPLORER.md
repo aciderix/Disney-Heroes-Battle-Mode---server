@@ -4,6 +4,22 @@
 > FAITS relevés dans le bytecode du jeu (`libs/game.jar`, APK 12.1.0) + le point sur ce qui existe déjà, et les options
 > chiffrées par effort/risque. À valider avant d'engager un incrément.
 
+## État d'avancement (annuaire communautaire)
+
+Décision util. : un **annuaire de serveurs communautaires** — le launcher PC (puis l'APK patché) affiche la liste des
+serveurs dispos + infos, on choisit → **Jouer**. Support retenu : **table Supabase** (inscription signée + lecture ;
+keep-alive par GitHub Action pour éviter la mise en pause du projet gratuit). Sécurité = **signature Ed25519** de chaque
+fiche (le launcher vérifie sans faire confiance à Supabase). Tout **paramétrable dans le launcher** (opt-in publication +
+nom/mode côté Héberger ; navigateur côté Serveurs ; adresse d'annuaire modifiable côté Réglages).
+
+| Brique | Contenu | Statut |
+|---|---|---|
+| **1** | Identité serveur **signée** + `GET /info` vérifiable (`ServerIdentity`/`ServerInfo`/`AuthService /info`/`ServerInfoVerifier`) | 🟢 **FAIT** (g222, `ServerInfoTest` 10/10, régression 177/177) — vérif stack réelle à la brique 3 |
+| **2** | Table **Supabase** : inscription signée par le serveur + lecture + **keep-alive** GitHub Action | ⬜ à faire (attend le rechargement conteneur → vrai projet Supabase) |
+| **3** | **Navigateur de serveurs** dans le launcher PC (lit l'annuaire, vérifie la signature, ping, Jouer) | ⬜ à faire |
+| **4** | **Patch APK** : écran de choix de serveur au lancement → Jouer connecté | ⬜ à faire (toolchain apktool/apksigner) |
+| indép. | Brancher le `GetServers` natif = sélecteur de **SHARD** in-game (Niveau 2) | ⬜ optionnel |
+
 ## 0. Ce que veut l'utilisateur
 
 Au lancement du jeu : voir les **serveurs disponibles**, en **choisir un**, appuyer sur **Jouer** → le jeu démarre
