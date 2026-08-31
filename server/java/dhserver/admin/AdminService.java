@@ -71,6 +71,11 @@ public final class AdminService {
         http.createContext("/admin/player/completeTutorials", guarded(this::handleCompleteTutorials));
         http.createContext("/admin/player/unlock", guarded(this::handleUnlock));
         http.createContext("/admin/audit", guarded(this::handleAudit)); // GET → journal des actions admin
+        // EVENTS live-ops (chantier D A) — specs {kind,…} persistées (shard_state), appliquées à chaud
+        http.createContext("/admin/events/remove", guarded(this::handleEventRemove)); // POST {index}
+        http.createContext("/admin/events/clear", guarded(this::handleEventClear));   // POST → tout retirer
+        http.createContext("/admin/events", guarded(this::handleEvents));             // GET liste | POST {spec}
+        http.createContext("/admin/enums", guarded(this::handleEnums));               // GET listes d'enums réelles
         http.setExecutor(null); // handlers courts, non bloquants
     }
 
@@ -281,6 +286,42 @@ public final class AdminService {
         String q = ex.getRequestURI().getRawQuery();
         if (q != null) for (String kv : q.split("&")) if (kv.startsWith("tail=")) { try { n = Integer.parseInt(kv.substring(5)); } catch (Exception ignore) {} }
         send(ex, 200, AdminAudit.tailJson(n));
+    }
+
+    // ─── EVENTS live-ops ─────────────────────────────────────────────────────────────────────────────────────────
+    /** GET /admin/events → liste des specs opérateur ; POST {@code {spec}} → ajoute une spec {kind,…} (VALIDÉE). */
+    private void handleEvents(HttpExchange ex) throws Exception {
+        if ("GET".equals(ex.getRequestMethod())) { send(ex, 200, EventsAdmin.listJson(store, SHARD)); return; }
+        if (!"POST".equals(ex.getRequestMethod())) { send(ex, 405, "{\"error\":\"method\"}"); return; }
+        String spec = form(ex).getOrDefault("spec", "");
+        String res = EventsAdmin.addSpec(store, SHARD, spec);
+        if (res == null) { send(ex, 400, "{\"error\":\"spec invalide\"}"); return; }
+        AdminAudit.log("eventAdd", "spec=" + spec, "ok");
+        send(ex, 200, res);
+    }
+
+    /** POST /admin/events/remove {@code {index}} → retire la spec à cet index. */
+    private void handleEventRemove(HttpExchange ex) throws Exception {
+        if (!"POST".equals(ex.getRequestMethod())) { send(ex, 405, "{\"error\":\"method\"}"); return; }
+        int index = intOr(form(ex), "index", -1);
+        String res = EventsAdmin.removeAt(store, SHARD, index);
+        if (res == null) { send(ex, 404, "{\"error\":\"index hors bornes\"}"); return; }
+        AdminAudit.log("eventRemove", "index=" + index, "ok");
+        send(ex, 200, res);
+    }
+
+    /** POST /admin/events/clear → retire TOUS les overrides (rotation par défaut du jeu). */
+    private void handleEventClear(HttpExchange ex) throws Exception {
+        if (!"POST".equals(ex.getRequestMethod())) { send(ex, 405, "{\"error\":\"method\"}"); return; }
+        String res = EventsAdmin.clear(store, SHARD);
+        AdminAudit.log("eventClear", "-", "ok");
+        send(ex, 200, res);
+    }
+
+    /** GET /admin/enums → listes d'enums RÉELLES (GameMode, ChestType, …) pour l'éditeur d'events. */
+    private void handleEnums(HttpExchange ex) throws Exception {
+        if (!"GET".equals(ex.getRequestMethod())) { send(ex, 405, "{\"error\":\"method\"}"); return; }
+        send(ex, 200, EventsAdmin.enumsJson());
     }
 
     private static long uid(java.util.Map<String, String> f) {

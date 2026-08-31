@@ -91,6 +91,23 @@ public final class AdminMonitorTest {
             ok(aud.statusCode() == 200 && aud.body().contains("giveResource") && aud.body().contains("setTeamLevel"),
                     "audit : giveResource + setTeamLevel tracés");
             ok(get(http, base + "/admin/audit", null, null).statusCode() == 401, "audit sans jeton → 401");
+
+            // EVENTS live-ops : enums réelles + cycle liste/ajout/validation/retrait
+            HttpResponse<String> enums = get(http, base + "/admin/enums", "X-Admin-Token", tok);
+            ok(enums.statusCode() == 200 && enums.body().contains("\"GameMode\":[") && enums.body().contains("\"kinds\":["),
+                    "enums : GameMode + kinds servis (réels)");
+            ok(get(http, base + "/admin/events", "X-Admin-Token", tok).body().contains("\"count\":0"), "events : 0 au départ");
+            String spec = dhserver.ServerEvents.specJson("MODES_OPEN",
+                    java.util.List.of(com.perblue.heroes.network.messages.GameMode.PORT_DOCKS), 0,
+                    dhserver.ServerEvents.defaultStart(), dhserver.ServerEvents.defaultEnd());
+            HttpResponse<String> add = post(http, base + "/admin/events", tok,
+                    "spec=" + java.net.URLEncoder.encode(spec, java.nio.charset.StandardCharsets.UTF_8));
+            ok(add.statusCode() == 200 && add.body().contains("\"count\":1"), "events : ajout spec valide → count 1");
+            ok(post(http, base + "/admin/events", tok,
+                    "spec=" + java.net.URLEncoder.encode("{\"kind\":\"BOGUS\"}", java.nio.charset.StandardCharsets.UTF_8))
+                    .statusCode() == 400, "events : spec invalide → 400 (non persistée)");
+            HttpResponse<String> rm = post(http, base + "/admin/events/remove", tok, "index=0");
+            ok(rm.statusCode() == 200 && rm.body().contains("\"count\":0"), "events : retrait index 0 → count 0");
         } finally {
             admin.stop();
         }

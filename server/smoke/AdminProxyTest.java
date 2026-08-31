@@ -74,6 +74,11 @@ public final class AdminProxyTest {
             HttpResponse<String> aud = get(http, base + "/admin/audit?tail=20");
             ok(aud.statusCode() == 200 && aud.body().contains("giveResource"), "admin/audit proxifié → mutation tracée");
 
+            // events proxifiés : enums (GET) + liste (GET) + clear (POST)
+            ok(get(http, base + "/admin/enums").body().contains("\"GameMode\":["), "admin/enums proxifié → GameMode réel");
+            ok(get(http, base + "/admin/events").body().contains("\"count\":"), "admin/events proxifié → liste");
+            ok(post(http, base + "/admin/events/clear", "").body().contains("\"count\":0"), "admin/events/clear proxifié → 0");
+
             // tail des logs hôte (fichier écrit par le serveur au boot)
             HttpResponse<String> logs = get(http, base + "/host/logs?which=server&tail=50");
             ok(logs.statusCode() == 200 && logs.body().contains("\"lines\":"), "host/logs (server) → JSON lines");

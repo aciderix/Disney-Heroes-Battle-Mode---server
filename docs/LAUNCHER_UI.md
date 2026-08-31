@@ -348,8 +348,10 @@ Le front **ne doit pas** exposer ces fonctions tant que l'endpoint n'existe pas 
    déchiffrement au démarrage. (Aujourd'hui : absent ; la phrase n'est pas persistée.)
 6. **Tail des logs hôte** : `GET /host/logs?which=server|content|bundle&tail=N`. (Fichiers écrits mais pas servis.)
 7. **ADMIN — panneau opérateur (chantier D, 5 domaines §4.6)** :
-   - **A. Events** : `GET/POST /admin/events`, `/admin/events/remove`, `/admin/events/clear`, `GET /admin/enums`
-     (enums réelles). Base : `ServerEvents.fromJson`/`setOperatorEvents` + `shard_state`. *(capacité prête)*
+   - **A. Events** : ✅ **LIVRÉ (inc.6d, g211)** — `GET|POST /admin/events` (liste | ajoute une spec `{kind,…}` VALIDÉE),
+     `POST /admin/events/remove {index}`, `POST /admin/events/clear`, `GET /admin/enums` (enums RÉELLES reflétées).
+     Helper `dhserver.admin.EventsAdmin` (réutilise `configSpecs`/`writeConfig`/`eventsFromConfig` + `shard_state`,
+     comme le CLI `AdminEvents`). Applique à chaud (`setOperatorEvents`). `AdminMonitorTest`/`AdminProxyTest`.
    - **B. Monitoring** : ✅ **LIVRÉ (inc.6a, g208)** — `GET /admin/monitor` (joueurs en ligne via `LoginServer.online`,
      connexions, uptime, strict) + `GET /host/logs?which=server|content&tail=N`. Archi : `dhserver.admin.AdminService`
      (dans la JVM serveur, jeton opérateur obligatoire, bind 127.0.0.1 par défaut / exposable réseau) ; le daemon

@@ -1,5 +1,24 @@
 # JOURNAL — journal détaillé des modifications
 
+## 2026-08-31 (g211) — Admin inc.6d : events live-ops (liste/ajout validé/retrait/clear) + enums réelles 🟢
+
+Domaine D « events » exposé via l'AdminService, en RÉUTILISANT le format de config du jeu-glue existant (§3, même
+mécanisme que le CLI `AdminEvents` : specs JSON `{kind,…}` persistées dans `shard_state/operator_events`, reconstruites
+par `ServerEvents.*`). Helper `dhserver.admin.EventsAdmin`.
+
+- **`EventsAdmin`** : `listJson` (specs persistées) ; `addSpec` (VALIDÉE : kind ∈ whitelist des 13 composants livrés ET
+  reconstruit exactement 1 event via `eventsFromConfig` — sinon rejet, jamais persistée §2 ; nécessaire car
+  `eventFromSpec` retombe silencieusement sur MODES_OPEN pour un kind inconnu) ; `removeAt` (index) ; `clear` ;
+  `enumsJson` (listes RÉELLES reflétées : GameMode/ChestType/MerchantType/MultiplierType/UserFlag/ResourceType/
+  GenericTrialType + kinds — jamais codées en dur côté front §4). Persiste (`shard_state`) + applique à CHAUD
+  (`setOperatorEvents`) → visible au prochain `REFRESH_SPECIAL_EVENTS` du client.
+- **AdminService** (jeton requis) : `GET|POST /admin/events` (liste | ajoute {spec}, 400 si invalide) ;
+  `POST /admin/events/remove {index}` (404 hors bornes) ; `POST /admin/events/clear` ; `GET /admin/enums`. Mutations
+  journalisées (`AdminAudit`). Daemon inchangé (proxy générique de g209).
+- **Vérif** : compile game-free OK ; `AdminMonitorTest` 29 (enums réelles, cycle liste 0→ajout MODES_OPEN→1, spec BOGUS
+  rejetée 400, retrait→0) + `AdminProxyTest` 22 (enums/liste/clear proxifiés) ; **régression 174/174**. 🟢 headless.
+- **Suite** : inc.6e **modération à CONSTRUIRE** (bans au login + mute + kick) → UI Admin + CI « build launcher-ui ».
+
 ## 2026-08-31 (g210) — Admin inc.6c : gestion des joueurs (édition autoritative) + journal d'audit 🟢
 
 Domaine D « joueurs » exposé via l'AdminService, en RÉUTILISANT les mutateurs `ServerUser` existants (§3, mêmes
