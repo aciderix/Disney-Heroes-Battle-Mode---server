@@ -1,5 +1,20 @@
 # JOURNAL — journal détaillé des modifications
 
+## 2026-08-31 (g219) — launcher-release : FUSION de l'exe fenêtré dans le package (one-download) 🟡 à valider par l'util.
+
+`launcher-release.yml` étendu : après le package daemon (jar + runtime/jdk + python + tooling), il BUILD l'appli
+fenêtrée Tauri (mêmes étapes que `launcher-tauri`, prouvées vertes) et DÉPOSE le binaire `DisneyHeroesLauncher[.exe]` à
+la RACINE du package (à côté du jar + runtime → `main.rs` les résout depuis le dossier de l'exe). La vérif du package
+EXTRAIT teste aussi sa présence. Résultat visé : **un seul téléchargement**, double-clic sur l'exe → fenêtre (7 écrans
+dont Admin) + daemon démarré ; `run-launcher.sh/.bat` reste le mode daemon-seul.
+**Validation = côté utilisateur** : l'intégration GitHub du sandbox ne peut PAS déclencher un workflow (403 dispatch),
+et un push de branche ne déclenche pas `launcher-release` (trigger = workflow_dispatch + tag `launcher-v*`). ⇒ pour
+valider + obtenir le package combiné : soit **Actions → launcher-release → Run workflow** (workflow_dispatch), soit
+**pousser un tag `launcher-v0.2.0`** (build les 2 OS + publie la Release téléchargeable avec l'exe fenêtré inclus).
+Sous-parties déjà prouvées : `launcher-tauri` vert ×2 OS ; package daemon vert (runs précédents). Nouveau = la copie du
+binaire (glue triviale), à confirmer par le run combiné.
+
+
 ## 2026-08-31 (g218) — Launcher FENÊTRÉ : build Tauri ✅ VERT sur Windows + Linux (exe/msi/deb/rpm produits)
 
 Run CI `launcher-tauri` **#4 VERT sur les 2 OS** (itérations #1-#3 = corrections guidées par les logs CI, ma seule
