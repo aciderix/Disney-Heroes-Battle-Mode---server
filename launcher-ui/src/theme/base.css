@@ -1,0 +1,50 @@
+/* Base layout + composants (utilise UNIQUEMENT les tokens). Restylable via tokens.css. */
+@import "./tokens.css";
+
+* { box-sizing: border-box; }
+html, body, #root { height: 100%; margin: 0; }
+body { font-family: var(--font); background: var(--bg); color: var(--text); font-size: 14px; }
+
+button {
+  font: inherit; cursor: pointer; border: 1px solid var(--border);
+  background: var(--bg-elev); color: var(--text);
+  border-radius: var(--radius-sm); padding: 8px 14px;
+}
+button:hover:not(:disabled) { border-color: var(--accent); }
+button:disabled { opacity: .5; cursor: not-allowed; }
+button.primary { background: var(--accent); color: var(--accent-text); border-color: var(--accent); }
+input, select {
+  font: inherit; color: var(--text); background: var(--bg-panel);
+  border: 1px solid var(--border); border-radius: var(--radius-sm); padding: 8px 10px; width: 100%;
+}
+
+.app { display: grid; grid-template-columns: var(--sidebar-w) 1fr; height: 100%; }
+.sidebar { background: var(--bg-panel); border-right: 1px solid var(--border); padding: var(--gap); display: flex; flex-direction: column; gap: 4px; }
+.sidebar .brand { font-weight: 700; padding: 8px; color: var(--text-dim); font-size: 12px; letter-spacing: .04em; text-transform: uppercase; }
+.nav-item { text-align: left; background: none; border: none; padding: 10px 12px; border-radius: var(--radius-sm); color: var(--text); }
+.nav-item:hover { background: var(--bg-elev); }
+.nav-item.active { background: var(--accent); color: var(--accent-text); }
+.main { padding: var(--gap-lg); overflow: auto; }
+.topbar { display: flex; align-items: center; justify-content: space-between; margin-bottom: var(--gap-lg); }
+
+.panel { background: var(--bg-panel); border: 1px solid var(--border); border-radius: var(--radius); padding: var(--gap-lg); box-shadow: var(--shadow); }
+.stack { display: flex; flex-direction: column; gap: var(--gap); }
+.row { display: flex; align-items: center; gap: var(--gap); }
+.muted { color: var(--text-dim); }
+
+.dot { width: 9px; height: 9px; border-radius: 50%; display: inline-block; }
+.dot.ok { background: var(--ok); } .dot.err { background: var(--err); } .dot.warn { background: var(--warn); }
+
+.banner { border-radius: var(--radius-sm); padding: 10px 12px; border: 1px solid var(--border); }
+.banner.error { border-color: var(--err); color: var(--err); }
+.banner.success { border-color: var(--ok); color: var(--ok); }
+
+/* Disclaimer gate */
+.gate { max-width: 760px; margin: 40px auto; }
+.gate .scroll { max-height: 46vh; overflow: auto; border: 1px solid var(--border); border-radius: var(--radius-sm); padding: var(--gap-lg); background: var(--bg-elev); }
+.gate .scroll p { margin: 0 0 14px; line-height: 1.55; }
+.gate .actions { display: flex; justify-content: space-between; align-items: center; margin-top: var(--gap-lg); gap: var(--gap); }
+
+.spinner { width: 16px; height: 16px; border: 2px solid var(--border); border-top-color: var(--accent); border-radius: 50%; display: inline-block; animation: spin 1s linear infinite; }
+@keyframes spin { to { transform: rotate(360deg); } }
+.center-screen { display: grid; place-items: center; height: 100%; gap: var(--gap); }

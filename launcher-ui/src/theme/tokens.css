@@ -1,0 +1,41 @@
+/* DESIGN TOKENS — le SEUL endroit à modifier pour re-styler entièrement le launcher (esthétique isolée).
+   Thème neutre volontairement sobre (Gemini pourra tout remplacer ici). Clair + sombre (prefers-color-scheme). */
+:root {
+  --font: system-ui, -apple-system, "Segoe UI", Roboto, Helvetica, Arial, sans-serif;
+  --font-mono: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
+
+  --bg: #f6f7f9;
+  --bg-panel: #ffffff;
+  --bg-elev: #eef0f3;
+  --border: #d8dce1;
+  --text: #1c2128;
+  --text-dim: #5b6570;
+
+  --accent: #3457d5;
+  --accent-text: #ffffff;
+  --ok: #1a7f37;
+  --warn: #9a6700;
+  --err: #cf222e;
+
+  --radius: 10px;
+  --radius-sm: 6px;
+  --gap: 12px;
+  --gap-lg: 20px;
+  --sidebar-w: 208px;
+  --shadow: 0 1px 3px rgba(0,0,0,.08), 0 1px 2px rgba(0,0,0,.04);
+}
+@media (prefers-color-scheme: dark) {
+  :root {
+    --bg: #0d1117;
+    --bg-panel: #161b22;
+    --bg-elev: #1f2630;
+    --border: #2b333d;
+    --text: #e6edf3;
+    --text-dim: #9aa5b1;
+    --accent: #4d7cff;
+    --ok: #3fb950;
+    --warn: #d29922;
+    --err: #f85149;
+    --shadow: 0 1px 3px rgba(0,0,0,.4);
+  }
+}

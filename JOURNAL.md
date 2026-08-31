@@ -1,5 +1,30 @@
 # JOURNAL — journal détaillé des modifications
 
+## 2026-08-31 (g203) — C2b : spec front exhaustive + endpoint /play + panneau admin (5 domaines) + squelette Tauri/React 🟢
+
+Front du launcher (chantier C2b), sur choix utilisateur : **spec d'abord** (tout défini depuis le code, rien oublié),
+**/play avant le front**, **UI neutre/fonctionnelle** (reskinnable par Gemini), auteur **Aciderix**.
+
+- **`docs/LAUNCHER_UI.md`** — spec EXHAUSTIVE : contrat des 15 endpoints (`daemonClient`), IA par intention
+  (Compte/Serveurs/Jouer/Héberger/Générer/Admin/Réglages), **avertissement 1er lancement** complet (non-affiliation
+  Disney/PerBlue, jeu non distribué, gratuit, aucun usage commercial, sans garantie ; auteur Aciderix), séparation
+  stricte front/back, et **manques backend listés** (§7).
+- **ADMIN = panneau opérateur 5 domaines**, défini DEPUIS le code (§8) : A. Events live-ops (13 builders `ServerEvents`,
+  prêt) ; B. Monitoring (`LoginServer.online`+`connectionsAccepted`+logs, prêt) ; C. Gestion joueurs (`ServerUser`
+  giveResource/grantHero/…, prêt) ; D. Ère de contenu (`RELEASE_PICKER`+`AdminRelease`+ancre d'horloge, prêt) ;
+  **E. Modération = ABSENT → à construire** (seul `KickFromGuild` = jeu). Tous requièrent des endpoints `/admin/*` (chantier D).
+- **Endpoint `/play` LIVRÉ** (`PlayManager` + `POST /play` / `/play/stop` / `GET /play/status`) : lance le bundle CLIENT
+  avec `DH_SERVER=host:contentPort` (+`DH_USERID` en permissif). **Vérifié bout-en-bout** : le vrai client démarre sur le
+  serveur choisi (`ServerType.LIVE → 127.0.0.1:8080`, `GameMain create`), status/arrêt OK. `PlayLifecycleTest` (8) →
+  **régression 171/171**. Reste : hook client `loginRequestID` pour le strict DISTANT.
+- **`launcher-ui/` — squelette Tauri+React+TS (incrément 1)** : `api/daemonClient.ts` (15 endpoints typés, SEUL point
+  réseau) + `types.ts` + `tauriBridge.ts` ; thème neutre isolé (`theme/tokens.css`) ; i18n fr/en ; **DisclaimerGate**
+  (avertissement à lire jusqu'en bas + accepter) ; coquille + navigation ; shell Tauri (`src-tauri/` : démarre le daemon
+  Java embarqué + expose son port + dialogues natifs). **Vérifié** : `tsc --noEmit` OK + `vite build` OK (38 modules).
+  Séparation stricte : un designer (Gemini) ne touche que `theme/`+`components/`. node_modules/dist gitignorés.
+- **Suite** : inc.2 Compte+Serveurs, inc.3 Héberger+Générer, inc.4 Jouer(/play), inc.5 Réglages, inc.6 Admin ;
+  puis endpoints backend manquants (§7) + job CI « build launcher-ui » (typecheck+bundle Tauri, 2 OS).
+
 ## 2026-08-31 (g202) — CI launcher VERTE sur Linux + Windows (VM GitHub) : build + exécution smoke prouvés ✅
 
 Le workflow `launcher-release` (g201) a été **déclenché par l'utilisateur** (workflow_dispatch). Run #1 :
