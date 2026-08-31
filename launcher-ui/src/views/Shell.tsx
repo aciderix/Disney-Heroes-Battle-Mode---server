@@ -9,6 +9,7 @@ import { Account } from "./Account";
 import { Host } from "./Host";
 import { Generate } from "./Generate";
 import { Play } from "./Play";
+import { Admin } from "./Admin";
 import { SettingsView } from "./Settings";
 import { t, type Lang, type MsgKey } from "../i18n";
 
@@ -22,6 +23,7 @@ export function Shell({ lang }: { lang: Lang }) {
     { id: "account", label: "nav.account", view: <Account /> },
     { id: "host", label: "nav.host", view: <Host /> },
     { id: "generate", label: "nav.generate", view: <Generate /> },
+    { id: "admin", label: "nav.admin", view: <Admin /> },
     { id: "settings", label: "nav.settings", view: <SettingsView /> },
   ];
   const [active, setActive] = useState("servers");

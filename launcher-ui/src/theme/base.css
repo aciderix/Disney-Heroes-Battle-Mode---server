@@ -48,3 +48,10 @@ input, select {
 .spinner { width: 16px; height: 16px; border: 2px solid var(--border); border-top-color: var(--accent); border-radius: 50%; display: inline-block; animation: spin 1s linear infinite; }
 @keyframes spin { to { transform: rotate(360deg); } }
 .center-screen { display: grid; place-items: center; height: 100%; gap: var(--gap); }
+
+/* Admin — tableaux + console de logs */
+.tblwrap { overflow-x: auto; }
+.tbl { border-collapse: collapse; width: 100%; font-size: 13px; }
+.tbl th, .tbl td { text-align: left; padding: 4px 10px; border-bottom: 1px solid var(--border); }
+.tbl th { color: var(--text-dim); font-weight: 600; }
+.logconsole { background: var(--bg-elev); border: 1px solid var(--border); border-radius: var(--radius-sm); padding: 10px 12px; max-height: 40vh; overflow: auto; font-family: ui-monospace, SFMono-Regular, Menlo, monospace; font-size: 12px; white-space: pre-wrap; word-break: break-word; margin: 0; }

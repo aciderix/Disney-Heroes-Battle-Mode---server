@@ -6,7 +6,7 @@ import react from "@vitejs/plugin-react";
 // (VITE_DAEMON_PORT, défaut 8090). Le daemon reste loopback-only sans CORS permissif (sécurité).
 const daemon = `http://127.0.0.1:${process.env.VITE_DAEMON_PORT ?? "8090"}`;
 const proxy = Object.fromEntries(
-  ["/health", "/identity", "/servers", "/host", "/build", "/play", "/settings"].map((p) => [p, { target: daemon, changeOrigin: true }]),
+  ["/health", "/identity", "/servers", "/host", "/build", "/play", "/settings", "/admin"].map((p) => [p, { target: daemon, changeOrigin: true }]),
 );
 
 export default defineConfig({

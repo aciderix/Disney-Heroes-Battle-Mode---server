@@ -5,6 +5,8 @@ import { getDaemonPort, isTauri } from "./tauriBridge";
 import type {
   Identity, AuthResult, Server, Ping, HostStatus, BuildStatus, PlayStatus, Settings,
   HostStartParams, BuildStartParams, PlayStartParams,
+  AdminMonitor, HostLogs, AdminReleases, AdminEraStatus, AdminClock, PlayerSummary,
+  AdminEvents, AdminEnums, Moderation, AuditLog,
 } from "./types";
 
 let baseUrlCache: string | null = null;
@@ -84,6 +86,42 @@ export const daemonClient = {
   // --- réglages locaux (persistés) ---
   getSettings: () => get<Settings>("/settings"),
   updateSettings: (patch: Partial<Settings>) => post<Settings>("/settings", patch as Record<string, unknown>),
+
+  // --- ADMIN (chantier D) — le daemon PROXIFIE /admin/* vers le serveur LOCAL hébergé en injectant le jeton opérateur.
+  //     503 si aucun serveur n'est hébergé (l'écran Admin invite alors à héberger). Admin distant = ultérieur (chantier F).
+  adminMonitor: () => get<AdminMonitor>("/admin/monitor"),
+  hostLogs: (which: "server" | "content", tail = 200) => get<HostLogs>(`/host/logs?which=${which}&tail=${tail}`),
+  // Ère de contenu
+  adminReleases: () => get<AdminReleases>("/admin/releases"),
+  adminSetRelease: (name: string) => post<AdminEraStatus>("/admin/release", { name }),
+  adminClockGet: () => get<AdminClock>("/admin/clock"),
+  adminClockSet: (offsetHours: number) => post<AdminClock>("/admin/clock", { offsetHours }),
+  // Joueurs (autoritatif, journalisé côté serveur)
+  adminPlayerLookup: (userID: number) => post<PlayerSummary>("/admin/player/lookup", { userID }),
+  adminGiveResource: (userID: number, type: string, amount: number) =>
+    post<PlayerSummary>("/admin/player/giveResource", { userID, type, amount }),
+  adminGrantHero: (userID: number, hero: string, rarity?: string, level?: number, stars?: number) =>
+    post<PlayerSummary>("/admin/player/grantHero", { userID, hero, rarity, level, stars }),
+  adminSetTeamLevel: (userID: number, level: number) =>
+    post<PlayerSummary>("/admin/player/setTeamLevel", { userID, level }),
+  adminGrantCampaign: (userID: number, chapter: number, level: number, stars?: number, campaignType?: string) =>
+    post<PlayerSummary>("/admin/player/grantCampaign", { userID, chapter, level, stars, campaignType }),
+  adminCompleteTutorials: (userID: number) => post<PlayerSummary>("/admin/player/completeTutorials", { userID }),
+  adminUnlock: (userID: number) => post<PlayerSummary>("/admin/player/unlock", { userID }),
+  adminAudit: (tail = 100) => get<AuditLog>(`/admin/audit?tail=${tail}`),
+  // Events live-ops
+  adminEvents: () => get<AdminEvents>("/admin/events"),
+  adminEventAdd: (spec: string) => post<AdminEvents>("/admin/events", { spec }),
+  adminEventRemove: (index: number) => post<AdminEvents>("/admin/events/remove", { index }),
+  adminEventClear: () => post<AdminEvents>("/admin/events/clear"),
+  adminEnums: () => get<AdminEnums>("/admin/enums"),
+  // Modération
+  adminModeration: () => get<Moderation>("/admin/moderation"),
+  adminBan: (userID: number) => post<Moderation>("/admin/moderation/ban", { userID }),
+  adminUnban: (userID: number) => post<Moderation>("/admin/moderation/unban", { userID }),
+  adminMute: (userID: number) => post<Moderation>("/admin/moderation/mute", { userID }),
+  adminUnmute: (userID: number) => post<Moderation>("/admin/moderation/unmute", { userID }),
+  adminKick: (userID: number) => post<{ kicked: boolean }>("/admin/moderation/kick", { userID }),
 };
 
 export type DaemonClient = typeof daemonClient;

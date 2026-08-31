@@ -1,5 +1,26 @@
 # JOURNAL — journal détaillé des modifications
 
+## 2026-08-31 (g213) — C2b inc.6 : écran ADMIN (5 domaines) branché sur le backend Admin 🟢
+
+Front de l'administration : l'écran **Admin** consomme les endpoints `/admin/*` (tous livrés+testés g208→g212) via le
+proxy daemon générique. **Le daemon injecte le jeton opérateur** pour le serveur LOCAL hébergé → l'UI n'a aucun jeton à
+gérer ; sans hébergement, `/admin/*` renvoie **503** → l'écran affiche un gating honnête « héberge d'abord » (pas de
+faux panneau, principe util.). Admin d'un serveur distant/cloud = ultérieur (chantier F).
+
+- **`daemonClient`** : 25 méthodes admin typées (monitor, hostLogs, releases/release/clock, player/{lookup,giveResource,
+  grantHero,setTeamLevel,grantCampaign,completeTutorials,unlock}, audit, events/{list,add,remove,clear}, enums,
+  moderation/{list,ban,unban,mute,unmute,kick}). `types.ts` : types du contrat admin.
+- **`Admin.tsx`** (nouvelle vue) — sonde `/admin/monitor` (503 → gate), sinon 5 sous-onglets : **Monitoring** (en ligne +
+  connexions + uptime + tail des logs serveur/content) ; **Ère** (liste des releases, servir/reset, horloge test) ;
+  **Joueurs** (lookup → résumé + actions autoritatives donner ressource/héros/TL/tutos/déblocage, avec confirmations,
+  + journal d'audit) ; **Events** (liste, ajout par spec JSON validée serveur, retrait/clear, enums de référence) ;
+  **Modération** (ban/mute/kick + listes débannir/démuter). Ajouté à la nav Shell ; `/admin` au proxy Vite ; CSS
+  `.tbl`/`.logconsole`.
+- **Vérif** : `tsc --noEmit` + `vite build` OK ; **E2E Playwright 9/9** (+ Admin : gating 503 honnête). Serveur inchangé
+  (régression 174/174 de g212). 🟢 (vérif EN JEU des actions = pilotable une fois un serveur hébergé, endpoints déjà
+  prouvés `AdminMonitorTest`/`AdminProxyTest`).
+- **Suite** : job CI « build launcher-ui » (typecheck + build sur 2 OS) ; (option) admin distant/cloud (chantier F).
+
 ## 2026-08-31 (g212) — Admin inc.6e : MODÉRATION (bans/mutes/kick) — CONSTRUITE → backend Admin COMPLET 🟢
 
 Dernier domaine du panneau opérateur (chantier D E). N'existait PAS dans le jeu (`KickFromGuild` = expulsion de guilde,
