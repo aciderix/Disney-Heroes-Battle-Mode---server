@@ -6,6 +6,7 @@ import { DISCLAIMER_VERSION } from "./content/disclaimer";
 import { CenterScreen, Spinner, Banner } from "./components";
 import { DisclaimerGate } from "./views/DisclaimerGate";
 import { Shell } from "./views/Shell";
+import { AppStateProvider } from "./state/store";
 import { t, type Lang } from "./i18n";
 import "./theme/base.css";
 
@@ -49,5 +50,9 @@ export default function App() {
       />
     );
   }
-  return <Shell lang={lang} />;
+  return (
+    <AppStateProvider>
+      <Shell lang={lang} />
+    </AppStateProvider>
+  );
 }

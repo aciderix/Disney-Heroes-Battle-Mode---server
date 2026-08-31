@@ -1,7 +1,7 @@
 // daemonClient — LE SEUL module qui parle au launcher-core (daemon HTTP local, loopback). Tout le reste de l'UI
 // passe par ici. Contrat = docs/LAUNCHER_UI.md §1 (source: LauncherDaemon.java). Aucune vue, aucun état ici.
 
-import { getDaemonPort } from "./tauriBridge";
+import { getDaemonPort, isTauri } from "./tauriBridge";
 import type {
   Identity, AuthResult, Server, Ping, HostStatus, BuildStatus, PlayStatus,
   HostStartParams, BuildStartParams, PlayStartParams,
@@ -9,7 +9,10 @@ import type {
 
 let baseUrlCache: string | null = null;
 async function base(): Promise<string> {
-  if (!baseUrlCache) baseUrlCache = `http://127.0.0.1:${await getDaemonPort()}`;
+  if (baseUrlCache !== null) return baseUrlCache;
+  // Prod Tauri / hors dev → URL directe du daemon local. En DEV navigateur → même origine (proxy Vite, pas de CORS).
+  if (!isTauri() && (import.meta as any).env?.DEV) baseUrlCache = "";
+  else baseUrlCache = `http://127.0.0.1:${await getDaemonPort()}`;
   return baseUrlCache;
 }
 

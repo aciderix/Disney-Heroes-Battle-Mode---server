@@ -1,5 +1,23 @@
 # JOURNAL — journal détaillé des modifications
 
+## 2026-08-31 (g204) — C2b inc.2 : écrans Serveurs + Compte (adossés endpoints réels) + E2E Playwright 🟢
+
+Principe posé par l'utilisateur : **tout ce que l'UI affiche = un endpoint réellement implémenté ET testé ; pas de
+bouton « à venir »**. Appliqué : la coquille n'affiche QUE les sections livrées (plus de placeholders).
+
+- **Serveurs** : list/add/remove/**ping** (endpoints `/servers*`, testés `LauncherServersTest`) — cartes + sélection +
+  ajout (nom/host + ports avancés) + « + localhost » + test de latence (voyant vert/rouge).
+- **Compte** : Nouveau (`/identity/generate` → grille des 8 mots + copier + case « noté » → `/identity/register`) et
+  Restaurer (saisie 8 mots avec **autocomplétion BIP39** + validation d'appartenance → `/identity/login`). Wordlist
+  BIP39 (2048 mots) **extraite** de `Bip39Wordlist.java` (réutilisation, pas de réinvention). Session en mémoire
+  (persistance « se souvenir » = §7, NON implémentée → NON proposée). Nécessite un serveur sélectionné.
+- **Transport dev** : le daemon est loopback-only SANS CORS permissif (sécurité) → en dev navigateur, **proxy Vite**
+  (même origine) ; en prod = pont natif Tauri. `daemonClient.base()` choisit selon Tauri/dev.
+- **Vérif** : `tsc --noEmit` + `vite build` OK, **et E2E Playwright** (Chromium pré-installé) : vrai front → vrai daemon
+  → DisclaimerGate (bouton bloqué au départ) → ajout serveur (`/servers`) → génération phrase (`/identity/generate`).
+  `e2e/smoke.mjs` (+ `npm run e2e`).
+- **Suite** : inc.3 Héberger+Générer, inc.4 Jouer(/play), inc.5 Réglages, inc.6 Admin ; endpoints manquants §7 ; CI front.
+
 ## 2026-08-31 (g203) — C2b : spec front exhaustive + endpoint /play + panneau admin (5 domaines) + squelette Tauri/React 🟢
 
 Front du launcher (chantier C2b), sur choix utilisateur : **spec d'abord** (tout défini depuis le code, rien oublié),

@@ -1,37 +1,45 @@
-// Coquille de l'app après acceptation : barre latérale (sections) + zone principale. Les écrans réels (Compte,
-// Serveurs, Héberger, Générer, Jouer, Admin, Réglages) arrivent aux incréments 2→6 ; ici des placeholders honnêtes.
-import { useState } from "react";
-import { Panel } from "../components";
+// Coquille : barre latérale + zone principale. PRINCIPE : on n'affiche QUE les sections dont les endpoints sont
+// implémentés ET testés (pas de bouton « à venir » qui ferait croire qu'une fonction existe). Les sections suivantes
+// (Héberger, Générer, Jouer, Réglages, Admin) apparaîtront quand leurs écrans seront livrés.
+import { useState, type ReactNode } from "react";
+import { useApp } from "../state/store";
+import { StatusDot } from "../components";
+import { Servers } from "./Servers";
+import { Account } from "./Account";
 import { t, type Lang, type MsgKey } from "../i18n";
 
-type Section = { id: string; label: MsgKey; ready: boolean };
-const SECTIONS: Section[] = [
-  { id: "play", label: "nav.play", ready: false },
-  { id: "servers", label: "nav.servers", ready: false },
-  { id: "host", label: "nav.host", ready: false },
-  { id: "generate", label: "nav.generate", ready: false },
-  { id: "admin", label: "nav.admin", ready: false },
-  { id: "settings", label: "nav.settings", ready: false },
-];
+type Section = { id: string; label: MsgKey; view: ReactNode };
 
 export function Shell({ lang }: { lang: Lang }) {
+  const { session, selectedServer } = useApp();
+  const sections: Section[] = [
+    { id: "servers", label: "nav.servers", view: <Servers /> },
+    { id: "account", label: "nav.account", view: <Account /> },
+  ];
   const [active, setActive] = useState("servers");
+  const current = sections.find((s) => s.id === active) ?? sections[0];
+
   return (
     <div className="app">
       <nav className="sidebar">
         <div className="brand">{t(lang, "app.title")}</div>
-        {SECTIONS.map((s) => (
+        {sections.map((s) => (
           <button key={s.id} className={`nav-item ${active === s.id ? "active" : ""}`} onClick={() => setActive(s.id)}>
             {t(lang, s.label)}
           </button>
         ))}
+        <div style={{ flex: 1 }} />
+        <div className="brand">
+          {session ? `Compte #${session.userID}` : "Non connecté"}
+          {selectedServer && <><br />▸ {selectedServer.name}</>}
+        </div>
       </nav>
       <main className="main">
-        <Panel title={t(lang, SECTIONS.find((s) => s.id === active)!.label)}>
-          <div className="muted">
-            Écran « {active} » — {t(lang, "common.soon")}. Livré aux incréments suivants (voir docs/LAUNCHER_UI.md §9).
-          </div>
-        </Panel>
+        <div className="topbar">
+          <h1 style={{ margin: 0, fontSize: 18 }}>{t(lang, current.label)}</h1>
+          <span className="row"><StatusDot state={session ? "ok" : "warn"} /><span className="muted">{session ? "connecté" : "hors ligne"}</span></span>
+        </div>
+        {current.view}
       </main>
     </div>
   );
