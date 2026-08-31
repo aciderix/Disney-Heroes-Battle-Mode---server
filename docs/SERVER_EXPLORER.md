@@ -37,6 +37,11 @@ nom/mode côté Héberger ; navigateur côté Serveurs ; adresse d'annuaire modi
   `apikey: <clé anon>`. Puis **re-vérifier chaque fiche** via `/info` (brique 1) avant de l'afficher (ne jamais faire
   confiance à la table seule).
 - **Keep-alive** : `.github/workflows/directory-keepalive.yml` (secrets `SUPABASE_URL` + `SUPABASE_ANON_KEY`), tous les 3 j.
+- **Packaging (brique 3)** : le launcher distribué embarque un fichier **`directory.env`** (URL + clé anon PUBLIQUES) écrit
+  par `build_launcher.sh` au build depuis `DH_DIRECTORY_URL`/`DH_DIRECTORY_ANON_KEY` (fournis par `launcher-release.yml` via
+  les secrets `SUPABASE_URL`/`SUPABASE_ANON_KEY`). Les `run-launcher.sh/.bat` le chargent au démarrage (une variable
+  d'environnement déjà posée a la priorité → l'utilisateur peut pointer sur SON propre annuaire). Absent → annuaire non
+  préconfiguré (gating honnête dans l'UI). Jamais de `service_role` ici.
 - **Secrets** : `service_role` et la chaîne de connexion directe NE sont JAMAIS committées ni exposées ; le runtime n'utilise
   que l'URL projet + la clé **anon/publishable** (publiques par conception). Le setup DB a été fait via le connecteur MCP.
 

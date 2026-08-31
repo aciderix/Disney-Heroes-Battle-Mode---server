@@ -86,6 +86,14 @@ set -uo pipefail
 DIR="$(cd "$(dirname "$0")" && pwd)"
 export JAVA_HOME="$DIR/runtime/jdk"
 PATH="$JAVA_HOME/bin:$DIR/runtime/python/bin:$PATH"; export PATH
+# ANNUAIRE (brique 3) — config de l'annuaire communautaire embarquée (URL + clé anon PUBLIQUE, sans danger). Éditable
+# pour pointer sur son propre annuaire. Une variable déjà définie dans l'environnement a la priorité.
+if [ -f "$DIR/directory.env" ]; then
+  while IFS='=' read -r k v; do
+    case "$k" in ''|\#*) continue;; esac
+    if [ -z "$(eval "echo \${$k:-}")" ]; then export "$k=$v"; fi
+  done < "$DIR/directory.env"
+fi
 # projectDir = tooling embarqué ; port du daemon HTTP local (défaut 8090)
 "$JAVA_HOME/bin/java" -cp "$DIR/dhlauncher.jar" dhlauncher.LauncherDaemon \
    --project "$DIR/tooling" --port "${DH_LAUNCHER_PORT:-8090}" "$@"
@@ -98,8 +106,22 @@ set DIR=%~dp0
 set JAVA_HOME=%DIR%runtime\jdk
 set PATH=%JAVA_HOME%\bin;%DIR%runtime\python;%PATH%
 if "%DH_LAUNCHER_PORT%"=="" set DH_LAUNCHER_PORT=8090
+REM ANNUAIRE (brique 3) : charge directory.env embarque (URL + cle anon PUBLIQUE) s'il existe. L'env existant a la priorite.
+if exist "%DIR%directory.env" (
+  for /f "usebackq eol=# tokens=1,2 delims==" %%a in ("%DIR%directory.env") do (
+    if not defined %%a set %%a=%%b
+  )
+)
 "%JAVA_HOME%\bin\java.exe" -cp "%DIR%dhlauncher.jar" dhlauncher.LauncherDaemon --project "%DIR%tooling" --port %DH_LAUNCHER_PORT% %*
 EOF
+
+# ANNUAIRE (brique 3) — si l'URL + la clé anon (PUBLIQUES) sont fournies au BUILD (secrets CI), les embarquer dans le
+# package via directory.env. Rien de secret : le service_role n'entre JAMAIS ici. Absent → l'utilisateur peut le fournir
+# par l'environnement, ou l'annuaire n'est simplement pas configuré (l'UI affiche un gating honnête).
+if [ -n "${DH_DIRECTORY_URL:-}" ] && [ -n "${DH_DIRECTORY_ANON_KEY:-}" ]; then
+  { printf 'DH_DIRECTORY_URL=%s\n' "$DH_DIRECTORY_URL"; printf 'DH_DIRECTORY_ANON_KEY=%s\n' "$DH_DIRECTORY_ANON_KEY"; } > "$OUT/directory.env"
+  echo "== annuaire embarqué (directory.env) =="
+fi
 
 echo "== PACKAGE LAUNCHER prêt : $OUT =="
 du -sh "$OUT" 2>/dev/null || true

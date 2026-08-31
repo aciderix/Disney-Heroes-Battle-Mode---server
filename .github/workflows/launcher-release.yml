@@ -44,6 +44,10 @@ jobs:
         env:
           OSKIND: ${{ matrix.oskind }}
           OUT: ${{ github.workspace }}/build/launcher-${{ matrix.oskind }}
+          # ANNUAIRE (brique 3) — URL + clé anon PUBLIQUES de l'annuaire communautaire, embarquées dans directory.env.
+          # Rien de secret ici (jamais le service_role). Absents → l'annuaire n'est simplement pas préconfiguré.
+          DH_DIRECTORY_URL: ${{ secrets.SUPABASE_URL }}
+          DH_DIRECTORY_ANON_KEY: ${{ secrets.SUPABASE_ANON_KEY }}
         run: bash tools/build_launcher.sh
 
       - name: Smoke — launcher runs game-free (identity + health) + python embarqué

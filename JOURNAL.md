@@ -1,5 +1,16 @@
 # JOURNAL — journal détaillé des modifications
 
+## 2026-08-31 (g225) — ANNUAIRE : packaging — le launcher distribué embarque la config d'annuaire (directory.env) 🟢
+
+Pour que le launcher **distribué** lise l'annuaire sans réglage manuel, sans mettre de clé dans le dépôt :
+- **`build_launcher.sh`** écrit **`directory.env`** dans le package (URL + clé anon PUBLIQUES) SI `DH_DIRECTORY_URL` +
+  `DH_DIRECTORY_ANON_KEY` sont fournis au build. Jamais de `service_role`. Absent → pas de config embarquée (gating honnête).
+- **`run-launcher.sh/.bat`** chargent `directory.env` au démarrage — **une variable d'env déjà posée gagne** (l'utilisateur
+  peut pointer sur SON annuaire). Vérifié : chargement OK + priorité env respectée.
+- **`launcher-release.yml`** passe `DH_DIRECTORY_URL`/`DH_DIRECTORY_ANON_KEY` depuis les secrets `SUPABASE_URL`/
+  `SUPABASE_ANON_KEY` à l'étape build → le package publié est préconfiguré.
+Fichiers : `tools/build_launcher.sh`, `.github/workflows/launcher-release.yml`, `docs/SERVER_EXPLORER.md`, `JOURNAL.md`, `MEMORY.md`.
+
 ## 2026-08-31 (g224) — ANNUAIRE brique 3 : navigateur de serveurs communautaires dans le launcher PC 🟢
 
 Le côté VISIBLE de l'annuaire : l'écran Serveurs du launcher liste les serveurs communautaires, **re-vérifie chaque fiche
