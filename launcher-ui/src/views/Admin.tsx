@@ -6,7 +6,7 @@
 import { useEffect, useRef, useState } from "react";
 import { daemonClient, DaemonError } from "../api/daemonClient";
 import type {
-  AdminMonitor, AdminReleases, AdminClock, PlayerSummary, AdminEvents, AdminEnums, Moderation as ModerationState,
+  AdminMonitor, AdminReleases, AdminClock, PlayerSummary, AdminEvents, AdminEnums, Moderation as ModerationState, AdminTarget,
 } from "../api/types";
 import { Panel, Banner, StatusDot } from "../components";
 
@@ -24,22 +24,32 @@ function fmtDur(ms: number): string {
 export function Admin() {
   const [available, setAvailable] = useState<boolean | null>(null); // null = en cours de sonde
   const [tab, setTab] = useState<Tab>("monitor");
+  const [target, setTarget] = useState<AdminTarget | null>(null);
 
   async function probe() {
     try { await daemonClient.adminMonitor(); setAvailable(true); }
     catch (e) { setAvailable(e instanceof DaemonError && e.status === 503 ? false : true); }
   }
-  useEffect(() => { probe(); const id = window.setInterval(probe, 3000); return () => window.clearInterval(id); }, []);
+  async function refreshTarget() { try { setTarget(await daemonClient.adminTargetGet()); } catch { /* */ } }
+  useEffect(() => {
+    probe(); refreshTarget();
+    const id = window.setInterval(probe, 3000);
+    return () => window.clearInterval(id);
+  }, []);
+  const onTargetChange = () => { refreshTarget(); probe(); };
 
   if (available === null) return <Panel title="Admin"><div className="muted">…</div></Panel>;
   if (!available)
     return (
-      <Panel title="Admin — panneau opérateur">
-        <Banner kind="info">
-          Héberge d'abord un serveur local (onglet « Héberger ») : l'administration s'applique au serveur que tu héberges.
-          L'administration d'un serveur distant (cloud) arrivera plus tard.
-        </Banner>
-      </Panel>
+      <div className="stack">
+        <TargetBar target={target} onChange={onTargetChange} />
+        <Panel title="Admin — panneau opérateur">
+          <Banner kind="info">
+            Cible actuelle : <strong>serveur local</strong> — aucun serveur hébergé. Héberge un serveur (onglet « Héberger »),
+            ou connecte un <strong>serveur distant</strong> ci-dessus (URL de son AdminService + jeton).
+          </Banner>
+        </Panel>
+      </div>
     );
 
   const tabs: { id: Tab; label: string }[] = [
@@ -48,6 +58,7 @@ export function Admin() {
   ];
   return (
     <div className="stack">
+      <TargetBar target={target} onChange={onTargetChange} />
       <div className="row" style={{ gap: 6, flexWrap: "wrap" }}>
         {tabs.map((tt) => (
           <button key={tt.id} className={tab === tt.id ? "primary" : ""} onClick={() => setTab(tt.id)}>{tt.label}</button>
@@ -59,6 +70,51 @@ export function Admin() {
       {tab === "events" && <EventsTab />}
       {tab === "moderation" && <ModerationTab />}
     </div>
+  );
+}
+
+// ─── CIBLE (local / distant) ─────────────────────────────────────────────────────────────────────────────────────
+function TargetBar({ target, onChange }: { target: AdminTarget | null; onChange: () => void }) {
+  const [open, setOpen] = useState(false);
+  const [url, setUrl] = useState("");
+  const [token, setToken] = useState("");
+  const [err, setErr] = useState<string | null>(null);
+  const [busy, setBusy] = useState(false);
+  const remote = target?.mode === "remote";
+
+  async function connect() {
+    setErr(null); setBusy(true);
+    try { await daemonClient.adminTargetSet(url.trim(), token.trim()); setOpen(false); setToken(""); onChange(); }
+    catch (e) { setErr(errText(e)); } finally { setBusy(false); }
+  }
+  async function backToLocal() { setErr(null); try { await daemonClient.adminTargetClear(); onChange(); } catch (e) { setErr(errText(e)); } }
+
+  return (
+    <Panel title="Serveur à administrer">
+      {err && <Banner kind="error">{err}</Banner>}
+      <div className="row" style={{ justifyContent: "space-between", flexWrap: "wrap", gap: 8 }}>
+        <div className="row">
+          <StatusDot state={remote ? "ok" : "warn"} />
+          <span>{remote ? <>Distant : <strong>{target?.baseUrl}</strong></> : <>Serveur <strong>local</strong> hébergé</>}</span>
+        </div>
+        <div className="row" style={{ gap: 6 }}>
+          {remote && <button onClick={backToLocal}>Revenir au local</button>}
+          <button onClick={() => setOpen((o) => !o)}>{open ? "Annuler" : "Connecter un serveur distant"}</button>
+        </div>
+      </div>
+      {open && (
+        <div className="stack" style={{ gap: 6 }}>
+          <div className="muted" style={{ fontSize: 12 }}>
+            URL de l'AdminService du serveur distant (ex. <code>http://mon-serveur:8083</code>) + jeton opérateur.
+            Le serveur doit être lancé avec <code>DH_ADMIN_BIND=0.0.0.0</code> + <code>DH_ADMIN_TOKEN=…</code>.
+            ⚠ Le jeton transite en clair : pour un serveur exposé sur Internet, passe par un tunnel SSH/VPN (TLS à venir).
+          </div>
+          <label className="stack" style={{ gap: 4 }}>URL<input value={url} onChange={(e) => setUrl(e.target.value)} placeholder="http://mon-serveur:8083" /></label>
+          <label className="stack" style={{ gap: 4 }}>Jeton<input value={token} onChange={(e) => setToken(e.target.value)} type="password" /></label>
+          <div className="row"><button className="primary" disabled={busy || !url.trim() || !token.trim()} onClick={connect}>Connecter</button></div>
+        </div>
+      )}
+    </Panel>
   );
 }
 

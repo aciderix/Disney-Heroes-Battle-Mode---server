@@ -351,10 +351,17 @@ public final class BuildManager {
       + "JAVA=\"$DIR/runtime/jre/bin/java\"; [ -x \"$JAVA\" ] || JAVA=java\n"
       + "PY=\"$DIR/runtime/python/bin/python3\"; [ -x \"$PY\" ] || PY=python3\n"
       + "CONTENT_PORT=\"${DH_CONTENT_PORT:-8080}\"; GAME_PORT=\"${DH_GAME_PORT:-8081}\"; AUTH_PORT=\"${DH_AUTH_PORT:-8082}\"\n"
+      // ADMIN DISTANT (chantier F) : par défaut l'AdminService écoute 127.0.0.1 avec un jeton aléatoire imprimé. Pour
+      // administrer CE serveur depuis un autre poste (cloud), exporter DH_ADMIN_BIND=0.0.0.0 + DH_ADMIN_TOKEN=<secret>
+      // (LoginServer lit DH_ADMIN_TOKEN en env ; on ne le met PAS sur la ligne de commande → absent de `ps`). ⚠ TLS non
+      // encore en place : exposer l'admin sur Internet = via tunnel SSH/VPN pour l'instant.
+      + "ADMIN_OPTS=\"\"\n"
+      + "[ -n \"${DH_ADMIN_BIND:-}\" ] && ADMIN_OPTS=\"$ADMIN_OPTS -Ddh.admin.bind=$DH_ADMIN_BIND\"\n"
+      + "[ -n \"${DH_ADMIN_PORT:-}\" ] && ADMIN_OPTS=\"$ADMIN_OPTS -Ddh.admin.port=$DH_ADMIN_PORT\"\n"
       + "mkdir -p \"$DIR/data\"\n"
       + "\"$PY\" \"$DIR/content_server.py\" --port \"$CONTENT_PORT\" --rewrite-host \"127.0.0.1:$CONTENT_PORT\" \\\n"
       + "        --game-server \"127.0.0.1:$GAME_PORT\" & CPID=$!\n"
-      + "\"$JAVA\" -XX:TieredStopAtLevel=1 ${DH_SERVER_OPTS:-} -Ddh.db=\"$DIR/data/dh-server.db\" \\\n"
+      + "\"$JAVA\" -XX:TieredStopAtLevel=1 ${DH_SERVER_OPTS:-} $ADMIN_OPTS -Ddh.db=\"$DIR/data/dh-server.db\" \\\n"
       + "     -Ddh.stats=\"$DIR/game-data/stats\" -Ddh.auth.port=\"$AUTH_PORT\" \\\n"
       + "     -cp \"$DIR/lib/*\" dhserver.LoginServer \"$GAME_PORT\" & JPID=$!\n"
       // les deux en arrière-plan + wait : le trap survit (contrairement à exec) → arrêt PROPRE des DEUX process
@@ -418,9 +425,14 @@ public final class BuildManager {
       + "if \"%DH_CONTENT_PORT%\"==\"\" set DH_CONTENT_PORT=8080\r\n"
       + "if \"%DH_GAME_PORT%\"==\"\" set DH_GAME_PORT=8081\r\n"
       + "if \"%DH_AUTH_PORT%\"==\"\" set DH_AUTH_PORT=8082\r\n"
+      // ADMIN DISTANT (chantier F) : DH_ADMIN_BIND=0.0.0.0 + DH_ADMIN_TOKEN=<secret> pour exposer l'admin (cloud).
+      // LoginServer lit DH_ADMIN_TOKEN en env ; bind/port via -D. TLS non encore en place → tunnel pour Internet.
+      + "set ADMIN_OPTS=\r\n"
+      + "if not \"%DH_ADMIN_BIND%\"==\"\" set ADMIN_OPTS=%ADMIN_OPTS% -Ddh.admin.bind=%DH_ADMIN_BIND%\r\n"
+      + "if not \"%DH_ADMIN_PORT%\"==\"\" set ADMIN_OPTS=%ADMIN_OPTS% -Ddh.admin.port=%DH_ADMIN_PORT%\r\n"
       + "if not exist \"%DIR%data\" mkdir \"%DIR%data\"\r\n"
       + "start \"dh-content\" \"%PY%\" \"%DIR%content_server.py\" --port %DH_CONTENT_PORT% --rewrite-host 127.0.0.1:%DH_CONTENT_PORT% --game-server 127.0.0.1:%DH_GAME_PORT%\r\n"
-      + "\"%JAVA%\" -XX:TieredStopAtLevel=1 -Ddh.db=\"%DIR%data\\dh-server.db\" -Ddh.stats=\"%DIR%game-data\\stats\" -Ddh.auth.port=%DH_AUTH_PORT% -cp \"%DIR%lib\\*\" dhserver.LoginServer %DH_GAME_PORT%\r\n";
+      + "\"%JAVA%\" -XX:TieredStopAtLevel=1 %ADMIN_OPTS% -Ddh.db=\"%DIR%data\\dh-server.db\" -Ddh.stats=\"%DIR%game-data\\stats\" -Ddh.auth.port=%DH_AUTH_PORT% -cp \"%DIR%lib\\*\" dhserver.LoginServer %DH_GAME_PORT%\r\n";
 
     private void runStep(String name, String[] cmd, String envKey, String envVal) throws Exception {
         step = name; append("=== étape " + name + " ===");

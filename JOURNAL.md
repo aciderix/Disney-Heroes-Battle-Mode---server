@@ -1,5 +1,24 @@
 # JOURNAL — journal détaillé des modifications
 
+## 2026-08-31 (g220) — Chantier F : ADMIN DISTANT / CLOUD (le launcher administre un serveur hébergé ailleurs) 🟢
+
+Le panneau Admin peut désormais cibler un serveur DISTANT (cloud), pas seulement le serveur local hébergé.
+- **Daemon** (`LauncherDaemon`) : cible d'admin configurable. `GET /admin/target` (mode local|remote+baseUrl) ;
+  `POST /admin/target {adminUrl, token}` → bascule sur un serveur distant, **VALIDÉ par un `/admin/ping` authentifié**
+  (URL/jeton faux → 502) ; `POST /admin/target/clear` → repli local. Le proxy générique `/admin/*` route vers la cible
+  distante quand elle est active (jeton distant injecté), sinon vers le serveur local hébergé (503 si aucun). Contextes
+  `/admin/target*` plus spécifiques que `/admin/` → traités localement (pas proxifiés). Reste game-free.
+- **Serveur exposable** : le bundle serveur (`RUN_SH`/`RUN_BAT`) forwarde `DH_ADMIN_BIND` (=0.0.0.0 pour le réseau) +
+  `DH_ADMIN_PORT` en `-D` ; le jeton via `DH_ADMIN_TOKEN` (env, lu par `LoginServer` → absent de `ps`). Défaut inchangé
+  (loopback + jeton aléatoire). ⇒ un opérateur cloud lance `DH_ADMIN_BIND=0.0.0.0 DH_ADMIN_TOKEN=<secret> ./run.sh`.
+- **Front** : barre « Serveur à administrer » (local / distant) dans l'écran Admin — connecter un serveur distant
+  (URL + jeton, validé), revenir au local. Avertissement TLS affiché.
+- **⚠ Limite (F, à durcir)** : le jeton transite en **clair (HTTP)** vers le serveur distant → pour un serveur exposé sur
+  Internet, passer par un **tunnel SSH/VPN** en attendant le TLS natif (prochain incrément F : TLS + rate-limit).
+- **Vérif** : compile game-free OK ; `AdminRemoteTargetTest` 10 (défaut local→503, mauvais jeton/URL→502, cible validée→
+  proxy vers le distant, clear→local) ; **régression 175/175** ; front `tsc`+`vite build` + **E2E 9/9** (barre de cible).
+
+
 ## 2026-08-31 (g219) — launcher-release : FUSION de l'exe fenêtré dans le package (one-download) ✅ RELEASE launcher-v0.2.0 publiée
 
 `launcher-release.yml` étendu : après le package daemon (jar + runtime/jdk + python + tooling), il BUILD l'appli

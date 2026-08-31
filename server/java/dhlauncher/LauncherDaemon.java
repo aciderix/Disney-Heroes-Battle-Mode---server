@@ -38,6 +38,10 @@ public final class LauncherDaemon {
     private final BuildManager build = new BuildManager(projectDir);
     private final PlayManager play = new PlayManager(projectDir);
     private final SettingsManager settings = new SettingsManager();
+    /** ADMIN DISTANT (chantier F) — cible d'administration : {@code null} = serveur LOCAL hébergé (défaut) ; sinon un
+     *  serveur DISTANT (cloud). Base URL de son AdminService (ex. {@code http://1.2.3.4:8083}) + jeton opérateur. */
+    private volatile String adminRemoteUrl;
+    private volatile String adminRemoteToken;
 
     /** @param port port local (0 = éphémère, choisi par l'OS). Lié à loopback seulement. */
     public LauncherDaemon(int port) throws IOException {
@@ -58,6 +62,10 @@ public final class LauncherDaemon {
         http.createContext("/play/stop", this::playStop);
         http.createContext("/play/status", this::playStatus);
         http.createContext("/settings", this::settingsHandler); // C2b : réglages locaux (GET état | POST fusion)
+        // ADMIN DISTANT (chantier F) — choisir la cible : local (hébergé) ou distant (URL+jeton). Ces contextes sont
+        // PLUS SPÉCIFIQUES que "/admin/" → traités ICI (daemon), pas proxifiés.
+        http.createContext("/admin/target/clear", this::adminTargetClear); // POST → repli sur le serveur local
+        http.createContext("/admin/target", this::adminTarget);            // GET état | POST {adminUrl, token}
         http.createContext("/admin/", this::adminProxy);          // chantier D : proxy GÉNÉRIQUE de tout /admin/* (jeton injecté)
         http.createContext("/host/logs", this::hostLogs);         // chantier D : tail des logs hôte
         http.setExecutor(null);
@@ -269,9 +277,12 @@ public final class LauncherDaemon {
      * modération) passent sans modif ici. (L'admin d'un serveur DISTANT/cloud = incrément ultérieur, chantier F.)
      */
     private void adminProxy(HttpExchange ex) throws IOException {
-        String baseUrl = host.adminBaseUrl();
-        String tok = host.adminToken();
-        if (baseUrl == null || tok == null) { send(ex, 503, "{\"error\":\"admin indisponible (aucun serveur local hébergé)\"}"); return; }
+        // Cible : DISTANTE si définie (/admin/target), sinon le serveur LOCAL hébergé.
+        String remote = adminRemoteUrl;
+        String baseUrl, tok;
+        if (remote != null) { baseUrl = remote; tok = adminRemoteToken; }
+        else { baseUrl = host.adminBaseUrl(); tok = host.adminToken(); }
+        if (baseUrl == null || tok == null) { send(ex, 503, "{\"error\":\"admin indisponible (héberge un serveur local, ou définis une cible distante via /admin/target)\"}"); return; }
         String path = ex.getRequestURI().getRawPath();
         String q = ex.getRequestURI().getRawQuery();
         String url = baseUrl + path + (q != null && !q.isEmpty() ? "?" + q : "");
@@ -284,6 +295,42 @@ public final class LauncherDaemon {
             HttpResponse<String> r = client.send(b.build(), HttpResponse.BodyHandlers.ofString());
             send(ex, r.statusCode(), r.body());
         } catch (Exception e) { send(ex, 502, "{\"error\":\"" + e.getClass().getSimpleName() + "\"}"); }
+    }
+
+    /**
+     * ADMIN DISTANT (chantier F) — GET /admin/target → cible courante ({@code {mode:"local"}} ou
+     * {@code {mode:"remote",baseUrl:...}}). POST {@code {adminUrl, token}} → bascule sur un serveur DISTANT, VALIDÉ par
+     * un {@code /admin/ping} authentifié (rejette une URL/jeton faux → 502). ⚠️ Le jeton transite en clair (HTTP) :
+     * jusqu'au durcissement TLS (chantier F), passer par un tunnel SSH / VPN pour un serveur exposé sur Internet.
+     */
+    private void adminTarget(HttpExchange ex) throws IOException {
+        if ("GET".equals(ex.getRequestMethod())) {
+            send(ex, 200, adminRemoteUrl != null ? "{\"mode\":\"remote\",\"baseUrl\":" + jstr(adminRemoteUrl) + "}" : "{\"mode\":\"local\"}");
+            return;
+        }
+        if (!post(ex)) return;
+        Map<String, String> f = form(ex);
+        String u = trimSlash(f.getOrDefault("adminUrl", "").trim());
+        String t = f.getOrDefault("token", "").trim();
+        if (u.isEmpty() || t.isEmpty()) { send(ex, 400, "{\"error\":\"adminUrl|token requis\"}"); return; }
+        try {
+            HttpResponse<String> r = adminGet(u + "/admin/ping", t);
+            if (r.statusCode() != 200) { send(ex, 502, "{\"error\":\"ping distant → HTTP " + r.statusCode() + " (URL ou jeton invalide)\"}"); return; }
+        } catch (Exception e) { send(ex, 502, "{\"error\":\"serveur distant injoignable\"}"); return; }
+        adminRemoteUrl = u; adminRemoteToken = t;
+        send(ex, 200, "{\"mode\":\"remote\",\"baseUrl\":" + jstr(u) + "}");
+    }
+
+    /** POST /admin/target/clear → repli sur le serveur LOCAL hébergé. */
+    private void adminTargetClear(HttpExchange ex) throws IOException {
+        if (!post(ex)) return;
+        adminRemoteUrl = null; adminRemoteToken = null;
+        send(ex, 200, "{\"mode\":\"local\"}");
+    }
+
+    private HttpResponse<String> adminGet(String url, String token) throws Exception {
+        return client.send(HttpRequest.newBuilder(URI.create(url)).header("X-Admin-Token", token).GET().build(),
+                HttpResponse.BodyHandlers.ofString());
     }
 
     /** GET /host/logs?which=server|content&tail=N → N dernières lignes du log hôte (lecture fichier locale, game-free). */
@@ -342,6 +389,16 @@ public final class LauncherDaemon {
         return m.group(1);
     }
     private static String trimSlash(String s) { return s.endsWith("/") ? s.substring(0, s.length() - 1) : s; }
+    private static String jstr(String s) {
+        StringBuilder b = new StringBuilder(s.length() + 2).append('"');
+        for (int i = 0; i < s.length(); i++) {
+            char c = s.charAt(i);
+            if (c == '"' || c == '\\') b.append('\\').append(c);
+            else if (c < 0x20) b.append(String.format("\\u%04x", (int) c));
+            else b.append(c);
+        }
+        return b.append('"').toString();
+    }
     private static String enc(String s) { return java.net.URLEncoder.encode(s, StandardCharsets.UTF_8); }
     private static String dec(String s) { return java.net.URLDecoder.decode(s, StandardCharsets.UTF_8); }
     private static String b64(byte[] b) { return Base64.getUrlEncoder().withoutPadding().encodeToString(b); }

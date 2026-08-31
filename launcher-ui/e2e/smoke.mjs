@@ -57,10 +57,12 @@ try {
   await page.waitForSelector("text=/Connecte-toi d'abord/i", { timeout: 10000 });
   ok((await page.getByRole("button", { name: /^JOUER$/ }).count()) === 0, "écran Jouer : pas de bouton JOUER sans session (gating)");
 
-  // 6b) Admin : gating honnête — aucun serveur hébergé (daemon E2E sans jeu) → /admin/* renvoie 503 → invite à héberger
+  // 6b) Admin : cible (local/distant) + gating honnête — aucun serveur hébergé (daemon E2E sans jeu) → /admin/* = 503
   await page.locator("button.nav-item", { hasText: "Admin" }).click();
-  await page.waitForSelector("text=/Héberge d'abord un serveur local/i", { timeout: 10000 });
-  ok(true, "écran Admin : gating honnête (503 → invite à héberger, pas de faux panneau)");
+  await page.waitForSelector("text=Serveur à administrer", { timeout: 10000 }); // barre de cible (local/distant)
+  await page.waitForSelector("text=/aucun serveur hébergé/i", { timeout: 10000 }); // gating honnête
+  ok((await page.getByRole("button", { name: /Connecter un serveur distant/i }).count()) >= 1,
+     "écran Admin : cible local + gating honnête + option « serveur distant »");
 
   // 7) Réglages : changer la langue (/settings persisté) → i18n appliqué (nav passe en anglais)
   await page.locator("button.nav-item", { hasText: "Réglages" }).click();

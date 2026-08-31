@@ -98,6 +98,7 @@ TESTS=(
   SettingsLifecycleTest
   AdminMonitorTest
   AdminProxyTest
+  AdminRemoteTargetTest
   BuildDataGenTest
   ServerBundleTest
 )

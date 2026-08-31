@@ -6,7 +6,7 @@ import type {
   Identity, AuthResult, Server, Ping, HostStatus, BuildStatus, PlayStatus, Settings,
   HostStartParams, BuildStartParams, PlayStartParams,
   AdminMonitor, HostLogs, AdminReleases, AdminEraStatus, AdminClock, PlayerSummary,
-  AdminEvents, AdminEnums, Moderation, AuditLog,
+  AdminEvents, AdminEnums, Moderation, AuditLog, AdminTarget,
 } from "./types";
 
 let baseUrlCache: string | null = null;
@@ -91,6 +91,10 @@ export const daemonClient = {
   //     503 si aucun serveur n'est hébergé (l'écran Admin invite alors à héberger). Admin distant = ultérieur (chantier F).
   adminMonitor: () => get<AdminMonitor>("/admin/monitor"),
   hostLogs: (which: "server" | "content", tail = 200) => get<HostLogs>(`/host/logs?which=${which}&tail=${tail}`),
+  // Cible d'administration : serveur LOCAL hébergé (défaut) ou DISTANT (cloud, URL + jeton, validé par ping)
+  adminTargetGet: () => get<AdminTarget>("/admin/target"),
+  adminTargetSet: (adminUrl: string, token: string) => post<AdminTarget>("/admin/target", { adminUrl, token }),
+  adminTargetClear: () => post<AdminTarget>("/admin/target/clear"),
   // Ère de contenu
   adminReleases: () => get<AdminReleases>("/admin/releases"),
   adminSetRelease: (name: string) => post<AdminEraStatus>("/admin/release", { name }),

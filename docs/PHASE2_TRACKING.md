@@ -21,7 +21,7 @@
 | C | Front-end joueur (launcher : liste/join serveurs, login) | ✅ **BOUCLÉ (local)** | login mnémonique C1a→C1d ✅ ; **launcher front COMPLET** (7 écrans, endpoints réels+testés, E2E 9/9, CI build 2 OS) ; **panneau Admin 5 domaines vérifié EN JEU** (g215 : monitor/joueurs/kick/events/ère/audit). Reste : admin DISTANT/cloud (→F) ; **son (backend audio non porté)** |
 | **D** | Backend/front d'hébergement (panneau opérateur, multi-shard) | 🚧 **EN COURS** | **inc.6a monitoring livré** (`AdminService` serveur + jeton opérateur + proxy daemon `/admin/monitor` + `/host/logs` ; `AdminMonitorTest`/`AdminProxyTest`). Archi : admin DANS la JVM serveur (launcher game-free), daemon proxifie. Suite : ère/joueurs/events/**modération à construire** + UI Admin |
 | E | Tests & intégration APK mobile | ⬜ | même wire 12.1.0 ; vrai client Android → serveur |
-| F | Tests inter-machines réels (Internet, NAT/TLS, charge) | ⬜ | soak, multi-région, sécurité réseau |
+| **F** | Tests inter-machines réels (Internet, NAT/TLS, charge) | 🚧 **EN COURS** | **admin distant/cloud livré** (daemon cible `/admin/target` validée + bundle serveur exposable `DH_ADMIN_BIND/TOKEN` + barre front local/distant ; `AdminRemoteTargetTest`). Reste : **TLS** (jeton en clair pour l'instant → tunnel), rate-limit, NAT/UPnP, soak/charge, multi-région |
 | G | Qualité/outillage transverse (CI, repro, doc self-hoster, légal) | 🚧 **EN COURS** | CI `launcher-release` (package clé-en-main 2 OS) + `launcher-ui-ci` (typecheck+build front 2 OS) livrés. Reste : CI régression serveur + WireCheck/ClientOracle ; doc self-hoster ; légal |
 
 ---
