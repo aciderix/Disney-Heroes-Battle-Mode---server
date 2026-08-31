@@ -1,5 +1,27 @@
 # JOURNAL — journal détaillé des modifications
 
+## 2026-08-31 (g210) — Admin inc.6c : gestion des joueurs (édition autoritative) + journal d'audit 🟢
+
+Domaine D « joueurs » exposé via l'AdminService, en RÉUTILISANT les mutateurs `ServerUser` existants (§3, mêmes
+méthodes que les outils dev `SetTeamLevel`/`CodebaseUnlock`) + **journalisation obligatoire** (choix util. « au mieux »).
+
+- **`ServerUser`** (3 ajouts, glue) : `setTeamLevel(int)` (miroir `SetTeamLevel`), `adminUnlock()` (miroir
+  `CodebaseUnlock` : TL300 + chapitre requis terminé + roster JAUNE, via data du jeu ; ne persiste pas, appelant),
+  `adminSummaryJson()` (résumé lecture-seule : id/nom/TL/or/diamants/énergie/héros/guilde, ressources via `getResource`).
+- **`AdminService`** (endpoints POST, jeton requis, renvoient le résumé du compte) : `/admin/player/{lookup,
+  giveResource,grantHero,setTeamLevel,grantCampaign,completeTutorials,unlock}` → chargent le compte
+  (`store.loadOrCreate`), appliquent le mutateur du jeu, `store.save`, et **JOURNALISENT**. Enums (`ResourceType`/
+  `UnitType`/`Rarity`/`CampaignType`) validées → 400 si invalide.
+- **`AdminAudit`** (nouveau) : chaque mutation écrit une ligne TSV horodatée dans `admin-audit.log` (à côté de la DB) ;
+  `GET /admin/audit?tail=N` la relit. Append-only, best-effort (ne bloque jamais l'action).
+- **Limite honnête (§2, documentée)** : édite le compte PERSISTÉ ; si le joueur est EN LIGNE, il verra les changements
+  à sa reconnexion, et une mutation faite pendant sa session peut être écrasée. Routage via l'instance vive = ultérieur.
+- **Vérif** : compile game-free OK (daemon inchangé — le proxy générique de g209 relaie déjà tout `/admin/*`) ;
+  `AdminMonitorTest` 24 (lookup, giveResource GOLD +500, type invalide→400, setTeamLevel 50, grantHero, audit tracé,
+  gardes jeton) + `AdminProxyTest` 19 (lookup/giveResource/audit proxifiés) ; **régression 174/174**. 🟢 headless
+  (vérif EN JEU = via l'UI Admin).
+- **Suite** : inc.6d events (`/admin/events`, `/admin/enums`) → inc.6e **modération à CONSTRUIRE** → UI Admin + CI front.
+
 ## 2026-08-31 (g209) — Admin inc.6b : ère de contenu (releases + horloge) + proxy daemon GÉNÉRIQUE 🟢
 
 Domaine D « ère de contenu » exposé via l'AdminService, **sans réécrire la logique** (§3) : nouveau helper

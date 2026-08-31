@@ -66,6 +66,14 @@ public final class AdminProxyTest {
             // release introuvable → 404 relayé
             ok(post(http, base + "/admin/release", "name=NOPE").statusCode() == 404, "admin/release inconnue → 404 relayé");
 
+            // gestion joueurs proxifiée : lookup + giveResource + audit tracé
+            HttpResponse<String> look = post(http, base + "/admin/player/lookup", "userID=1");
+            ok(look.statusCode() == 200 && look.body().contains("\"userID\":1"), "admin/player/lookup proxifié → résumé");
+            HttpResponse<String> give = post(http, base + "/admin/player/giveResource", "userID=1&type=GOLD&amount=100");
+            ok(give.statusCode() == 200 && give.body().contains("\"gold\":"), "admin/player/giveResource proxifié → or crédité");
+            HttpResponse<String> aud = get(http, base + "/admin/audit?tail=20");
+            ok(aud.statusCode() == 200 && aud.body().contains("giveResource"), "admin/audit proxifié → mutation tracée");
+
             // tail des logs hôte (fichier écrit par le serveur au boot)
             HttpResponse<String> logs = get(http, base + "/host/logs?which=server&tail=50");
             ok(logs.statusCode() == 200 && logs.body().contains("\"lines\":"), "host/logs (server) → JSON lines");

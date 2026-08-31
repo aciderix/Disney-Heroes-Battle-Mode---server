@@ -314,6 +314,62 @@ public final class ServerUser {
   /** Nombre de héros possédés (diagnostic). */
   public synchronized int heroCount() { return userExtra.heroes.size(); }
 
+  // ─── ADMIN (chantier D — gestion des joueurs, autoritatif, À JOURNALISER) ────────────────────────────────────
+  /** ADMIN — fixe le niveau d'équipe (miroir de l'outil {@code SetTeamLevel} : champ de {@code BasicUserInfo},
+   *  persisté via userInfo). L'appelant persiste ({@code store.save}). */
+  public synchronized void setTeamLevel(int lvl) {
+    if (userInfo.basicInfo != null) userInfo.basicInfo.teamLevel = lvl;
+  }
+
+  /** ADMIN — DÉBLOCAGE global (miroir de {@code CodebaseUnlock}) : TL 300 + chapitre requis terminé + roster JAUNE
+   *  jouable. Utilise la logique/données du jeu (§4). Ne persiste pas (appelant). Renvoie le nombre de héros accordés. */
+  public synchronized int adminUnlock() {
+    if (userInfo.basicInfo != null) userInfo.basicInfo.teamLevel = 300;
+    int chap = com.perblue.heroes.game.data.codebase.CodebaseStats.getRequiredCampaignChapter();
+    int maxIdx = com.perblue.heroes.game.data.campaign.CampaignStats.getMaxLevelIndex(CampaignType.NORMAL, chap);
+    grantCampaignLevel(CampaignType.NORMAL, chap, maxIdx, 3);
+    com.perblue.heroes.network.messages.UnitType[] team = {
+        com.perblue.heroes.network.messages.UnitType.RALPH, com.perblue.heroes.network.messages.UnitType.ELASTIGIRL,
+        com.perblue.heroes.network.messages.UnitType.FROZONE, com.perblue.heroes.network.messages.UnitType.MR_INCREDIBLE,
+        com.perblue.heroes.network.messages.UnitType.YAX };
+    int granted = 0;
+    for (com.perblue.heroes.network.messages.UnitType t : team) {
+      try { grantHero(t, com.perblue.heroes.network.messages.Rarity.YELLOW, 200, 6); granted++; } catch (Throwable ignore) {}
+    }
+    return granted;
+  }
+
+  /** ADMIN — résumé LECTURE SEULE d'un compte (JSON) : id, nom, niveau d'équipe, ressources clés (or/diamants/énergie),
+   *  nombre de héros, guilde. Ressources lues via la logique du jeu ({@code getResource} après bind). */
+  public synchronized String adminSummaryJson() {
+    ServerContext.init();
+    User user = ClientNetworkStateConverter.getUser(userInfo, userExtra, "admin");
+    IndividualUser iu = ClientNetworkStateConverter.getIndividualUser(
+        individualUserExtra, userID, userInfo.diamonds, "admin");
+    ServerContext.bind(user, iu);
+    long gold = user.getResource(com.perblue.heroes.network.messages.ResourceType.GOLD);
+    long diamonds = user.getResource(com.perblue.heroes.network.messages.ResourceType.DIAMONDS);
+    long stamina = user.getResource(com.perblue.heroes.network.messages.ResourceType.STAMINA);
+    String name = userInfo.basicInfo != null && userInfo.basicInfo.name != null ? userInfo.basicInfo.name : "";
+    int tl = userInfo.basicInfo != null ? userInfo.basicInfo.teamLevel : 0;
+    return "{\"userID\":" + userID + ",\"name\":" + adminJsonStr(name) + ",\"teamLevel\":" + tl
+        + ",\"gold\":" + gold + ",\"diamonds\":" + diamonds + ",\"stamina\":" + stamina
+        + ",\"heroCount\":" + heroCount() + ",\"guildID\":" + currentGuildID() + "}";
+  }
+
+  private static String adminJsonStr(String s) {
+    StringBuilder b = new StringBuilder(s.length() + 2).append('"');
+    for (int i = 0; i < s.length(); i++) {
+      char c = s.charAt(i);
+      switch (c) {
+        case '"':  b.append("\\\""); break;
+        case '\\': b.append("\\\\"); break;
+        default: if (c < 0x20) b.append(String.format("\\u%04x", (int) c)); else b.append(c);
+      }
+    }
+    return b.append('"').toString();
+  }
+
   /** #25 (test) — nb d'entrées de mémoire de pitié + pool d'XP persistés (distinguent crédit autoritaire vs repli). */
   public synchronized int lootMemorySize() {
     return individualUserExtra.lootMemory == null ? 0 : individualUserExtra.lootMemory.size();

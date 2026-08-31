@@ -354,8 +354,10 @@ Le front **ne doit pas** exposer ces fonctions tant que l'endpoint n'existe pas 
      connexions, uptime, strict) + `GET /host/logs?which=server|content&tail=N`. Archi : `dhserver.admin.AdminService`
      (dans la JVM serveur, jeton opérateur obligatoire, bind 127.0.0.1 par défaut / exposable réseau) ; le daemon
      PROXIFIE `/admin/monitor` (jeton injecté ; 503 si aucun serveur hébergé). `AdminMonitorTest`/`AdminProxyTest`.
-   - **C. Joueurs** : `POST /admin/player/{lookup,giveResource,grantHero,setTeamLevel,grantCampaign,completeTutorials,unlock}`
-     (méthodes `ServerUser` existantes ; **journaliser**). *(capacité prête)*
+   - **C. Joueurs** : ✅ **LIVRÉ (inc.6c, g210)** — `POST /admin/player/{lookup,giveResource,grantHero,setTeamLevel,
+     grantCampaign,completeTutorials,unlock}` (réutilise les mutateurs `ServerUser` ; enums validées) + **journalisation
+     `AdminAudit`** (`admin-audit.log`, `GET /admin/audit?tail=N`). Limite honnête : édite le compte persisté (joueur en
+     ligne → visible à la reconnexion). `AdminMonitorTest`/`AdminProxyTest`.
    - **D. Ère de contenu** : ✅ **LIVRÉ (inc.6b, g209)** — `GET /admin/releases`, `POST /admin/release {name|#idx|reset}`,
      `GET|POST /admin/clock {offsetHours}`. Helper `dhserver.admin.ContentEra` (source unique, réutilisée par le CLI
      `AdminRelease`). Ère découplée (ne touche ni sauvegardes ni timers), appliquée à chaud. Proxy daemon générique.

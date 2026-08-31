@@ -23,6 +23,7 @@ public final class AdminMonitorTest {
     public static void main(String[] args) throws Exception {
         ServerContext.init();
         String db = Files.createTempFile("admintest", ".db").toString();
+        System.setProperty("dh.db", db);   // le journal d'audit s'écrit à côté de la DB (dossier temp, pas le projet)
         UserStore store = new UserStore(db);
         ServerUser user = store.loadOrCreate(1L, 1);
         LoginServer server = new LoginServer(0, user, store);  // pas de socket : on teste juste l'AdminService
@@ -64,6 +65,32 @@ public final class AdminMonitorTest {
             HttpResponse<String> rel = get(http, base + "/admin/releases", "X-Admin-Token", tok);
             ok(rel.statusCode() == 200 && rel.body().contains("\"releases\":["), "releases : liste servie");
             ok(rel.body().contains("\"maxTeamLevel\":"), "releases : Max TL présent par release");
+
+            // GESTION DES JOUEURS (compte de test userID 1)
+            ok(post(http, base + "/admin/player/lookup", null, "userID=1").statusCode() == 401, "player sans jeton → 401");
+            HttpResponse<String> look = post(http, base + "/admin/player/lookup", tok, "userID=1");
+            ok(look.statusCode() == 200 && look.body().contains("\"userID\":1"), "player/lookup → résumé du compte");
+            ok(look.body().contains("\"gold\":") && look.body().contains("\"teamLevel\":"), "player/lookup : or + TL présents");
+
+            // giveResource GOLD +500 (compte neuf = 0 → 500)
+            HttpResponse<String> gr = post(http, base + "/admin/player/giveResource", tok, "userID=1&type=GOLD&amount=500");
+            ok(gr.statusCode() == 200 && gr.body().contains("\"gold\":500"), "giveResource GOLD +500 → or=500");
+            ok(post(http, base + "/admin/player/giveResource", tok, "userID=1&type=NOPE&amount=1").statusCode() == 400, "type invalide → 400");
+
+            // setTeamLevel 50
+            HttpResponse<String> tl = post(http, base + "/admin/player/setTeamLevel", tok, "userID=1&level=50");
+            ok(tl.statusCode() == 200 && tl.body().contains("\"teamLevel\":50"), "setTeamLevel 50 → TL=50");
+
+            // grantHero (défaut) → héros +1
+            int before = jsonInt(look.body(), "heroCount");
+            HttpResponse<String> gh = post(http, base + "/admin/player/grantHero", tok, "userID=1&hero=STITCH");
+            ok(gh.statusCode() == 200 && jsonInt(gh.body(), "heroCount") >= before + 1, "grantHero STITCH → +1 héros");
+
+            // journal d'audit : les mutations sont tracées
+            HttpResponse<String> aud = get(http, base + "/admin/audit", "X-Admin-Token", tok);
+            ok(aud.statusCode() == 200 && aud.body().contains("giveResource") && aud.body().contains("setTeamLevel"),
+                    "audit : giveResource + setTeamLevel tracés");
+            ok(get(http, base + "/admin/audit", null, null).statusCode() == 401, "audit sans jeton → 401");
         } finally {
             admin.stop();
         }
@@ -76,5 +103,19 @@ public final class AdminMonitorTest {
         HttpRequest.Builder b = HttpRequest.newBuilder(URI.create(url)).GET();
         if (header != null) b.header(header, value);
         return h.send(b.build(), HttpResponse.BodyHandlers.ofString());
+    }
+
+    static HttpResponse<String> post(HttpClient h, String url, String token, String body) throws Exception {
+        HttpRequest.Builder b = HttpRequest.newBuilder(URI.create(url))
+                .header("Content-Type", "application/x-www-form-urlencoded")
+                .POST(HttpRequest.BodyPublishers.ofString(body));
+        if (token != null) b.header("X-Admin-Token", token);
+        return h.send(b.build(), HttpResponse.BodyHandlers.ofString());
+    }
+
+    /** Extrait un entier JSON {@code "key":<int>} (test-only, tolérant). */
+    static int jsonInt(String body, String key) {
+        java.util.regex.Matcher m = java.util.regex.Pattern.compile("\"" + key + "\"\\s*:\\s*(-?\\d+)").matcher(body);
+        return m.find() ? Integer.parseInt(m.group(1)) : -1;
     }
 }

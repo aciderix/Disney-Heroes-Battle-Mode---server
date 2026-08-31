@@ -2,8 +2,13 @@ package dhserver.admin;
 
 import com.sun.net.httpserver.HttpExchange;
 import com.sun.net.httpserver.HttpServer;
+import com.perblue.heroes.network.messages.CampaignType;
+import com.perblue.heroes.network.messages.Rarity;
+import com.perblue.heroes.network.messages.ResourceType;
+import com.perblue.heroes.network.messages.UnitType;
 import dhserver.LoginServer;
 import dhserver.ServerContext;
+import dhserver.ServerUser;
 import dhserver.UserStore;
 
 import java.io.IOException;
@@ -57,6 +62,15 @@ public final class AdminService {
         http.createContext("/admin/releases", guarded(this::handleReleases)); // ère de contenu : liste R1…Rn
         http.createContext("/admin/release", guarded(this::handleSetRelease)); // POST {name|#idx|reset} → règle l'ère
         http.createContext("/admin/clock", guarded(this::handleClock));        // GET état | POST {offsetHours} → décale l'horloge
+        // GESTION DES JOUEURS (autoritatif, À JOURNALISER) — POST {userID, …}, renvoie le résumé du compte
+        http.createContext("/admin/player/lookup", guarded(this::handlePlayerLookup));
+        http.createContext("/admin/player/giveResource", guarded(this::handleGiveResource));
+        http.createContext("/admin/player/grantHero", guarded(this::handleGrantHero));
+        http.createContext("/admin/player/setTeamLevel", guarded(this::handleSetTeamLevel));
+        http.createContext("/admin/player/grantCampaign", guarded(this::handleGrantCampaign));
+        http.createContext("/admin/player/completeTutorials", guarded(this::handleCompleteTutorials));
+        http.createContext("/admin/player/unlock", guarded(this::handleUnlock));
+        http.createContext("/admin/audit", guarded(this::handleAudit)); // GET → journal des actions admin
         http.setExecutor(null); // handlers courts, non bloquants
     }
 
@@ -72,7 +86,7 @@ public final class AdminService {
     }
 
     // ---- garde de jeton (401 sinon) ----
-    private interface AdminHandler { void handle(HttpExchange ex) throws IOException; }
+    private interface AdminHandler { void handle(HttpExchange ex) throws Exception; }
 
     private com.sun.net.httpserver.HttpHandler guarded(AdminHandler h) {
         return ex -> {
@@ -92,19 +106,19 @@ public final class AdminService {
         return java.security.MessageDigest.isEqual(pb, tokenBytes);
     }
 
-    private void handlePing(HttpExchange ex) throws IOException {
+    private void handlePing(HttpExchange ex) throws Exception {
         if (!"GET".equals(ex.getRequestMethod())) { send(ex, 405, "{\"error\":\"method\"}"); return; }
         send(ex, 200, "{\"ok\":true}");
     }
 
     /** Monitoring lecture-seule : joueurs en ligne (userID + ancienneté), connexions acceptées, uptime, mode strict. */
-    private void handleMonitor(HttpExchange ex) throws IOException {
+    private void handleMonitor(HttpExchange ex) throws Exception {
         if (!"GET".equals(ex.getRequestMethod())) { send(ex, 405, "{\"error\":\"method\"}"); return; }
         send(ex, 200, server.monitorSnapshotJson());
     }
 
     /** GET /admin/releases → liste des releases R1…Rn (nom, date, Max TL, courante) + offset d'ère courant. */
-    private void handleReleases(HttpExchange ex) throws IOException {
+    private void handleReleases(HttpExchange ex) throws Exception {
         if (!"GET".equals(ex.getRequestMethod())) { send(ex, 405, "{\"error\":\"method\"}"); return; }
         send(ex, 200, ContentEra.listJson(SHARD));
     }
@@ -114,7 +128,7 @@ public final class AdminService {
      * {@code name} = nom de release ({@code R50}) ou {@code #index} ; {@code reset}/vide → ère = date réelle.
      * Applique à CHAUD (prochain BootData) + persiste ({@code content_offset_ms}). Renvoie l'état d'ère.
      */
-    private void handleSetRelease(HttpExchange ex) throws IOException {
+    private void handleSetRelease(HttpExchange ex) throws Exception {
         if (!"POST".equals(ex.getRequestMethod())) { send(ex, 405, "{\"error\":\"method\"}"); return; }
         String sel = form(ex).getOrDefault("name", "").trim();
         try {
@@ -134,7 +148,7 @@ public final class AdminService {
      * l'HORLOGE ENTIÈRE (ère + tous les timers), persiste ({@code clock_offset_ms}). ⚠️ Puissant (mode test) :
      * distinct du release-picker qui, lui, ne touche que l'ère. {@code offsetHours} positif = avancer le temps de jeu.
      */
-    private void handleClock(HttpExchange ex) throws IOException {
+    private void handleClock(HttpExchange ex) throws Exception {
         try {
             if ("POST".equals(ex.getRequestMethod())) {
                 double hours = 0;
@@ -151,8 +165,133 @@ public final class AdminService {
         } catch (Exception e) { send(ex, 500, "{\"error\":\"" + e.getClass().getSimpleName() + "\"}"); }
     }
 
+    // ─── GESTION DES JOUEURS (édition autoritative, journalisée) ─────────────────────────────────────────────────
+    // ⚠️ Édite le compte PERSISTÉ. Si le joueur est EN LIGNE, la session serveur détient sa propre instance : les
+    // changements ADMIN seront visibles à sa reconnexion (BootData), et une mutation faite pendant qu'il joue peut être
+    // écrasée par sa session. Acceptable pour un opérateur (joueur hors ligne) — routage via l'instance vive = ultérieur.
+
+    private void handlePlayerLookup(HttpExchange ex) throws Exception {
+        if (!"POST".equals(ex.getRequestMethod())) { send(ex, 405, "{\"error\":\"method\"}"); return; }
+        long uid = uid(form(ex));
+        if (uid <= 0) { send(ex, 400, "{\"error\":\"userID\"}"); return; }
+        ServerUser su = store.loadOrCreate(uid, SHARD);   // lecture seule (pas d'audit)
+        send(ex, 200, su.adminSummaryJson());
+    }
+
+    private void handleGiveResource(HttpExchange ex) throws Exception {
+        if (!"POST".equals(ex.getRequestMethod())) { send(ex, 405, "{\"error\":\"method\"}"); return; }
+        var f = form(ex);
+        long uid = uid(f);
+        if (uid <= 0) { send(ex, 400, "{\"error\":\"userID\"}"); return; }
+        ResourceType type;
+        long amount;
+        try { type = ResourceType.valueOf(f.getOrDefault("type", "").trim().toUpperCase()); }
+        catch (IllegalArgumentException e) { send(ex, 400, "{\"error\":\"type invalide\"}"); return; }
+        try { amount = Long.parseLong(f.getOrDefault("amount", "").trim()); }
+        catch (NumberFormatException e) { send(ex, 400, "{\"error\":\"amount\"}"); return; }
+        ServerUser su = store.loadOrCreate(uid, SHARD);
+        su.giveResource(type, amount);
+        store.save(su);
+        AdminAudit.log("giveResource", "uid=" + uid + " type=" + type + " amount=" + amount, "ok");
+        send(ex, 200, su.adminSummaryJson());
+    }
+
+    private void handleGrantHero(HttpExchange ex) throws Exception {
+        if (!"POST".equals(ex.getRequestMethod())) { send(ex, 405, "{\"error\":\"method\"}"); return; }
+        var f = form(ex);
+        long uid = uid(f);
+        if (uid <= 0) { send(ex, 400, "{\"error\":\"userID\"}"); return; }
+        UnitType hero;
+        try { hero = UnitType.valueOf(f.getOrDefault("hero", "").trim().toUpperCase()); }
+        catch (IllegalArgumentException e) { send(ex, 400, "{\"error\":\"hero invalide\"}"); return; }
+        ServerUser su = store.loadOrCreate(uid, SHARD);
+        String rar = f.getOrDefault("rarity", "").trim();
+        if (!rar.isEmpty()) {
+            Rarity rarity;
+            try { rarity = Rarity.valueOf(rar.toUpperCase()); }
+            catch (IllegalArgumentException e) { send(ex, 400, "{\"error\":\"rarity invalide\"}"); return; }
+            int level = intOr(f, "level", 1), stars = intOr(f, "stars", 1);
+            su.grantHero(hero, rarity, level, stars);
+            AdminAudit.log("grantHero", "uid=" + uid + " hero=" + hero + " rarity=" + rarity + " level=" + level + " stars=" + stars, "ok");
+        } else {
+            su.grantHero(hero);
+            AdminAudit.log("grantHero", "uid=" + uid + " hero=" + hero + " (défaut WHITE 1/1)", "ok");
+        }
+        store.save(su);
+        send(ex, 200, su.adminSummaryJson());
+    }
+
+    private void handleSetTeamLevel(HttpExchange ex) throws Exception {
+        if (!"POST".equals(ex.getRequestMethod())) { send(ex, 405, "{\"error\":\"method\"}"); return; }
+        var f = form(ex);
+        long uid = uid(f);
+        if (uid <= 0) { send(ex, 400, "{\"error\":\"userID\"}"); return; }
+        int level = intOr(f, "level", -1);
+        if (level < 1) { send(ex, 400, "{\"error\":\"level\"}"); return; }
+        ServerUser su = store.loadOrCreate(uid, SHARD);
+        su.setTeamLevel(level);
+        store.save(su);
+        AdminAudit.log("setTeamLevel", "uid=" + uid + " level=" + level, "ok");
+        send(ex, 200, su.adminSummaryJson());
+    }
+
+    private void handleGrantCampaign(HttpExchange ex) throws Exception {
+        if (!"POST".equals(ex.getRequestMethod())) { send(ex, 405, "{\"error\":\"method\"}"); return; }
+        var f = form(ex);
+        long uid = uid(f);
+        if (uid <= 0) { send(ex, 400, "{\"error\":\"userID\"}"); return; }
+        CampaignType type;
+        try { type = CampaignType.valueOf(f.getOrDefault("campaignType", "NORMAL").trim().toUpperCase()); }
+        catch (IllegalArgumentException e) { send(ex, 400, "{\"error\":\"campaignType invalide\"}"); return; }
+        int chapter = intOr(f, "chapter", -1), level = intOr(f, "level", -1), stars = intOr(f, "stars", 3);
+        if (chapter < 1 || level < 0) { send(ex, 400, "{\"error\":\"chapter|level\"}"); return; }
+        ServerUser su = store.loadOrCreate(uid, SHARD);
+        su.grantCampaignLevel(type, chapter, level, stars);
+        store.save(su);
+        AdminAudit.log("grantCampaign", "uid=" + uid + " type=" + type + " ch=" + chapter + " lvl=" + level + " stars=" + stars, "ok");
+        send(ex, 200, su.adminSummaryJson());
+    }
+
+    private void handleCompleteTutorials(HttpExchange ex) throws Exception {
+        if (!"POST".equals(ex.getRequestMethod())) { send(ex, 405, "{\"error\":\"method\"}"); return; }
+        long uid = uid(form(ex));
+        if (uid <= 0) { send(ex, 400, "{\"error\":\"userID\"}"); return; }
+        ServerUser su = store.loadOrCreate(uid, SHARD);
+        int n = su.completeAllTutorials();
+        store.save(su);
+        AdminAudit.log("completeTutorials", "uid=" + uid + " completed=" + n, "ok");
+        send(ex, 200, su.adminSummaryJson());
+    }
+
+    private void handleUnlock(HttpExchange ex) throws Exception {
+        if (!"POST".equals(ex.getRequestMethod())) { send(ex, 405, "{\"error\":\"method\"}"); return; }
+        long uid = uid(form(ex));
+        if (uid <= 0) { send(ex, 400, "{\"error\":\"userID\"}"); return; }
+        ServerUser su = store.loadOrCreate(uid, SHARD);
+        int granted = su.adminUnlock();
+        store.save(su);
+        AdminAudit.log("unlock", "uid=" + uid + " (TL300 + chapitre requis + roster JAUNE)", "granted=" + granted);
+        send(ex, 200, su.adminSummaryJson());
+    }
+
+    /** GET /admin/audit?tail=N → dernières entrées du journal des actions admin. */
+    private void handleAudit(HttpExchange ex) throws Exception {
+        if (!"GET".equals(ex.getRequestMethod())) { send(ex, 405, "{\"error\":\"method\"}"); return; }
+        int n = 100;
+        String q = ex.getRequestURI().getRawQuery();
+        if (q != null) for (String kv : q.split("&")) if (kv.startsWith("tail=")) { try { n = Integer.parseInt(kv.substring(5)); } catch (Exception ignore) {} }
+        send(ex, 200, AdminAudit.tailJson(n));
+    }
+
+    private static long uid(java.util.Map<String, String> f) {
+        try { return Long.parseLong(f.getOrDefault("userID", "0").trim()); } catch (NumberFormatException e) { return 0L; }
+    }
+    private static int intOr(java.util.Map<String, String> f, String k, int def) {
+        try { return Integer.parseInt(f.getOrDefault(k, "").trim()); } catch (NumberFormatException e) { return def; }
+    }
+
     // ---- utilitaires HTTP ----
-    private static java.util.Map<String, String> form(HttpExchange ex) throws IOException {
+    private static java.util.Map<String, String> form(HttpExchange ex) throws Exception {
         java.util.Map<String, String> m = new java.util.HashMap<>();
         for (String kv : new String(ex.getRequestBody().readAllBytes(), StandardCharsets.UTF_8).split("&")) {
             if (kv.isEmpty()) continue;
