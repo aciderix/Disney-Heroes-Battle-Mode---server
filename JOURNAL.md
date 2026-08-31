@@ -1,5 +1,16 @@
 # JOURNAL — journal détaillé des modifications
 
+## 2026-08-31 (g216) — Fix affichage : le bundle CLIENT lance la fenêtre VISIBLE (cause du « cmd sans fenêtre »)
+
+Cause racine du souci util. « la console s'ouvre mais pas de fenêtre de jeu » TROUVÉE : `DesktopLauncher.java:50` crée la
+fenêtre GLFW **invisible par défaut** (`GLFW_VISIBLE` piloté par `-Ddh.visible=1`, absent = invisible) — choix orienté
+**capture headless** (Xvfb + screenshot). Le bundle client généré (`BuildManager.RUN_SH_CLIENT`/`RUN_BAT_CLIENT`) ne
+passait PAS ce flag → sur une vraie machine, la fenêtre existe mais reste cachée. **Correctif** : les run-scripts du bundle
+client ajoutent `-Ddh.visible=1` par défaut (Windows toujours ; Linux sauf si `DH_SHOT` = mode capture). Le chemin de
+capture Xvfb (dev/tests) reste invisible. Aucune régression serveur (glue de packaging). Compile game-free OK.
+NB : correspond au souvenir util. (« une option à false, sur l'ancienne version émulée ») — c'était `dh.visible`.
+
+
 ## 2026-08-31 (g215) — Panneau ADMIN ✅ VÉRIFIÉ EN JEU (client réel → AdminService) + point son/affichage
 
 Vérif §8 du panneau opérateur : pile complète `run-online.sh` (serveur `LoginServer` + `content_server` + **vrai client**

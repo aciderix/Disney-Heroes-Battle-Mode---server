@@ -382,6 +382,9 @@ public final class BuildManager {
       + "[ -n \"${DH_USERID:-}\" ] && JOPTS=\"$JOPTS -Ddh.userid=$DH_USERID\"\n"
       + "[ -n \"${DH_FRAMES:-}\" ] && JOPTS=\"$JOPTS -Ddh.frames=$DH_FRAMES\"\n"
       + "[ -n \"${DH_SHOT:-}\" ] && JOPTS=\"$JOPTS -Ddh.shot=$DH_SHOT\"\n"
+      // FENÊTRE VISIBLE pour un vrai joueur (DesktopLauncher crée la fenêtre INVISIBLE par défaut — orienté capture
+      // headless). Sans ça : « la console s'ouvre mais aucune fenêtre de jeu ». En mode capture (DH_SHOT) on garde invisible.
+      + "[ -z \"${DH_SHOT:-}\" ] && JOPTS=\"$JOPTS -Ddh.visible=1\"\n"
       + "if [ -z \"${DISPLAY:-}\" ] && command -v Xvfb >/dev/null; then\n"
       + "  Xvfb :99 -screen 0 1280x720x24 >/tmp/dh_xvfb.log 2>&1 & XVFB=$!\n"
       + "  trap 'kill $XVFB 2>/dev/null' EXIT; export DISPLAY=:99; sleep 1; fi\n"
@@ -399,6 +402,9 @@ public final class BuildManager {
       + "set JOPTS=-XX:TieredStopAtLevel=1 -Ddh.rundir=\"%DIR%data\\run\" -Ddh.spinelib=\"%DIR%native\\libspine-native.so\" -Ddh.server=%DH_SERVER%\r\n"
       + "if exist \"%DIR%native\\libgdx64.so\" set JOPTS=%JOPTS% -Ddh.gdxnative=\"%DIR%native\\libgdx64.so\"\r\n"
       + "if exist \"%DIR%native\\libhostspine64.so\" set JOPTS=%JOPTS% -Ddh.spinebackend=jni -Ddh.hostspine=\"%DIR%native\\libhostspine64.so\"\r\n"
+      // FENÊTRE VISIBLE (la fenêtre est créée invisible par défaut, orienté capture headless) — sans ça le joueur Windows
+      // voit la console s'ouvrir mais aucune fenêtre de jeu.
+      + "set JOPTS=%JOPTS% -Ddh.visible=1\r\n"
       + "\"%JAVA%\" %JOPTS% -cp \"%CP%\" dhdesktop.DesktopLauncher %*\r\n";
 
     private static final String RUN_BAT =
