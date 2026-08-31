@@ -7,6 +7,7 @@ use std::net::TcpListener;
 use std::path::PathBuf;
 use std::process::{Child, Command};
 use std::sync::Mutex;
+use tauri::Manager; // fournit Window::state (Tauri v2)
 
 struct Daemon {
     port: u16,
