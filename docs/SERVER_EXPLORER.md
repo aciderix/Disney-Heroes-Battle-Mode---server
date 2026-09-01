@@ -69,6 +69,16 @@ retenu (`ServerType.contentLocation`, servi par `content_server.py` — même m�
 **Toolchain (téléchargée, gitignorée `libs/apktools/`, §7)** : apktool (manifeste, round-trip **prouvé** sur 12.1.0) +
 **r8/d8 8.3.37** + **android.jar** (API 33) pour compiler l'Activity + baksmali/smali + uber-apk-signer.
 
+**⚠️ IMPORTANT — l'APK est un XAPK (app bundle)** : `game/disney-heroes-12.1.0.apk` = seulement le **base.apk** d'un XAPK
+(`android:requiredSplitTypes="base__abi,base__textures"`, `splits.required=true`, **0 `.so`**). Installé seul → « incompatible »
+(splits requis manquants). Le XAPK complet = base + `config.armeabi_v7a.apk` (natifs `.so`) + `config.etc2.apk` (textures).
+**Solution (g230)** : les outils (`apk_inject_picker.sh`, `patch_apk.sh`) détectent un XAPK et le **FUSIONNENT en APK UNIVERSEL**
+via **APKEditor** (`m` : retire les exigences de split, rassemble libs+textures) AVANT de patcher. Injection **chirurgicale**
+(manifeste + dex remplacés, picker ajouté ; libs/textures intactes). Prouvé : universel 158 Mo, `lib/armeabi-v7a/*.so` présents,
+picker=LAUNCHER, signé v2/v3 → installable seul. (Le SERVEUR et le CLIENT PC n'ont PAS besoin des splits : données `.tab` +
+dex sont dans le base, natifs desktop auto-compilés.) ⚠️ L'universel 158 Mo dépasse chat(30 Mo)/GitHub(100 Mo) → généré côté
+utilisateur depuis SON XAPK.
+
 **État 4c-1 (g228) — fondations PROUVÉES** : `DhServerPicker` **compile** (javac+android.jar) et **dexe** (d8) ;
 `ServerType.setLive` **réassemble** (smali) ; **apktool rebuild** de l'APK OK. **Reste 4c-2** : le hook `AndroidLauncher`
 + l'édition du manifeste + l'orchestration `tools/apk_inject_picker.sh` (repackage + re-signe) + vérif SUR APPAREIL.

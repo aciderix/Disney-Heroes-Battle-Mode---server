@@ -1,5 +1,29 @@
 # JOURNAL — journal détaillé des modifications
 
+## 2026-09-01 (g230) — PATCH APK : XAPK → APK UNIVERSEL fusionné + patché (installable seul, libs incluses) ✅
+
+Vérif appareil : l'APK patché s'installait « incompatible ». **Cause TROUVÉE (pas le patch)** : `game/disney-heroes-12.1.0.apk`
+est le **base.apk d'un XAPK** (app bundle) — manifeste `android:requiredSplitTypes="base__abi,base__textures"` +
+`splits.required=true`, **0 `.so`** dans le base. Installé seul → Android refuse (splits requis manquants : natifs +
+textures). Le vrai jeu Play a base + splits ; nous n'avions que le base. Confirmé par l'utilisateur (« à l'origine c'est
+un XAPK »). Le XAPK récupéré contient : base + **`config.armeabi_v7a.apk`** (les `.so`) + **`config.etc2.apk`** (textures).
+- **Correctif** : les outils acceptent désormais un **XAPK** et le **FUSIONNENT en APK universel** d'abord (via **APKEditor**
+  `m` — retire les exigences de split, rassemble libs+textures), puis patchent. `apk_inject_picker.sh` ET `patch_apk.sh`
+  détectent un zip-de-.apk → fusion auto. APKEditor ajouté au cache d'outils gitignoré.
+- **Injection rendue CHIRURGICALE** (`apk_inject_picker.sh` réécrit) : on ne remplace QUE le manifeste (via apktool, extrait
+  puis ré-injecté) + les dex du jeu, on ajoute le dex du picker — **libs/textures/ressources RESTENT intactes** (fini le
+  rebuild lourd apktool qui perdait des fichiers).
+- **✅ PROUVÉ** : `apk_inject_picker.sh game.xapk <url> <key>` → **APK UNIVERSEL 158 Mo** — **plus de `requiredSplitTypes`
+  ni `splits.required`**, **picker=LAUNCHER** (jeu plus LAUNCHER), **`lib/armeabi-v7a/{libgdx,libgdx-opensl,libspine-native}.so`
+  présents**, **signature v2/v3 vérifiée**. Devrait s'installer ET tourner sur appareil (à confirmer côté user).
+- **Front** : l'écran Générer mentionne l'acceptation d'un **XAPK** (fusionné en universel).
+- **⚠️ Livraison** : l'APK universel (158 Mo) dépasse la limite du chat (30 Mo) ET de GitHub (100 Mo) → **l'utilisateur le
+  génère lui-même** depuis SON XAPK : `tools/apk_inject_picker.sh <mon.xapk> "$PROJECT_URL" "$ANON_PUBLIC"` (ou launcher →
+  Générer → APK mobile → Écran de choix, en pointant le XAPK).
+
+Fichiers : `tools/apk_inject_picker.sh` (réécrit : XAPK + injection chirurgicale), `tools/patch_apk.sh` (XAPK auto-merge),
+`launcher-ui/src/views/Generate.tsx`, `docs/SERVER_EXPLORER.md`, `docs/PHASE2_TRACKING.md`, `JOURNAL.md`, `MEMORY.md`.
+
 ## 2026-09-01 (g229) — PATCH APK brique 4c-2 : ÉCRAN DE CHOIX injecté dans l'APK + câblé dans le launcher ✅ (structurel)
 
 L'écran de sélection de serveur est INJECTÉ dans l'APK et l'APK produit d'un clic depuis le launcher. Au lancement de

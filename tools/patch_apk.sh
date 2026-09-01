@@ -27,9 +27,16 @@ fetch() { # <url> <dest>
 fetch "https://github.com/baksmali/smali/releases/download/v2.5.2/baksmali-2.5.2.jar"        "$CACHE/baksmali.jar"
 fetch "https://github.com/baksmali/smali/releases/download/v2.5.2/smali-2.5.2.jar"            "$CACHE/smali.jar"
 fetch "https://github.com/patrickfav/uber-apk-signer/releases/download/v1.3.0/uber-apk-signer-1.3.0.jar" "$CACHE/signer.jar"
+fetch "https://github.com/REAndroid/APKEditor/releases/download/V1.4.3/APKEditor-1.4.3.jar"  "$CACHE/APKEditor.jar"
 
 WORK="$(mktemp -d)"; trap 'rm -rf "$WORK"' EXIT
-cp "$IN" "$WORK/app.apk"
+# XAPK (base + config splits) → FUSION en universel d'abord (sinon install « incompatible » + pas de .so)
+if unzip -l "$IN" 2>/dev/null | grep -qE '\.apk$'; then
+  echo "[apk] XAPK détecté → fusion en APK universel (APKEditor) ..."
+  java -jar "$CACHE/APKEditor.jar" m -i "$IN" -o "$WORK/app.apk" >/dev/null 2>&1 || { echo "[apk] ✖ fusion XAPK"; exit 1; }
+else
+  cp "$IN" "$WORK/app.apk"
+fi
 
 # --- 1) repérer le dex qui contient la redirection LIVE ---
 echo "[apk] recherche du dex ServerType ..."

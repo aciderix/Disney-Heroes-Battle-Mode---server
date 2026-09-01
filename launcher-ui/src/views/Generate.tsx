@@ -78,8 +78,8 @@ export function Generate() {
               </select>
             </label>
             <div className="muted" style={{ fontSize: 12 }}>
-              Patche TON APK, puis le re-signe. À installer <strong>hors Play Store</strong> (sources inconnues).
-              L'APK d'origine n'est pas redistribué.
+              Patche TON APK <strong>ou XAPK</strong> (un XAPK est d'abord fusionné en APK universel — libs + textures),
+              puis re-signe. À installer <strong>hors Play Store</strong> (sources inconnues). Non redistribué.
             </div>
             {isPicker ? (
               <div className="muted" style={{ fontSize: 12 }}>
