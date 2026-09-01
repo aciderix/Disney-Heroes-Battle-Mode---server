@@ -17,7 +17,9 @@ export function Generate() {
   const [pkg, setPkg] = useState(true);
   const [serverHost, setServerHost] = useState("");
   const [serverPort, setServerPort] = useState(8080);
+  const [apkMode, setApkMode] = useState<"redirect" | "picker">("picker");
   const isApk = target === "apk";
+  const isPicker = isApk && apkMode === "picker";
   const [status, setStatus] = useState<BuildStatus | null>(null);
   const [err, setErr] = useState<string | null>(null);
   const [busy, setBusy] = useState(false);
@@ -37,8 +39,10 @@ export function Generate() {
   async function start() {
     setErr(null); setBusy(true);
     try {
-      const s = isApk
-        ? await daemonClient.buildStart({ apkPath, target, outDir: outDir || undefined, serverHost: serverHost.trim(), serverPort })
+      const s = isPicker
+        ? await daemonClient.buildStart({ apkPath, target, outDir: outDir || undefined, apkMode: "picker" })
+        : isApk
+        ? await daemonClient.buildStart({ apkPath, target, outDir: outDir || undefined, apkMode: "redirect", serverHost: serverHost.trim(), serverPort })
         : await daemonClient.buildStart({ apkPath, target, outDir: outDir || undefined, full, pkg });
       setStatus(s);
       stopPolling();
@@ -67,16 +71,29 @@ export function Generate() {
         </label>
         {isApk ? (
           <>
+            <label className="stack" style={{ gap: 4 }}>Mode
+              <select value={apkMode} onChange={(e) => setApkMode(e.target.value as "redirect" | "picker")}>
+                <option value="picker">Écran de choix au lancement (annuaire)</option>
+                <option value="redirect">Serveur fixe (une seule adresse)</option>
+              </select>
+            </label>
             <div className="muted" style={{ fontSize: 12 }}>
-              Patche TON APK pour qu'il se connecte au serveur ci-dessous, puis le re-signe. À installer <strong>hors Play
-              Store</strong> (sources inconnues). L'APK d'origine n'est pas redistribué.
+              Patche TON APK, puis le re-signe. À installer <strong>hors Play Store</strong> (sources inconnues).
+              L'APK d'origine n'est pas redistribué.
             </div>
-            <div className="row">
-              <label className="stack" style={{ gap: 4, flex: 2 }}>Serveur (hôte / IP)
-                <input value={serverHost} onChange={(e) => setServerHost(e.target.value)} placeholder="192.168.1.20" /></label>
-              <label className="stack" style={{ gap: 4, flex: 1 }}>Port
-                <input type="number" value={serverPort} onChange={(e) => setServerPort(+e.target.value)} /></label>
-            </div>
+            {isPicker ? (
+              <div className="muted" style={{ fontSize: 12 }}>
+                Au lancement, l'appli affichera un <strong>écran de choix de serveur</strong> (liste de l'annuaire + saisie
+                manuelle). Nécessite un annuaire configuré sur ce launcher.
+              </div>
+            ) : (
+              <div className="row">
+                <label className="stack" style={{ gap: 4, flex: 2 }}>Serveur (hôte / IP)
+                  <input value={serverHost} onChange={(e) => setServerHost(e.target.value)} placeholder="192.168.1.20" /></label>
+                <label className="stack" style={{ gap: 4, flex: 1 }}>Port
+                  <input type="number" value={serverPort} onChange={(e) => setServerPort(+e.target.value)} /></label>
+              </div>
+            )}
           </>
         ) : (
           <div className="row">
@@ -84,7 +101,7 @@ export function Generate() {
             <label className="row"><input type="checkbox" style={{ width: "auto" }} checked={pkg} onChange={(e) => setPkg(e.target.checked)} /><span>packaging autonome</span></label>
           </div>
         )}
-        <button className="primary" disabled={busy || !apkPath || (isApk && !serverHost.trim())} onClick={start}>Générer</button>
+        <button className="primary" disabled={busy || !apkPath || (isApk && !isPicker && !serverHost.trim())} onClick={start}>Générer</button>
       </Panel>
 
       {status && (
@@ -93,7 +110,7 @@ export function Generate() {
           {done && status.outDir && (
             <Banner kind="success">Terminé : <span style={{ fontFamily: "var(--font-mono)" }}>{status.outDir}</span>
               {target === "server" && <> — copie ce dossier dans « Héberger » pour lancer le serveur.</>}
-              {target === "apk" && <> — l'APK patché est dans ce dossier ; installe-le sur le téléphone (sources inconnues).</>}</Banner>
+              {target === "apk" && <> — l'APK patché est dans ce dossier ; installe-le sur le téléphone (sources inconnues){isPicker && <>, il affichera l'écran de choix au lancement</>}.</>}</Banner>
           )}
           <LogConsole text={status.log} />
         </Panel>

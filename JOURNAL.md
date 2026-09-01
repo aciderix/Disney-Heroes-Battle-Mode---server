@@ -1,5 +1,31 @@
 # JOURNAL — journal détaillé des modifications
 
+## 2026-09-01 (g229) — PATCH APK brique 4c-2 : ÉCRAN DE CHOIX injecté dans l'APK + câblé dans le launcher ✅ (structurel)
+
+L'écran de sélection de serveur est INJECTÉ dans l'APK et l'APK produit d'un clic depuis le launcher. Au lancement de
+l'appli patchée : écran de choix (annuaire + saisie) → « Jouer » lance le jeu sur le serveur retenu.
+- **`tools/apk_inject_smali.py`** : ajoute `ServerType.setLive(host,port)` + le HOOK dans `AndroidLauncher.onCreate`
+  (lit les SharedPreferences « dhserver » → `setLive`). Idempotent.
+- **`tools/apk_manifest_picker.py`** : édite le manifeste (décodé apktool) — `DhServerPicker` devient LAUNCHER,
+  `AndroidLauncher` perd MAIN/LAUNCHER (garde ses deep-links).
+- **`tools/apk_inject_picker.sh`** : pipeline complet `<apk> <dirUrl> <anonKey>` — compile le picker (javac+android.jar →
+  d8), édite le manifeste (apktool d -s / b), patche le dex du jeu (baksmali/smali : setLive+hook), **ajoute** le picker en
+  `classesN+1.dex`, **re-signe**, et **vérifie** (picker présent, setLive+hook présents, signature v2/v3).
+- **✅ PROUVÉ (structurel)** sur `disney-heroes-12.1.0.apk` : APK 97 Mo signé v2/v3 ; manifeste décodé → **picker=LAUNCHER**,
+  AndroidLauncher sans LAUNCHER (garde deep-links) ; `classes7.dex`=picker (URL annuaire injectée) ; `classes4.dex`=setLive+hook.
+- **Câblage launcher** : `BuildManager.setApkPicker(dirUrl, anonKey)` + `runApkPipeline` branche picker/redirect ;
+  daemon `POST /build/start target=apk apkMode=picker|redirect` (picker exige l'annuaire configuré) ; **écran Générer**
+  gagne un sélecteur de mode (Écran de choix / Serveur fixe). **✅ bout-en-bout via le launcher** (`ApkBuildProbe` mode
+  picker : DONE → `dh-picker.apk`). Front `tsc`+`vite build` OK ; **régression 176/177** (seul `WarSeasonTest` = bug bord
+  de mois pré-existant, cf. g227).
+- **⚠️ Reste la vérif §8 SUR APPAREIL** (je n'ai ni téléphone ni émulateur ici) : installer `dh-picker.apk`, confirmer que
+  l'écran s'affiche, que le choix démarre le jeu, et que le contenu se télécharge via l'`index.txt` du serveur retenu.
+
+Fichiers : `tools/apk_inject_picker.sh` (+), `tools/apk_manifest_picker.py` (+), `tools/apk_inject_smali.py` (+),
+`server/java/dhlauncher/BuildManager.java`, `server/java/dhlauncher/LauncherDaemon.java`, `server/smoke/ApkBuildProbe.java`,
+`launcher-ui/src/views/Generate.tsx`, `launcher-ui/src/api/types.ts`, `docs/SERVER_EXPLORER.md`, `docs/PHASE2_TRACKING.md`,
+`JOURNAL.md`, `MEMORY.md`.
+
 ## 2026-09-01 (g228) — PATCH APK brique 4c-1 : fondations de l'écran de sélection in-app (Activity + setLive + toolchain) 🟢
 
 Attaque de l'écran de CHOIX de serveur DANS l'appli mobile (au lancement → Jouer sur le serveur choisi). Architecture

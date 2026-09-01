@@ -20,7 +20,7 @@ nom/mode côté Héberger ; navigateur côté Serveurs ; adresse d'annuaire modi
 | **4a** | **Patch APK — redirection + re-signature** (`tools/patch_apk.sh`) | 🟢 **FAIT** (g226, PROUVÉ sur 12.1.0 : LIVE→serveur choisi, signé v2/v3) |
 | **4b** | Câbler le patch APK dans le launcher (cible « apk » de `BuildManager` + écran Générer) | 🟢 **FAIT** (g227 : `/build/start target=apk`, écran Générer host/port, prouvé via `ApkBuildProbe`) |
 | **4c-1** | Fondations de l'écran in-app (Activity picker + `ServerType.setLive` + toolchain) | 🟢 **PROUVÉ** (g228 : picker compile→dex, setLive réassemble, apktool round-trip) |
-| **4c-2** | Orchestration : hook boot + manifeste LAUNCHER + repackage + re-signe | ⬜ suivant |
+| **4c-2** | Orchestration : hook boot + manifeste LAUNCHER + repackage + re-signe + launcher | 🟢 **FAIT (structurel)** (g229, `apk_inject_picker.sh` + câblage launcher ; **reste vérif §8 sur appareil**) |
 | indép. | Brancher le `GetServers` natif = sélecteur de **SHARD** in-game (Niveau 2) | ⬜ optionnel |
 
 ## Annuaire Supabase — schéma technique (brique 2, LIVRÉ)

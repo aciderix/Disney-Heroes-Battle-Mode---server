@@ -239,10 +239,19 @@ public final class LauncherDaemon {
         catch (Exception e) { send(ex, 400, "{\"error\":\"target invalide (server|client|apk)\"}"); return; }
         boolean pkg = !("false".equalsIgnoreCase(f.getOrDefault("pkg", "true")) || "0".equals(f.getOrDefault("pkg", "")));
         if (tgt == BuildManager.Target.APK) {
-            String host = f.getOrDefault("serverHost", "").trim();
-            int port = intOr(f, "serverPort", 0);
-            if (host.isEmpty() || port <= 0) { send(ex, 400, "{\"error\":\"serverHost + serverPort requis pour target=apk\"}"); return; }
-            build.setApkTarget(host, port);
+            String mode = f.getOrDefault("apkMode", "redirect").trim();
+            if ("picker".equalsIgnoreCase(mode)) {
+                // brique 4c — écran de choix : alimenté par l'annuaire (doit être configuré sur ce launcher)
+                if (directoryUrl == null || directoryKey == null) {
+                    send(ex, 400, "{\"error\":\"annuaire non configuré (DH_DIRECTORY_URL/ANON_KEY) — requis pour target=apk mode=picker\"}"); return;
+                }
+                build.setApkPicker(directoryUrl, directoryKey);
+            } else {
+                String host = f.getOrDefault("serverHost", "").trim();
+                int port = intOr(f, "serverPort", 0);
+                if (host.isEmpty() || port <= 0) { send(ex, 400, "{\"error\":\"serverHost + serverPort requis pour target=apk mode=redirect\"}"); return; }
+                build.setApkTarget(host, port);
+            }
         }
         send(ex, 200, build.start(f.getOrDefault("apkPath", ""), f.getOrDefault("outDir", ""), tgt, full, pkg));
     }

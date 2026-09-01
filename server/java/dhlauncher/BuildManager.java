@@ -32,13 +32,26 @@ public final class BuildManager {
     /** PATCH APK (brique 4b) — serveur cible de la redirection (hôte + port), posé avant un build de cible {@code APK}. */
     private volatile String apkHost;
     private volatile int apkPort;
+    /** PATCH APK (brique 4c) — mode ÉCRAN DE CHOIX : si {@code apkDirUrl != null}, on injecte le picker (annuaire) au lieu
+     *  d'une redirection fixe. {@code apkDirUrl}/{@code apkDirKey} = URL + clé anon PUBLIQUE de l'annuaire. */
+    private volatile String apkDirUrl;
+    private volatile String apkDirKey;
     private final StringBuilder log = new StringBuilder();
     private Thread worker;
 
     public BuildManager(String projectDir) { this.projectDir = projectDir; }
 
-    /** PATCH APK (brique 4b) — fixe le serveur cible (host:port) de la redirection, à appeler avant {@code start(...APK...)}. */
-    public void setApkTarget(String host, int port) { this.apkHost = host == null ? null : host.trim(); this.apkPort = port; }
+    /** PATCH APK (brique 4b) — redirection FIXE vers {@code host:port}. Efface un éventuel mode picker. */
+    public void setApkTarget(String host, int port) {
+        this.apkHost = host == null ? null : host.trim(); this.apkPort = port;
+        this.apkDirUrl = null; this.apkDirKey = null;
+    }
+
+    /** PATCH APK (brique 4c) — mode ÉCRAN DE CHOIX : injecte le picker alimenté par l'annuaire {@code dirUrl} (clé anon publique). */
+    public void setApkPicker(String dirUrl, String anonKey) {
+        this.apkDirUrl = dirUrl == null ? null : dirUrl.trim(); this.apkDirKey = anonKey;
+        this.apkHost = "picker"; this.apkPort = 1;   // marqueurs (la validation « host+port » de start() passe)
+    }
 
     /**
      * Démarre une génération pour une CIBLE. {@code full=false} → seulement l'extraction des données (léger, sans
@@ -119,12 +132,22 @@ public final class BuildManager {
     private void runApkPipeline(File apk, String out) {
         try {
             new File(out).mkdirs();
-            String outApk = new File(out, "dh-" + apkHost.replaceAll("[^0-9A-Za-z._-]", "_") + ".apk").getPath();
-            runStep("apk-patch", new String[]{"bash", tool("patch_apk.sh"), apk.getPath(),
-                    apkHost, Integer.toString(apkPort), outApk}, null, null);
+            String outApk, done;
+            if (apkDirUrl != null && !apkDirUrl.isEmpty()) {
+                // brique 4c — ÉCRAN DE CHOIX injecté (alimenté par l'annuaire)
+                outApk = new File(out, "dh-picker.apk").getPath();
+                runStep("apk-picker", new String[]{"bash", tool("apk_inject_picker.sh"), apk.getPath(),
+                        apkDirUrl, apkDirKey == null ? "" : apkDirKey, outApk}, null, null);
+                done = "APK avec écran de choix prêt : " + outApk + " (au lancement, sélection du serveur ; installer hors store)";
+            } else {
+                // brique 4b — redirection FIXE
+                outApk = new File(out, "dh-" + apkHost.replaceAll("[^0-9A-Za-z._-]", "_") + ".apk").getPath();
+                runStep("apk-patch", new String[]{"bash", tool("patch_apk.sh"), apk.getPath(),
+                        apkHost, Integer.toString(apkPort), outApk}, null, null);
+                done = "APK patché prêt : " + outApk + " (redirige vers http://" + apkHost + ":" + apkPort + " ; installer hors store)";
+            }
             if (!new File(outApk).isFile()) throw new IllegalStateException("APK patché absent en sortie");
-            append("APK patché prêt : " + outApk + " (redirige vers http://" + apkHost + ":" + apkPort
-                 + " ; installer hors store)");
+            append(done);
             step = "done"; state = State.DONE;
         } catch (Exception e) {
             append("ÉCHEC (" + step + "): " + e.getMessage()); state = State.FAILED;

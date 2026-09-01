@@ -29,7 +29,7 @@ public final class ApkBuildProbe {
         try {
             String host = "10.0.0.5"; int port = 8080;
             String r = post(http, base + "/build/start",
-                    "apkPath=" + enc(apk) + "&target=apk&serverHost=" + host + "&serverPort=" + port + "&outDir=" + enc(outDir));
+                    "apkPath=" + enc(apk) + "&target=apk&apkMode=picker&outDir=" + enc(outDir));
             System.out.println("start → " + r);
             String state = "RUNNING";
             long t0 = System.currentTimeMillis();
@@ -39,10 +39,10 @@ public final class ApkBuildProbe {
                 if (st.contains("\"state\":\"FAILED\"")) { state = "FAILED: " + st; break; }
                 for (int j = 0; j < 30_000_000; j++) { /* busy-wait ~court */ }
             }
-            File outApk = new File(outDir, "dh-" + host + ".apk");
+            File outApk = new File(outDir, "dh-picker.apk");
             boolean ok = "DONE".equals(state) && outApk.isFile() && outApk.length() > 1_000_000;
             System.out.println("état=" + state + " · apk=" + outApk.getPath() + " (" + (outApk.isFile() ? outApk.length() : 0) + " o)");
-            System.out.println("ApkBuildProbe : " + (ok ? "TOUT VERT ✅ (APK redirigé + re-signé produit par le launcher)" : "ÉCHEC ✗"));
+            System.out.println("ApkBuildProbe : " + (ok ? "TOUT VERT ✅ (APK produit par le launcher)" : "ÉCHEC ✗"));
         } finally { d.stop(); }
     }
 
