@@ -1,5 +1,32 @@
 # JOURNAL — journal détaillé des modifications
 
+## 2026-09-01 (g241) — Autonomie du « Générer » : jars runtime embarqués (#1) + decompile sans Maven (#2) + gradle wrapper (#3)
+
+Suite à l'audit d'autonomie (le launcher tourne zéro-install, mais GÉNÉRER un serveur/port depuis l'APK exigeait réseau +
+`mvn`/`gradle`/`git` + des jars runtime absents du package). Trois trous fermés :
+- **#1 — jars runtime tiers embarqués** : `build_launcher.sh` place `commons-logging` (committé) + `sqlite-jdbc` 3.45.3.0 +
+  `slf4j-api` 1.7.36 + `joda-time` 2.12.2 (curl Maven au build) dans `tooling/libs/`. `BuildManager.packageServer` lit
+  `RUNTIME_JARS` depuis `<tooling>/libs/` → **packaging serveur autonome** (avant : `commons-logging` jamais téléchargé →
+  « jar runtime absent »). `game-framed.jar` reste régénéré depuis l'APK (dérivé, copyright).
+- **#2 — `decompile.sh` sans `mvn`** : la dépendance DURE Maven (`exit 1` si absent) est levée. On télécharge les **17 jars**
+  du classpath dex2jar 2.4.28 (résolus une fois, pinnés) en URLs Maven Central DIRECTES (comme ASM), cache gitignoré
+  `libs/apktools/dex2jar`. Vérifié : `Dex2jarCmd` tourne avec ce set (asm core non requis).
+- **#3 — gradle WRAPPER** : `desktop-port/gradlew(.bat)` + `gradle/wrapper/*` (8.14.3) versionnés. `run-desktop.sh` utilise
+  `./gradlew` (repli `gradle` système si absent) → plus besoin d'un gradle SYSTÈME installé. (Le wrapper télécharge la
+  distrib Gradle au 1er run — réseau une fois.)
+- **Reste (#4, expliqué à l'utilisateur)** : `spine-libgdx-perblue.jar` régénéré par `build_spine_jar.sh` (clone
+  spine-runtimes 3.6 + gdx 1.9.7) → exige `git`+réseau. Options : pré-générer en CI et embarquer (jar dérivé d'un runtime
+  Spine sous licence Spine Runtime — redistribution soumise à conditions), ou garder la régénération et documenter `git`.
+
+**Autonomie après g241** : lancer le launcher = zéro-install ✓ ; générer un SERVEUR = autonome (jars embarqués, decompile
+sans mvn) ✓ ; générer le PORT CLIENT = wrapper gradle (plus de gradle système) mais encore réseau (distrib gradle + deps) +
+`git` pour spine (#4). Réseau au 1er build reste nécessaire (Maven/Gradle/archive.org) — c'est intrinsèque à un build depuis
+l'APK.
+
+Fichiers : `tools/build_launcher.sh`, `tools/decompile.sh`, `desktop-port/run-desktop.sh`, `desktop-port/gradlew`(+.bat),
+`desktop-port/gradle/wrapper/*`, `JOURNAL.md`, `MEMORY.md`.
+
+
 ## 2026-09-01 (g240) — CI launcher : cache Rust isolé par version d'OS (build Tauri Linux cassé après passage en 22.04)
 
 Le run `launcher-release` déclenché par l'utilisateur : **Windows ✅ réussi** (package + artefact), **Linux (ubuntu-22.04) ✗**

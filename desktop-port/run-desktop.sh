@@ -60,10 +60,13 @@ echo "[desktop] compilation ..."
 # NE PAS avaler les erreurs (ancien `2>/dev/null … || true` masquait un échec complet → jar client VIDE, "Jouer"
 # crashait « ClassNotFoundException dhdesktop.DesktopLauncher » sans le moindre message — bug #5). On garde stderr
 # VISIBLE et on ÉCHOUE si gradle échoue, pour que BuildManager remonte un vrai statut d'erreur.
-gradle --no-daemon compileJava 2>&1 | grep -v 'Picked up'
+# Gradle : on privilégie le WRAPPER embarqué (`./gradlew`, versionné) → pas besoin d'un gradle SYSTÈME installé
+# (autonomie). Repli sur un `gradle` du PATH si le wrapper est absent.
+GRADLE="./gradlew"; [ -x ./gradlew ] || GRADLE="gradle"
+"$GRADLE" --no-daemon compileJava 2>&1 | grep -v 'Picked up'
 gstatus=${PIPESTATUS[0]}
 if [ "$gstatus" -ne 0 ]; then echo "[desktop] ✖ compileJava a ÉCHOUÉ (rc=$gstatus) — voir les erreurs ci-dessus"; exit 1; fi
-RUNTIME_CP=$(gradle --no-daemon -q printRuntimeClasspath 2>/dev/null | grep -v 'Picked up' | tail -1)
+RUNTIME_CP=$("$GRADLE" --no-daemon -q printRuntimeClasspath 2>/dev/null | grep -v 'Picked up' | tail -1)
 
 # game.jar vient de dex2jar : bytecode SANS StackMapTable. Sous -Xverify:none la JVM calcule
 # paresseusement les oop-maps (generateOopMap.cpp) et PLANTE sur certaines méthodes (« Illegal

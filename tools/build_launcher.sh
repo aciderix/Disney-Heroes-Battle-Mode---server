@@ -83,6 +83,24 @@ done
 # → le client ne peut pas télécharger les assets (archive.org / cache). On l'embarque donc dans le tooling.
 [ -f "$ROOT/index.txt" ] && cp "$ROOT/index.txt" "$OUT/tooling/index.txt" && echo "== index.txt embarqué (manifeste de contenu) =="
 
+# --- 4bis) jars runtime TIERS (open-source) du bundle serveur → tooling/libs/ (autonomie du packaging) ---
+# BuildManager.packageServer copie RUNTIME_JARS depuis <tooling>/libs/. commons-logging est committé ; sqlite/slf4j/
+# joda sont sinon curl-és au 1er run (réseau requis chez l'hébergeur). On les EMBARQUE ici pour que « Générer » un
+# serveur marche hors-ligne. (game-framed.jar reste régénéré depuis l'APK du joueur — dérivé, copyright.)
+echo "== embarquement des jars runtime tiers (serveur) =="
+mkdir -p "$OUT/tooling/libs"
+[ -f "$ROOT/libs/commons-logging.jar" ] && cp "$ROOT/libs/commons-logging.jar" "$OUT/tooling/libs/commons-logging.jar"
+MVN_C="https://repo1.maven.org/maven2"
+dl_lib() { # <destname> <maven-path>
+  local dst="$OUT/tooling/libs/$1"
+  if [ -f "$ROOT/libs/$1" ]; then cp "$ROOT/libs/$1" "$dst";
+  else curl -fsSL -o "$dst" "$MVN_C/$2" || { echo "!! échec téléchargement $1"; return 1; }; fi
+}
+dl_lib sqlite-jdbc.jar "org/xerial/sqlite-jdbc/3.45.3.0/sqlite-jdbc-3.45.3.0.jar"
+dl_lib slf4j-api.jar   "org/slf4j/slf4j-api/1.7.36/slf4j-api-1.7.36.jar"
+dl_lib joda-time.jar   "joda-time/joda-time/2.12.2/joda-time-2.12.2.jar"
+echo "   → $(ls "$OUT/tooling/libs" | tr '\n' ' ')"
+
 # --- 5) scripts de lancement du launcher (utilisent le JDK embarqué) ---
 cat > "$OUT/run-launcher.sh" <<'EOF'
 #!/usr/bin/env bash
