@@ -1,5 +1,32 @@
 # JOURNAL — journal détaillé des modifications
 
+## 2026-09-01 (g234) — ÉCRAN MOBILE V3 brique 3a : handshake d'auth mnémonique mobile (défi-réponse) — PROUVÉ headless ✅
+
+Le picker mobile AUTHENTIFIE un compte mnémonique par défi-réponse Ed25519 contre l'`AuthService`, via le proxy `/auth/*`
+de `content_server` (le picker ne connaît que l'adresse content/login).
+- **`mobile/MobileAuth.java`** (plain-Java, HttpURLConnection + Base64 URL-safe, présents dès API 26) : `authenticate(baseUrl,
+  identity)` = `POST /auth/challenge{userID}` → nonce → **signe** (Ed25519 pur-Java) → `POST /auth/register{userID,
+  loginRequestID,pubKey,nonce,signature}`. `register` sert à créer ET reconnecter (idempotent, rejette une AUTRE clé pour ce
+  userID). Marque le compte « récemment authentifié » → au `/login`, `content_server` frappe le billet nominatif (`/auth/mint`)
+  pour CE userID → le serveur strict lie le socket.
+- **`server/content_server.py`** : proxy `POST /auth/{challenge,register,verify}` → `DH_AUTH_URL` (AuthService) ; `/auth/mint`
+  reste LOCAL (jamais exposé) ; 503 si non configuré, 502 si upstream KO.
+- **`mobile/DhServerPicker.java`** : « Jouer » → si un compte existe, `MobileAuth.authenticate("http://host:port", id)` en
+  tâche de fond AVANT de lancer (statut « Authentification du compte #userID… ») ; écrit le **userID** en SharedPreferences
+  `dhserver` (pour le hook de boot 3b) puis démarre le jeu. Serveur ouvert / pas de compte → lancement direct.
+- **PREUVE `server/smoke/MobileAuthFlowTest`** (dans `regression.sh`, **12 assertions**) : compte NEUF (challenge→sign→register
+  → clé enregistrée == clé mobile → **billet frappé** → `authenticatedUser(billet)==userID`) ; RECONNEXION idempotente ;
+  **PORTABILITÉ** (un compte créé côté SERVEUR/SunEC est authentifié par le MOBILE : même phrase → même userID) ; aucun billet
+  pour un compte non authentifié. Le picker complet (DhServerPicker + Ed25519 + MobileIdentity + **MobileAuth** + wordlist)
+  **compile+dexe** (android.jar API33, source/target 8, d8 --min-api 26 → dex 50 Ko). **Régression 178/179** (seul rouge
+  `WarSeasonTest`, bug bord-de-mois pré-existant).
+- **Reste brique 3b** (structurel + §8 appareil) : hook de boot smali `BuildOptions.TEST_USER_ID = prefs userID` (écrase
+  `ClientInfo.userID`, relevé bytecode `GameMain`) + faire porter le userID mnémonique au `/login` HTTP (mint nominatif) —
+  comme le re-login desktop `startInitialLogin(userID)`. Puis brique 4 (/info + ping) et vérif §8 SUR APPAREIL.
+
+Fichiers : `mobile/MobileAuth.java` (+), `server/content_server.py`, `mobile/DhServerPicker.java`, `tools/apk_inject_picker.sh`,
+`server/smoke/MobileAuthFlowTest.java` (+), `server/smoke/regression.sh`, `JOURNAL.md`, `MEMORY.md`.
+
 ## 2026-09-01 (g233) — ÉCRAN MOBILE V3 brique 2 : UI compte mnémonique dans le picker (créer / restaurer / afficher) 🟢
 
 Section « 👤 Compte (serveurs stricts) » ajoutée dans `mobile/DhServerPicker.java`, adossée à la crypto de la brique 1 :

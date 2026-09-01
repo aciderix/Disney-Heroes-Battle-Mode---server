@@ -256,9 +256,29 @@ public final class DhServerPicker extends Activity {
         } catch (Exception e) { dirStatus.setText("Port invalide."); }
     }
 
-    private void play(String host, int port) {
+    /** « Jouer » : si un compte existe, authentifie (défi-réponse) AVANT de lancer, puis démarre le jeu sur le serveur. */
+    private void play(final String host, final int port) {
+        final String phrase = mnemonic();
+        if (phrase.isEmpty()) { launchGame(host, port, 0); return; }   // serveur ouvert / pas de compte
+        final MobileIdentity.Identity id;
+        try { id = MobileIdentity.fromPhrase(phrase); }
+        catch (Exception ex) { launchGame(host, port, 0); return; }
+        dirStatus.setText("Authentification du compte #" + id.userID + " …");
+        new Thread(new Runnable() { public void run() {
+            final MobileAuth.Result r = MobileAuth.authenticate("http://" + host + ":" + port, id);
+            ui.post(new Runnable() { public void run() {
+                if (!r.ok) dirStatus.setText("Auth : " + r.message + " (le jeu se lance ; un serveur strict pourra refuser).");
+                launchGame(host, port, id.userID);
+            } });
+        } }).start();
+    }
+
+    /** Écrit host/port (+ userID authentifié pour le hook de boot) et démarre le jeu. */
+    private void launchGame(String host, int port, long userID) {
         SharedPreferences.Editor e = getSharedPreferences(PREFS, MODE_PRIVATE).edit();
-        e.putString("host", host); e.putInt("port", port); e.commit();
+        e.putString("host", host); e.putInt("port", port);
+        if (userID > 0) e.putLong("userID", userID); else e.remove("userID");
+        e.commit();
         try {
             Intent i = new Intent();
             i.setClassName(getPackageName(), GAME_ACTIVITY);

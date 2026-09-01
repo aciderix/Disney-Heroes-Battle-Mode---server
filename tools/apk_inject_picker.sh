@@ -42,7 +42,7 @@ sed -e "s#__DH_DIRECTORY_URL__#${DIR_URL//&/\\&}#g" -e "s#__DH_DIRECTORY_ANON_KE
     "$ROOT/mobile/DhServerPicker.java" > "$W/src/com/perblue/dhlauncher/DhServerPicker.java"
 # Identité mnémonique mobile (V3) : Ed25519 pur-Java + MobileIdentity + wordlist BIP39 (source unique = celle du
 # serveur, package renommé sous le picker). Requis par la crypto d'auth strict côté mobile.
-cp "$ROOT/mobile/Ed25519.java" "$ROOT/mobile/MobileIdentity.java" "$W/src/com/perblue/dhlauncher/"
+cp "$ROOT/mobile/Ed25519.java" "$ROOT/mobile/MobileIdentity.java" "$ROOT/mobile/MobileAuth.java" "$W/src/com/perblue/dhlauncher/"
 sed 's/^package dhserver.auth;/package com.perblue.dhlauncher;/' \
     "$ROOT/server/java/dhserver/auth/Bip39Wordlist.java" > "$W/src/com/perblue/dhlauncher/Bip39Wordlist.java"
 javac -bootclasspath "$CACHE/android.jar" -source 8 -target 8 -d "$W/cls" \

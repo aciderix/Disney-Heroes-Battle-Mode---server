@@ -76,7 +76,33 @@ class Handler(BaseHTTPRequestHandler):
         path = self.path.split("?", 1)[0]
         if path.rstrip("/") == "/login":
             return self._serve_login()
+        # PROXY AUTH (V3 mobile) : le picker mobile ne connaît QUE l'adresse content/login ; on relaie /auth/*
+        # (challenge / register / verify) vers l'AuthService (DH_AUTH_URL). /auth/mint reste LOCAL (jamais exposé).
+        if path.startswith("/auth/") and path.rstrip("/") != "/auth/mint":
+            return self._proxy_auth(path)
         self._send(404, "text/plain", b"not found\n", head_only=False)
+
+    def _proxy_auth(self, path):
+        """Relaie un POST /auth/{challenge,register,verify} vers l'AuthService et renvoie sa réponse telle quelle."""
+        import os, urllib.request, urllib.error
+        auth_url = os.environ.get("DH_AUTH_URL")
+        if not auth_url:
+            return self._send(503, "application/json", b'{"error":"auth-not-configured"}\n', head_only=False)
+        try:
+            length = int(self.headers.get("Content-Length", "0"))
+            body = self.rfile.read(length) if length else b""
+            req = urllib.request.Request(
+                auth_url.rstrip("/") + path, data=body,
+                headers={"Content-Type": self.headers.get("Content-Type", "application/x-www-form-urlencoded")})
+            try:
+                with urllib.request.urlopen(req, timeout=8) as resp:
+                    data = resp.read()
+                    self._send(resp.status, "application/json", data, head_only=False)
+            except urllib.error.HTTPError as he:
+                self._send(he.code, "application/json", he.read() or b"{}", head_only=False)
+        except Exception as e:
+            sys.stderr.write("[content] /auth proxy échec (%s): %s\n" % (path, e))
+            self._send(502, "application/json", b'{"error":"auth-upstream"}\n', head_only=False)
 
     def _serve_login(self):
         # Le client POST des params device (form-encoded, dont `userID`) puis attend un JSON :
