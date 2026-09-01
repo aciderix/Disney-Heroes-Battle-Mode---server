@@ -1,5 +1,27 @@
 # JOURNAL — journal détaillé des modifications
 
+## 2026-09-01 (g227) — PATCH APK brique 4b : cible « APK » câblée dans le launcher (Générer → APK redirigé + re-signé) 🟢
+
+Le patch APK (g226) est maintenant accessible depuis le launcher, comme les cibles Serveur/Client.
+- **`BuildManager`** : cible `APK` CÂBLÉE (le refus « à venir » est levé). `setApkTarget(host, port)` + `runApkPipeline`
+  appelle `tools/patch_apk.sh <apk> <host> <port> <out>/dh-<host>.apk`. Sans serveur cible → refus honnête.
+- **`LauncherDaemon`** : `POST /build/start target=apk` accepte `serverHost` + `serverPort` (400 honnête si absents) →
+  `build.setApkTarget(...)`.
+- **Front `Générer`** : 3ᵉ option « APK mobile (rediriger vers un serveur) » → champs hôte + port + avertissement install
+  hors store ; bannière de fin adaptée. `tsc`+`vite build` OK.
+- **✅ PROUVÉ end-to-end via le launcher** (`ApkBuildProbe`, DEV) : `POST /build/start target=apk 10.0.0.5:8080` → poll
+  `/build/status` → **DONE** → `dh-10.0.0.5.apk` (97 Mo, redirigé + re-signé) produit. `BuildDataGenTest` mis à jour
+  (apk sans cible → 400 honnête) → 5/5.
+- **⚠️ Régression 176/177** : l'unique échec, **`WarSeasonTest`**, est un bug de **BORD DE MOIS PRÉ-EXISTANT** (aujourd'hui
+  = 1ᵉʳ sept.) — `ServerWar.seasonIDAt(now)` renvoie la saison de SEPTEMBRE alors que sa fenêtre n'ouvre qu'à `RESET_HOUR`
+  (11:00 America/Chicago) le 1ᵉʳ ; entre minuit et 11:00 (heure serveur) `now < seasonStartTime(cur)` → assertion faussée.
+  **SANS LIEN avec cette brique** (elle ne touche ni la guerre ni l'horloge). À traiter à part (aligner `seasonIDAt` sur
+  l'ancrage RESET_HOUR, comme les correctifs de bord de mois `pinClockToMidMonth` de `SigninMultiDayTest`/`WarSchedulerTest`).
+
+Fichiers : `server/java/dhlauncher/BuildManager.java`, `server/java/dhlauncher/LauncherDaemon.java`,
+`server/smoke/BuildDataGenTest.java`, `server/smoke/ApkBuildProbe.java` (+, DEV), `launcher-ui/src/views/Generate.tsx`,
+`launcher-ui/src/api/types.ts`, `docs/SERVER_EXPLORER.md`, `docs/PHASE2_TRACKING.md`, `JOURNAL.md`, `MEMORY.md`.
+
 ## 2026-08-31 (g226) — PATCH APK brique 4a : redirection ServerType + re-signature — CHAÎNE PROUVÉE sur l'APK 12.1.0 ✅
 
 Première brique du côté MOBILE de l'explorateur : prouver qu'on peut **rediriger l'APK vers un serveur auto-hébergé** puis

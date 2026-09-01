@@ -29,10 +29,16 @@ public final class BuildManager {
     private volatile String outDir = "";
     private volatile Target target = Target.SERVER;
     private volatile boolean doPackage = true;
+    /** PATCH APK (brique 4b) — serveur cible de la redirection (hôte + port), posé avant un build de cible {@code APK}. */
+    private volatile String apkHost;
+    private volatile int apkPort;
     private final StringBuilder log = new StringBuilder();
     private Thread worker;
 
     public BuildManager(String projectDir) { this.projectDir = projectDir; }
+
+    /** PATCH APK (brique 4b) — fixe le serveur cible (host:port) de la redirection, à appeler avant {@code start(...APK...)}. */
+    public void setApkTarget(String host, int port) { this.apkHost = host == null ? null : host.trim(); this.apkPort = port; }
 
     /**
      * Démarre une génération pour une CIBLE. {@code full=false} → seulement l'extraction des données (léger, sans
@@ -56,17 +62,23 @@ public final class BuildManager {
             return status();
         }
         if (this.target == Target.APK) {
-            state = State.FAILED; step = "cible-à-venir";
-            append("Cible APK (patch mobile) : incrément ULTÉRIEUR (intégrer la découverte/redirection serveur dans "
-                 + "l'APK). Cibles câblées : SERVER (hébergement), CLIENT (port PC).");
-            return status();
+            // PATCH APK (brique 4b) — redirige l'APK du joueur vers un serveur choisi, puis re-signe (tools/patch_apk.sh).
+            if (apkHost == null || apkHost.isEmpty() || apkPort <= 0) {
+                state = State.FAILED; step = "apk-cible-manquante";
+                append("Patch APK : hôte + port du serveur cible requis (setApkTarget). Ex. 192.168.1.20:8080.");
+                return status();
+            }
         }
-        String def = this.target == Target.CLIENT ? "build/generated-client" : "build/generated-server";
+        String def = this.target == Target.CLIENT ? "build/generated-client"
+                   : this.target == Target.APK ? "build/generated-apk" : "build/generated-server";
         this.outDir = (out == null || out.isEmpty()) ? new File(projectDir, def).getPath() : out;
         state = State.RUNNING; step = "démarrage";
         final Target t = this.target;
-        worker = new Thread(() -> { if (t == Target.CLIENT) runClientPipeline(apk, this.outDir);
-                                    else runPipeline(apk, this.outDir, full); }, "dh-build");
+        worker = new Thread(() -> {
+            if (t == Target.CLIENT) runClientPipeline(apk, this.outDir);
+            else if (t == Target.APK) runApkPipeline(apk, this.outDir);
+            else runPipeline(apk, this.outDir, full);
+        }, "dh-build");
         worker.setDaemon(true);
         worker.start();
         return status();
@@ -98,6 +110,26 @@ public final class BuildManager {
     }
 
     private String tool(String name) { return new File(projectDir, "tools/" + name).getPath(); }
+
+    /**
+     * Pipeline APK (brique 4b) — redirige l'APK du joueur vers le serveur choisi ({@link #setApkTarget}) et le re-signe,
+     * via {@code tools/patch_apk.sh} (baksmali/smali + uber-apk-signer). Sortie = {@code <out>/dh-<host>.apk}. On NE
+     * redistribue PAS l'APK (le joueur fournit et patche le sien, §7) ; à installer HORS store.
+     */
+    private void runApkPipeline(File apk, String out) {
+        try {
+            new File(out).mkdirs();
+            String outApk = new File(out, "dh-" + apkHost.replaceAll("[^0-9A-Za-z._-]", "_") + ".apk").getPath();
+            runStep("apk-patch", new String[]{"bash", tool("patch_apk.sh"), apk.getPath(),
+                    apkHost, Integer.toString(apkPort), outApk}, null, null);
+            if (!new File(outApk).isFile()) throw new IllegalStateException("APK patché absent en sortie");
+            append("APK patché prêt : " + outApk + " (redirige vers http://" + apkHost + ":" + apkPort
+                 + " ; installer hors store)");
+            step = "done"; state = State.DONE;
+        } catch (Exception e) {
+            append("ÉCHEC (" + step + "): " + e.getMessage()); state = State.FAILED;
+        }
+    }
 
     /**
      * Pipeline CLIENT (C2a-4b) — construit le port PC (game-logic-framed + gradle + assets + natifs via

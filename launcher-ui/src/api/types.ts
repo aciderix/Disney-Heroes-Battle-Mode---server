@@ -64,5 +64,6 @@ export type AdminTarget = { mode: "local" | "remote"; baseUrl?: string; tls?: bo
 
 // Paramètres d'appel (côté front → daemon).
 export type HostStartParams = { bundleDir?: string; contentPort?: number; gamePort?: number; authPort?: number; strict?: boolean };
-export type BuildStartParams = { apkPath: string; target?: BuildTarget; outDir?: string; full?: boolean; pkg?: boolean };
+export type BuildStartParams = { apkPath: string; target?: BuildTarget; outDir?: string; full?: boolean; pkg?: boolean;
+  serverHost?: string; serverPort?: number };
 export type PlayStartParams = { clientDir: string; serverId?: string; serverHost?: string; contentPort?: number; userID?: number; strict?: boolean };

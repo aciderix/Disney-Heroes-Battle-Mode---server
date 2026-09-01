@@ -225,7 +225,11 @@ public final class LauncherDaemon {
         send(ex, 200, host.status());
     }
 
-    /** POST /build/start {apkPath, [target=server|client|apk], [outDir], [full=false]} → génère depuis l'APK (async). */
+    /**
+     * POST /build/start {apkPath, [target=server|client|apk], [outDir], [full=false]} → génère depuis l'APK (async).
+     * Pour {@code target=apk} (brique 4b) : {@code serverHost} + {@code serverPort} (le serveur cible de la redirection)
+     * sont requis → l'APK est redirigé + re-signé (`tools/patch_apk.sh`).
+     */
     private void buildStart(HttpExchange ex) throws IOException {
         if (!post(ex)) return;
         Map<String, String> f = form(ex);
@@ -234,6 +238,12 @@ public final class LauncherDaemon {
         try { tgt = BuildManager.Target.valueOf(f.getOrDefault("target", "server").trim().toUpperCase()); }
         catch (Exception e) { send(ex, 400, "{\"error\":\"target invalide (server|client|apk)\"}"); return; }
         boolean pkg = !("false".equalsIgnoreCase(f.getOrDefault("pkg", "true")) || "0".equals(f.getOrDefault("pkg", "")));
+        if (tgt == BuildManager.Target.APK) {
+            String host = f.getOrDefault("serverHost", "").trim();
+            int port = intOr(f, "serverPort", 0);
+            if (host.isEmpty() || port <= 0) { send(ex, 400, "{\"error\":\"serverHost + serverPort requis pour target=apk\"}"); return; }
+            build.setApkTarget(host, port);
+        }
         send(ex, 200, build.start(f.getOrDefault("apkPath", ""), f.getOrDefault("outDir", ""), tgt, full, pkg));
     }
 

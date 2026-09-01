@@ -18,7 +18,7 @@ nom/mode côté Héberger ; navigateur côté Serveurs ; adresse d'annuaire modi
 | **2** | Table **Supabase** : inscription signée par le serveur + lecture + **keep-alive** GitHub Action | 🟢 **FAIT** (g223, prouvé LIVE `DirectoryProbe` : register 200 / read 200 / faux 401) |
 | **3** | **Navigateur de serveurs** dans le launcher PC (lit l'annuaire, vérifie la signature, ping, Jouer) | 🟢 **FAIT** (g224 : daemon `/directory` + `/directory/verify` ; front panneau communautaire ; E2E 10/10 + chemin LIVE prouvé) |
 | **4a** | **Patch APK — redirection + re-signature** (`tools/patch_apk.sh`) | 🟢 **FAIT** (g226, PROUVÉ sur 12.1.0 : LIVE→serveur choisi, signé v2/v3) |
-| **4b** | Câbler le patch APK dans le launcher (cible « apk » de `BuildManager` + écran Générer) | ⬜ à faire |
+| **4b** | Câbler le patch APK dans le launcher (cible « apk » de `BuildManager` + écran Générer) | 🟢 **FAIT** (g227 : `/build/start target=apk`, écran Générer host/port, prouvé via `ApkBuildProbe`) |
 | **4c** | Écran de CHOIX de serveur DANS l'appli au lancement (injection UI smali, Option C) | ⬜ à faire (le gros morceau) |
 | indép. | Brancher le `GetServers` natif = sélecteur de **SHARD** in-game (Niveau 2) | ⬜ optionnel |
 
