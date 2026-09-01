@@ -19,7 +19,8 @@ nom/mode côté Héberger ; navigateur côté Serveurs ; adresse d'annuaire modi
 | **3** | **Navigateur de serveurs** dans le launcher PC (lit l'annuaire, vérifie la signature, ping, Jouer) | 🟢 **FAIT** (g224 : daemon `/directory` + `/directory/verify` ; front panneau communautaire ; E2E 10/10 + chemin LIVE prouvé) |
 | **4a** | **Patch APK — redirection + re-signature** (`tools/patch_apk.sh`) | 🟢 **FAIT** (g226, PROUVÉ sur 12.1.0 : LIVE→serveur choisi, signé v2/v3) |
 | **4b** | Câbler le patch APK dans le launcher (cible « apk » de `BuildManager` + écran Générer) | 🟢 **FAIT** (g227 : `/build/start target=apk`, écran Générer host/port, prouvé via `ApkBuildProbe`) |
-| **4c** | Écran de CHOIX de serveur DANS l'appli au lancement (injection UI smali, Option C) | ⬜ à faire (le gros morceau) |
+| **4c-1** | Fondations de l'écran in-app (Activity picker + `ServerType.setLive` + toolchain) | 🟢 **PROUVÉ** (g228 : picker compile→dex, setLive réassemble, apktool round-trip) |
+| **4c-2** | Orchestration : hook boot + manifeste LAUNCHER + repackage + re-signe | ⬜ suivant |
 | indép. | Brancher le `GetServers` natif = sélecteur de **SHARD** in-game (Niveau 2) | ⬜ optionnel |
 
 ## Annuaire Supabase — schéma technique (brique 2, LIVRÉ)
@@ -46,6 +47,31 @@ nom/mode côté Héberger ; navigateur côté Serveurs ; adresse d'annuaire modi
   préconfiguré (gating honnête dans l'UI). Jamais de `service_role` ici.
 - **Secrets** : `service_role` et la chaîne de connexion directe NE sont JAMAIS committées ni exposées ; le runtime n'utilise
   que l'URL projet + la clé **anon/publishable** (publiques par conception). Le setup DB a été fait via le connecteur MCP.
+
+## Écran de sélection in-app (brique 4c) — architecture retenue + état
+
+**But** : au lancement de l'appli mobile, afficher D'ABORD un écran de choix de serveur (liste de l'annuaire + saisie
+manuelle) ; « Jouer » lance le jeu sur le serveur choisi. Le contenu se télécharge ensuite via l'`index.txt` du serveur
+retenu (`ServerType.contentLocation`, servi par `content_server.py` — même mécanisme que le desktop).
+
+**Architecture (Option C, la plus tractable)** — une Activity Android SÉPARÉE en amont, pas de refonte de l'UI libGDX :
+1. **`mobile/DhServerPicker.java`** (nouvelle Activity, UI programmatique) : lit l'annuaire (REST Supabase, clé anon
+   PUBLIQUE injectée au patch) → liste de boutons + saisie manuelle ; au choix, écrit `host`/`port` dans les
+   `SharedPreferences` « dhserver » puis démarre `com.perblue.heroes.android.AndroidLauncher` (le jeu).
+2. **`ServerType.setLive(host, port)`** (méthode statique ajoutée en smali) : pose `gameHost="http://"+host`,
+   `gamePort=port`, `contentLocation="http://host:port/live/index.txt"` sur `LIVE`.
+3. **Hook boot** (smali, dans `AndroidLauncher.onCreate`, après `super.onCreate`) : lit les prefs « dhserver » ; si
+   présentes → `ServerType.setLive(host, port)` AVANT que le jeu ne lise son serveur.
+4. **Manifeste** : `DhServerPicker` devient le LAUNCHER (`MAIN`/`LAUNCHER`) ; on retire cet intent d'`AndroidLauncher`
+   (qui reste démarrable par le picker). `INTERNET` déjà accordé.
+5. **Repackage** : dex du picker (`d8`) + dex jeu patchés (baksmali/smali) + manifeste édité (apktool) → **re-signe**.
+
+**Toolchain (téléchargée, gitignorée `libs/apktools/`, §7)** : apktool (manifeste, round-trip **prouvé** sur 12.1.0) +
+**r8/d8 8.3.37** + **android.jar** (API 33) pour compiler l'Activity + baksmali/smali + uber-apk-signer.
+
+**État 4c-1 (g228) — fondations PROUVÉES** : `DhServerPicker` **compile** (javac+android.jar) et **dexe** (d8) ;
+`ServerType.setLive` **réassemble** (smali) ; **apktool rebuild** de l'APK OK. **Reste 4c-2** : le hook `AndroidLauncher`
++ l'édition du manifeste + l'orchestration `tools/apk_inject_picker.sh` (repackage + re-signe) + vérif SUR APPAREIL.
 
 ## 0. Ce que veut l'utilisateur
 

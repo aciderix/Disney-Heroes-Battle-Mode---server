@@ -1,5 +1,27 @@
 # JOURNAL — journal détaillé des modifications
 
+## 2026-09-01 (g228) — PATCH APK brique 4c-1 : fondations de l'écran de sélection in-app (Activity + setLive + toolchain) 🟢
+
+Attaque de l'écran de CHOIX de serveur DANS l'appli mobile (au lancement → Jouer sur le serveur choisi). Architecture
+retenue (Option C, cf. `docs/SERVER_EXPLORER.md`) : une **Activity Android séparée en amont** (pas de refonte UI libGDX)
+qui écrit le choix en SharedPreferences, un **hook boot** qui appelle `ServerType.setLive`, un **manifeste** où le picker
+devient LAUNCHER. Ce commit PROUVE les 3 briques techniques nouvelles ; l'orchestration (4c-2) suit.
+
+- **`mobile/DhServerPicker.java`** (nouveau) : Activity UI-programmatique (aucune ressource XML → pas d'aapt) — liste
+  l'annuaire (REST Supabase, clé anon publique injectée au patch) + saisie manuelle ; au choix écrit `dhserver` (host/port)
+  puis démarre `AndroidLauncher`. **Compile** (javac + android.jar API 33) **et dexe** (d8/r8 8.3.37) → dex OK.
+- **`ServerType.setLive(host, port)`** : méthode statique ajoutée en smali (pose gameHost/gamePort/contentLocation sur
+  LIVE) → **réassemble** (smali) sans erreur.
+- **apktool** : **rebuild** de l'APK 12.1.0 round-trip **OK** (manifeste éditable) — gate levé.
+- Toolchain téléchargée + gitignorée `libs/apktools/` (apktool + r8/d8 + android.jar en plus de baksmali/smali/signer).
+- **Reste 4c-2** : hook `AndroidLauncher.onCreate` (lire prefs → setLive) + édition manifeste (LAUNCHER) + orchestration
+  `tools/apk_inject_picker.sh` (repackage picker.dex + dex jeu patchés + manifeste, re-signe) + **vérif SUR APPAREIL**.
+
+⚠️ Régression inchangée à 176/177 (le seul rouge reste `WarSeasonTest`, bug de bord de mois PRÉ-EXISTANT du 1ᵉʳ sept.,
+sans lien — cf. g227). Ce commit n'ajoute pas de code serveur (Activity mobile + doc).
+
+Fichiers : `mobile/DhServerPicker.java` (+), `docs/SERVER_EXPLORER.md`, `docs/PHASE2_TRACKING.md`, `JOURNAL.md`, `MEMORY.md`.
+
 ## 2026-09-01 (g227) — PATCH APK brique 4b : cible « APK » câblée dans le launcher (Générer → APK redirigé + re-signé) 🟢
 
 Le patch APK (g226) est maintenant accessible depuis le launcher, comme les cibles Serveur/Client.
