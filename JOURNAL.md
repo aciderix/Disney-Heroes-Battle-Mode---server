@@ -1,5 +1,36 @@
 # JOURNAL — journal détaillé des modifications
 
+## 2026-09-01 (g232) — ÉCRAN MOBILE V3 brique 1 : Ed25519 pur-Java + identité mnémonique mobile — PARITÉ SunEC PROUVÉE ✅ + portrait
+
+Reprise APRÈS COMPRESSION : rituel appliqué EN ENTIER (MEMORY haut, commits, JOURNAL récents, SHIMS, PRINCIPLES §1-§8,
+SERVER_EXPLORER, auth serveur). Retour util. sur la V2 : ✅ fonctionne (écran + Jouer + favoris) ; demandes → (a) écran de
+choix en **PORTRAIT** (jeu reste paysage), (b) **V3 pack complet** (identité/auth mnémonique mobile).
+
+- **Ergonomie (a)** : `tools/apk_manifest_picker.py` pose `android:screenOrientation="portrait"` sur l'activity `DhServerPicker`
+  (au lieu de `sensorLandscape`). Le jeu (`AndroidLauncher`) garde sa propre orientation → **picker portrait, jeu paysage**.
+- **KEYSTONE crypto (b)** : le jeu vise **API 26**, or `Signature/KeyPairGenerator.getInstance("Ed25519")` n'existent qu'à
+  partir d'**API 33** → il faut un **Ed25519 pur-Java embarqué**. Livré :
+  - **`mobile/Ed25519.java`** : port fidèle de **TweetNaCl** (domaine public, §4 rien d'inventé) — arithmétique de corps base
+    2^16, `scalarbase`/`scalarmult`, `crypto_sign`/`crypto_sign_open` ; SHA-512 via `MessageDigest` (présent dès API 26).
+    Clés/signatures RAW (pub 32 o, sig 64 o).
+  - **`mobile/MobileIdentity.java`** : MIROIR EXACT de `dhserver.auth.MnemonicIdentity` (serveur, SunEC) — phrase BIP39 8 mots
+    → seed PBKDF2-HMAC-SHA512 (`"mnemonic"`, 2048 it., présent dès API 26) → clé Ed25519 déterministe (32 premiers octets du
+    seed = clé privée RFC 8032) → clé publique X.509 **SPKI 44 o** (préfixe Ed25519 fixe + 32 o) → **userID** = SHA-256(SPKI)[0..7].
+  - **PREUVE `server/smoke/MobileIdentityParityTest`** (dans `regression.sh`, **586 assertions**) : sur 40 phrases aléatoires +
+    12 longueurs de message, **même seed / même clé SPKI bit-à-bit / même userID** mobile↔serveur ; **signature MOBILE vérifiée
+    par le SERVEUR (SunEC)** et réciproquement ; **signatures identiques** (RFC 8032 pur = déterministe) ; nonce falsifié rejeté
+    des 2 côtés ; verdict de validité (checksum) identique sur faute de frappe. ⇒ **une même phrase = le même compte sur le
+    launcher desktop ET le mobile** (comptes portables), et le serveur accepte les signatures forgées côté mobile.
+  - `regression.sh` compile les sources mobiles + génère la wordlist sous le package du picker (source unique = celle du serveur,
+    package renommé — pas de duplication). **Régression 177/178** (seul rouge = `WarSeasonTest`, bug bord-de-mois PRÉ-EXISTANT du
+    1ᵉʳ sept., sans lien — dépriorisé par l'util.).
+- **Reste V3** : brique 2 (UI compte : créer/restaurer/afficher la phrase dans le picker + copie wordlist dans le dex picker),
+  brique 3 (handshake auth strict depuis le picker : /auth/challenge → sign → register/verify + patch smali userID de boot),
+  brique 4 (vérif signature /info mobile + ping). Puis vérif §8 SUR APPAREIL.
+
+Fichiers : `mobile/Ed25519.java` (+), `mobile/MobileIdentity.java` (+), `server/smoke/MobileIdentityParityTest.java` (+),
+`server/smoke/regression.sh`, `tools/apk_manifest_picker.py`, `JOURNAL.md`, `MEMORY.md`.
+
 ## 2026-09-01 (g231) — ÉCRAN MOBILE V2 : ergonomie + FAVORIS + infos serveur (annuaire) 🟢
 
 Vérif appareil (user) : l'**écran s'affiche** (paysage, cohérent avec le jeu) et **« Jouer » lance le jeu** ✅ — la boucle

@@ -37,7 +37,7 @@ def main(path: str) -> None:
         '<activity android:name="' + PICKER + '" android:exported="true" '
         'android:label="@string/app_name" android:launchMode="singleTask" '
         'android:configChanges="keyboard|keyboardHidden|orientation|screenSize" '
-        'android:screenOrientation="sensorLandscape">'
+        'android:screenOrientation="portrait">'
         '<intent-filter>'
         '<action android:name="android.intent.action.MAIN"/>'
         '<category android:name="android.intent.category.LAUNCHER"/>'
