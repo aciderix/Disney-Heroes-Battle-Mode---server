@@ -1,5 +1,30 @@
 # JOURNAL — journal détaillé des modifications
 
+## 2026-09-01 (g238) — ÉCRAN MOBILE : ergonomie (onglets + carte verticale + copie phrase + recherche/filtres) + APK rebuild
+
+Retours utilisateur EN JEU (captures) : l'écran s'affiche en portrait mais (a) les cartes serveur s'enroulaient
+LETTRE PAR LETTRE (texte écrasé par les 3 boutons sur la même ligne), (b) besoin d'un bouton COPIER la phrase, (c)
+recherche + filtres souhaités.
+- **Carte serveur VERTICALE** (`serverCard`) : nom + détails en **pleine largeur** puis une rangée de boutons DESSOUS
+  (Jouer extensible + ★/✕ + 🔎) → fini l'enroulement caractère par caractère. Fond arrondi par carte.
+- **Onglets** : barre `🎮 Serveurs` / `👤 Compte` (`showTab`) → deux conteneurs togglés, moins de défilement.
+- **Copier la phrase** : bouton `⧉ Copier` (ClipboardManager + toast) dans la création ET l'affichage ; phrase en
+  MONOSPACE pleine largeur, plus lisible.
+- **Recherche + filtres** (annuaire) : champ de recherche (nom/adresse/mode, live via `TextWatcher`) + filtres
+  `Tous / 🔒 Strict / Ouvert`. Les serveurs sont parsés EN MÉMOIRE (`dirServers`) puis `renderDir()` applique
+  recherche+filtre sans re-télécharger ; compteur « n / total ».
+- **✅ compile+dexe** (android.jar API33, source/target 8, sans lambda, d8 --min-api 26 → dex 61 Ko).
+- **APK régénéré** `mobile-build/dh-picker-universal.apk` (158 Mo, LFS).
+
+**Réponse « index.txt / assets archive.org »** : OUI, inclus CÔTÉ SERVEUR. `index.txt` (485 archives, committé) est servi
+par `content_server.py` à `/live/index.txt`, qui **réécrit les URLs** et sert les archives depuis un **cache local** ou en
+**redirige/streame depuis archive.org** (reprise + retries). L'APK ne embarque PAS les assets : au lancement il pointe sur
+`http://host:port/live/index.txt` du serveur choisi (via `ServerType.contentLocation`, posé par le hook `setLive`) et le
+client télécharge les assets manquants. ⇒ pour VOIR des assets se télécharger, il faut un serveur JOIGNABLE qui fait tourner
+`content_server.py` (l'entrée DÉMO de l'annuaire pointe sur une IP injoignable, donc pas de contenu réel).
+
+Fichiers : `mobile/DhServerPicker.java`, `mobile-build/dh-picker-universal.apk` (LFS), `JOURNAL.md`, `MEMORY.md`.
+
 ## 2026-09-01 (g237) — BUGS LAUNCHER (rapport agent externe) : CORS + annuaire GUI + build client + CI Linux ✅ + APK V3 rebuild
 
 Rapport d'un agent IA ayant testé le launcher sous Linux headless (l'utilisateur, lui, était bloqué sous Windows). 4 bugs
