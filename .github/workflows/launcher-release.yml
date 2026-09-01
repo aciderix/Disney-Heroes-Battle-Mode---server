@@ -23,7 +23,10 @@ jobs:
       fail-fast: false
       matrix:
         include:
-          - os: ubuntu-latest
+          # ubuntu-22.04 (GLIBC 2.35) et non ubuntu-latest/24.04 (GLIBC 2.39) : un binaire lié à 2.39 REFUSE de
+          # démarrer sur Debian 12 (2.36) / Ubuntu 22.04 (2.35) etc. (bug #2). Builder sur la plus ANCIENNE GLIBC
+          # raisonnable maximise la compat descendante ; l'AppImage (déjà produit par Tauri) embarque webkit2gtk.
+          - os: ubuntu-22.04
             oskind: linux
             pyexe: runtime/python/bin/python3
           - os: windows-latest

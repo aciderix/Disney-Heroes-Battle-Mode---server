@@ -187,8 +187,19 @@ public final class BuildManager {
 
         // classes desktop-port → lib/dhdesktop.jar
         String classes = req(m, "CLASSES");
-        runStep("jar-client", new String[]{ javaBin("jar"), "cf", new File(lib, "dhdesktop.jar").getPath(),
-                "-C", classes, "." }, null, null);
+        File clientJar = new File(lib, "dhdesktop.jar");
+        runStep("jar-client", new String[]{ javaBin("jar"), "cf", clientJar.getPath(), "-C", classes, "." }, null, null);
+        // GARDE-FOU (bug #5) : ne JAMAIS déclarer le build réussi avec un jar client VIDE (compilation gradle échouée
+        // en amont mais avalée). Sans ce contrôle, "Jouer" crashait « ClassNotFoundException dhdesktop.DesktopLauncher »
+        // sans aucune erreur visible. On exige au moins une classe .class dans le jar.
+        int classCount = 0;
+        try (java.util.jar.JarFile jf = new java.util.jar.JarFile(clientJar)) {
+            java.util.Enumeration<java.util.jar.JarEntry> en = jf.entries();
+            while (en.hasMoreElements()) if (en.nextElement().getName().endsWith(".class")) { classCount++; if (classCount > 0) break; }
+        }
+        if (classCount == 0)
+            throw new java.io.IOException("build client INVALIDE : dhdesktop.jar ne contient AUCUNE classe (la compilation "
+                + "du client a échoué — voir la sortie de run-desktop.sh). Client non lançable ; build interrompu.");
         // game-logic-framed.jar (doit précéder les jars runtime → ombrage le game-logic original)
         copyFile(new File(req(m, "FRAMED")), new File(lib, "game-logic-framed.jar"));
         // jars runtime (LWJGL3, gdx, unidbg…) → lib/runtime/

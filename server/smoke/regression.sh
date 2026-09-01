@@ -91,6 +91,7 @@ TESTS=(
   AuthFlowTest
   LauncherLoginTest
   LauncherServersTest
+  LauncherCorsTest
   AuthMintTest
   StrictSingleLoginTest
   HostLifecycleTest

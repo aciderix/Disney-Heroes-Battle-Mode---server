@@ -97,6 +97,48 @@ public final class LauncherDaemon {
     public int port()   { return http.getAddress().getPort(); }
 
     /**
+     * ANNUAIRE (bug #4) — charge {@code directory.env} (placé À CÔTÉ DU JAR par {@code build_launcher.sh}) et pose
+     * {@code dh.directory.url}/{@code dh.directory.anonkey} en propriétés système, que les champs {@code directoryUrl}/
+     * {@code directoryKey} lisent EN PREMIER. Nécessaire parce que le binaire GUI (Tauri/Rust) spawn {@code java -cp
+     * dhlauncher.jar …} DIRECTEMENT, sans jamais sourcer {@code run-launcher.sh} (le seul endroit qui lisait ce fichier).
+     * L'ENV réel garde la priorité : on ne pose la propriété QUE si ni la propriété ni la variable d'env correspondante
+     * ne sont déjà définies. Rien de secret ici (URL + clé anon PUBLIQUE ; jamais de service_role).
+     */
+    static void loadDirectoryEnv() {
+        try {
+            java.io.File jar = new java.io.File(
+                LauncherDaemon.class.getProtectionDomain().getCodeSource().getLocation().toURI());
+            java.io.File dir = jar.isFile() ? jar.getParentFile() : jar;   // jar → son dossier ; classes → le dossier
+            java.io.File[] candidates = {
+                new java.io.File(dir, "directory.env"),
+                new java.io.File(System.getProperty("user.dir", "."), "directory.env"),
+            };
+            for (java.io.File f : candidates) {
+                if (f == null || !f.isFile()) continue;
+                for (String line : java.nio.file.Files.readAllLines(f.toPath(), StandardCharsets.UTF_8)) {
+                    line = line.trim();
+                    if (line.isEmpty() || line.startsWith("#")) continue;
+                    int eq = line.indexOf('=');
+                    if (eq <= 0) continue;
+                    String k = line.substring(0, eq).trim(), v = line.substring(eq + 1).trim();
+                    if ("DH_DIRECTORY_URL".equals(k))       maybeSet("dh.directory.url", v, "DH_DIRECTORY_URL", "PROJECT_URL");
+                    else if ("DH_DIRECTORY_ANON_KEY".equals(k)) maybeSet("dh.directory.anonkey", v, "DH_DIRECTORY_ANON_KEY", "ANON_PUBLIC", "PUBLISHABLE_KEY");
+                }
+                return;   // premier directory.env trouvé = celui qu'on utilise
+            }
+        } catch (Exception e) {
+            System.out.println("[launcher] directory.env non chargé (" + e + ") — annuaire via env/props seulement");
+        }
+    }
+    /** Pose la propriété {@code prop=val} SEULEMENT si ni cette propriété ni aucune des variables d'env {@code envs} n'est déjà définie. */
+    private static void maybeSet(String prop, String val, String... envs) {
+        if (val == null || val.isEmpty()) return;
+        if (firstNonBlank(System.getProperty(prop)) != null) return;      // propriété déjà posée → priorité
+        for (String e : envs) if (firstNonBlank(System.getenv(e)) != null) return; // env déjà défini → priorité
+        System.setProperty(prop, val);
+    }
+
+    /**
      * POINT D'ENTRÉE du launcher distribué (package clé-en-main, cf. {@code tools/build_launcher.sh} +
      * {@code .github/workflows/launcher-release.yml}). Args : {@code --port <n>} (défaut 8090, ou
      * {@code -Ddh.launcher.port}) ; {@code --project <dir>} (racine du tooling embarqué → pose
@@ -110,6 +152,8 @@ public final class LauncherDaemon {
             else if ("--project".equals(args[i])) { System.setProperty("dh.launcher.projectdir", args[i + 1]); }
         }
         port = Integer.getInteger("dh.launcher.port", port);
+        loadDirectoryEnv();                                // ANNUAIRE : lit directory.env À CÔTÉ DU JAR (le binaire GUI
+                                                           // Tauri spawn `java` sans sourcer run-launcher.sh — bug #4)
         LauncherDaemon d = new LauncherDaemon(port);       // lit dh.launcher.projectdir posé ci-dessus
         d.start();
         System.out.println("[launcher] daemon local sur http://127.0.0.1:" + d.port()
@@ -392,7 +436,7 @@ public final class LauncherDaemon {
 
     /** GET /host/logs?which=server|content&tail=N → N dernières lignes du log hôte (lecture fichier locale, game-free). */
     private void hostLogs(HttpExchange ex) throws IOException {
-        if (!"GET".equals(ex.getRequestMethod())) { ex.sendResponseHeaders(405, -1); ex.close(); return; }
+        if (!"GET".equals(ex.getRequestMethod())) { deny405(ex); return; }
         Map<String, String> q = query(ex.getRequestURI().getRawQuery());
         send(ex, 200, host.tailLog(q.getOrDefault("which", "server"), intOr(q, "tail", 200)));
     }
@@ -407,7 +451,7 @@ public final class LauncherDaemon {
      * la table) ; le launcher DOIT re-vérifier chaque fiche via {@code POST /directory/verify} avant de faire confiance.
      */
     private void directoryList(HttpExchange ex) throws IOException {
-        if (!"GET".equals(ex.getRequestMethod())) { ex.sendResponseHeaders(405, -1); ex.close(); return; }
+        if (!"GET".equals(ex.getRequestMethod())) { deny405(ex); return; }
         if (directoryUrl == null || directoryKey == null) {
             send(ex, 503, "{\"error\":\"annuaire non configuré (DH_DIRECTORY_URL / DH_DIRECTORY_ANON_KEY)\"}"); return;
         }
@@ -464,7 +508,7 @@ public final class LauncherDaemon {
     // ---- utilitaires HTTP ----
     private static boolean post(HttpExchange ex) throws IOException {
         if ("POST".equals(ex.getRequestMethod())) return true;
-        ex.sendResponseHeaders(405, -1); ex.close(); return false;
+        deny405(ex); return false;
     }
     private static Map<String, String> form(HttpExchange ex) throws IOException {
         Map<String, String> m = new HashMap<>();
@@ -477,9 +521,30 @@ public final class LauncherDaemon {
     }
     private static void send(HttpExchange ex, int code, String body) throws IOException {
         byte[] b = body.getBytes(StandardCharsets.UTF_8);
+        cors(ex);
         ex.getResponseHeaders().set("Content-Type", "application/json");
         ex.sendResponseHeaders(code, b.length);
         try (OutputStream os = ex.getResponseBody()) { os.write(b); }
+    }
+    /**
+     * En-têtes CORS sur TOUTES les réponses. La fenêtre Tauri charge le front en {@code tauri://localhost} /
+     * {@code https://tauri.localhost} — origine DIFFÉRENTE de {@code http://127.0.0.1:<port>} où tourne ce daemon.
+     * WebKitGTK (Linux) comme WebView2 (Windows) appliquent CORS même en loopback : sans {@code Access-Control-Allow-Origin}
+     * le {@code fetch} du front échoue (« Launcher local injoignable ») alors que le serveur a bien répondu 200. Pas de
+     * cookies/credentials → {@code *} suffit. (Rapport bug launcher #1, reproduit Linux+Windows.)
+     */
+    private static void cors(HttpExchange ex) {
+        com.sun.net.httpserver.Headers h = ex.getResponseHeaders();
+        h.set("Access-Control-Allow-Origin", "*");
+        h.set("Access-Control-Allow-Methods", "GET, POST, OPTIONS");
+        h.set("Access-Control-Allow-Headers", "Content-Type");
+        h.set("Access-Control-Max-Age", "86400");
+    }
+    /** 405 « méthode non permise » AVEC en-têtes CORS (sinon le front lit un échec réseau opaque, pas le 405). */
+    private static void deny405(HttpExchange ex) throws IOException {
+        cors(ex);
+        ex.sendResponseHeaders(405, -1);
+        ex.close();
     }
     private static String json(String body, String key) {
         Matcher m = Pattern.compile("\"" + key + "\"\\s*:\\s*\"([^\"]*)\"").matcher(body);

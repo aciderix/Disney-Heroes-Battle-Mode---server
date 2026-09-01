@@ -1,5 +1,37 @@
 # JOURNAL — journal détaillé des modifications
 
+## 2026-09-01 (g237) — BUGS LAUNCHER (rapport agent externe) : CORS + annuaire GUI + build client + CI Linux ✅ + APK V3 rebuild
+
+Rapport d'un agent IA ayant testé le launcher sous Linux headless (l'utilisateur, lui, était bloqué sous Windows). 4 bugs
+confirmés dans le code réel puis corrigés :
+- **#1 CORS (BLOQUANT Windows+Linux)** = cause de « Launcher local injoignable ». La fenêtre Tauri (`tauri://localhost`)
+  n'a PAS la même origine que le daemon (`http://127.0.0.1:port`) ; sans `Access-Control-Allow-Origin` WebKitGTK/WebView2
+  rejettent la réponse (le `fetch` échoue alors que le serveur a répondu 200). **Fix** : `LauncherDaemon.send()` pose
+  désormais `Access-Control-Allow-Origin: *` + `Allow-Methods`/`Allow-Headers` ; les réponses 405 passent par `deny405`
+  (CORS aussi). **PROUVÉ `LauncherCorsTest`** (5 assertions : header présent sur 200 ET sur erreur).
+- **#4 annuaire jamais configuré dans le binaire GUI** : le binaire Tauri spawn `java … LauncherDaemon` DIRECTEMENT, sans
+  sourcer `run-launcher.sh` (le seul endroit qui lisait `directory.env`) → `/directory` toujours 503. **Fix** :
+  `LauncherDaemon.main()` appelle `loadDirectoryEnv()` qui lit `directory.env` À CÔTÉ DU JAR et pose `dh.directory.url/anonkey`
+  (l'ENV réel garde la priorité). Rien de secret (URL + clé anon publique).
+- **#5 build client = jar VIDE** (« Jouer » crashait `ClassNotFoundException dhdesktop.DesktopLauncher`) : `run-desktop.sh`
+  faisait `gradle compileJava 2>/dev/null … || true` (erreurs AVALÉES) et la dépendance `spine-libgdx-perblue.jar`
+  (git-ignorée, régénérable) n'était jamais auto-générée → sur un env neuf la compilation échoue en silence et `jar-client`
+  empaquette 0 classe. **Fix** : `run-desktop.sh` régénère le jar spine si absent (`tools/build_spine_jar.sh`) + n'avale plus
+  stderr et **exit 1** si `compileJava` échoue ; `BuildManager` **refuse** un `dhdesktop.jar` sans aucune classe (garde-fou).
+- **#2 portabilité Linux (GLIBC/GTK)** : binaire lié à GLIBC 2.39 (runner ubuntu-24.04) → refuse de démarrer sur Debian 12
+  (2.36)/Ubuntu 22.04 (2.35). **Fix** : `launcher-release.yml` build le Linux sur **ubuntu-22.04** (GLIBC 2.35, compat
+  descendante). (Note bug #3 = chemin `--project` relatif : NON reproductible via l'app livrée, `run-launcher.sh` passe un
+  chemin absolu — laissé tel quel.)
+- **Régression 181/181 verts** (dont `LauncherCorsTest`).
+
+**APK MOBILE V3 régénéré** : `mobile-build/dh-picker-universal.apk` (158 Mo, **git LFS**) reconstruit depuis le XAPK avec TOUT
+le pack V3 (écran portrait + compte mnémonique + handshake + boot-sur-compte + vérif /info). Build : universel 3 .so, picker=
+LAUNCHER, `classes4` = setLive+dhBoot+dhLoginUserID+hook+override, `classes7` = picker, signé v2/v3.
+
+Fichiers : `server/java/dhlauncher/LauncherDaemon.java`, `server/java/dhlauncher/BuildManager.java`, `desktop-port/run-desktop.sh`,
+`.github/workflows/launcher-release.yml`, `server/smoke/LauncherCorsTest.java` (+), `server/smoke/regression.sh`,
+`mobile-build/dh-picker-universal.apk` (LFS), `JOURNAL.md`, `MEMORY.md`.
+
 ## 2026-09-01 (g236) — ÉCRAN MOBILE V3 brique 4 : vérif signature /info mobile + ping/latence 🟢 PROUVÉ headless
 
 Le picker peut PROUVER l'authenticité d'un serveur communautaire (sans faire confiance à l'annuaire) et afficher sa latence.

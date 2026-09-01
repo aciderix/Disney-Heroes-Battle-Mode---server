@@ -48,8 +48,21 @@ REFRAME_CLS="../tools/reframe/classes"
 SPINE_LIB="../native/reference/libspine-native.so"
 [ -f "$SPINE_LIB" ] || echo "[desktop] WARN: $SPINE_LIB (binaire ARM d'origine) introuvable"
 
+# Dépendance locale OBLIGATOIRE : spine-libgdx-perblue.jar (artefact dérivé git-ignoré, régénérable). Sans lui,
+# build.gradle (`implementation files('../libs/spine-libgdx-perblue.jar')`) ne trouve AUCUNE classe spine → 94 erreurs
+# `cannot find symbol` → compilation ÉCHOUE. Sur un environnement neuf il n'existe pas encore → on le RÉGÉNÈRE (bug #5).
+if [ ! -f ../libs/spine-libgdx-perblue.jar ]; then
+  echo "[desktop] spine-libgdx-perblue.jar absent → génération (tools/build_spine_jar.sh) ..."
+  ( cd .. && tools/build_spine_jar.sh ) || { echo "[desktop] ✖ build_spine_jar.sh a ÉCHOUÉ — client non compilable"; exit 1; }
+fi
+
 echo "[desktop] compilation ..."
-gradle --no-daemon -q compileJava 2>/dev/null | grep -v 'Picked up' || true
+# NE PAS avaler les erreurs (ancien `2>/dev/null … || true` masquait un échec complet → jar client VIDE, "Jouer"
+# crashait « ClassNotFoundException dhdesktop.DesktopLauncher » sans le moindre message — bug #5). On garde stderr
+# VISIBLE et on ÉCHOUE si gradle échoue, pour que BuildManager remonte un vrai statut d'erreur.
+gradle --no-daemon compileJava 2>&1 | grep -v 'Picked up'
+gstatus=${PIPESTATUS[0]}
+if [ "$gstatus" -ne 0 ]; then echo "[desktop] ✖ compileJava a ÉCHOUÉ (rc=$gstatus) — voir les erreurs ci-dessus"; exit 1; fi
 RUNTIME_CP=$(gradle --no-daemon -q printRuntimeClasspath 2>/dev/null | grep -v 'Picked up' | tail -1)
 
 # game.jar vient de dex2jar : bytecode SANS StackMapTable. Sous -Xverify:none la JVM calcule
