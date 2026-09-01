@@ -1,5 +1,25 @@
 # JOURNAL — journal détaillé des modifications
 
+## 2026-09-01 (g242) — #4 : spine-runtimes sans `git` (archive tar.gz + repli git) → build client PC autonome
+
+Dernier trou d'outil-système du build CLIENT (sur le PC de l'utilisateur, à « Générer le port PC » — PAS en CI) : `build_spine_jar.sh`
+faisait un `git clone` du dépôt officiel spine-runtimes 3.6 → exigeait `git` (souvent absent, surtout sous Windows).
+**Comparaison faite** : embarquer `git` dans la release = gros binaire par-OS (~40–50 Mo) pour une seule étape, inutile ;
+télécharger l'**archive tar.gz** (même source, sans git) = changement minuscule. **Retenu : archive d'abord, repli git.**
+- `build_spine_jar.sh` étape 1 : `curl` l'archive `codeload.github.com/.../spine-runtimes/tar.gz/refs/heads/3.6` +
+  `tar --strip-components=1` (AUCUN git requis) ; si l'archive est indisponible (proxy restrictif) ET que `git` existe →
+  repli `git clone` ; sinon erreur claire. Rien n'est redistribué : l'utilisateur compile la **source publique** lui-même
+  (licence Spine Runtime respectée — cf. #4 des 3 options ; l'option « embarquer le jar compilé » = redistribution, écartée).
+- **Vérifié end-to-end** : jar reproduit à l'identique (97 classes spine, 172975 o). Ici l'archive est bloquée par le proxy
+  du sandbox (403) → le repli git s'est exercé + la compilation a réussi ; sur un PC normal, la branche archive passe sans git.
+
+**Bilan autonomie (après #1–#4)** : lancer le launcher = zéro-install ; générer un SERVEUR = autonome (jars embarqués,
+decompile sans mvn) ; générer le PORT CLIENT = plus besoin de mvn/gradle-système/git (wrapper gradle + spine par archive).
+Reste seulement le **réseau au 1er build** (Maven/Gradle/spine/archive.org) — intrinsèque à un build depuis l'APK.
+
+Fichiers : `tools/build_spine_jar.sh`, `JOURNAL.md`, `MEMORY.md`.
+
+
 ## 2026-09-01 (g241) — Autonomie du « Générer » : jars runtime embarqués (#1) + decompile sans Maven (#2) + gradle wrapper (#3)
 
 Suite à l'audit d'autonomie (le launcher tourne zéro-install, mais GÉNÉRER un serveur/port depuis l'APK exigeait réseau +

@@ -19,11 +19,26 @@ SRC="$SPINE_DIR/spine-libgdx/spine-libgdx/src"
 GDX="$ROOT/build/spinebuild/gdx-1.9.7.jar"
 MVN="https://repo1.maven.org/maven2"
 
-# 1) sources spine-runtimes 3.6 (clone officiel, comme native/build.sh)
+# 1) sources spine-runtimes 3.6 (dépôt OFFICIEL). PRÉFÉRENCE : archive tar.gz → AUCUN `git` requis (autonomie du
+#    build client sur le PC de l'utilisateur, souvent sans git — surtout Windows). REPLI : `git clone` si l'archive
+#    est indisponible (proxy restrictif) ET que git est présent. Rien n'est redistribué : l'utilisateur compile la
+#    source publique lui-même (licence Spine Runtime respectée).
 if [ ! -d "$SRC/com/esotericsoftware/spine" ]; then
-  echo "[spine-jar] clone spine-runtimes 3.6 (officiel) → $SPINE_DIR ..."
-  rm -rf "$SPINE_DIR"
-  git clone --depth 1 --branch 3.6 https://github.com/EsotericSoftware/spine-runtimes.git "$SPINE_DIR"
+  echo "[spine-jar] récupération des sources spine-runtimes 3.6 → $SPINE_DIR ..."
+  rm -rf "$SPINE_DIR"; mkdir -p "$SPINE_DIR"
+  TGZ="$(mktemp)"
+  if curl -fsSL -o "$TGZ" "https://codeload.github.com/EsotericSoftware/spine-runtimes/tar.gz/refs/heads/3.6" \
+       && tar -xzf "$TGZ" -C "$SPINE_DIR" --strip-components=1; then
+    echo "[spine-jar]   → via archive tar.gz (sans git)"
+  elif command -v git >/dev/null 2>&1; then
+    echo "[spine-jar]   → archive indisponible, repli sur git clone"
+    rm -rf "$SPINE_DIR"
+    git clone --depth 1 --branch 3.6 https://github.com/EsotericSoftware/spine-runtimes.git "$SPINE_DIR"
+  else
+    echo "[spine-jar] ✖ sources introuvables : ni archive tar.gz (réseau/proxy) ni git. Installez git ou débloquez codeload.github.com." >&2
+    rm -f "$TGZ"; exit 1
+  fi
+  rm -f "$TGZ"
 fi
 
 # 2) gdx-1.9.7 (dépendance de compilation, Maven Central)
