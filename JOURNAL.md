@@ -1,5 +1,31 @@
 # JOURNAL — journal détaillé des modifications
 
+## 2026-09-01 (g235) — ÉCRAN MOBILE V3 brique 3b : le jeu boote sur le compte mnémonique (TEST_USER_ID + userID de login) ✅ structurel
+
+Le maillon qui manquait pour l'auth STRICT mobile : faire porter le userID mnémonique au `/login` HTTP (→ mint nominatif).
+**Fait bytecode** (relevé sur `GameMain`) : (1) la méthode qui bâtit `ClientInfo` écrase `ClientInfo.userID` par
+`BuildOptions.TEST_USER_ID` quand non-null ; (2) `connectToLoginServer(J…)` met `map.put("userID", Long.toString(lload_1))`
+= le userID du `/login` HTTP vient de son **1ᵉʳ paramètre**, PAS de `ClientInfo`/`TEST_USER_ID`. Donc régler `TEST_USER_ID`
+seul ne suffit pas (comme sur desktop, qui re-login via `startInitialLogin(userID)`).
+- **`tools/apk_inject_smali.py`** étendu (patch du dex jeu `classes4`, qui contient GameMain+ServerType+AndroidLauncher+
+  BuildOptions) :
+  - `ServerType.dhBoot(Context)` : lit les prefs `dhserver` → `setLive(host,port)` + si `contains("userID")` →
+    `BuildOptions.TEST_USER_ID = Long.valueOf(getLong("userID"))`. Le **hook onCreate** devient un simple
+    `invoke-static {p0} dhBoot` (registre-sûr : plus d'inline à registres fragiles).
+  - `ServerType.dhLoginUserID(J)J` = `TEST_USER_ID ?: orig`, **appelé en tête de `connectToLoginServer`**
+    (`invoke-static {p1,p2}` → `move-result-wide p1`, aucun registre temporaire) → le `/login` HTTP porte le userID
+    mnémonique → `content_server` mint le bon compte (fallback `mint_id or user_id`). Ouvert / sans compte : `TEST_USER_ID`
+    null → `dhLoginUserID` renvoie l'original → **comportement inchangé**.
+- **✅ PROUVÉ structurel** (round-trip réel sur `classes4.dex` : baksmali → patch → smali → **rc=0**) : `dhBoot` +
+  `dhLoginUserID` présents dans `ServerType`, `sput TEST_USER_ID` présent, hook `invoke dhBoot` dans `AndroidLauncher.onCreate`,
+  override `dhLoginUserID` + `move-result-wide p1` en tête de `connectToLoginServer`. **Idempotent** (2ᵉ passe = « déjà
+  présent » + réassemble). §1/§3 : deux valeurs de PLATEFORME fixées au boot (adresse + userID de login), comme le port
+  desktop par réflexion — aucune règle de jeu touchée.
+- **⚠️ Reste vérif §8 SUR APPAREIL** (pas de téléphone ici) : installer l'APK universel régénéré, créer/restaurer un compte
+  dans le picker, se connecter à un serveur STRICT et confirmer que le jeu entre bien sur CE compte (mint nominatif).
+
+Fichiers : `tools/apk_inject_smali.py`, `JOURNAL.md`, `MEMORY.md`.
+
 ## 2026-09-01 (g234) — ÉCRAN MOBILE V3 brique 3a : handshake d'auth mnémonique mobile (défi-réponse) — PROUVÉ headless ✅
 
 Le picker mobile AUTHENTIFIE un compte mnémonique par défi-réponse Ed25519 contre l'`AuthService`, via le proxy `/auth/*`
