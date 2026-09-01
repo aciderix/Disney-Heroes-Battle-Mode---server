@@ -1,5 +1,18 @@
 # JOURNAL — journal détaillé des modifications
 
+## 2026-09-01 (g240) — CI launcher : cache Rust isolé par version d'OS (build Tauri Linux cassé après passage en 22.04)
+
+Le run `launcher-release` déclenché par l'utilisateur : **Windows ✅ réussi** (package + artefact), **Linux (ubuntu-22.04) ✗**
+à l'étape « Build windowed launcher (Tauri) » — `error[E0463]: can't find crate for tauri`. Cause : `swatinem/rust-cache`
+ne distingue par défaut que `runner.os` (= « Linux » pour 24.04 ET 22.04) ; en passant d'ubuntu-latest (g237) à
+ubuntu-22.04, le cache Rust construit sous 24.04 a été restauré et **empoisonnait** le build 22.04 (deps non recompilées,
+rlib `tauri` absente). **Fix** : `key: ${{ matrix.os }}` sur l'étape de cache → cache ISOLÉ par version d'OS → build neuf.
+⇒ re-déclencher `launcher-release` sur la branche (le re-run des jobs échoués reprendrait l'ancien workflow). Le package
+**Windows** du run précédent est déjà bon (embarque CORS + index.txt).
+
+Fichiers : `.github/workflows/launcher-release.yml`, `JOURNAL.md`, `MEMORY.md`.
+
+
 ## 2026-09-01 (g239) — Launcher : index.txt EMBARQUÉ dans le package (héberger du contenu échouait sans lui)
 
 En préparant le rebuild du launcher, gap trouvé : `tools/build_launcher.sh` ne copiait dans le tooling embarqué que

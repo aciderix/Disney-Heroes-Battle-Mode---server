@@ -93,6 +93,10 @@ jobs:
         uses: swatinem/rust-cache@v2
         with:
           workspaces: 'launcher-ui/src-tauri -> target'
+          # La clé par défaut ne distingue que runner.os (« Linux » pour 24.04 ET 22.04) → en passant
+          # d'ubuntu-latest à ubuntu-22.04, le cache 24.04 empoisonnait le build (error[E0463] can't find crate
+          # for `tauri`). On inclut la VERSION exacte de l'OS dans la clé → cache isolé par version.
+          key: ${{ matrix.os }}
 
       - name: Build windowed launcher (Tauri)
         working-directory: launcher-ui
