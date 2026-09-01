@@ -21,7 +21,17 @@ nom/mode côté Héberger ; navigateur côté Serveurs ; adresse d'annuaire modi
 | **4b** | Câbler le patch APK dans le launcher (cible « apk » de `BuildManager` + écran Générer) | 🟢 **FAIT** (g227 : `/build/start target=apk`, écran Générer host/port, prouvé via `ApkBuildProbe`) |
 | **4c-1** | Fondations de l'écran in-app (Activity picker + `ServerType.setLive` + toolchain) | 🟢 **PROUVÉ** (g228 : picker compile→dex, setLive réassemble, apktool round-trip) |
 | **4c-2** | Orchestration : hook boot + manifeste LAUNCHER + repackage + re-signe + launcher | 🟢 **FAIT (structurel)** (g229, `apk_inject_picker.sh` + câblage launcher ; **reste vérif §8 sur appareil**) |
+| **V1/V2** | Écran de sélection (annuaire + manuel + **favoris**) + ergonomie **portrait** (jeu paysage) | 🟢 **FAIT** (g231/g235 : `DhServerPicker` V2, favoris SharedPreferences, picker `screenOrientation=portrait`) — ✅ écran+Jouer confirmés appareil |
+| **V3-1** | **Ed25519 pur-Java** (API 26) + `MobileIdentity` (miroir de `MnemonicIdentity`) | 🟢 **FAIT** (g232, `MobileIdentityParityTest` 586 assertions : même phrase → même userID/clé/signature que SunEC, bit-à-bit) |
+| **V3-2** | UI **compte mnémonique** dans le picker (créer / restaurer / afficher la phrase) | 🟢 **FAIT** (g233, compile+dexe, stockage `dhserver/mnemonic`) |
+| **V3-3a** | **Handshake** défi-réponse depuis le picker (`/auth/challenge→sign→register`), proxy `/auth/*` content_server | 🟢 **FAIT** (g234, `MobileAuthFlowTest` 12 assertions : billet frappé, portabilité desktop↔mobile) |
+| **V3-3b** | Boot sur le compte : hook smali `TEST_USER_ID` + override userID de `connectToLoginServer` (→ /login porte le userID) | 🟢 **FAIT (structurel)** (g235, round-trip baksmali→smali rc=0, idempotent ; **reste §8 appareil**) |
+| **V3-4** | **Vérif signature /info** mobile (anti-usurpation) + **ping** par serveur | 🟢 **FAIT** (g236, `MobileInfoVerifyTest` 8 assertions : parité canonique + fiche altérée rejetée) |
 | indép. | Brancher le `GetServers` natif = sélecteur de **SHARD** in-game (Niveau 2) | ⬜ optionnel |
+
+**⚠️ V3 = complet CÔTÉ CODE (prouvé headless/structurel). Reste la vérif §8 SUR APPAREIL** : régénérer l'APK universel depuis
+SON XAPK (`tools/apk_inject_picker.sh <xapk> "$PROJECT_URL" "$ANON_PUBLIC"`), créer/restaurer un compte, se connecter à un
+serveur STRICT et confirmer l'entrée sur le bon compte + la vérif 🔎 d'un serveur communautaire.
 
 ## Annuaire Supabase — schéma technique (brique 2, LIVRÉ)
 

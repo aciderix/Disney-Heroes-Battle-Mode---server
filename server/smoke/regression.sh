@@ -103,6 +103,7 @@ TESTS=(
   ServerInfoTest
   MobileIdentityParityTest
   MobileAuthFlowTest
+  MobileInfoVerifyTest
   BuildDataGenTest
   ServerBundleTest
 )
@@ -113,7 +114,7 @@ SRC=(); for t in "${TESTS[@]}"; do SRC+=("$SMOKE/$t.java"); done
 # (source unique = celle du serveur, package renommé) pour le test de parité MobileIdentityParityTest.
 GEN="$OUT/gen/com/perblue/dhlauncher"; mkdir -p "$GEN"
 sed 's/^package dhserver.auth;/package com.perblue.dhlauncher;/' "$ROOT/server/java/dhserver/auth/Bip39Wordlist.java" > "$GEN/Bip39Wordlist.java"
-MOBSRC=("$ROOT/mobile/Ed25519.java" "$ROOT/mobile/MobileIdentity.java" "$ROOT/mobile/MobileAuth.java" "$GEN/Bip39Wordlist.java")
+MOBSRC=("$ROOT/mobile/Ed25519.java" "$ROOT/mobile/MobileIdentity.java" "$ROOT/mobile/MobileAuth.java" "$ROOT/mobile/MobileInfoVerifier.java" "$GEN/Bip39Wordlist.java")
 if ! javac -cp "$CPF" -d "$OUT" $(find "$ROOT/server/java" -name '*.java') "${MOBSRC[@]}" "${SRC[@]}" "$SMOKE/BatchRunner.java" 2>"$OUT/javac.log"; then
   grep -v 'Picked up' "$OUT/javac.log" | grep -iE 'error|\.java:'; echo "[reg] ✖ COMPILATION ÉCHOUÉE"; exit 1
 fi

@@ -219,14 +219,21 @@ public final class DhServerPicker extends Activity {
         lp.setMargins(0, dp(6), dp(8), 0); b.setLayoutParams(lp);
         return b;
     }
-    private View serverCard(final String name, String subtitle, final String host, final int port, boolean favorite) {
+    private View serverCard(String name, String subtitle, String host, int port, boolean favorite) {
+        return serverCard(name, subtitle, host, port, favorite, null);
+    }
+    /** Carte serveur. Si {@code infoUrl != null} (serveur communautaire), ajoute « 🔎 Vérifier » (signature /info + ping). */
+    private View serverCard(final String name, String subtitle, final String host, final int port,
+                            boolean favorite, final String infoUrl) {
+        LinearLayout card = new LinearLayout(this); card.setOrientation(LinearLayout.VERTICAL);
         LinearLayout c = new LinearLayout(this); c.setOrientation(LinearLayout.HORIZONTAL);
         c.setGravity(Gravity.CENTER_VERTICAL); c.setPadding(0, dp(6), 0, dp(6));
         LinearLayout txt = new LinearLayout(this); txt.setOrientation(LinearLayout.VERTICAL);
         txt.setLayoutParams(new LinearLayout.LayoutParams(0, ViewGroup.LayoutParams.WRAP_CONTENT, 1f));
         TextView n = new TextView(this); n.setText(name); n.setTextColor(TXT); n.setTextSize(16);
         TextView s = new TextView(this); s.setText(subtitle); s.setTextColor(MUT); s.setTextSize(12);
-        txt.addView(n); txt.addView(s);
+        final TextView status = new TextView(this); status.setTextSize(12); status.setVisibility(View.GONE);
+        txt.addView(n); txt.addView(s); txt.addView(status);
         c.addView(txt);
         Button pl = button("Jouer", true);
         pl.setOnClickListener(new View.OnClickListener() { public void onClick(View v) { play(host, port); } });
@@ -240,7 +247,27 @@ public final class DhServerPicker extends Activity {
             rm.setOnClickListener(new View.OnClickListener() { public void onClick(View v) { removeFavorite(host, port); renderFavorites(); } });
             c.addView(rm);
         }
-        return c;
+        if (infoUrl != null && !infoUrl.isEmpty() && !infoUrl.startsWith("__")) {
+            final Button vf = button("🔎", false);
+            vf.setOnClickListener(new View.OnClickListener() { public void onClick(View v) {
+                vf.setEnabled(false);
+                status.setVisibility(View.VISIBLE); status.setTextColor(MUT); status.setText("Vérification…");
+                new Thread(new Runnable() { public void run() {
+                    final MobileInfoVerifier.Result r = MobileInfoVerifier.verify(infoUrl);
+                    ui.post(new Runnable() { public void run() {
+                        vf.setEnabled(true);
+                        if (r.ok) {
+                            status.setTextColor(OKC);
+                            status.setText("✅ vérifié · " + r.pingMs + " ms · " + r.online
+                                + (r.maxOnline > 0 ? "/" + r.maxOnline : "") + " en ligne");
+                        } else { status.setTextColor(WARN); status.setText("⚠️ " + r.message); }
+                    } });
+                } }).start();
+            } });
+            c.addView(vf);
+        }
+        card.addView(c);
+        return card;
     }
 
     // ---------- actions ----------
@@ -332,7 +359,7 @@ public final class DhServerPicker extends Activity {
         new Thread(new Runnable() { public void run() {
             try {
                 String url = DIRECTORY_URL.replaceAll("/$", "")
-                    + "/rest/v1/servers?select=name,mode,game_version,address,online,max_online&order=updated_at.desc";
+                    + "/rest/v1/servers?select=name,mode,game_version,address,online,max_online,info_url&order=updated_at.desc";
                 HttpURLConnection c = (HttpURLConnection) new URL(url).openConnection();
                 c.setConnectTimeout(8000); c.setReadTimeout(8000);
                 c.setRequestProperty("apikey", ANON_KEY);
@@ -354,7 +381,7 @@ public final class DhServerPicker extends Activity {
         while (m.find()) {
             String o = m.group();
             String name = field(o, "name"), mode = field(o, "mode"), gv = field(o, "game_version"), address = field(o, "address");
-            String online = numField(o, "online"), maxOnline = numField(o, "max_online");
+            String online = numField(o, "online"), maxOnline = numField(o, "max_online"), infoUrl = field(o, "info_url");
             if (address == null) continue;
             int c = address.lastIndexOf(':');
             if (c <= 0) continue;
@@ -362,7 +389,7 @@ public final class DhServerPicker extends Activity {
                 String sub = (mode == null ? "" : ("strict".equals(mode) ? "🔒 strict" : "ouvert") + " · ")
                     + (gv == null ? "" : "v" + gv + " · ") + address
                     + (online == null ? "" : "  ·  " + online + (maxOnline != null && !"0".equals(maxOnline) ? "/" + maxOnline : "") + " en ligne");
-                dirBox.addView(serverCard(name == null ? address : name, sub, address.substring(0, c), Integer.parseInt(address.substring(c + 1)), false));
+                dirBox.addView(serverCard(name == null ? address : name, sub, address.substring(0, c), Integer.parseInt(address.substring(c + 1)), false, infoUrl));
                 n++;
             } catch (NumberFormatException ignore) { }
         }

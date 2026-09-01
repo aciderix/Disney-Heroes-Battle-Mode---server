@@ -1,5 +1,29 @@
 # JOURNAL — journal détaillé des modifications
 
+## 2026-09-01 (g236) — ÉCRAN MOBILE V3 brique 4 : vérif signature /info mobile + ping/latence 🟢 PROUVÉ headless
+
+Le picker peut PROUVER l'authenticité d'un serveur communautaire (sans faire confiance à l'annuaire) et afficher sa latence.
+- **`mobile/MobileInfoVerifier.java`** (plain-Java, Ed25519 pur-Java) : MIROIR de `dhlauncher.ServerInfoVerifier`. `verify(infoUrl)`
+  → `GET /info?nonce=<défi>` → **recompose la canonique EXACTE** (`PROTOCOL␟name␟mode␟gameVersion␟serverVersion␟online␟
+  maxOnline␟openTime␟nonce`, identique octet-pour-octet à `ServerInfo.canonical`) → **vérifie la signature Ed25519** avec la
+  clé publique annoncée (SPKI 44 o → 32 o bruts) + cohérence `serverId == userIdOf(clé)` + **mesure le ping** du round-trip.
+- **`mobile/DhServerPicker.java`** : chaque serveur communautaire gagne un bouton **🔎** → vérif en fond → statut
+  **✅ vérifié · N ms · X/Y en ligne** (vert) ou **⚠️ <raison>** (orange). Requête annuaire enrichie de `info_url`.
+- **PREUVE `server/smoke/MobileInfoVerifyTest`** (dans `regression.sh`, 8 assertions) : POSITIF contre un vrai `AuthService
+  /info` (nom/mode/en-ligne/serverId/version vérifiés + latence mesurée) → prouve la **parité canonique** mobile↔serveur ;
+  NÉGATIF : un serveur qui SIGNE `online=3` mais SERT `online=999` est **REJETÉ** (anti-falsification bout-en-bout).
+- Picker complet (DhServerPicker + Ed25519 + MobileIdentity + MobileAuth + **MobileInfoVerifier** + wordlist) **compile+dexe**
+  (android.jar API33, source/target 8, d8 --min-api 26 → dex 55 Ko). **Régression 180/180 verts** (WarSeasonTest repassé vert :
+  on est désormais après l'heure de reset du 1ᵉʳ).
+
+**⇒ V3 « pack complet » CÔTÉ CODE : identité mnémonique (brique 1) + UI compte (2) + handshake auth strict (3a) + boot sur le
+compte (3b) + vérif /info & ping (4), tout PROUVÉ headless/structurel.** Reste : régénérer l'APK universel depuis le XAPK
+(côté utilisateur, 158 Mo) et **vérifier §8 SUR APPAREIL** (créer/restaurer un compte, se connecter à un serveur strict,
+confirmer l'entrée sur le bon compte + la vérif d'un serveur communautaire).
+
+Fichiers : `mobile/MobileInfoVerifier.java` (+), `mobile/DhServerPicker.java`, `server/smoke/MobileInfoVerifyTest.java` (+),
+`server/smoke/regression.sh`, `docs/SERVER_EXPLORER.md`, `JOURNAL.md`, `MEMORY.md`.
+
 ## 2026-09-01 (g235) — ÉCRAN MOBILE V3 brique 3b : le jeu boote sur le compte mnémonique (TEST_USER_ID + userID de login) ✅ structurel
 
 Le maillon qui manquait pour l'auth STRICT mobile : faire porter le userID mnémonique au `/login` HTTP (→ mint nominatif).
