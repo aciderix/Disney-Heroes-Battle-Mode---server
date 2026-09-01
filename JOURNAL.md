@@ -1,5 +1,17 @@
 # JOURNAL — journal détaillé des modifications
 
+## 2026-09-01 (g239) — Launcher : index.txt EMBARQUÉ dans le package (héberger du contenu échouait sans lui)
+
+En préparant le rebuild du launcher, gap trouvé : `tools/build_launcher.sh` ne copiait dans le tooling embarqué que
+`server/ desktop-port/ tools/` — or **`index.txt` (manifeste de contenu, 485 archives) est à la RACINE**. `content_server.py`
+le cherche à `<tooling>/index.txt` (défaut `--index`) et **`ap.error("index introuvable")` fait ÉCHOUER** le serveur de
+contenu → un serveur hébergé depuis le launcher ne pouvait PAS servir `/live/index.txt` → aucun asset téléchargeable côté
+client. **Fix** : `build_launcher.sh` copie désormais `index.txt` dans `$OUT/tooling/index.txt`. (Réponse à la question
+util. « l'index est-il embarqué dans la release ? il faut ? » → OUI il faut, et il ne l'était PAS ; corrigé.)
+
+Fichiers : `tools/build_launcher.sh`, `JOURNAL.md`, `MEMORY.md`.
+
+
 ## 2026-09-01 (g238) — ÉCRAN MOBILE : ergonomie (onglets + carte verticale + copie phrase + recherche/filtres) + APK rebuild
 
 Retours utilisateur EN JEU (captures) : l'écran s'affiche en portrait mais (a) les cartes serveur s'enroulaient

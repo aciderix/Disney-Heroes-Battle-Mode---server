@@ -78,6 +78,10 @@ for d in server desktop-port tools; do
   (cd "$ROOT" && git ls-files "$d" | while read -r f; do
      mkdir -p "$OUT/tooling/$(dirname "$f")"; cp "$ROOT/$f" "$OUT/tooling/$f"; done)
 done
+# index.txt (manifeste de contenu, À LA RACINE du repo) : REQUIS par content_server.py qui le cherche à
+# <tooling>/index.txt (défaut `--index`). Sans lui, héberger un serveur de contenu échoue (« index introuvable »)
+# → le client ne peut pas télécharger les assets (archive.org / cache). On l'embarque donc dans le tooling.
+[ -f "$ROOT/index.txt" ] && cp "$ROOT/index.txt" "$OUT/tooling/index.txt" && echo "== index.txt embarqué (manifeste de contenu) =="
 
 # --- 5) scripts de lancement du launcher (utilisent le JDK embarqué) ---
 cat > "$OUT/run-launcher.sh" <<'EOF'
