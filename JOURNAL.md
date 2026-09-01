@@ -1,5 +1,24 @@
 # JOURNAL — journal détaillé des modifications
 
+## 2026-09-01 (g233) — ÉCRAN MOBILE V3 brique 2 : UI compte mnémonique dans le picker (créer / restaurer / afficher) 🟢
+
+Section « 👤 Compte (serveurs stricts) » ajoutée dans `mobile/DhServerPicker.java`, adossée à la crypto de la brique 1 :
+- **Sans compte** : boutons « Créer un compte » (génère une phrase de 8 mots via `MobileIdentity.generate`, l'AFFICHE avec un
+  avertissement fort « note ces 8 mots, seule façon de retrouver ton compte », la stocke en SharedPreferences `mnemonic`) et
+  « Restaurer une phrase » (saisie → `MobileIdentity.isValid` → stockage ; refus honnête si invalide).
+- **Avec compte** : affiche `Compte #<userID>` (dérivé via `MobileIdentity.fromPhrase`) + « Afficher ma phrase » (révélation à
+  la demande) + « Changer de compte » (nouveau / restaurer, avec garde-fou). Phrase invalide stockée → « Réinitialiser ».
+- **Build** : `tools/apk_inject_picker.sh` compile désormais `Ed25519.java` + `MobileIdentity.java` + la wordlist BIP39 (source
+  unique = celle du serveur, package renommé sous le picker) DANS le dex du picker.
+- **✅ PROUVÉ structurel** : le picker complet (DhServerPicker + crypto) **compile** (javac -bootclasspath android.jar -source/
+  target 8, sans lambda) **et dexe** (d8 --min-api 26 → dex 45 Ko). Anonymes (pas de lambdas). Le stockage `mnemonic` vit dans
+  les mêmes SharedPreferences `dhserver` que host/port.
+- **Reste** : brique 3 = câbler le HANDSHAKE (au « Jouer » sur un serveur strict : /auth/challenge → signer → register/verify)
+  + patch smali pour que le jeu boote avec le vrai userID (mint du bon compte au /login) ; brique 4 = vérif /info + ping. Puis §8
+  SUR APPAREIL.
+
+Fichiers : `mobile/DhServerPicker.java` (V3), `tools/apk_inject_picker.sh`, `JOURNAL.md`, `MEMORY.md`.
+
 ## 2026-09-01 (g232) — ÉCRAN MOBILE V3 brique 1 : Ed25519 pur-Java + identité mnémonique mobile — PARITÉ SunEC PROUVÉE ✅ + portrait
 
 Reprise APRÈS COMPRESSION : rituel appliqué EN ENTIER (MEMORY haut, commits, JOURNAL récents, SHIMS, PRINCIPLES §1-§8,

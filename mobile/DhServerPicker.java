@@ -39,11 +39,13 @@ public final class DhServerPicker extends Activity {
     static final String ANON_KEY = "__DH_DIRECTORY_ANON_KEY__";
     static final String PREFS = "dhserver";
     static final String FAV_PREF = "dh_favorites";           // "name\thost\tport" par ligne
+    static final String MNEMONIC_PREF = "mnemonic";          // phrase du compte (V3, serveurs stricts)
     static final String GAME_ACTIVITY = "com.perblue.heroes.android.AndroidLauncher";
 
     private static final int BG = 0xFF0E1420, CARD = 0xFF19222E, ACCENT = 0xFF2E6BE6, TXT = 0xFFEAF0F8, MUT = 0xFF9FB0C8, BTN2 = 0xFF26313F;
+    private static final int WARN = 0xFFE6B22E, OKC = 0xFF3FB765;
 
-    private LinearLayout favBox, dirBox;
+    private LinearLayout accountBox, favBox, dirBox;
     private TextView dirStatus;
     private final Handler ui = new Handler(Looper.getMainLooper());
 
@@ -66,6 +68,7 @@ public final class DhServerPicker extends Activity {
         sub.setTextColor(MUT); sub.setTextSize(13); sub.setPadding(0, 0, 0, dp(14));
         root.addView(sub);
 
+        accountBox = section(root, "👤  Compte (serveurs stricts)");
         favBox = section(root, "★  Favoris");
         dirBox = section(root, "🌐  Serveurs communautaires");
         dirStatus = new TextView(this);
@@ -85,8 +88,109 @@ public final class DhServerPicker extends Activity {
         man.addView(row);
 
         setContentView(scroll);
+        renderAccount();
         renderFavorites();
         loadDirectory();
+    }
+
+    // ---------- compte mnémonique (V3 — identité pour les serveurs stricts) ----------
+    private String mnemonic() { return getSharedPreferences(PREFS, MODE_PRIVATE).getString(MNEMONIC_PREF, ""); }
+    private void storeMnemonic(String phrase) {
+        getSharedPreferences(PREFS, MODE_PRIVATE).edit().putString(MNEMONIC_PREF, phrase).commit();
+    }
+
+    /** Ajoute un TextView simple à un conteneur. */
+    private TextView text(LinearLayout box, String s, int color, int size) {
+        TextView t = new TextView(this); t.setText(s); t.setTextColor(color); t.setTextSize(size);
+        t.setPadding(0, dp(2), 0, dp(2)); box.addView(t); return t;
+    }
+    private void addRow(LinearLayout box, View... views) {
+        LinearLayout r = new LinearLayout(this); r.setOrientation(LinearLayout.HORIZONTAL);
+        for (View v : views) r.addView(v);
+        box.addView(r);
+    }
+
+    private void renderAccount() {
+        accountBox.removeAllViews();
+        String phrase = mnemonic();
+        if (phrase.isEmpty()) {
+            text(accountBox, "Aucun compte. Les serveurs 🔒 stricts exigent un compte mnémonique "
+                + "(8 mots, comme une « seed » de portefeuille). Il te suit d'un appareil à l'autre.", MUT, 13);
+            Button create = button("Créer un compte", true);
+            Button restore = button("Restaurer une phrase", false);
+            create.setOnClickListener(new View.OnClickListener() { public void onClick(View v) { createAccount(); } });
+            restore.setOnClickListener(new View.OnClickListener() { public void onClick(View v) { restoreUI(); } });
+            addRow(accountBox, create, restore);
+            return;
+        }
+        try {
+            MobileIdentity.Identity id = MobileIdentity.fromPhrase(phrase);
+            text(accountBox, "Compte  #" + id.userID, OKC, 16);
+            Button show = button("Afficher ma phrase", false);
+            Button change = button("Changer de compte", false);
+            show.setOnClickListener(new View.OnClickListener() { public void onClick(View v) { showPhraseUI(); } });
+            change.setOnClickListener(new View.OnClickListener() { public void onClick(View v) { changeAccountUI(); } });
+            addRow(accountBox, show, change);
+        } catch (Exception e) {
+            text(accountBox, "Phrase enregistrée invalide — restaure ou recrée un compte.", WARN, 13);
+            Button reset = button("Réinitialiser", false);
+            reset.setOnClickListener(new View.OnClickListener() { public void onClick(View v) { storeMnemonic(""); renderAccount(); } });
+            accountBox.addView(reset);
+        }
+    }
+
+    private void createAccount() {
+        String phrase = MobileIdentity.generate();
+        storeMnemonic(phrase);
+        accountBox.removeAllViews();
+        text(accountBox, "⚠  NOTE CES 8 MOTS ET GARDE-LES EN SÛRETÉ. C'est la SEULE façon de retrouver ton compte "
+            + "(sur cet appareil ou un autre). Personne ne peut les récupérer à ta place.", WARN, 13);
+        TextView p = text(accountBox, phrase, TXT, 18);
+        GradientDrawable bg = new GradientDrawable(); bg.setColor(BTN2); bg.setCornerRadius(dp(8));
+        p.setBackground(bg); p.setPadding(dp(10), dp(10), dp(10), dp(10));
+        Button done = button("J'ai noté ma phrase", true);
+        done.setOnClickListener(new View.OnClickListener() { public void onClick(View v) { renderAccount(); } });
+        accountBox.addView(done);
+    }
+
+    private void restoreUI() {
+        accountBox.removeAllViews();
+        text(accountBox, "Saisis les 8 mots de ta phrase (séparés par des espaces).", MUT, 13);
+        final EditText in = input("mot1 mot2 … mot8");
+        accountBox.addView(in);
+        final TextView err = text(accountBox, "", WARN, 13);
+        Button ok = button("Restaurer", true);
+        Button cancel = button("Annuler", false);
+        ok.setOnClickListener(new View.OnClickListener() { public void onClick(View v) {
+            String phrase = in.getText().toString().trim();
+            if (!MobileIdentity.isValid(phrase)) { err.setText("Phrase invalide (vérifie les mots / l'ordre)."); return; }
+            storeMnemonic(phrase); renderAccount();
+        } });
+        cancel.setOnClickListener(new View.OnClickListener() { public void onClick(View v) { renderAccount(); } });
+        addRow(accountBox, ok, cancel);
+    }
+
+    private void showPhraseUI() {
+        accountBox.removeAllViews();
+        text(accountBox, "Ta phrase (garde-la secrète) :", MUT, 13);
+        TextView p = text(accountBox, mnemonic(), TXT, 18);
+        GradientDrawable bg = new GradientDrawable(); bg.setColor(BTN2); bg.setCornerRadius(dp(8));
+        p.setBackground(bg); p.setPadding(dp(10), dp(10), dp(10), dp(10));
+        Button back = button("Masquer", false);
+        back.setOnClickListener(new View.OnClickListener() { public void onClick(View v) { renderAccount(); } });
+        accountBox.addView(back);
+    }
+
+    private void changeAccountUI() {
+        accountBox.removeAllViews();
+        text(accountBox, "Changer de compte remplace la phrase actuelle. Assure-toi de l'avoir notée avant.", WARN, 13);
+        Button create = button("Nouveau compte", true);
+        Button restore = button("Restaurer une phrase", false);
+        Button cancel = button("Annuler", false);
+        create.setOnClickListener(new View.OnClickListener() { public void onClick(View v) { createAccount(); } });
+        restore.setOnClickListener(new View.OnClickListener() { public void onClick(View v) { restoreUI(); } });
+        cancel.setOnClickListener(new View.OnClickListener() { public void onClick(View v) { renderAccount(); } });
+        addRow(accountBox, create, restore, cancel);
     }
 
     // ---------- UI helpers ----------

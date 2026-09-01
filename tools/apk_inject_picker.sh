@@ -35,12 +35,18 @@ if unzip -l "$IN" 2>/dev/null | grep -qE '\.apk$'; then
   echo "[inj]   universel : $(unzip -l "$APK" | grep -c '\.so$') .so, $(du -h "$APK" | cut -f1)"
 fi
 
-# --- 1) compiler l'écran de sélection → picker.dex ---
+# --- 1) compiler l'écran de sélection (+ crypto identité mobile) → picker.dex ---
 echo "[inj] compilation de l'écran de sélection ..."
 mkdir -p "$W/src/com/perblue/dhlauncher"
 sed -e "s#__DH_DIRECTORY_URL__#${DIR_URL//&/\\&}#g" -e "s#__DH_DIRECTORY_ANON_KEY__#${DIR_KEY//&/\\&}#g" \
     "$ROOT/mobile/DhServerPicker.java" > "$W/src/com/perblue/dhlauncher/DhServerPicker.java"
-javac -bootclasspath "$CACHE/android.jar" -source 8 -target 8 -d "$W/cls" "$W/src/com/perblue/dhlauncher/DhServerPicker.java" 2>"$W/javac.log" \
+# Identité mnémonique mobile (V3) : Ed25519 pur-Java + MobileIdentity + wordlist BIP39 (source unique = celle du
+# serveur, package renommé sous le picker). Requis par la crypto d'auth strict côté mobile.
+cp "$ROOT/mobile/Ed25519.java" "$ROOT/mobile/MobileIdentity.java" "$W/src/com/perblue/dhlauncher/"
+sed 's/^package dhserver.auth;/package com.perblue.dhlauncher;/' \
+    "$ROOT/server/java/dhserver/auth/Bip39Wordlist.java" > "$W/src/com/perblue/dhlauncher/Bip39Wordlist.java"
+javac -bootclasspath "$CACHE/android.jar" -source 8 -target 8 -d "$W/cls" \
+    $(find "$W/src/com/perblue/dhlauncher" -name '*.java') 2>"$W/javac.log" \
   || { echo "[inj] ✖ javac picker"; grep -v warning "$W/javac.log" | head; exit 1; }
 java -cp "$CACHE/r8.jar" com.android.tools.r8.D8 --min-api 26 --lib "$CACHE/android.jar" --output "$W" $(find "$W/cls" -name '*.class') >/dev/null 2>&1 \
   || { echo "[inj] ✖ d8 picker"; exit 1; }
