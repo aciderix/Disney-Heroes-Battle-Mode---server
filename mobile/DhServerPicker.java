@@ -4,10 +4,13 @@ import android.app.Activity;
 import android.content.Intent;
 import android.content.SharedPreferences;
 import android.graphics.Color;
+import android.graphics.drawable.GradientDrawable;
 import android.os.Bundle;
 import android.os.Handler;
 import android.os.Looper;
+import android.view.Gravity;
 import android.view.View;
+import android.view.ViewGroup;
 import android.widget.Button;
 import android.widget.EditText;
 import android.widget.LinearLayout;
@@ -18,82 +21,137 @@ import java.io.BufferedReader;
 import java.io.InputStreamReader;
 import java.net.HttpURLConnection;
 import java.net.URL;
+import java.util.ArrayList;
+import java.util.List;
 import java.util.regex.Matcher;
 import java.util.regex.Pattern;
 
 /**
- * PATCH APK (brique 4c) — ÉCRAN DE SÉLECTION DE SERVEUR affiché AU LANCEMENT du jeu mobile. Liste les serveurs
- * communautaires (annuaire Supabase, lecture publique), plus une saisie manuelle host:port. Au choix : enregistre
- * l'adresse dans les préférences ({@code dhserver}) puis démarre l'Activity du JEU ({@code AndroidLauncher}), qui lit
- * ce choix au boot et redirige {@code ServerType.LIVE} vers le serveur retenu.
- *
- * <p>UI 100% programmatique (aucune ressource XML → aucun aapt requis pour ce code). Compilée séparément (javac +
- * android.jar) puis dexée (d8) et injectée dans l'APK ; le manifeste fait de cette Activity le LAUNCHER (cf.
- * {@code tools/apk_inject_picker.sh}). {@code DIRECTORY_URL}/{@code ANON_KEY} sont injectés au patch (valeurs PUBLIQUES).
+ * PATCH APK (brique 4c / V2) — ÉCRAN DE SÉLECTION DE SERVEUR au lancement du jeu mobile. Sections : FAVORIS (persistés),
+ * SERVEURS COMMUNAUTAIRES (annuaire Supabase, lecture publique) et ADRESSE MANUELLE. Au choix : enregistre l'adresse dans
+ * les préférences {@code dhserver} puis démarre {@code AndroidLauncher} (le jeu), qui lit ce choix au boot et redirige
+ * {@code ServerType.LIVE}. UI 100% programmatique (aucune ressource XML ; anonymes plutôt que lambdas car l'{@code
+ * android.jar} de compilation n'a pas {@code LambdaMetafactory}). {@code DIRECTORY_URL}/{@code ANON_KEY} injectés au patch
+ * (PUBLIQUES). Paysage (comme le jeu). Identité/auth STRICT = incrément ultérieur (Ed25519 embarqué).
  */
 public final class DhServerPicker extends Activity {
-    // Remplacés au patch (tools) par l'URL + la clé anon PUBLIQUE de l'annuaire ; vides = annuaire désactivé.
     static final String DIRECTORY_URL = "__DH_DIRECTORY_URL__";
     static final String ANON_KEY = "__DH_DIRECTORY_ANON_KEY__";
     static final String PREFS = "dhserver";
+    static final String FAV_PREF = "dh_favorites";           // "name\thost\tport" par ligne
     static final String GAME_ACTIVITY = "com.perblue.heroes.android.AndroidLauncher";
 
-    private LinearLayout list;
-    private TextView status;
+    private static final int BG = 0xFF0E1420, CARD = 0xFF19222E, ACCENT = 0xFF2E6BE6, TXT = 0xFFEAF0F8, MUT = 0xFF9FB0C8, BTN2 = 0xFF26313F;
+
+    private LinearLayout favBox, dirBox;
+    private TextView dirStatus;
     private final Handler ui = new Handler(Looper.getMainLooper());
 
     @Override protected void onCreate(Bundle b) {
         super.onCreate(b);
         ScrollView scroll = new ScrollView(this);
+        scroll.setBackgroundColor(BG);
         LinearLayout root = new LinearLayout(this);
         root.setOrientation(LinearLayout.VERTICAL);
-        int pad = dp(16);
+        int pad = dp(20);
         root.setPadding(pad, pad, pad, pad);
-        root.setBackgroundColor(Color.parseColor("#0f1420"));
         scroll.addView(root);
 
         TextView title = new TextView(this);
-        title.setText("Choisir un serveur");
-        title.setTextColor(Color.WHITE);
-        title.setTextSize(22);
+        title.setText("Disney Heroes — choisir un serveur");
+        title.setTextColor(TXT); title.setTextSize(24); title.setPadding(0, 0, 0, dp(4));
         root.addView(title);
+        TextView sub = new TextView(this);
+        sub.setText("Sélectionne un serveur communautaire, un favori, ou saisis une adresse.");
+        sub.setTextColor(MUT); sub.setTextSize(13); sub.setPadding(0, 0, 0, dp(14));
+        root.addView(sub);
 
-        status = new TextView(this);
-        status.setTextColor(Color.parseColor("#9fb0c8"));
-        status.setText("Chargement de l'annuaire…");
-        root.addView(status);
+        favBox = section(root, "★  Favoris");
+        dirBox = section(root, "🌐  Serveurs communautaires");
+        dirStatus = new TextView(this);
+        dirStatus.setTextColor(MUT); dirStatus.setTextSize(13);
+        dirBox.addView(dirStatus);
 
-        list = new LinearLayout(this);
-        list.setOrientation(LinearLayout.VERTICAL);
-        root.addView(list);
-
-        // Saisie manuelle (serveur privé hors annuaire)
-        TextView manual = new TextView(this);
-        manual.setText("\nOu adresse manuelle (host:port)");
-        manual.setTextColor(Color.parseColor("#9fb0c8"));
-        root.addView(manual);
-        final EditText addr = new EditText(this);
-        addr.setHint("192.168.1.20:8080");
-        addr.setTextColor(Color.WHITE);
-        root.addView(addr);
-        Button go = new Button(this);
-        go.setText("Jouer sur cette adresse");
-        go.setOnClickListener(new View.OnClickListener() {
-            public void onClick(View v) {
-                String s = addr.getText().toString().trim();
-                int c = s.lastIndexOf(':');
-                if (c <= 0) { status.setText("Adresse invalide (attendu host:port)."); return; }
-                try { play(s.substring(0, c), Integer.parseInt(s.substring(c + 1))); }
-                catch (Exception e) { status.setText("Port invalide."); }
-            }
-        });
-        root.addView(go);
+        LinearLayout man = section(root, "⌨  Adresse manuelle");
+        final EditText name = input("Nom (optionnel)");
+        final EditText addr = input("192.168.1.20:8080");
+        man.addView(name); man.addView(addr);
+        LinearLayout row = new LinearLayout(this); row.setOrientation(LinearLayout.HORIZONTAL);
+        Button play = button("Jouer", true);
+        Button fav = button("+ Favori", false);
+        play.setOnClickListener(new View.OnClickListener() { public void onClick(View v) { parsePlay(addr, name, false); } });
+        fav.setOnClickListener(new View.OnClickListener() { public void onClick(View v) { parsePlay(addr, name, true); } });
+        row.addView(play); row.addView(fav);
+        man.addView(row);
 
         setContentView(scroll);
+        renderFavorites();
         loadDirectory();
     }
 
-    /** Enregistre le serveur choisi puis démarre le JEU. Le hook de boot lira {@code dhserver} et redirigera ServerType. */
+    // ---------- UI helpers ----------
+    private LinearLayout section(LinearLayout parent, String label) {
+        TextView h = new TextView(this);
+        h.setText(label); h.setTextColor(TXT); h.setTextSize(16); h.setPadding(0, dp(12), 0, dp(6));
+        parent.addView(h);
+        LinearLayout box = new LinearLayout(this);
+        box.setOrientation(LinearLayout.VERTICAL);
+        GradientDrawable bg = new GradientDrawable(); bg.setColor(CARD); bg.setCornerRadius(dp(10));
+        box.setBackground(bg); box.setPadding(dp(12), dp(10), dp(12), dp(10));
+        parent.addView(box);
+        return box;
+    }
+    private EditText input(String hint) {
+        EditText e = new EditText(this);
+        e.setHint(hint); e.setTextColor(TXT); e.setHintTextColor(MUT); e.setTextSize(15); e.setSingleLine(true);
+        return e;
+    }
+    private Button button(String text, boolean primary) {
+        Button b = new Button(this);
+        b.setText(text); b.setAllCaps(false); b.setTextColor(primary ? Color.WHITE : TXT); b.setTextSize(15);
+        GradientDrawable bg = new GradientDrawable(); bg.setColor(primary ? ACCENT : BTN2); bg.setCornerRadius(dp(8));
+        b.setBackground(bg);
+        LinearLayout.LayoutParams lp = new LinearLayout.LayoutParams(ViewGroup.LayoutParams.WRAP_CONTENT, ViewGroup.LayoutParams.WRAP_CONTENT);
+        lp.setMargins(0, dp(6), dp(8), 0); b.setLayoutParams(lp);
+        return b;
+    }
+    private View serverCard(final String name, String subtitle, final String host, final int port, boolean favorite) {
+        LinearLayout c = new LinearLayout(this); c.setOrientation(LinearLayout.HORIZONTAL);
+        c.setGravity(Gravity.CENTER_VERTICAL); c.setPadding(0, dp(6), 0, dp(6));
+        LinearLayout txt = new LinearLayout(this); txt.setOrientation(LinearLayout.VERTICAL);
+        txt.setLayoutParams(new LinearLayout.LayoutParams(0, ViewGroup.LayoutParams.WRAP_CONTENT, 1f));
+        TextView n = new TextView(this); n.setText(name); n.setTextColor(TXT); n.setTextSize(16);
+        TextView s = new TextView(this); s.setText(subtitle); s.setTextColor(MUT); s.setTextSize(12);
+        txt.addView(n); txt.addView(s);
+        c.addView(txt);
+        Button pl = button("Jouer", true);
+        pl.setOnClickListener(new View.OnClickListener() { public void onClick(View v) { play(host, port); } });
+        c.addView(pl);
+        if (!favorite) {
+            Button st = button("★", false);
+            st.setOnClickListener(new View.OnClickListener() { public void onClick(View v) { addFavorite(name, host, port); renderFavorites(); } });
+            c.addView(st);
+        } else {
+            Button rm = button("✕", false);
+            rm.setOnClickListener(new View.OnClickListener() { public void onClick(View v) { removeFavorite(host, port); renderFavorites(); } });
+            c.addView(rm);
+        }
+        return c;
+    }
+
+    // ---------- actions ----------
+    private void parsePlay(EditText addr, EditText name, boolean favOnly) {
+        String s = addr.getText().toString().trim();
+        int c = s.lastIndexOf(':');
+        if (c <= 0) { dirStatus.setText("Adresse invalide (attendu host:port)."); return; }
+        try {
+            String host = s.substring(0, c); int port = Integer.parseInt(s.substring(c + 1));
+            String nm = name.getText().toString().trim(); if (nm.isEmpty()) nm = host;
+            if (favOnly) { addFavorite(nm, host, port); renderFavorites(); }
+            else play(host, port);
+        } catch (Exception e) { dirStatus.setText("Port invalide."); }
+    }
+
     private void play(String host, int port) {
         SharedPreferences.Editor e = getSharedPreferences(PREFS, MODE_PRIVATE).edit();
         e.putString("host", host); e.putInt("port", port); e.commit();
@@ -101,72 +159,99 @@ public final class DhServerPicker extends Activity {
             Intent i = new Intent();
             i.setClassName(getPackageName(), GAME_ACTIVITY);
             i.addFlags(Intent.FLAG_ACTIVITY_NEW_TASK | Intent.FLAG_ACTIVITY_CLEAR_TASK);
-            startActivity(i);
-            finish();
-        } catch (Exception ex) { status.setText("Impossible de démarrer le jeu : " + ex); }
+            startActivity(i); finish();
+        } catch (Exception ex) { dirStatus.setText("Impossible de démarrer le jeu : " + ex); }
     }
 
-    private void addServerButton(final String name, final String mode, final String host, final int port) {
-        Button btn = new Button(this);
-        btn.setText(name + "   [" + mode + "]   " + host + ":" + port);
-        btn.setAllCaps(false);
-        btn.setOnClickListener(new View.OnClickListener() {
-            public void onClick(View v) { play(host, port); }
-        });
-        list.addView(btn);
+    // ---------- favoris (SharedPreferences) ----------
+    private List<String[]> favorites() {
+        List<String[]> out = new ArrayList<String[]>();
+        String raw = getSharedPreferences(PREFS, MODE_PRIVATE).getString(FAV_PREF, "");
+        for (String line : raw.split("\n")) {
+            if (line.isEmpty()) continue;
+            String[] p = line.split("\t");
+            if (p.length == 3) out.add(p);
+        }
+        return out;
+    }
+    private void addFavorite(String name, String host, int port) {
+        removeFavorite(host, port);
+        String line = name.replace("\t", " ").replace("\n", " ") + "\t" + host + "\t" + port + "\n";
+        String raw = getSharedPreferences(PREFS, MODE_PRIVATE).getString(FAV_PREF, "");
+        getSharedPreferences(PREFS, MODE_PRIVATE).edit().putString(FAV_PREF, line + raw).commit();
+    }
+    private void removeFavorite(String host, int port) {
+        StringBuilder keep = new StringBuilder();
+        for (String[] f : favorites()) if (!(f[1].equals(host) && f[2].equals(String.valueOf(port))))
+            keep.append(f[0]).append('\t').append(f[1]).append('\t').append(f[2]).append('\n');
+        getSharedPreferences(PREFS, MODE_PRIVATE).edit().putString(FAV_PREF, keep.toString()).commit();
+    }
+    private void renderFavorites() {
+        favBox.removeAllViews();
+        List<String[]> favs = favorites();
+        if (favs.isEmpty()) {
+            TextView t = new TextView(this); t.setText("Aucun favori — ajoute-en avec ★."); t.setTextColor(MUT); t.setTextSize(13);
+            favBox.addView(t); return;
+        }
+        for (String[] f : favs) {
+            try { favBox.addView(serverCard(f[0], f[1] + ":" + f[2], f[1], Integer.parseInt(f[2]), true)); }
+            catch (NumberFormatException ignore) { }
+        }
     }
 
-    /** Lecture publique de la table {@code servers} (clé anon). Parsing minimal (nom + adresse). En arrière-plan. */
+    // ---------- annuaire (lecture publique) ----------
     private void loadDirectory() {
         if (DIRECTORY_URL.startsWith("__") || DIRECTORY_URL.isEmpty()) {
-            status.setText("Annuaire non configuré — saisis une adresse ci-dessous.");
-            return;
+            dirStatus.setText("Annuaire non configuré — utilise l'adresse manuelle."); return;
         }
-        new Thread(new Runnable() {
-            public void run() {
-                try {
-                    String url = DIRECTORY_URL.replaceAll("/$", "")
-                        + "/rest/v1/servers?select=name,mode,address&order=updated_at.desc";
-                    HttpURLConnection c = (HttpURLConnection) new URL(url).openConnection();
-                    c.setConnectTimeout(8000); c.setReadTimeout(8000);
-                    c.setRequestProperty("apikey", ANON_KEY);
-                    c.setRequestProperty("Authorization", "Bearer " + ANON_KEY);
-                    StringBuilder sb = new StringBuilder();
-                    BufferedReader r = new BufferedReader(new InputStreamReader(c.getInputStream(), "UTF-8"));
-                    for (String ln; (ln = r.readLine()) != null; ) sb.append(ln);
-                    r.close();
-                    final String body = sb.toString();
-                    ui.post(new Runnable() { public void run() { render(body); } });
-                } catch (final Exception e) {
-                    ui.post(new Runnable() { public void run() { status.setText("Annuaire injoignable — saisis une adresse."); } });
-                }
+        dirStatus.setText("Chargement de l'annuaire…");
+        new Thread(new Runnable() { public void run() {
+            try {
+                String url = DIRECTORY_URL.replaceAll("/$", "")
+                    + "/rest/v1/servers?select=name,mode,game_version,address,online,max_online&order=updated_at.desc";
+                HttpURLConnection c = (HttpURLConnection) new URL(url).openConnection();
+                c.setConnectTimeout(8000); c.setReadTimeout(8000);
+                c.setRequestProperty("apikey", ANON_KEY);
+                c.setRequestProperty("Authorization", "Bearer " + ANON_KEY);
+                StringBuilder sb = new StringBuilder();
+                BufferedReader r = new BufferedReader(new InputStreamReader(c.getInputStream(), "UTF-8"));
+                for (String ln; (ln = r.readLine()) != null; ) sb.append(ln);
+                r.close();
+                final String body = sb.toString();
+                ui.post(new Runnable() { public void run() { render(body); } });
+            } catch (Exception e) {
+                ui.post(new Runnable() { public void run() { dirStatus.setText("Annuaire injoignable — utilise l'adresse manuelle."); } });
             }
-        }).start();
+        } }).start();
     }
-
     private void render(String json) {
-        Pattern p = Pattern.compile("\\{[^}]*\\}");
-        Matcher m = p.matcher(json);
+        Matcher m = Pattern.compile("\\{[^}]*\\}").matcher(json);
         int n = 0;
         while (m.find()) {
             String o = m.group();
-            String name = field(o, "name"), mode = field(o, "mode"), address = field(o, "address");
+            String name = field(o, "name"), mode = field(o, "mode"), gv = field(o, "game_version"), address = field(o, "address");
+            String online = numField(o, "online"), maxOnline = numField(o, "max_online");
             if (address == null) continue;
             int c = address.lastIndexOf(':');
             if (c <= 0) continue;
             try {
-                addServerButton(name == null ? address : name, mode == null ? "?" : mode,
-                        address.substring(0, c), Integer.parseInt(address.substring(c + 1)));
+                String sub = (mode == null ? "" : ("strict".equals(mode) ? "🔒 strict" : "ouvert") + " · ")
+                    + (gv == null ? "" : "v" + gv + " · ") + address
+                    + (online == null ? "" : "  ·  " + online + (maxOnline != null && !"0".equals(maxOnline) ? "/" + maxOnline : "") + " en ligne");
+                dirBox.addView(serverCard(name == null ? address : name, sub, address.substring(0, c), Integer.parseInt(address.substring(c + 1)), false));
                 n++;
             } catch (NumberFormatException ignore) { }
         }
-        status.setText(n == 0 ? "Aucun serveur dans l'annuaire — saisis une adresse." : n + " serveur(s) disponible(s)");
+        dirStatus.setText(n == 0 ? "Aucun serveur dans l'annuaire pour l'instant." : n + " serveur(s) disponible(s)");
     }
 
     private static String field(String obj, String key) {
         Matcher m = Pattern.compile("\"" + key + "\"\\s*:\\s*\"((?:\\\\.|[^\"\\\\])*)\"").matcher(obj);
         return m.find() ? m.group(1) : null;
     }
-
+    private static String numField(String obj, String key) {
+        Matcher m = Pattern.compile("\"" + key + "\"\\s*:\\s*(-?\\d+)").matcher(obj);
+        return m.find() ? m.group(1) : null;
+    }
     private int dp(int v) { return (int) (v * getResources().getDisplayMetrics().density); }
 }

@@ -1,5 +1,24 @@
 # JOURNAL — journal détaillé des modifications
 
+## 2026-09-01 (g231) — ÉCRAN MOBILE V2 : ergonomie + FAVORIS + infos serveur (annuaire) 🟢
+
+Vérif appareil (user) : l'**écran s'affiche** (paysage, cohérent avec le jeu) et **« Jouer » lance le jeu** ✅ — la boucle
+mobile est fonctionnelle. Liste vide (annuaire vide) → enrichissement + entrée démo pour la tester.
+- **`mobile/DhServerPicker.java` V2** : UI programmatique repensée (cartes arrondies, sections, couleurs, boutons lisibles),
+  **3 sections** — **FAVORIS** (persistés en SharedPreferences `dh_favorites`, ajout ★ / retrait ✕), **SERVEURS
+  COMMUNAUTAIRES** (annuaire : nom + mode 🔒/ouvert + version + adresse + **joueurs en ligne**, bouton Jouer + ★), **ADRESSE
+  MANUELLE** (nom + host:port → Jouer / + Favori). Anonymes plutôt que lambdas (l'android.jar de compil n'a pas
+  LambdaMetafactory). Compile (javac+android.jar) + dexe (d8) OK.
+- **Entrée DÉMO** inscrite dans l'annuaire (« DÉMO Legion (test liste) », injoignable) pour que la liste s'affiche au test
+  — à retirer ensuite.
+- **APK régénéré** (`mobile-build/dh-picker-universal.apk`, LFS) : XAPK→universel + V2 injecté, 158 Mo signé v2/v3.
+- **Reste (V3, plus lourd)** : IDENTITÉ/AUTH mnémonique sur mobile pour les serveurs STRICT — nécessite un **Ed25519
+  pure-Java embarqué** (l'API Android `Signature("Ed25519")` n'existe qu'à partir d'API 33 ; jeu = API 26) + défi-réponse
+  + mint. Aussi possible : vérif de signature `/info` côté mobile (même dépendance crypto), ping/latence.
+
+Fichiers : `mobile/DhServerPicker.java` (V2), `mobile-build/dh-picker-universal.apk` (LFS, régénéré), `docs/SERVER_EXPLORER.md`,
+`JOURNAL.md`, `MEMORY.md`.
+
 ## 2026-09-01 (g230) — PATCH APK : XAPK → APK UNIVERSEL fusionné + patché (installable seul, libs incluses) ✅
 
 Vérif appareil : l'APK patché s'installait « incompatible ». **Cause TROUVÉE (pas le patch)** : `game/disney-heroes-12.1.0.apk`
