@@ -26,16 +26,28 @@ JNI_INC="$JDK/include"
 JNI_MD="$JNI_INC/linux"
 [ -f "$JNI_INC/jni.h" ] || { echo "[native] ERREUR: jni.h introuvable ($JNI_INC)"; exit 1; }
 
-# En-têtes JNI générés depuis les classes Native DU JEU (signatures mangle exactes).
-# On reconstruit des déclarations `native` (sans corps) à partir des classes du jeu et on émet les .h.
+# En-têtes JNI (signatures mangle exactes des classes Native DU JEU). Deux sources possibles :
+#  - GÉNÉRÉES depuis game.jar (chemin dev/génération : `javac -h` sur les stubs jni-decl/) — source de vérité ;
+#  - COMMITTÉES dans native/jni-headers/ (prototypes C purs, sans logique de jeu) — repli GAME-FREE pour la CI
+#    (le launcher-release est game-free ⇒ pas de game.jar). On régénère + rafraîchit la copie committée quand
+#    game.jar est présent, sinon on l'utilise telle quelle.
 HDR=build/jni-headers
-if [ ! -f "$HDR/com_perblue_heroes_cspine_Native.h" ] || [ "$ROOT/libs/game.jar" -nt "$HDR/com_perblue_heroes_cspine_Native.h" ]; then
-  echo "[native] génération des en-têtes JNI depuis game.jar ..."
-  mkdir -p build/jni-decl/com/perblue/heroes/cspine build/jni-decl/com/perblue/heroes/cparticle "$HDR"
-  # Les stubs de déclarations sont maintenus à la main dans native/jni-decl/ (dérivés de javap).
-  cp -r jni-decl/* build/jni-decl/ 2>/dev/null || true
-  "$JAVAC" -cp "$ROOT/libs/game.jar" -h "$HDR" -d build/jni-decl/out $(find build/jni-decl -name '*.java') \
-    2>&1 | grep -viE 'Picked up|warning' || true
+COMMITTED_HDR="jni-headers"
+if [ -f "$ROOT/libs/game.jar" ]; then
+  if [ ! -f "$HDR/com_perblue_heroes_cspine_Native.h" ] || [ "$ROOT/libs/game.jar" -nt "$HDR/com_perblue_heroes_cspine_Native.h" ]; then
+    echo "[native] génération des en-têtes JNI depuis game.jar ..."
+    mkdir -p build/jni-decl/com/perblue/heroes/cspine build/jni-decl/com/perblue/heroes/cparticle "$HDR"
+    # Les stubs de déclarations sont maintenus à la main dans native/jni-decl/ (dérivés de javap).
+    cp -r jni-decl/* build/jni-decl/ 2>/dev/null || true
+    "$JAVAC" -cp "$ROOT/libs/game.jar" -h "$HDR" -d build/jni-decl/out $(find build/jni-decl -name '*.java') \
+      2>&1 | grep -viE 'Picked up|warning' || true
+    # Rafraîchit la copie committée (repli CI game-free).
+    cp "$HDR"/*.h "$COMMITTED_HDR"/ 2>/dev/null || true
+  fi
+else
+  echo "[native] game.jar absent → en-têtes JNI COMMITTÉS (native/jni-headers/, build game-free) ..."
+  mkdir -p "$HDR"; cp "$COMMITTED_HDR"/*.h "$HDR"/ \
+    || { echo "[native] ERREUR: en-têtes JNI committés introuvables ($COMMITTED_HDR)"; exit 1; }
 fi
 
 mkdir -p build/obj

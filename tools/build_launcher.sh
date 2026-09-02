@@ -94,6 +94,17 @@ done
 # → le client ne peut pas télécharger les assets (archive.org / cache). On l'embarque donc dans le tooling.
 [ -f "$ROOT/index.txt" ] && cp "$ROOT/index.txt" "$OUT/tooling/index.txt" && echo "== index.txt embarqué (manifeste de contenu) =="
 
+# --- 4ter) backend spine jni PRÉ-COMPILÉ (perf ~50×) → tooling/native/build/ (autonomie : pas de compilateur C
+# chez le joueur). DH_HOSTSPINE_LIB (posé par la CI) = chemin d'un libhostspine64.{so|dll} déjà cross-compilé pour
+# l'OS de CE package. On le dépose là où run-desktop.sh (build-only) le cherche → il saute la compilation (garde
+# idempotent) et le manifeste HOSTSPINE le référence → BuildManager l'embarque dans le bundle client. Absent → le
+# client se construira le backend lui-même si un compilateur C est présent, sinon repli unidbg (plus lent).
+if [ -n "${DH_HOSTSPINE_LIB:-}" ] && [ -f "$DH_HOSTSPINE_LIB" ]; then
+  mkdir -p "$OUT/tooling/native/build"
+  cp "$DH_HOSTSPINE_LIB" "$OUT/tooling/native/build/$(basename "$DH_HOSTSPINE_LIB")"
+  echo "== hostspine pré-compilé embarqué ($(basename "$DH_HOSTSPINE_LIB")) → backend jni rapide sans compilateur côté joueur =="
+fi
+
 # --- 4bis) jars runtime TIERS (open-source) du bundle serveur → tooling/libs/ (autonomie du packaging) ---
 # BuildManager.packageServer copie RUNTIME_JARS depuis <tooling>/libs/. commons-logging est committé ; sqlite/slf4j/
 # joda sont sinon curl-és au 1er run (réseau requis chez l'hébergeur). On les EMBARQUE ici pour que « Générer » un

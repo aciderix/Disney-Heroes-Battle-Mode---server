@@ -18,7 +18,43 @@ permissions:
   contents: write        # créer/attacher la Release
 
 jobs:
+  # PERF : pré-compile le backend spine jni natif (libhostspine64.so + .dll) UNE fois, GAME-FREE (en-têtes JNI
+  # committés dans native/jni-headers/ → pas besoin de game.jar) sur un runner Linux (gcc pour le .so + MinGW pour
+  # cross-compiler le .dll Windows). Les deux libs sont embarquées dans les packages par le job build → le joueur a
+  # le backend rapide (~50×) SANS installer de compilateur C. Rien de copyright ici (runtime spine-c public compilé,
+  # glue JNI maison, en-têtes = prototypes C).
+  hostspine:
+    runs-on: ubuntu-22.04
+    steps:
+      - uses: actions/checkout@v4
+      - name: Set up JDK 21 (Temurin)
+        uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: '21'
+      - name: Install toolchains (gcc + MinGW-w64)
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y build-essential gcc-mingw-w64-x86-64 git
+      - name: Build hostspine (.so Linux + .dll Windows) game-free
+        run: |
+          cd native
+          bash build.sh
+          bash build-hostspine.sh
+          bash build-hostspine-win.sh
+          ls -la build/libhostspine64.so build/libhostspine64.dll
+          file build/libhostspine64.dll
+      - name: Upload hostspine natives
+        uses: actions/upload-artifact@v4
+        with:
+          name: hostspine-natives
+          path: |
+            native/build/libhostspine64.so
+            native/build/libhostspine64.dll
+          retention-days: 7
+
   build:
+    needs: hostspine
     strategy:
       fail-fast: false
       matrix:
@@ -29,9 +65,11 @@ jobs:
           - os: ubuntu-22.04
             oskind: linux
             pyexe: runtime/python/bin/python3
+            hostspinelib: libhostspine64.so
           - os: windows-latest
             oskind: windows
             pyexe: runtime/python/python.exe
+            hostspinelib: libhostspine64.dll
     runs-on: ${{ matrix.os }}
     steps:
       - uses: actions/checkout@v4
@@ -42,6 +80,12 @@ jobs:
           distribution: temurin
           java-version: '21'
 
+      - name: Download prebuilt hostspine natives
+        uses: actions/download-artifact@v4
+        with:
+          name: hostspine-natives
+          path: hostspine-prebuilt
+
       - name: Build launcher package
         shell: bash
         env:
@@ -51,6 +95,8 @@ jobs:
           # Rien de secret ici (jamais le service_role). Absents → l'annuaire n'est simplement pas préconfiguré.
           DH_DIRECTORY_URL: ${{ secrets.SUPABASE_URL }}
           DH_DIRECTORY_ANON_KEY: ${{ secrets.SUPABASE_ANON_KEY }}
+          # Backend spine jni pré-compilé pour CET OS → embarqué dans tooling/native/build/ (perf sans compilateur joueur).
+          DH_HOSTSPINE_LIB: ${{ github.workspace }}/hostspine-prebuilt/${{ matrix.hostspinelib }}
         run: bash tools/build_launcher.sh
 
       - name: Smoke — launcher runs game-free (identity + health) + python embarqué
