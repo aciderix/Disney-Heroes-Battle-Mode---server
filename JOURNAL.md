@@ -1,5 +1,49 @@
 # JOURNAL — journal détaillé des modifications
 
+## 2026-09-02 (g244) — TEST INTÉGRATION (suite) : générer le CLIENT (port PC) + jeu RENDU EN JEU depuis le bundle généré
+
+Suite du test « comme un user » (g243), côté **génération du CLIENT (port PC)** via le daemon packagé
+(`POST /build/start target=client`). Deux corrections d'autonomie puis une vérif EN JEU.
+
+**1) Le build client échouait à `jar-client`** : `cd: ../native/reference: No such file or directory` puis
+`manifeste : clé absente SPINE_LIB`. Deux causes :
+- `run-desktop.sh` extrayait les assets d'un **chemin d'APK codé en dur** (`../game/disney-heroes-12.1.0.apk`),
+  absent du package (l'APK appartient au joueur). ⇒ `BuildManager` (cible CLIENT) passe désormais
+  `DH_APK=<apk du joueur>` ; `run-desktop.sh` lit `APK="${DH_APK:-…}"`. Ajout d'une surcharge
+  `runStep(name,cmd,Map env)`.
+- `build_launcher.sh` copiait `server/ desktop-port/ tools/` dans le tooling **mais pas `native/`**
+  (binaires ARM `libspine-native.so`/`libgdx*.so`, git-tracked, requis par unidbg et référencés par le
+  manifeste build-only comme `SPINE_LIB`). Sans eux, `ABS "$SPINE_LIB"` (`cd ../native/reference`) échouait →
+  `SPINE_LIB` VIDE dans le manifeste → `jar-client` rejetait. ⇒ `native` ajouté à la boucle de copie.
+
+Après fix : `target=client` → **DONE**. Bundle autonome : `dhdesktop.jar` (39 classes, **non vide** — le
+garde-fou #5 tient), `game-logic-framed.jar` (63249), `native/libspine-native.so` + `libgdx64.so`, `run.sh`
+câblé sur `-Ddh.spinelib`, **JRE jlink** embarqué, assets/resources (~283 Mo) → **355 Mo**, `run.sh`/`run.bat`.
+
+**2) Lancer le jeu depuis le bundle généré** : la 1ʳᵉ tentative a **crashé** à `GameMain.create()` →
+`Asset not loaded: ETC1/world/color_mask.png`. **Cause (fait)** : `game/disney-heroes-12.1.0.apk` est le
+**base.apk d'un XAPK** (`requiredSplitTypes=base__abi,base__textures`) — **0** entrée `assets/ETC1/*` (les
+textures sont dans `config.etc2.apk`). Le dev « marchait » parce que `desktop-port/build/apk/assets/ETC1/`
+(215 Mo) est committé. ⇒ **Correctif** : extraction d'assets **XAPK-aware** dans `run-desktop.sh` — si l'APK
+fourni est un XAPK/.apks, on le **FUSIONNE en universel (APKEditor 1.4.3)** avant extraction, exactement comme
+le chemin patch APK (`tools/apk_inject_picker.sh`, prouvé g230). Paresseux (seulement si assets/ressources
+manquent) ; un universel déjà complet passe tel quel ; non-régressif sur le base APK (pas de `.apk` interne).
+
+**3) Vérif EN JEU (§8), isolation du gap** : en fournissant au bundle les textures ETC1 complètes (celles du
+dev, issues du XAPK complet), le client généré **se connecte au serveur** (`/login` :8080 → jeu :8081),
+**télécharge le contenu depuis content_server** (`[FileDownloader] Done Downloading
+COMPLETE_LIVE_UI_BOOSTER_INITIAL_XHDPI_ETC1_335.zip` depuis `http://127.0.0.1:8080/live/…`, unzip dans le
+rundir), `LoadingScreen: DownloadRequiredContent finished` → `CreateStartScreen` → **`[MainScreen]`**, et
+**REND l'intro Disney Heroes** (capture PPM 1280×720 : logo « DISNEY HEROES » + scène tuto Ralph/Vanellope
+« I can't believe you talked me into this » + « TAP TO CONTINUE »). ⇒ **le bundle client est sain** ; le seul
+manque était la **source des textures** (le base APK seul ne suffit pas).
+
+**Bilan cible CLIENT** : les 3 cibles du launcher génèrent depuis l'APK — **serveur ✅, client PC ✅, patch APK ✅**.
+⚠️ **Reste §8** : re-confirmer la **fusion XAPK sur un VRAI XAPK complet** (le bac-à-sable n'a que le base APK ;
+mécanisme identique à g230, non re-vérifié end-to-end ici) — à faire côté user avec son XAPK.
+
+Commits : `8685e3e` (DH_APK + native), `00702df` (XAPK-aware assets).
+
 ## 2026-09-02 (g243) — TEST INTÉGRATION launcher Linux (comme un user) : 3 vrais bugs d'autonomie trouvés + corrigés
 
 Test end-to-end du package launcher Linux construit avec le même `build_launcher.sh` que le CI (run #9 vert). L'artefact CI
