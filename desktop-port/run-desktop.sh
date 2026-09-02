@@ -197,6 +197,25 @@ CP="$BUILD/classes/java/main:$FRAMED:$NATDIR:$ASSETS:$RESD:$RUNTIME_CP"
 # assets, ressources, natifs). On émet un MANIFESTE des chemins et on SORT sans lancer → le packager
 # (dhlauncher.BuildManager cible CLIENT) assemble un bundle autonome à partir de ça.
 if [ -n "${DH_BUILD_ONLY:-}" ]; then
+  # PERF : backend spine JNI natif (libhostspine64.{so|dll}) — le VRAI runtime spine-c officiel compilé pour
+  # l'hôte, ~50× plus rapide qu'unidbg (spine sort du hot-path émulé). On le CONSTRUIT à la génération SI un
+  # compilateur C est présent ; sinon repli SILENCIEUX sur unidbg (le client tourne, plus lent). Idempotent.
+  # build.sh a besoin de game.jar (en-têtes JNI) — présent après le decompile de l'APK. Fidélité jni certifiée (B3/B5).
+  # OS-aware : Windows (Git Bash MSYS/MinGW) → libhostspine64.dll (MinGW) ; sinon → libhostspine64.so (gcc).
+  case "$(uname -s 2>/dev/null || echo linux)" in
+    MINGW*|MSYS*|CYGWIN*) HS_SCRIPT="build-hostspine-win.sh"; HS_LIB="libhostspine64.dll"; HS_CC="x86_64-w64-mingw32-gcc" ;;
+    *)                    HS_SCRIPT="build-hostspine.sh";     HS_LIB="libhostspine64.so";  HS_CC="gcc" ;;
+  esac
+  if [ ! -f "$(cd .. && pwd)/native/build/$HS_LIB" ]; then
+    if command -v "$HS_CC" >/dev/null 2>&1 || command -v cc >/dev/null 2>&1; then
+      echo "[desktop] build du backend spine natif rapide ($HS_LIB) ..."
+      ( cd ../native && bash build.sh && bash "$HS_SCRIPT" ) >/dev/null 2>&1 \
+        && echo "[desktop]   $HS_LIB OK → backend jni rapide embarqué" \
+        || echo "[desktop]   WARN: build hostspine échoué → le client généré utilisera unidbg (plus lent, mais fonctionnel)"
+    else
+      echo "[desktop] compilateur C ($HS_CC) absent → backend jni rapide non construit ; le client utilisera unidbg (plus lent). Installez un compilateur C pour le mode rapide."
+    fi
+  fi
   ABS() { (cd "$(dirname "$1")" && printf '%s/%s' "$(pwd)" "$(basename "$1")"); }
   { echo "RUNTIME_CP=$RUNTIME_CP"
     echo "CLASSES=$(ABS "$BUILD/classes/java/main")"
@@ -205,7 +224,7 @@ if [ -n "${DH_BUILD_ONLY:-}" ]; then
     echo "ASSETS=$(ABS "$ASSETS")"
     echo "RESD=$(ABS "$RESD")"
     echo "SPINE_LIB=$(ABS "$SPINE_LIB")"
-    echo "HOSTSPINE=$( [ -f "$(cd .. && pwd)/native/build/libhostspine64.so" ] && echo "$(cd .. && pwd)/native/build/libhostspine64.so" || echo "" )"
+    echo "HOSTSPINE=$( NB="$(cd .. && pwd)/native/build"; [ -f "$NB/$HS_LIB" ] && echo "$NB/$HS_LIB" || { [ -f "$NB/libhostspine64.so" ] && echo "$NB/libhostspine64.so" || echo ""; } )"
   } > "$BUILD/client-manifest.env"
   echo "[desktop] build-only : manifeste écrit ($BUILD/client-manifest.env)"
   exit 0

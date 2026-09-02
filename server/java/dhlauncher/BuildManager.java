@@ -218,7 +218,9 @@ public final class BuildManager {
         File natdir = new File(req(m, "NATDIR"));
         if (natdir.isDirectory()) for (File f : natdir.listFiles()) if (f.isFile()) copyFile(f, new File(nat, f.getName()));
         File spineLib = new File(req(m, "SPINE_LIB")); if (spineLib.isFile()) copyFile(spineLib, new File(nat, spineLib.getName()));
-        String host = m.getOrDefault("HOSTSPINE", ""); if (!host.isEmpty() && new File(host).isFile()) copyFile(new File(host), new File(nat, "libhostspine64.so"));
+        // hostspine (backend spine jni rapide, optionnel) : préserver l'extension d'origine (.so Linux / .dll Windows)
+        // — run.sh cherche libhostspine64.so, run.bat cherche libhostspine64.dll.
+        String host = m.getOrDefault("HOSTSPINE", ""); if (!host.isEmpty() && new File(host).isFile()) copyFile(new File(host), new File(nat, new File(host).getName()));
         // assets + ressources (accédés en chemins relatifs par le jeu ; sur le classpath)
         append("copie des assets (~283 Mo) + ressources ...");
         copyDir(new File(req(m, "ASSETS")).toPath(), new File(out, "assets").toPath());
@@ -488,7 +490,7 @@ public final class BuildManager {
       + "set CP=%DIR%lib\\dhdesktop.jar;%DIR%lib\\game-logic-framed.jar;%DIR%native;%DIR%assets;%DIR%resources;%DIR%lib\\runtime\\*\r\n"
       + "set JOPTS=-XX:TieredStopAtLevel=1 -Ddh.rundir=\"%DIR%data\\run\" -Ddh.spinelib=\"%DIR%native\\libspine-native.so\" -Ddh.server=%DH_SERVER%\r\n"
       + "if exist \"%DIR%native\\libgdx64.so\" set JOPTS=%JOPTS% -Ddh.gdxnative=\"%DIR%native\\libgdx64.so\"\r\n"
-      + "if exist \"%DIR%native\\libhostspine64.so\" set JOPTS=%JOPTS% -Ddh.spinebackend=jni -Ddh.hostspine=\"%DIR%native\\libhostspine64.so\"\r\n"
+      + "if exist \"%DIR%native\\libhostspine64.dll\" set JOPTS=%JOPTS% -Ddh.spinebackend=jni -Ddh.hostspine=\"%DIR%native\\libhostspine64.dll\"\r\n"
       // FENÊTRE VISIBLE (la fenêtre est créée invisible par défaut, orienté capture headless) — sans ça le joueur Windows
       // voit la console s'ouvrir mais aucune fenêtre de jeu.
       + "set JOPTS=%JOPTS% -Ddh.visible=1\r\n"
