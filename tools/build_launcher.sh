@@ -82,8 +82,11 @@ echo "== smoke python embarqué =="
 echo "== copie du tooling repo =="
 for d in server desktop-port tools native; do
   mkdir -p "$OUT/tooling/$d"
-  # exclut les artefacts lourds/gitignorés (build/, libs/*.jar, game-data/, caches)
+  # exclut les artefacts lourds/gitignorés (build/, libs/*.jar, game-data/, caches). `git ls-files`
+  # liste aussi les GITLINKS de sous-modules (ex. native/spine-c) — non copiables par cp → on saute
+  # tout ce qui n'est pas un fichier régulier (sinon `cp` échoue et `set -e` avorte tout le build).
   (cd "$ROOT" && git ls-files "$d" | while read -r f; do
+     [ -f "$ROOT/$f" ] || continue
      mkdir -p "$OUT/tooling/$(dirname "$f")"; cp "$ROOT/$f" "$OUT/tooling/$f"; done)
 done
 # index.txt (manifeste de contenu, À LA RACINE du repo) : REQUIS par content_server.py qui le cherche à
