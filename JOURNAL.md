@@ -1,5 +1,63 @@
 # JOURNAL — journal détaillé des modifications
 
+## 2026-09-02 (g248) — BUG CRITIQUE launcher corrigé : « Launcher local injoignable » en PROD (100% des lancements)
+
+Session **téléportée sur le PC Windows de l'utilisateur** (nouvelle machine, `C:\Users\fromt\Documents\disney
+server\Disney-Heroes-Battle-Mode---server`). L'utilisateur a mis le launcher packagé dans
+`C:\Users\fromt\Desktop\launcher-windows` et double-cliqué `DisneyHeroesLauncher.exe` : la console Java s'ouvre
+et affiche bien `[launcher] daemon local sur http://127.0.0.1:65426 ...` (daemon démarré), mais la FENÊTRE Tauri
+affiche **« Launcher local injoignable. Relance l'application. »** — l'utilisateur soupçonne un problème de CORS.
+
+**Investigation EN JEU sur la machine réelle** (§8, jamais supposé) :
+1. `Invoke-WebRequest` PowerShell direct sur le port du daemon → **200 `{"ok":true}` + tous les en-têtes CORS
+   corrects** (`Access-Control-Allow-Origin: *`, etc.) → le daemon ET le CORS sont SAINS. Le soupçon CORS de
+   l'utilisateur était une fausse piste raisonnable mais non la cause.
+2. `netstat`/`Get-NetTCPConnection` sur les process `msedgewebview2.exe` → **aucune connexion** vers 127.0.0.1
+   pendant que la fenêtre affiche l'erreur → le fetch n'atteint JAMAIS le réseau (le bug est dans le JS AVANT le
+   fetch, pas un blocage réseau/pare-feu/antivirus).
+3. **Debugging distant WebView2** : relance avec `$env:WEBVIEW2_ADDITIONAL_BROWSER_ARGUMENTS =
+   "--remote-debugging-port=9222"` → CDP (`http://127.0.0.1:9222/json`) expose la VRAIE page (`http://tauri.localhost/`).
+   Script Node (WebSocket natif, Node 24) connecté au CDP : `Log.enable`+`Network.enable`+`Console.enable` capturent
+   en DIRECT, sur la fenêtre RÉELLE du joueur, l'app en train de faire `GET http://127.0.0.1:8090/health` →
+   `net::ERR_CONNECTION_REFUSED`, en boucle — **8090 est le port de SECOURS codé en dur** (`getDaemonPort()`), PAS
+   le vrai port aléatoire du daemon (65426/62740/60054 selon le lancement).
+4. **Cause racine isolée** (`tauriBridge.ts`) : le pont Tauri charge l'API par `import(/* @vite-ignore */
+   VARIABLE)` où `VARIABLE = "@tauri-apps/api/core"` — un specifier **INDIRECT** (via une const), pas un littéral.
+   Vite/Rollup **n'analyse que les chaînes littérales** pour décider quoi bundler en chunk séparé → ce module
+   n'est **jamais bundlé** → au runtime le navigateur tente de résoudre le bare specifier npm tel quel (impossible
+   sans import map) → `TypeError: Failed to resolve module specifier '@tauri-apps/api/core'`. **Reproduit à
+   l'identique** en évaluant `await import(/* @vite-ignore */ "@tauri-apps/api/core")` via CDP dans la fenêtre
+   réelle (message d'erreur EXACT). Cette exception était rattrapée SILENCIEUSEMENT par le `try/catch` de
+   `getDaemonPort()` → repli sur 8090 (prévu SEULEMENT pour le dev navigateur SANS Tauri, jamais censé s'activer
+   en prod). Contre-preuve : appeler DIRECTEMENT `window.__TAURI_INTERNALS__.invoke("get_daemon_port")` (en
+   contournant le wrapper cassé) renvoie le VRAI port sans erreur.
+   ⇒ **Bug de build 100% reproductible, sur TOUT OS packagé (Windows ET Linux)** — la justification de
+   l'indirection dans le commentaire du code (« évite de requérir les paquets @tauri-apps/* au type-check CI »)
+   était **caduque** : `@tauri-apps/api` et `@tauri-apps/plugin-dialog` sont déjà de VRAIES dépendances
+   `package.json` (jamais optionnelles) → l'indirection n'apportait plus rien et cassait tout silencieusement.
+
+**Correctif** : `tauriBridge.ts` réécrit avec des imports **STATIQUES** (`import { invoke } from
+"@tauri-apps/api/core"`, `import { open } from "@tauri-apps/plugin-dialog"`), résolus par le bundler à la
+compilation (littéral ou statique, peu importe — Vite les inline/chunk correctement). Comportement inchangé
+(mêmes wrappers `inTauri()`/`getDaemonPort()`/`pickFile`/`pickDir`).
+
+**Vérifié** :
+- `npm ci` + `npm run typecheck` (`tsc --noEmit`) → **OK**.
+- `npm run build` → **OK**, bundle inspecté : plus aucun `import(bare-specifier)` non résolu au runtime,
+  `__TAURI_INTERNALS__` correctement inliné (1 occurrence, invoke direct).
+- **EN JEU** (CDP sur la fenêtre Windows réelle) : `window.__TAURI_INTERNALS__.invoke("get_daemon_port")` —
+  exactement le chemin qu'emprunte le code corrigé — renvoie le **vrai port** (60054) et
+  `fetch("http://127.0.0.1:60054/health")` répond **200 `{"ok":true}`**. Tentative de test end-to-end complémentaire
+  (hot-patch du bundle corrigé injecté en direct via blob URL dans la fenêtre vivante) bloquée par la CSP
+  `script-src` (attendu, limite de la méthode de test, pas un bug applicatif) — sans incidence sur la conclusion
+  puisque le chemin direct (celui réellement exercé par le code corrigé une fois rebuild) est prouvé fonctionnel.
+- Recherché (`grep -rn "vite-ignore"`) : **aucune autre occurrence** du même anti-pattern dans `launcher-ui/src`.
+
+**Reste** : rebuild + republier le launcher (aucun toolchain Rust dans ce contexte Windows pour recompiler l'exe
+Tauri) — ce bug bloquait **TOUS les lancements en production**, priorité absolue au prochain re-tag `launcher-v*`.
+
+Commit : `987bbc8`.
+
 ## 2026-09-02 (g247) — PERF (suite) : prébuild CI du backend jni (.so + .dll) — perf sans compilateur chez le joueur
 
 Décision util. : **prébuild en CI** (plutôt que MinGW chez le joueur ou laisser Windows sur unidbg). But : les
