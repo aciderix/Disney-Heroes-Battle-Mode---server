@@ -144,20 +144,28 @@ if [ ! -d "$ASSETS" ] || [ ! -d "$RESD" ]; then
   fi
 fi
 
-# Assets de l'APK (accédés par le jeu en chemins relatifs "ui/...", "world/...").
-if [ ! -d "$ASSETS" ]; then
-  echo "[desktop] extraction des assets de l'APK ..."
-  mkdir -p "$BUILD/apk"
-  unzip -oq "$EXTRACT_APK" 'assets/*' -d "$BUILD/apk"
-fi
-
-# Ressources au racine du classpath (com/perblue/... : .tab/.properties/.glsl) que dex2jar
-# a laissées de côté — tout ce qui n'est pas assets/res/lib/dex/META-INF.
-if [ ! -d "$RESD" ]; then
-  echo "[desktop] extraction des ressources classpath de l'APK ..."
-  mkdir -p "$RESD"
-  unzip -oq "$EXTRACT_APK" -x 'assets/*' 'res/*' 'lib/*' 'META-INF/*' '*.dex' \
-     'AndroidManifest.xml' 'resources.arsc' -d "$RESD" || true
+# Assets (accédés par le jeu en chemins relatifs "ui/...", "world/...") + ressources classpath
+# (com/perblue/... : .tab/.properties/.glsl que dex2jar a laissées de côté — tout ce qui n'est
+# pas assets/res/lib/dex/META-INF). UN SEUL passage d'extraction COMPLET (sans motif d'inclusion),
+# puis répartition par déplacement de dossiers — PAS deux extractions filtrées par motif.
+# Raison (trouvée EN JEU, Windows, g255) : l'UnZip 6.00 (2009) fourni avec Git for Windows NE
+# RÉCURSE PAS dans les sous-dossiers avec un motif d'inclusion `'assets/*'` (vérifié : `unzip -l
+# EXTRACT_APK 'assets/*'` ne listait que les 9 fichiers À LA RACINE de assets/, aucun des ~3046
+# fichiers dans ses sous-dossiers ETC/, stats/, sound/, fonts/, shaders/, joda/, strings/… — sur
+# CE build, le dossier de textures générique `ETC/` [détection dynamique du jeu, `initTextureCompressionType`]
+# disparaissait ENTIÈREMENT → assets incomplets → crash potentiel au lancement). Une extraction SANS
+# motif (`unzip -oq EXTRACT_APK -d STAGING`, testée : 133 Mo, `assets/ETC/` bien présent) n'a pas ce
+# problème → on extrait tout une fois, puis on RÉPARTIT par déplacement (fiable, indépendant du motif).
+if [ ! -d "$ASSETS" ] || [ ! -d "$RESD" ]; then
+  echo "[desktop] extraction complète de l'APK (assets + ressources classpath) ..."
+  STAGING="$BUILD/apk-staging"
+  rm -rf "$STAGING"; mkdir -p "$STAGING"
+  unzip -oq "$EXTRACT_APK" -d "$STAGING"
+  mkdir -p "$(dirname "$ASSETS")"
+  rm -rf "$ASSETS"; mv "$STAGING/assets" "$ASSETS"
+  rm -rf "$STAGING/res" "$STAGING/lib" "$STAGING/META-INF" "$STAGING"/*.dex \
+         "$STAGING/AndroidManifest.xml" "$STAGING/resources.arsc"
+  rm -rf "$RESD"; mv "$STAGING" "$RESD"
 fi
 
 # Overlay des CHAÎNES manquantes : le bundle de l'APK (12.1.0) précède certaines clés que le CODE de
