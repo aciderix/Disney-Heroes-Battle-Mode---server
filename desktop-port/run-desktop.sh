@@ -79,11 +79,39 @@ if [ ! -f "$FRAMED" ] || [ "$GAMELOGIC" -nt "$FRAMED" ]; then
   java -cp "$REFRAME_CLS:$ASM:$RUNTIME_CP" ReframeJar "$GAMELOGIC" "$FRAMED" | grep -v 'Picked up' || true
 fi
 
+# APK d'extraction : si le joueur fournit un XAPK/.apks (base + splits config), les TEXTURES
+# (variantes ETC1/ETC2/…) et les .so sont dans des splits SÉPARÉS — le base.apk seul n'a PAS
+# d'assets/ETC1 → le jeu crashe au boot (« Asset not loaded: ETC1/world/color_mask.png »). On
+# FUSIONNE donc le XAPK en APK universel (APKEditor) AVANT extraction, comme le chemin patch APK
+# (tools/apk_inject_picker.sh, prouvé g230). Un APK universel déjà complet passe tel quel. Paresseux :
+# seulement quand une extraction est nécessaire (assets ou ressources manquants).
+EXTRACT_APK="$APK"
+if [ ! -d "$ASSETS" ] || [ ! -d "$RESD" ]; then
+  if unzip -l "$APK" 2>/dev/null | grep -qE '\.apk$'; then
+    APKEDITOR="../libs/apktools/APKEditor.jar"
+    if [ ! -s "$APKEDITOR" ]; then
+      echo "[desktop] téléchargement APKEditor (fusion XAPK) ..."
+      mkdir -p "../libs/apktools"
+      curl -sSL --retry 3 --max-time 300 -o "$APKEDITOR" \
+        "https://github.com/REAndroid/APKEditor/releases/download/V1.4.3/APKEditor-1.4.3.jar" \
+        || { echo "[desktop] ✖ téléchargement APKEditor" >&2; exit 1; }
+    fi
+    mkdir -p "$BUILD"
+    if [ ! -s "$BUILD/universal.apk" ]; then
+      echo "[desktop] XAPK détecté → fusion en APK universel (APKEditor) ..."
+      java -jar "$APKEDITOR" m -i "$APK" -o "$BUILD/universal.apk" >/dev/null 2>&1 \
+        || { echo "[desktop] ✖ fusion XAPK (APKEditor)" >&2; exit 1; }
+    fi
+    EXTRACT_APK="$BUILD/universal.apk"
+    echo "[desktop]   universel : $(unzip -l "$EXTRACT_APK" 2>/dev/null | grep -c '\.so$') .so"
+  fi
+fi
+
 # Assets de l'APK (accédés par le jeu en chemins relatifs "ui/...", "world/...").
 if [ ! -d "$ASSETS" ]; then
   echo "[desktop] extraction des assets de l'APK ..."
   mkdir -p "$BUILD/apk"
-  unzip -oq "$APK" 'assets/*' -d "$BUILD/apk"
+  unzip -oq "$EXTRACT_APK" 'assets/*' -d "$BUILD/apk"
 fi
 
 # Ressources au racine du classpath (com/perblue/... : .tab/.properties/.glsl) que dex2jar
@@ -91,7 +119,7 @@ fi
 if [ ! -d "$RESD" ]; then
   echo "[desktop] extraction des ressources classpath de l'APK ..."
   mkdir -p "$RESD"
-  unzip -oq "$APK" -x 'assets/*' 'res/*' 'lib/*' 'META-INF/*' '*.dex' \
+  unzip -oq "$EXTRACT_APK" -x 'assets/*' 'res/*' 'lib/*' 'META-INF/*' '*.dex' \
      'AndroidManifest.xml' 'resources.arsc' -d "$RESD" || true
 fi
 
