@@ -25,6 +25,15 @@ if [[ -z "$APK" || ! -f "$APK" ]]; then
 fi
 
 OUT="$ROOT/libs"; mkdir -p "$OUT"
+
+# IDEMPOTENT (perf) : si libs/game.jar existe déjà et est PLUS RÉCENT que l'APK source (+ commons-logging.jar
+# présent), la décompilation dex2jar (la plus LOURDE étape du pipeline, plusieurs minutes pour ~65k classes)
+# est SAUTÉE. Supprimer libs/game.jar force une régénération. Mêmes règles que le reframe/gradle du dépôt
+# (`[ ! -f … ] || [ … -nt … ]`).
+if [ -f "$OUT/game.jar" ] && [ -f "$OUT/commons-logging.jar" ] && [ "$OUT/game.jar" -nt "$APK" ]; then
+  echo "[decompile] libs/game.jar déjà à jour (plus récent que l'APK) → décompilation SAUTÉE (supprimer libs/game.jar pour forcer)"
+  exit 0
+fi
 WORK="$(mktemp -d)"; trap 'rm -rf "$WORK"' EXIT
 
 # dex2jar (fork femtopedia 2.4.28) + ses dépendances RÉSOLUES, en URLs Maven Central DIRECTES (pinnées) — plus besoin
@@ -67,7 +76,19 @@ cp "$WORK"/lib/commons-logging-*.jar "$OUT/commons-logging.jar"
 echo "[decompile] dex2jar : $APK → libs/game.jar"
 # -Xverify:none pour l'outil lui-même n'est pas nécessaire ; -f force malgré des classes
 # partielles (SDK pub tiers). JAVA_TOOL_OPTIONS vidé pour un log propre.
-JAVA_TOOL_OPTIONS= java -cp "$WORK/lib/*" com.googlecode.dex2jar.tools.Dex2jarCmd \
+# Classpath : sous Git Bash/MSYS (Windows), un java.exe NATIF appelé avec un classpath WILDCARD POSIX
+# ("$WORK/lib/*") n'a PAS ses arguments traduits (le "*" casse l'heuristique de traduction automatique des
+# chemins POSIX→Windows de MSYS) → 0 jar chargé → ClassNotFoundException sur la classe principale (reproduit et
+# vérifié). Sur Windows on construit donc un classpath EXPLICITE (chaque jar converti en chemin natif via
+# `cygpath -w`, fourni par Git for Windows) joint par ";" (séparateur Windows) ; sur Linux/macOS le wildcard
+# "dir/*" (déjà éprouvé, MSYS absent) reste utilisé tel quel.
+CP="$WORK/lib/*"
+if command -v cygpath >/dev/null 2>&1; then
+  CP=""
+  for j in "$WORK"/lib/*.jar; do CP="$CP;$(cygpath -w "$j")"; done
+  CP="${CP#;}"
+fi
+JAVA_TOOL_OPTIONS= java -cp "$CP" com.googlecode.dex2jar.tools.Dex2jarCmd \
     -f -o "$OUT/game.jar" "$APK"
 
 echo "[decompile] OK → $OUT/game.jar (+ $OUT/commons-logging.jar)"

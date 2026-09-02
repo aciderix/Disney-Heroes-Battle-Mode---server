@@ -16,6 +16,17 @@ export LIBGL_ALWAYS_SOFTWARE=1
 # Unicode s'encodent correctement. Correctif de plateforme (lanceur), pas une modif du jeu.
 export LC_ALL="${LC_ALL:-C.utf8}"
 
+# Classpath OS-correct : sous Git Bash/MSYS (Windows), un java.exe NATIF appelé avec un classpath COMPOSITE
+# (plusieurs entrées jointes) contenant des chemins POSIX (ex. issus de $HOME/../ ou de mktemp) n'a PAS ses
+# arguments traduits de façon fiable (vérifié EN JEU : `java -cp "posix1;posix2" X` échoue même avec le bon
+# séparateur) → NATIVE() convertit chaque chemin en forme Windows native via `cygpath -w` (fourni par Git for
+# Windows) avant assemblage ; PSEP est le séparateur de classpath OS-correct (";" Windows / ":" ailleurs). Sur
+# Linux/macOS les deux sont des no-op (déjà éprouvé).
+PSEP=":"; NATIVE() { printf '%s' "$1"; }
+case "$(uname -s 2>/dev/null || true)" in
+  MINGW*|MSYS*|CYGWIN*) PSEP=";"; NATIVE() { cygpath -w "$1" 2>/dev/null || printf '%s' "$1"; } ;;
+esac
+
 # APK : fourni par le launcher via DH_APK (le package embarqué n'inclut PAS l'APK — copyright/joueur) ; repli dev.
 APK="${DH_APK:-../game/disney-heroes-12.1.0.apk}"
 BUILD="build"
@@ -41,7 +52,7 @@ if [ ! -f "$ASM" ]; then
   ASM="$BUILD/asm-9.7.jar"; [ -f "$ASM" ] || { echo "[desktop] téléchargement ASM ..."; mkdir -p "$BUILD"; curl -fsSL -o "$ASM" "$MVN/org/ow2/asm/asm/9.7/asm-9.7.jar"; }
 fi
 REFRAME_CLS="../tools/reframe/classes"
-[ -f "$REFRAME_CLS/ReframeJar.class" ] || { mkdir -p "$REFRAME_CLS"; javac -cp "$ASM" -d "$REFRAME_CLS" ../tools/reframe/src/ReframeJar.java; }
+[ -f "$REFRAME_CLS/ReframeJar.class" ] || { mkdir -p "$REFRAME_CLS"; javac -encoding UTF-8 -cp "$ASM" -d "$REFRAME_CLS" ../tools/reframe/src/ReframeJar.java; }
 # Spine + particules : on exécute le VRAI binaire natif d'origine de PerBlue
 # (native/reference/libspine-native.so, ARM, committé) IN-PROCESS via unidbg. Les shadows
 # com.perblue.heroes.cspine/cparticle.Native (desktop-port/src) dispatchent vers dhbackend.unidbg.UnidbgVM.
@@ -93,7 +104,7 @@ RUNTIME_CP=$("$GRADLE" --no-daemon -q printRuntimeClasspath 2>/dev/null | grep -
 FRAMED="../libs/game-logic-framed.jar"
 if [ ! -f "$FRAMED" ] || [ "$GAMELOGIC" -nt "$FRAMED" ]; then
   echo "[desktop] reframe de game-logic.jar (COMPUTE_FRAMES, ~10s) ..."
-  java -cp "$REFRAME_CLS:$ASM:$RUNTIME_CP" ReframeJar "$GAMELOGIC" "$FRAMED" | grep -v 'Picked up' || true
+  java -cp "$(NATIVE "$REFRAME_CLS")$PSEP$(NATIVE "$ASM")$PSEP$RUNTIME_CP" ReframeJar "$GAMELOGIC" "$FRAMED" | grep -v 'Picked up' || true
 fi
 
 # APK d'extraction : si le joueur fournit un XAPK/.apks (base + splits config), les TEXTURES
@@ -182,7 +193,7 @@ fi
 NATDIR="$BUILD/native"
 if [ ! -f "$NATDIR/libgdx64.so" ]; then
   mkdir -p "$NATDIR"
-  GDXJAR=$(echo "$RUNTIME_CP" | tr ':' '\n' | grep 'gdx-platform.*natives-desktop.jar' | head -1)
+  GDXJAR=$(echo "$RUNTIME_CP" | tr "$PSEP" '\n' | grep 'gdx-platform.*natives-desktop.jar' | head -1)
   [ -n "$GDXJAR" ] && unzip -oq "$GDXJAR" 'libgdx64.so' -d "$NATDIR" || echo "[desktop] WARN: gdx-platform natives introuvable"
 fi
 # (Plus de spine-native64.so : spine/particules passent par unidbg + le binaire ARM d'origine.)
@@ -191,7 +202,7 @@ fi
 # assets/ressources du jeu. RUNTIME_CP contient déjà game-logic.jar (via build.gradle).
 # game-logic-framed.jar AVANT RUNTIME_CP (qui contient l'original non-framé) → il l'ombrage.
 # $NATDIR sur le classpath → SharedLibraryLoader y trouve spine-native64.so.
-CP="$BUILD/classes/java/main:$FRAMED:$NATDIR:$ASSETS:$RESD:$RUNTIME_CP"
+CP="$(NATIVE "$BUILD/classes/java/main")$PSEP$(NATIVE "$FRAMED")$PSEP$(NATIVE "$NATDIR")$PSEP$(NATIVE "$ASSETS")$PSEP$(NATIVE "$RESD")$PSEP$RUNTIME_CP"
 
 # BUILD-ONLY (C2a-4b, packaging client) : tous les artefacts sont construits (game-logic-framed, gradle,
 # assets, ressources, natifs). On émet un MANIFESTE des chemins et on SORT sans lancer → le packager

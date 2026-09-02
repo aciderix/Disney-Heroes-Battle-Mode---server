@@ -100,22 +100,61 @@ public final class BuildManager {
     private void runPipeline(File apk, String out, boolean full) {
         try {
             new File(out).mkdirs();
+            // Résout un éventuel XAPK (base + splits config, ex. téléchargements APKPure/APKMirror) en APK
+            // universel AVANT extract/decompile — sinon `unzip assets/stats/*` / dex2jar échouent (le base.apk
+            // seul d'un XAPK n'a que le code jeu, pas forcément les assets nécessaires selon la source ; miroir
+            // du même correctif déjà appliqué côté patch APK g230 et côté build client g244).
+            File resolved = resolveApk(apk, new File(out));
             // 1) données .tab (léger, unzip) → <out>/game-data
-            runStep("extract", new String[]{"bash", tool("extract_game_data.sh"), apk.getPath()},
+            runStep("extract", new String[]{bashBin(), tool("extract_game_data.sh"), resolved.getPath()},
                     "DH_DATA_DEST", new File(out, "game-data").getPath());
             if (full) {
                 // 2) décompilation dex2jar (LOURD, Maven/réseau) → libs/game.jar (emplacement standard du pipeline)
-                runStep("decompile", new String[]{"bash", tool("decompile.sh"), apk.getPath()}, null, null);
+                runStep("decompile", new String[]{bashBin(), tool("decompile.sh"), resolved.getPath()}, null, null);
                 // 3) reframe (StackMapTable valides) → libs/game-framed.jar. AUTO-SUFFISANT : sur un package FRAIS,
                 //    ni ASM ni ReframeJar.class ne sont présents (artefacts dérivés) → on les prépare ici (télécharge
                 //    ASM 9.7 + compile ReframeJar.java) avant de lancer, comme run-desktop.sh. Utilise le JDK EMBARQUÉ.
-                runStep("reframe", new String[]{"bash", "-c",
-                        "set -e; RF=" + projectDir + "/tools/reframe; ASM=\"$RF/asm-9.7.jar\"; "
-                      + "[ -f \"$ASM\" ] || curl -fsSL -o \"$ASM\" https://repo1.maven.org/maven2/org/ow2/asm/asm/9.7/asm-9.7.jar; "
-                      + "CLS=\"$RF/classes\"; [ -f \"$CLS/ReframeJar.class\" ] || { mkdir -p \"$CLS\"; "
-                      + "\"" + javaBin("javac") + "\" -cp \"$ASM\" -d \"$CLS\" \"$RF/src/ReframeJar.java\"; }; "
-                      + "\"" + javaBin("java") + "\" -cp \"$CLS:$ASM:" + projectDir + "/libs/game.jar\" ReframeJar "
-                      + projectDir + "/libs/game.jar " + projectDir + "/libs/game-framed.jar"}, null, null);
+                // pd = projectDir en séparateurs "/" (cosmétique/robustesse, cf. plus bas pourquoi ce n'est PAS le
+                // vrai correctif de fond).
+                String pd = projectDir.replace('\\', '/');
+                File gameJar = new File(projectDir, "libs/game.jar"), framedJar = new File(projectDir, "libs/game-framed.jar");
+                if (framedJar.isFile() && framedJar.lastModified() > gameJar.lastModified()) {
+                    // IDEMPOTENT (perf) : game-framed.jar déjà à jour (plus récent que game.jar) → reframe (64k+
+                    // classes) SAUTÉ. Supprimer libs/game-framed.jar pour forcer une régénération.
+                    append("=== étape reframe ===\nlibs/game-framed.jar déjà à jour → SAUTÉ");
+                } else {
+                // SCRIPT ÉCRIT DANS UN FICHIER, PAS "bash -c <chaîne>" : vérifié EN JEU que `bash -c "<script complexe
+                // multi-guillemets>"` lancé via ProcessBuilder sur Windows fait REPARSER par MSYS/bash la ligne de
+                // commande reconstruite par CreateProcess → les "\" de chemins Windows ABSOLUS embarqués (ex.
+                // javaBin() = "C:\Users\...\javac.exe") sont MANGÉS (perdus) même correctement doublement-quotés côté
+                // Java (`ProcessBuilder` et l'argv-parser de MSYS bash n'utilisent PAS la même convention
+                // d'échappement pour une chaîne -c à guillemets imbriqués) → commande totalement mal formée
+                // (`java` affichait sa propre AIDE, ou `bash: ...javac.exe: command not found` selon la casse).
+                // Écrire le script dans un FICHIER (bash le lit par I/O normal, aucun réencodage CreateProcess) et
+                // lancer `bash <fichier>` (un SEUL argv simple, sans guillemets imbriqués) élimine le problème à la
+                // racine — prouvé : le MÊME script, avec les MÊMES chemins "\" de javaBin(), réussit (64196 classes)
+                // via fichier alors qu'il échouait systématiquement via -c.
+                File scriptFile = new File(projectDir, "tools/reframe/_run_reframe.sh");
+                String script = "set -e\n"
+                      + "RF=" + pd + "/tools/reframe; ASM=\"$RF/asm-9.7.jar\"\n"
+                      + "[ -f \"$ASM\" ] || curl -fsSL -o \"$ASM\" https://repo1.maven.org/maven2/org/ow2/asm/asm/9.7/asm-9.7.jar\n"
+                      + "CLS=\"$RF/classes\"\n"
+                      + "if [ ! -f \"$CLS/ReframeJar.class\" ]; then\n"
+                      + "  mkdir -p \"$CLS\"\n"
+                      // -encoding UTF-8 EXPLICITE : sans lui, javac utilise l'encodage PAR DÉFAUT de l'OS (ex.
+                      // windows-1252 sur un Windows en locale FR) → "unmappable character" sur les commentaires
+                      // accentués/emoji du dépôt (UTF-8) — vérifié EN JEU (plantait la génération serveur Windows).
+                      + "  \"" + javaBin("javac") + "\" -encoding UTF-8 -cp \"$ASM\" -d \"$CLS\" \"$RF/src/ReframeJar.java\"\n"
+                      + "fi\n"
+                      // Séparateur de classpath OS-CORRECT (File.pathSeparator = ";" Windows / ":" Linux-macOS) :
+                      // un ":" en dur casse sur Windows (ambigu avec la lettre de lecteur "C:", vérifié EN JEU —
+                      // `java -cp "C:\a:C:\b" X` échoue, `;` fonctionne).
+                      + "\"" + javaBin("java") + "\" -cp \"$CLS" + File.pathSeparator + "$ASM" + File.pathSeparator + pd + "/libs/game.jar\" ReframeJar "
+                      + pd + "/libs/game.jar " + pd + "/libs/game-framed.jar\n";
+                new File(projectDir, "tools/reframe").mkdirs();
+                java.nio.file.Files.write(scriptFile.toPath(), script.getBytes(java.nio.charset.StandardCharsets.UTF_8));
+                runStep("reframe", new String[]{bashBin(), scriptFile.getPath()}, null, null);
+                }
             }
             // 4) PACKAGING clé-en-main : assemble un serveur AUTONOME lançable hors dev (C2a-4-pkg).
             if (doPackage) packageServer(new File(out));
@@ -127,6 +166,32 @@ public final class BuildManager {
     }
 
     private String tool(String name) { return new File(projectDir, "tools/" + name).getPath(); }
+
+    /** Résout l'APK à traiter : si l'entrée est un XAPK/.apks (zip contenant des .apk imbriqués — base + splits
+     *  config, format typique des téléchargements APKPure/APKMirror), le FUSIONNE en APK UNIVERSEL (APKEditor),
+     *  comme {@code tools/apk_inject_picker.sh}/{@code patch_apk.sh} (g230) et {@code desktop-port/run-desktop.sh}
+     *  (g244) le font déjà pour leurs propres pipelines. Sinon renvoie l'APK tel quel, inchangé. Détection et
+     *  fusion en JAVA PUR (ZipFile + HttpClient déjà utilisé par {@link #downloadTo}) — aucune dépendance shell,
+     *  donc fiable identiquement sur tous les OS. Résultat mis en cache dans {@code <out>/universal.apk}
+     *  (idempotent : ne refusionne pas si déjà présent). */
+    private File resolveApk(File apk, File out) throws Exception {
+        boolean isXapk;
+        try (java.util.zip.ZipFile zf = new java.util.zip.ZipFile(apk)) {
+            isXapk = zf.stream().anyMatch(e -> e.getName().toLowerCase(java.util.Locale.ROOT).endsWith(".apk"));
+        }
+        if (!isXapk) return apk;
+        File universal = new File(out, "universal.apk");
+        if (!universal.isFile()) {
+            append("XAPK détecté → fusion en APK universel (APKEditor) ...");
+            File cache = new File(projectDir, "libs/apktools"); cache.mkdirs();
+            File editor = new File(cache, "APKEditor.jar");
+            if (!editor.isFile()) downloadTo(
+                "https://github.com/REAndroid/APKEditor/releases/download/V1.4.3/APKEditor-1.4.3.jar", editor);
+            runStep("xapk-merge", new String[]{javaBin("java"), "-jar", editor.getPath(),
+                "m", "-i", apk.getPath(), "-o", universal.getPath()}, null, null);
+        }
+        return universal;
+    }
 
     /**
      * Pipeline APK (brique 4b) — redirige l'APK du joueur vers le serveur choisi ({@link #setApkTarget}) et le re-signe,
@@ -140,13 +205,13 @@ public final class BuildManager {
             if (apkDirUrl != null && !apkDirUrl.isEmpty()) {
                 // brique 4c — ÉCRAN DE CHOIX injecté (alimenté par l'annuaire)
                 outApk = new File(out, "dh-picker.apk").getPath();
-                runStep("apk-picker", new String[]{"bash", tool("apk_inject_picker.sh"), apk.getPath(),
+                runStep("apk-picker", new String[]{bashBin(), tool("apk_inject_picker.sh"), apk.getPath(),
                         apkDirUrl, apkDirKey == null ? "" : apkDirKey, outApk}, null, null);
                 done = "APK avec écran de choix prêt : " + outApk + " (au lancement, sélection du serveur ; installer hors store)";
             } else {
                 // brique 4b — redirection FIXE
                 outApk = new File(out, "dh-" + apkHost.replaceAll("[^0-9A-Za-z._-]", "_") + ".apk").getPath();
-                runStep("apk-patch", new String[]{"bash", tool("patch_apk.sh"), apk.getPath(),
+                runStep("apk-patch", new String[]{bashBin(), tool("patch_apk.sh"), apk.getPath(),
                         apkHost, Integer.toString(apkPort), outApk}, null, null);
                 done = "APK patché prêt : " + outApk + " (redirige vers http://" + apkHost + ":" + apkPort + " ; installer hors store)";
             }
@@ -171,7 +236,7 @@ public final class BuildManager {
             java.util.Map<String,String> cbEnv = new java.util.HashMap<>();
             cbEnv.put("DH_BUILD_ONLY", "1");
             cbEnv.put("DH_APK", apk.getAbsolutePath());
-            runStep("client-build", new String[]{"bash", new File(projectDir, "desktop-port/run-desktop.sh").getPath()}, cbEnv);
+            runStep("client-build", new String[]{bashBin(), new File(projectDir, "desktop-port/run-desktop.sh").getPath()}, cbEnv);
             java.util.Map<String,String> m = new java.util.HashMap<>();
             File manifest = new File(projectDir, "desktop-port/build/client-manifest.env");
             for (String line : java.nio.file.Files.readAllLines(manifest.toPath())) {
@@ -284,8 +349,10 @@ public final class BuildManager {
         java.nio.file.Files.walk(new File(projectDir, "server/java").toPath())
                 .filter(p -> p.toString().endsWith(".java"))
                 .forEach(p -> srcFiles.add(p.toString()));
+        // -encoding UTF-8 : mêmes raisons que le javac de ReframeJar (repli Windows locale FR = CP1252, casse
+        // sur les sources UTF-8 du dépôt).
         java.util.List<String> javac = new java.util.ArrayList<>(java.util.List.of(
-                javaBin("javac"), "-cp", rtCp, "-d", cls.getPath()));
+                javaBin("javac"), "-encoding", "UTF-8", "-cp", rtCp, "-d", cls.getPath()));
         javac.addAll(srcFiles);
         runStep("compile-server", javac.toArray(new String[0]), null, null);
         runStep("jar-server", new String[]{ javaBin("jar"), "cf", new File(lib, "dhserver.jar").getPath(),
@@ -313,8 +380,74 @@ public final class BuildManager {
 
     private static String javaBin(String tool) {
         String home = System.getProperty("java.home");
-        File f = new File(home, "bin/" + tool);
-        return f.isFile() ? f.getPath() : tool;   // repli PATH
+        // Sur Windows, le binaire réel est "<tool>.exe" — File.isFile() ne matche PAS "javac" (sans extension) même
+        // si "javac.exe" existe (vérifié EN JEU : repli silencieux sur le "javac"/"java" NU du PATH → résout vers un
+        // AUTRE JDK système, potentiellement d'une version DIFFÉRENTE de l'embarqué → UnsupportedClassVersionError
+        // en aval, masqué par un PATH de processus différent selon le lanceur — un JDK embarqué ne doit JAMAIS
+        // dépendre du PATH ambiant). On essaie l'extension native de la plateforme AVANT le nom nu.
+        File f = new File(home, "bin/" + tool + (System.getProperty("os.name", "").toLowerCase().contains("win") ? ".exe" : ""));
+        if (f.isFile()) return f.getPath();
+        File plain = new File(home, "bin/" + tool);
+        return plain.isFile() ? plain.getPath() : tool;   // repli PATH (dernier recours)
+    }
+
+    /** Chemin ABSOLU de bash. Sur Linux/macOS, "bash" (PATH) suffit. Sur Windows, "bash" NU n'est PAS fiable :
+     *  aucun bash n'est embarqué dans le launcher (game-free), on dépend de Git for Windows installé par
+     *  l'utilisateur — mais le launcher est lancé par double-clic depuis l'Explorateur, dont le PATH mis en
+     *  cache peut ne PAS inclure "Git\bin" (installé après le démarrage de la session, avant un redémarrage) même
+     *  si un terminal fraîchement ouvert le résout correctement. On cherche donc par emplacements CONNUS + le
+     *  registre officiel de l'installeur Git for Windows (HKLM/HKCU SOFTWARE\GitForWindows\InstallPath), avant
+     *  de retomber sur le PATH. Si RIEN n'est trouvé → erreur EXPLICITE (§2, pas de rustine : un vrai prérequis
+     *  manquant doit être dit clairement, pas planter avec un code d'erreur Windows opaque en aval). */
+    private static volatile String bashBinCache;
+    private static String bashBin() {
+        if (bashBinCache != null) return bashBinCache;
+        if (!System.getProperty("os.name", "").toLowerCase().contains("win")) return bashBinCache = "bash";
+        for (String c : windowsBashCandidates()) if (new File(c).isFile()) return bashBinCache = c;
+        String pathEnv = System.getenv("Path");
+        if (pathEnv != null) for (String dir : pathEnv.split(File.pathSeparator)) {
+            File f = new File(dir, "bash.exe");
+            if (f.isFile()) return bashBinCache = f.getPath();
+        }
+        throw new IllegalStateException("bash introuvable (requis pour générer serveur/client/APK). "
+            + "Installez Git for Windows (https://git-scm.com/download/win, coche \"Git Bash\") puis relancez le launcher.");
+    }
+
+    private static java.util.List<String> windowsBashCandidates() {
+        java.util.List<String> out = new java.util.ArrayList<>();
+        for (String hive : new String[]{"HKLM", "HKCU"}) {
+            String p = readRegistry(hive, "SOFTWARE\\GitForWindows", "InstallPath");
+            if (p != null) { out.add(p + "\\bin\\bash.exe"); out.add(p + "\\usr\\bin\\bash.exe"); }
+        }
+        String pf = System.getenv("ProgramFiles");
+        if (pf != null) { out.add(pf + "\\Git\\bin\\bash.exe"); out.add(pf + "\\Git\\usr\\bin\\bash.exe"); }
+        String pf86 = System.getenv("ProgramFiles(x86)");
+        if (pf86 != null) out.add(pf86 + "\\Git\\bin\\bash.exe");
+        String lad = System.getenv("LocalAppData");
+        if (lad != null) out.add(lad + "\\Programs\\Git\\bin\\bash.exe");
+        return out;
+    }
+
+    /** Lit une valeur de registre Windows via `reg query` (utilitaire système, toujours présent). Best-effort :
+     *  renvoie null si la clé n'existe pas / reg.exe absent (jamais d'exception qui casserait la résolution). */
+    private static String readRegistry(String hive, String key, String value) {
+        try {
+            Process p = new ProcessBuilder("reg", "query", hive + "\\" + key, "/v", value)
+                .redirectErrorStream(true).start();
+            String out;
+            try (BufferedReader r = new BufferedReader(new InputStreamReader(p.getInputStream(), StandardCharsets.UTF_8))) {
+                out = r.lines().collect(java.util.stream.Collectors.joining("\n"));
+            }
+            p.waitFor();
+            for (String line : out.split("\n")) {
+                String t = line.trim();
+                if (t.startsWith(value)) {
+                    String[] parts = t.split("\\s{2,}");
+                    if (parts.length >= 3) return parts[parts.length - 1].trim();
+                }
+            }
+        } catch (Exception ignored) { /* best-effort */ }
+        return null;
     }
 
     /** Modules JDK requis par le bundle (serveur + client). Superset VÉRIFIÉ : jdeps donne la base ; on AJOUTE

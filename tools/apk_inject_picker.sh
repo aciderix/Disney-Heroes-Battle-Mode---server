@@ -45,7 +45,7 @@ sed -e "s#__DH_DIRECTORY_URL__#${DIR_URL//&/\\&}#g" -e "s#__DH_DIRECTORY_ANON_KE
 cp "$ROOT/mobile/Ed25519.java" "$ROOT/mobile/MobileIdentity.java" "$ROOT/mobile/MobileAuth.java" "$ROOT/mobile/MobileInfoVerifier.java" "$W/src/com/perblue/dhlauncher/"
 sed 's/^package dhserver.auth;/package com.perblue.dhlauncher;/' \
     "$ROOT/server/java/dhserver/auth/Bip39Wordlist.java" > "$W/src/com/perblue/dhlauncher/Bip39Wordlist.java"
-javac -bootclasspath "$CACHE/android.jar" -source 8 -target 8 -d "$W/cls" \
+javac -encoding UTF-8 -bootclasspath "$CACHE/android.jar" -source 8 -target 8 -d "$W/cls" \
     $(find "$W/src/com/perblue/dhlauncher" -name '*.java') 2>"$W/javac.log" \
   || { echo "[inj] ✖ javac picker"; grep -v warning "$W/javac.log" | head; exit 1; }
 java -cp "$CACHE/r8.jar" com.android.tools.r8.D8 --min-api 26 --lib "$CACHE/android.jar" --output "$W" $(find "$W/cls" -name '*.class') >/dev/null 2>&1 \

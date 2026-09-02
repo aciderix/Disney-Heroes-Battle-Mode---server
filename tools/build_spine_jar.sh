@@ -48,6 +48,6 @@ mkdir -p "$ROOT/build/spinebuild"
 # 3) compile le runtime Java spine → jar (com.esotericsoftware.spine uniquement, aucune classe badlogic)
 CLS="$ROOT/build/spinebuild/classes"; rm -rf "$CLS"; mkdir -p "$CLS"
 echo "[spine-jar] compilation spine-libgdx 3.6 contre gdx-1.9.7 ..."
-javac -nowarn -cp "$GDX" -d "$CLS" $(find "$SRC" -name '*.java')
+javac -encoding UTF-8 -nowarn -cp "$GDX" -d "$CLS" $(find "$SRC" -name '*.java')
 ( cd "$CLS" && jar cf "$OUT" com )
 echo "[spine-jar] OK → $OUT ($(unzip -l "$OUT" 2>/dev/null | grep -c 'com/esotericsoftware/spine') classes spine)"
