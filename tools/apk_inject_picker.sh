@@ -14,6 +14,14 @@ OUT="${4:-${IN%.*}-dh-picker.apk}"
 ROOT="$(cd "$(dirname "$0")/.." && pwd)"
 CACHE="$ROOT/libs/apktools"; mkdir -p "$CACHE"
 export JAVA_TOOL_OPTIONS=
+# Python : "python3" est la convention Linux/macOS ; sur Windows (python-build-standalone embarqué OU install
+# système) seul "python.exe" existe, PAS "python3.exe" — un "python3" en dur échouait sur Windows même avec le
+# bon dossier sur PATH. PIRE : `command -v python3` seul ne suffit PAS pour détecter ce cas — Windows enregistre
+# un "App Execution Alias" STUB à `%LOCALAPPDATA%\Microsoft\WindowsApps\python3.exe` (fichier RÉEL, donc
+# `command -v` le trouve et déclare succès) qui affiche juste "Python was not found… Microsoft Store" et QUITTE
+# EN ÉCHEC (code 49) sans rien faire. Seul un test d'EXÉCUTION réelle (`--version`) distingue un vrai Python de
+# ce stub. Vérifié EN JEU.
+PY=python3; "$PY" --version >/dev/null 2>&1 || PY=python
 
 fetch() { [ -s "$2" ] && return 0; echo "[inj] dl $(basename "$2")"; curl -sSL --retry 3 --max-time 300 -o "$2" "$1" || { echo "[inj] ✖ dl $1"; exit 1; }; }
 fetch "https://bitbucket.org/iBotPeaches/apktool/downloads/apktool_2.9.3.jar"                          "$CACHE/apktool.jar"
@@ -55,7 +63,7 @@ mv "$W/classes.dex" "$W/picker.dex"
 # --- 2) manifeste édité : décoder (apktool -s), picker=LAUNCHER, recompiler → EXTRAIRE le manifeste binaire ---
 echo "[inj] édition du manifeste ..."
 java -jar "$CACHE/apktool.jar" d -s -f "$APK" -o "$W/dec" >/dev/null 2>&1 || { echo "[inj] ✖ apktool d"; exit 1; }
-python3 "$ROOT/tools/apk_manifest_picker.py" "$W/dec/AndroidManifest.xml" || exit 1
+"$PY" "$ROOT/tools/apk_manifest_picker.py" "$W/dec/AndroidManifest.xml" || exit 1
 java -jar "$CACHE/apktool.jar" b "$W/dec" -o "$W/rebuilt.apk" >/dev/null 2>&1 || { echo "[inj] ✖ apktool b (manifeste)"; exit 1; }
 mkdir -p "$W/mf"; unzip -o -q "$W/rebuilt.apk" AndroidManifest.xml -d "$W/mf"
 
@@ -66,7 +74,7 @@ GDEX=""; for d in "$W"/dex/classes*.dex; do grep -aql "Lcom/perblue/heroes/andro
 [ -n "$GDEX" ] || { echo "[inj] ✖ dex AndroidLauncher introuvable"; exit 1; }
 GNAME="$(basename "$GDEX")"
 java -jar "$CACHE/baksmali.jar" disassemble "$GDEX" -o "$W/smali" >/dev/null 2>&1 || { echo "[inj] ✖ baksmali"; exit 1; }
-python3 "$ROOT/tools/apk_inject_smali.py" "$W/smali" || exit 1
+"$PY" "$ROOT/tools/apk_inject_smali.py" "$W/smali" || exit 1
 java -jar "$CACHE/smali.jar" assemble "$W/smali" -o "$W/$GNAME" >/dev/null 2>&1 || { echo "[inj] ✖ smali"; exit 1; }
 
 # --- 4) INJECTION CHIRURGICALE dans l'APK universel : manifeste + dex jeu (remplacés) + picker (nouveau classesN.dex) ---

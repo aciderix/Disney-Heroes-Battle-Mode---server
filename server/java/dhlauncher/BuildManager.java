@@ -206,13 +206,13 @@ public final class BuildManager {
                 // brique 4c — ÉCRAN DE CHOIX injecté (alimenté par l'annuaire)
                 outApk = new File(out, "dh-picker.apk").getPath();
                 runStep("apk-picker", new String[]{bashBin(), tool("apk_inject_picker.sh"), apk.getPath(),
-                        apkDirUrl, apkDirKey == null ? "" : apkDirKey, outApk}, null, null);
+                        apkDirUrl, apkDirKey == null ? "" : apkDirKey, outApk}, embeddedToolsEnv());
                 done = "APK avec écran de choix prêt : " + outApk + " (au lancement, sélection du serveur ; installer hors store)";
             } else {
                 // brique 4b — redirection FIXE
                 outApk = new File(out, "dh-" + apkHost.replaceAll("[^0-9A-Za-z._-]", "_") + ".apk").getPath();
                 runStep("apk-patch", new String[]{bashBin(), tool("patch_apk.sh"), apk.getPath(),
-                        apkHost, Integer.toString(apkPort), outApk}, null, null);
+                        apkHost, Integer.toString(apkPort), outApk}, embeddedToolsEnv());
                 done = "APK patché prêt : " + outApk + " (redirige vers http://" + apkHost + ":" + apkPort + " ; installer hors store)";
             }
             if (!new File(outApk).isFile()) throw new IllegalStateException("APK patché absent en sortie");
@@ -233,17 +233,9 @@ public final class BuildManager {
             new File(out).mkdirs();
             // 1) build-only : game-logic-framed + gradle compile + extraction assets/ressources + natifs + manifeste.
             //    On PASSE l'APK du joueur (DH_APK) → run-desktop.sh en extrait les assets (il n'est PAS dans le tooling).
-            java.util.Map<String,String> cbEnv = new java.util.HashMap<>();
+            java.util.Map<String,String> cbEnv = embeddedToolsEnv();
             cbEnv.put("DH_BUILD_ONLY", "1");
             cbEnv.put("DH_APK", apk.getAbsolutePath());
-            // run-desktop.sh appelle "javac"/"java"/"jar" NUS en interne (pas via javaBin()) → résolvent via le
-            // PATH hérité du daemon, qui peut pointer vers un AUTRE JDK système (ex. Java 17) que l'EMBARQUÉ (21)
-            // → UnsupportedClassVersionError sur des artefacts (ex. ReframeJar.class) compilés/exécutés par des
-            // JDK différents selon le contexte. Vérifié EN JEU (Windows). On fait précéder le bin/ du JDK embarqué
-            // dans le PATH transmis à ce sous-processus → tous les outils bare résolvent vers LE MÊME JDK cohérent.
-            String jdkBin = new File(System.getProperty("java.home"), "bin").getPath();
-            String inheritedPath = System.getenv("PATH");
-            cbEnv.put("PATH", jdkBin + File.pathSeparator + (inheritedPath != null ? inheritedPath : ""));
             runStep("client-build", new String[]{bashBin(), new File(projectDir, "desktop-port/run-desktop.sh").getPath()}, cbEnv);
             java.util.Map<String,String> m = new java.util.HashMap<>();
             File manifest = new File(projectDir, "desktop-port/build/client-manifest.env");
@@ -384,6 +376,32 @@ public final class BuildManager {
         writeExec(new File(out, "run.sh"), RUN_SH);
         writeText(new File(out, "run.bat"), RUN_BAT);
         append("bundle prêt : " + out.getPath() + " (run.sh / run.bat)");
+    }
+
+    /** Environnement pour un sous-processus BASH qui invoque des outils NUS en interne (javac/java/jar/python3 —
+     *  {@code run-desktop.sh}, {@code patch_apk.sh}, {@code apk_inject_picker.sh}) : fait précéder le PATH par le
+     *  {@code bin/} du JDK EMBARQUÉ et le dossier du PYTHON EMBARQUÉ (frère de {@code projectDir}, {@code
+     *  tools/build_launcher.sh} l'y dépose) — sans ça, ces outils résolvent via le PATH hérité du daemon vers un
+     *  AUTRE JDK/Python système (ex. le "python3" nu peut même résoudre vers le stub Windows Store "App Execution
+     *  Alias" si aucun Python système n'est installé) → versions incohérentes ou binaire absent. Vérifié EN JEU
+     *  (Windows) : `UnsupportedClassVersionError` (JDK) et « Python was not found… Microsoft Store » (python3) SANS
+     *  ce correctif. Nouvelle Map à chaque appel (mutable, l'appelant y ajoute ses propres variables). */
+    private java.util.Map<String,String> embeddedToolsEnv() {
+        java.util.Map<String,String> env = new java.util.HashMap<>();
+        StringBuilder pre = new StringBuilder();
+        pre.append(new File(System.getProperty("java.home"), "bin").getPath());
+        File launcherRoot = new File(projectDir).getParentFile();
+        if (launcherRoot != null) {
+            File py = new File(launcherRoot, "runtime/python");
+            if (py.isDirectory()) pre.append(File.pathSeparator).append(py.getPath());
+        }
+        String inheritedPath = System.getenv("PATH");
+        env.put("PATH", pre + File.pathSeparator + (inheritedPath != null ? inheritedPath : ""));
+        // Windows (locale FR) : stdout/stdin Python par défaut en cp1252 (PAS UTF-8) → UnicodeEncodeError sur tout
+        // caractère hors cp1252 (ex. "→" U+2192) dans un print() des scripts .py du dépôt. Même famille que
+        // `javac -encoding UTF-8` (g249). Vérifié EN JEU.
+        env.put("PYTHONIOENCODING", "utf-8");
+        return env;
     }
 
     private static String javaBin(String tool) {

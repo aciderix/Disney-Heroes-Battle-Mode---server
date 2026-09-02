@@ -16,6 +16,14 @@ OUT="${4:-${IN%.apk}-dh-${HOST}.apk}"
 ROOT="$(cd "$(dirname "$0")/.." && pwd)"
 CACHE="$ROOT/libs/apktools"      # jars d'outils (gitignorés, régénérables — §7)
 mkdir -p "$CACHE"
+# Python : "python3" est la convention Linux/macOS ; sur Windows (python-build-standalone embarqué OU install
+# système) seul "python.exe" existe, PAS "python3.exe" — un "python3" en dur échouait sur Windows même avec le
+# bon dossier sur PATH. PIRE : `command -v python3` seul ne suffit PAS pour détecter ce cas — Windows enregistre
+# un "App Execution Alias" STUB à `%LOCALAPPDATA%\Microsoft\WindowsApps\python3.exe` (fichier RÉEL, donc
+# `command -v` le trouve et déclare succès) qui affiche juste "Python was not found… Microsoft Store" et QUITTE
+# EN ÉCHEC (code 49) sans rien faire. Seul un test d'EXÉCUTION réelle (`--version`) distingue un vrai Python de
+# ce stub. Vérifié EN JEU.
+PY=python3; "$PY" --version >/dev/null 2>&1 || PY=python
 export JAVA_TOOL_OPTIONS=
 
 # --- 0) outils (téléchargés une fois, comme dex2jar dans decompile.sh) ---
@@ -53,7 +61,7 @@ echo "[apk] ServerType dans $DEXNAME"
 java -jar "$CACHE/baksmali.jar" disassemble "$DEX" -o "$WORK/smali" >/dev/null 2>&1 || { echo "[apk] ✖ baksmali"; exit 1; }
 ST="$WORK/smali/com/perblue/heroes/ServerType.smali"
 [ -f "$ST" ] || { echo "[apk] ✖ ServerType.smali absent après baksmali"; exit 1; }
-python3 "$ROOT/tools/apk_redirect_smali.py" "$ST" "$HOST" "$PORT" "http://$HOST:$PORT/live/index.txt" || exit 1
+"$PY" "$ROOT/tools/apk_redirect_smali.py" "$ST" "$HOST" "$PORT" "http://$HOST:$PORT/live/index.txt" || exit 1
 java -jar "$CACHE/smali.jar" assemble "$WORK/smali" -o "$WORK/$DEXNAME" >/dev/null 2>&1 || { echo "[apk] ✖ smali (réassemblage)"; exit 1; }
 grep -aql "$HOST" "$WORK/$DEXNAME" || { echo "[apk] ✖ l'hôte patché est absent du dex réassemblé"; exit 1; }
 
