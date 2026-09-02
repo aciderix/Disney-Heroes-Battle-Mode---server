@@ -1,5 +1,124 @@
 # JOURNAL — journal détaillé des modifications
 
+## 2026-09-02 (g249) — 7 bugs Windows corrigés → « Générer serveur » depuis l'APK RÉUSSIT DE BOUT EN BOUT (§8 EN JEU)
+
+Suite de g248 (fix du launcher lui-même). Une fois le launcher joignable, l'utilisateur a testé « Générer → Serveur
+(héberger) » avec SON propre XAPK (`Disney+Heroes_+Battle+Mode_8.0_APKPure.xapk`, téléchargement APKPure) sur SA
+machine Windows réelle. **§8 : chaque bug ci-dessous a été REPRODUIT sur cette machine, ISOLÉ par un test minimal,
+corrigé, RECOMPILÉ (`dhlauncher.jar`), et REVÉRIFIÉ en relançant le pipeline réel avant de passer au suivant** —
+jamais de correctif supposé, jamais de « ça devrait marcher ». **7 bugs INDÉPENDANTS et CUMULATIFS** ont été
+trouvés, chacun bloquant le pipeline un cran plus loin que le précédent une fois corrigé. **Résultat final :
+pipeline complet (fusion XAPK → extract → decompile → reframe → compile-server → jlink → package) exécuté de bout
+en bout avec succès** — bundle serveur autonome vérifié (`run.bat`/`run.sh`, `lib/dhserver.jar` 410 Ko,
+`lib/game-framed.jar` 75 Mo, `game-data/{stats,strings}`, `runtime/{jre,python}` embarqués).
+
+**Bug #1 — `bash` introuvable** (`CreateProcess error=2, Le fichier spécifié est introuvable`). `BuildManager`
+lançait `"bash"` en dur (6 endroits) ; le launcher est démarré par double-clic depuis l'Explorateur Windows, dont
+le PATH mis en cache peut ne PAS inclure `Git\bin` (installé après le démarrage de la session) même si un
+terminal fraîchement ouvert le résout. **Correctif** : nouvelle méthode `bashBin()` — résout un chemin ABSOLU via
+le registre officiel de l'installeur Git for Windows (`HKLM`/`HKCU SOFTWARE\GitForWindows\InstallPath`), puis
+emplacements connus (`%ProgramFiles%\Git\bin`, etc.), puis scan du `PATH` courant ; si RIEN n'est trouvé → erreur
+EXPLICITE (§2, pas de code Windows opaque en aval) invitant à installer Git for Windows. **Vérifié EN JEU** :
+`bashBin()` appelé par réflexion sur la machine réelle → résout `C:\Program Files\Git\bin\bash.exe` (existe).
+
+**Bug #2 — XAPK non géré par `extract_game_data.sh`/`decompile.sh`** (`unzip`: `caution: filename not matched`,
+exit 11 ; dex2jar : `ClassNotFoundException`). L'utilisateur fournit un XAPK (base + splits config, format
+standard des téléchargements APKPure/APKMirror) — le même gap que celui déjà connu et corrigé côté patch APK
+(g230) et côté build client (g244), mais jamais comblé côté pipeline SERVEUR. **Correctif** : nouvelle méthode
+`BuildManager.resolveApk(apk, out)` — détecte un XAPK en JAVA PUR (`ZipFile`, cherche une entrée `*.apk` imbriquée,
+aucune dépendance shell), le FUSIONNE en APK universel via APKEditor (téléchargé une fois, `libs/apktools/`,
+réutilise `downloadTo()` déjà existant) dans `<out>/universal.apk` (idempotent), et c'est CE fichier résolu qui est
+passé à `extract`+`decompile` (au lieu de l'APK brut). **Vérifié EN JEU** : XAPK réel (3 modules : base + etc2 +
+armeabi_v7a) fusionné avec succès, `extract` → 274 fichiers stats + 77 strings.
+
+**Bug #3 — classpath `dex2jar` cassé** (`ClassNotFoundException: Dex2jarCmd` malgré les jars présents).
+`decompile.sh` utilisait `java -cp "$WORK/lib/*"` (wildcard). Sous Git Bash/MSYS, un `java.exe` NATIF Windows
+appelé avec un classpath WILDCARD dont le chemin vient de `mktemp -d` (POSIX, `/tmp/...`) n'a PAS ses arguments
+traduits (le caractère `*` casse l'heuristique de traduction automatique MSYS→Windows) → 0 jar chargé. **Isolé et
+reproduit précisément** (testé : chemin unique → OK ; wildcard/composite `;`-joint de chemins `/tmp/...` → KO ;
+composite de chemins `/c/...`-form ou relatifs → OK). **Correctif** : sur Windows (`command -v cygpath`), classpath
+EXPLICITE — chaque jar converti en chemin natif via `cygpath -w` (fourni par Git for Windows), joint par `;` ;
+Linux/macOS inchangé (wildcard, déjà éprouvé). **Vérifié EN JEU** avec les 17 jars dex2jar réels : `--help` répond.
+
+**Bug #4 — séparateur de classpath `:` vs `;`** (étape reframe : `ClassNotFoundException` sur `ReframeJar`).
+`BuildManager` construisait `-cp "$CLS:$ASM:.../game.jar"` (`:` en dur). Sur Windows, `:` est AMBIGU avec la
+lettre de lecteur (`C:`) → classpath illisible pour la JVM. **Isolé et reproduit** (`java -cp "C:\a:C:\b" X` →
+`ClassNotFoundException` ; `java -cp "C:\a;C:\b" X` → OK). **Correctif** : `File.pathSeparator` (déjà `;`
+Windows / `:` ailleurs, résolu par la JVM) au lieu du littéral `:`. Même correctif appliqué à
+`desktop-port/run-desktop.sh` (pipeline CLIENT/« port », 3 endroits : reframe, extraction du jar gdx-platform
+via `tr`, classpath final de lancement) — introduction d'un couple `PSEP`/`NATIVE()` (détecté par `uname`,
+`cygpath -w` sous Windows) réutilisé partout où un chemin bash POSIX doit rejoindre `$RUNTIME_CP` (déjà natif,
+produit par Gradle).
+
+**Bug #5 — `\` du `projectDir` Windows détruit par bash (assignation non quotée)**. Le bloc reframe de
+`BuildManager` construisait un SCRIPT `bash -c "..."` où `projectDir` (ex. `C:\Users\...\tooling`) était concaténé
+dans une assignation bash NON QUOTÉE (`RF=` + projectDir). Hors quotes, bash traite chaque `\X` comme une séquence
+d'échappement → le `\` disparaît (`\U`→`U`), détruisant le chemin. **Correctif** : `String pd =
+projectDir.replace('\\', '/')` — `/` est accepté par Windows/la JVM partout ici et n'a aucune signification
+spéciale pour bash. Réel et nécessaire, mais **insuffisant seul** (voir bug #7).
+
+**Bug #6 — `javaBin()` ne matchait pas les binaires `.exe` sur Windows** (le MÊME défaut que `bashBin()` avant
+correction, mais découvert plus tard car masqué par le bug #7 ci-dessous). `new File(home, "bin/javac").isFile()`
+est **`false`** sur Windows (le fichier réel est `javac.exe` — `File.isFile()` ne devine pas l'extension) → repli
+silencieux sur le nom NU `"javac"`/`"java"`, résolu ensuite via le PATH du process bash enfant vers un **AUTRE
+JDK système** (ici Eclipse Adoptium 17, différent de l'embarqué 21) → `UnsupportedClassVersionError` sur
+`ReframeJar.class` (compilé en version 65 par l'un, exécuté par l'autre limité à la version 61) — symptôme confus
+selon le PATH hérité par chaque processus. **Impact bien plus large que le seul reframe** : `javaBin()` est
+utilisé par TOUTES les étapes du pipeline (`jar-client`, `jar-server`, `jlink-runtime`, `compile-server`) — un
+JDK embarqué ne doit JAMAIS dépendre du PATH ambiant. **Correctif** : essaie `<tool>.exe` en premier sur Windows
+(`os.name` contient `win`), sinon le nom nu, sinon repli PATH en dernier recours. **Vérifié par réflexion** sur
+la machine réelle : `java`/`javac`/`jar`/`jlink` résolvent tous vers `runtime/jdk/bin/*.exe` (existants).
+
+**Bug #7 — LE vrai fond du problème : `bash -c "<script complexe>"` via `ProcessBuilder` sur Windows fait
+RE-PARSER la ligne de commande par MSYS d'une façon incompatible avec l'échappement Windows de Java.** Même
+avec les bugs #5 et #6 corrigés (chemins `pd` en `/`, `javaBin()` renvoyant les vrais `.exe` avec BACKSLASHES,
+correctement doublement-quotés côté Java `"\"" + javaBin(...) + "\""`), l'étape reframe échouait ENCORE — tantôt
+`java` affichait sa propre AIDE (commande vide/mal formée), tantôt `bash: C:UsersfromtDesktoplauncher-windows
+...javac.exe: command not found` (les `\` littéralement disparus d'un chemin pourtant bien encadré de guillemets
+doubles côté Java). **Isolé avec un test minimal déterminant** : le MÊME script Java-construit, avec les MÊMES
+chemins `javaBin()` (backslashes), échoue via `ProcessBuilder(bashBin(),"-c",script)` mais réussit PARFAITEMENT
+(`reframed=64196`) si écrit dans un **fichier** `.sh` et lancé via `ProcessBuilder(bashBin(), scriptFile)`. Cause :
+`ProcessBuilder`/`CreateProcess` (convention Windows/CommandLineToArgvW) et l'argv-parser de MSYS bash.exe
+(convention Cygwin/POSIX) **ne s'accordent PAS** sur le ré-échappement d'une chaîne `-c` truffée de guillemets
+imbriqués (`\"$ASM\"`, `\"$CLS\"`…) — un `bash -c "<mega-chaîne>"` passé par ProcessBuilder n'est PAS fiable dès
+que le script est non-trivial. **Correctif définitif** : le script reframe est désormais ÉCRIT DANS UN FICHIER
+(`tools/reframe/_run_reframe.sh`, UTF-8) puis lancé via `bash <fichier>` (un SEUL argv simple, sans guillemets
+imbriqués à re-parser) — bash lit le contenu par I/O de fichier normal, complètement immunisé contre le problème
+de re-quoting inter-processus. **Vérifié EN JEU en isolation d'abord** (`exit=0`, `reframed=64196`) **PUIS via le
+daemon réel de bout en bout**.
+
+**RÉSULTAT FINAL — pipeline complet vérifié EN JEU** : `POST /build/start target=server full=true` avec le VRAI
+XAPK de l'utilisateur → **`DONE`**. Bundle généré (`C:\Users\fromt\Desktop\disney8`) : fusion XAPK (3 modules) →
+`game-data/{stats: 274, strings: 77}` → `libs/game.jar` (dex2jar, ~65k classes) → `libs/game-framed.jar` (75 Mo,
+reframe complet) → `libs/dhserver.jar` (410 Ko, `compile-server` avec `-encoding UTF-8` — prouve aussi le fix du
+bug encodage sur l'ENSEMBLE de `server/java`, pas seulement ReframeJar) → `runtime/{jre,python}` embarqués
+(jlink + python-build-standalone) → `run.bat`/`run.sh`. **Premier succès de bout en bout de la cible SERVEUR
+depuis un launcher Windows réel, avec un XAPK réel.**
+
+**Optimisation perf (demande util., « en profiter pour optimiser le build »)** : `decompile.sh` (étape la plus
+LOURDE, plusieurs minutes pour ~65k classes) et l'étape reframe de `BuildManager` sont désormais IDEMPOTENTES —
+si `libs/game.jar` est déjà plus récent que l'APK source (resp. `libs/game-framed.jar` plus récent que
+`game.jar`), l'étape est SAUTÉE (log explicite). Gain majeur pour toute RÉGÉNÉRATION vers le même dossier de
+sortie (ex. après avoir corrigé une étape suivante, ou relancer après une panne réseau). Supprimer le jar
+correspondant force une régénération. (dex2jar/ReframeJar eux-mêmes ne sont pas parallélisés — outils
+tiers/internes, gain marginal vs le risque ; le vrai levier était l'idempotence, absente jusqu'ici. Limite connue :
+un XAPK refusionné vers un NOUVEAU dossier de sortie produit un `universal.apk` de timestamp frais → le cache ne
+s'active pas pour un tout premier essai vers un dossier neuf, seulement pour les RÉGÉNÉRATIONS vers un dossier déjà
+utilisé.)
+
+Fichiers modifiés : `server/java/dhlauncher/BuildManager.java` (bashBin/resolveApk/javaBin `.exe`/reframe via
+fichier script/idempotence), `tools/decompile.sh` (classpath Windows + idempotence), `desktop-port/run-desktop.sh`
+(PSEP/NATIVE), `tools/apk_inject_picker.sh` + `tools/build_spine_jar.sh` (`-encoding UTF-8`, même risque que
+ReframeJar, pipelines CLIENT/PATCH APK — non encore re-testés en jeu à cette heure, prochaine étape).
+
+**Méthode de diagnostic** (à retenir) : chaque bug a été ISOLÉ et REPRODUIT par un test minimal AVANT d'écrire le
+correctif — jamais de correctif à l'aveugle, jamais deux hypothèses corrigées à la fois sans re-tester entre les
+deux. Le bug #7 en particulier n'a été trouvé qu'en reconstruisant, via un petit programme Java autonome, la
+chaîne EXACTE que `BuildManager` construit (pas une approximation retapée à la main) et en la rejouant via
+`ProcessBuilder` — une commande retapée manuellement dans un terminal interactif peut réussir alors que la MÊME
+commande construite par programme et lancée via `ProcessBuilder` échoue, à cause de re-échappements différents
+entre le shell interactif et l'appel `CreateProcess` de la JVM.
+
 ## 2026-09-02 (g248) — BUG CRITIQUE launcher corrigé : « Launcher local injoignable » en PROD (100% des lancements)
 
 Session **téléportée sur le PC Windows de l'utilisateur** (nouvelle machine, `C:\Users\fromt\Documents\disney
