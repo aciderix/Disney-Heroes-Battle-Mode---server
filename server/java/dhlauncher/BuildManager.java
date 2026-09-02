@@ -166,9 +166,12 @@ public final class BuildManager {
     private void runClientPipeline(File apk, String out) {
         try {
             new File(out).mkdirs();
-            // 1) build-only : game-logic-framed + gradle compile + extraction assets/ressources + natifs + manifeste
-            runStep("client-build", new String[]{"bash", new File(projectDir, "desktop-port/run-desktop.sh").getPath()},
-                    "DH_BUILD_ONLY", "1");
+            // 1) build-only : game-logic-framed + gradle compile + extraction assets/ressources + natifs + manifeste.
+            //    On PASSE l'APK du joueur (DH_APK) → run-desktop.sh en extrait les assets (il n'est PAS dans le tooling).
+            java.util.Map<String,String> cbEnv = new java.util.HashMap<>();
+            cbEnv.put("DH_BUILD_ONLY", "1");
+            cbEnv.put("DH_APK", apk.getAbsolutePath());
+            runStep("client-build", new String[]{"bash", new File(projectDir, "desktop-port/run-desktop.sh").getPath()}, cbEnv);
             java.util.Map<String,String> m = new java.util.HashMap<>();
             File manifest = new File(projectDir, "desktop-port/build/client-manifest.env");
             for (String line : java.nio.file.Files.readAllLines(manifest.toPath())) {
@@ -513,9 +516,14 @@ public final class BuildManager {
       + "\"%JAVA%\" -XX:TieredStopAtLevel=1 %ADMIN_OPTS% -Ddh.db=\"%DIR%data\\dh-server.db\" -Ddh.stats=\"%DIR%game-data\\stats\" -Ddh.auth.port=%DH_AUTH_PORT% -cp \"%DIR%lib\\*\" dhserver.LoginServer %DH_GAME_PORT%\r\n";
 
     private void runStep(String name, String[] cmd, String envKey, String envVal) throws Exception {
+        java.util.Map<String,String> env = null;
+        if (envKey != null) { env = new java.util.HashMap<>(); env.put(envKey, envVal); }
+        runStep(name, cmd, env);
+    }
+    private void runStep(String name, String[] cmd, java.util.Map<String,String> env) throws Exception {
         step = name; append("=== étape " + name + " ===");
         ProcessBuilder pb = new ProcessBuilder(cmd).directory(new File(projectDir)).redirectErrorStream(true);
-        if (envKey != null) pb.environment().put(envKey, envVal);
+        if (env != null) pb.environment().putAll(env);
         Process p = pb.start();
         try (BufferedReader r = new BufferedReader(new InputStreamReader(p.getInputStream(), StandardCharsets.UTF_8))) {
             String line;

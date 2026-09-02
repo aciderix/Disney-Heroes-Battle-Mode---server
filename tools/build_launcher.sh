@@ -80,7 +80,7 @@ echo "== smoke python embarqué =="
 
 # --- 4) tooling repo nécessaire au launcher (aucun code de jeu ; game-data/APK gitignorés) ---
 echo "== copie du tooling repo =="
-for d in server desktop-port tools; do
+for d in server desktop-port tools native; do
   mkdir -p "$OUT/tooling/$d"
   # exclut les artefacts lourds/gitignorés (build/, libs/*.jar, game-data/, caches)
   (cd "$ROOT" && git ls-files "$d" | while read -r f; do

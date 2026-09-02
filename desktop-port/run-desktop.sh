@@ -16,7 +16,8 @@ export LIBGL_ALWAYS_SOFTWARE=1
 # Unicode s'encodent correctement. Correctif de plateforme (lanceur), pas une modif du jeu.
 export LC_ALL="${LC_ALL:-C.utf8}"
 
-APK="../game/disney-heroes-12.1.0.apk"
+# APK : fourni par le launcher via DH_APK (le package embarqué n'inclut PAS l'APK — copyright/joueur) ; repli dev.
+APK="${DH_APK:-../game/disney-heroes-12.1.0.apk}"
 BUILD="build"
 ASSETS="$BUILD/apk/assets"
 RESD="$BUILD/apk-resources"
