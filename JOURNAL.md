@@ -1,5 +1,32 @@
 # JOURNAL — journal détaillé des modifications
 
+## 2026-09-02 (g247) — PERF (suite) : prébuild CI du backend jni (.so + .dll) — perf sans compilateur chez le joueur
+
+Décision util. : **prébuild en CI** (plutôt que MinGW chez le joueur ou laisser Windows sur unidbg). But : les
+joueurs (surtout Windows, majorité) ont le backend spine jni rapide (~50×) SANS installer de compilateur C.
+
+- **GAME-FREE** (la CI launcher est game-free, pas de game.jar) : les en-têtes JNI — `com_perblue_heroes_cspine_Native.h`
+  + `..._cparticle_Native.h`, des **prototypes C purs** (`JNIEXPORT ... JNICALL Java_...`), aucune logique de jeu —
+  sont désormais **COMMITTÉS** dans `native/jni-headers/`. `native/build.sh` les **régénère depuis game.jar** quand
+  présent (chemin dev/génération, source de vérité) et **rafraîchit** la copie committée ; sinon il **retombe** sur
+  la copie committée. **Prouvé** en masquant temporairement game.jar : `build.sh` + `build-hostspine.sh` +
+  `build-hostspine-win.sh` produisent `libhostspine64.so` (47 symboles) ET `libhostspine64.dll` (PE32+ x86-64, 47
+  symboles) **sans game.jar** — exactement le contexte CI.
+- **CI** (`launcher-release.yml`) : nouveau job `hostspine` (ubuntu-22.04) — installe `build-essential` +
+  `gcc-mingw-w64-x86-64`, lance les 3 scripts, publie `libhostspine64.{so,dll}` en artefact `hostspine-natives`.
+  Le job `build` gagne `needs: hostspine` + un champ matrice `hostspinelib` (`.so` pour linux, `.dll` pour windows)
+  + une étape `download-artifact` + `DH_HOSTSPINE_LIB` passé à `build_launcher.sh`.
+- `build_launcher.sh` : si `DH_HOSTSPINE_LIB` pointe un fichier, le dépose dans `tooling/native/build/` → au moment
+  où le joueur clique « Générer client », `run-desktop.sh` (build-only) le trouve DÉJÀ présent (garde idempotent
+  `[ ! -f ]`) → n'essaie même pas de compiler → le manifeste `HOSTSPINE` le référence → `BuildManager` l'embarque
+  dans le bundle. Résultat : bundle client avec le **backend jni rapide, zéro compilateur requis côté joueur**.
+
+**Reste** : §8 EN JEU sur une **vraie machine Windows** (le `.dll` cross-compilé n'est pas exécutable dans le
+sandbox Linux ; côté Linux, le jni est déjà vérifié en jeu g246). Le user doit re-tagger `launcher-v*` sur le tip
+pour produire la release (le tag v0.2.2 pointait sur un commit cassé, corrigé depuis).
+
+Commit : `a0d0360`.
+
 ## 2026-09-02 (g246) — PERF : backend spine jni rapide embarqué à la génération (Linux .so + Windows .dll)
 
 Demande util. : le port PC généré doit bénéficier des améliorations de perf (backend spine jni ~50×), **Linux ET
