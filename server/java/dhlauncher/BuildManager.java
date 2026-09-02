@@ -407,6 +407,17 @@ public final class BuildManager {
         // caractère hors cp1252 (ex. "→" U+2192) dans un print() des scripts .py du dépôt. Même famille que
         // `javac -encoding UTF-8` (g249). Vérifié EN JEU.
         env.put("PYTHONIOENCODING", "utf-8");
+        // JAVA_HOME EXPLICITE (bug trouvé EN JEU, g255) : Gradle Wrapper (gradlew) choisit sa JVM via JAVA_HOME
+        // EN PRIORITÉ sur PATH — si la machine du joueur a JAVA_HOME pointant vers UN AUTRE JDK système (ex. Java
+        // 17, pour un tout autre projet), Gradle compile alors avec CE JDK, alors que spine-libgdx-perblue.jar/
+        // game-logic-framed.jar/gdx-lwjgl3-audio.jar (fabriqués par run-desktop.sh EN AMONT, via le JDK EMBARQUÉ
+        // grâce au PATH ci-dessus) sont en bytecode Java 21 → « cannot find symbol » en cascade sur TOUTES les
+        // classes de ces jars (Animation/Skin/Skeleton/…, javac Java 17 REFUSE de lire du class-file version 65,
+        // limite 61 — symptôme confus car aucune mention explicite de "wrong version" dans l'erreur affichée par
+        // défaut). Même principe déjà appliqué à javaBin() (« un JDK embarqué ne doit JAMAIS dépendre du PATH/de
+        // l'environnement ambiant ») — étendu à Gradle. Vérifié EN JEU : `gradlew compileJava` ÉCHOUE avec
+        // JAVA_HOME hérité (Java 17), RÉUSSIT (`BUILD SUCCESSFUL`) avec JAVA_HOME forcé sur le JDK embarqué.
+        env.put("JAVA_HOME", new File(System.getProperty("java.home")).getPath());
         return env;
     }
 
@@ -717,7 +728,22 @@ public final class BuildManager {
     private void runStep(String name, String[] cmd, java.util.Map<String,String> env) throws Exception {
         step = name; append("=== étape " + name + " ===");
         ProcessBuilder pb = new ProcessBuilder(cmd).directory(new File(projectDir)).redirectErrorStream(true);
-        if (env != null) pb.environment().putAll(env);
+        if (env != null) {
+            // BUG WINDOWS TROUVÉ EN JEU (g254) : `pb.environment().putAll(env)` NE FUSIONNE PAS les variantes de
+            // casse d'un nom de variable sur ce JDK — poser "PATH" (notre valeur corrigée, cf. embeddedToolsEnv())
+            // laissait COEXISTER l'ancienne clé héritée "Path" (convention Windows) → le sous-processus MSYS bash
+            // suivait l'ANCIENNE "Path" (sans nos ajouts Git usr/bin) → "dirname/mkdir: command not found" MALGRÉ
+            // un PATH Java correctement construit (vérifié par harnais réflexif : le PATH calculé était juste, mais
+            // `pb.environment().keySet()` contenait BIEN [PATH, Path] après putAll — deux clés distinctes). Fix :
+            // pour chaque clé à poser, on retire D'ABORD toute clé existante qui lui correspond insensible à la
+            // casse, pour ne JAMAIS laisser deux variantes coexister (pas seulement PATH — toute variable).
+            java.util.Map<String,String> pe = pb.environment();
+            for (java.util.Map.Entry<String,String> e : env.entrySet()) {
+                String key = e.getKey();
+                pe.keySet().removeIf(k -> k.equalsIgnoreCase(key));
+                pe.put(key, e.getValue());
+            }
+        }
         Process p = pb.start();
         try (BufferedReader r = new BufferedReader(new InputStreamReader(p.getInputStream(), StandardCharsets.UTF_8))) {
             String line;
