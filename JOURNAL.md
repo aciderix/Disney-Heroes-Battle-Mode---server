@@ -1,5 +1,38 @@
 # JOURNAL — journal détaillé des modifications
 
+## 2026-09-02 (g253) — KIT DE PILOTAGE WINDOWS : contrôle TOTAL du vrai launcher via CDP (WebView2)
+
+Demande util. : quand une session tourne SUR le PC Windows, pouvoir **utiliser l'app pour de vrai** (vrais clics,
+saisie, DOM, console) sur le **VRAI exe packagé** — donc le vrai pont Tauri↔daemon — **sans capture d'écran ni
+proxy Vite** (contrairement au harnais `npm run dev`+CDP de g252 qui empruntait un chemin différent).
+
+**Principe** : l'app Tauri tourne dans **WebView2** (moteur Edge/Chromium) sous Windows. Comme tout Chromium, on
+lui ouvre le protocole DevTools (CDP) via `WEBVIEW2_ADDITIONAL_BROWSER_ARGUMENTS="--remote-debugging-port=9222"`,
+et on pilote le DOM + les entrées du vrai exe. Le front détecte Tauri (`__TAURI_INTERNALS__`) → on exerce le
+**vrai IPC**. **Aucune modif de l'app, aucun impact joueur** (le port ne s'ouvre que si la variable est posée).
+
+**Livré** :
+- **`tools/cdp_drive.mjs`** — pilote CDP COMPLET, **zéro dépendance** (Node ≥ 21 : `WebSocket`/`fetch` natifs).
+  Commandes : `targets`, `eval`, `click`, **`clicktext`** (clique par TEXTE visible — robuste sans sélecteurs,
+  pose un `data-dhcdp` temporaire), `type` (compatible React : setter natif + events input/change), `press`,
+  `text`, `attr`, `exists`, `wait [visible]`, `html`, `dump` (éléments interactifs + libellés), `console`
+  (console + exceptions + logs), `shot` (PNG), `nav`, `reload`, `repl`. Options `--port/--url/--timeout/--json`.
+- **`tools/dh-debug-launch.ps1`** — pose la variable WebView2 + lance `DisneyHeroesLauncher.exe` (recherche l'exe
+  en remontant les dossiers ; `-Exe/-Port`).
+- **`tools/dh-watch-daemon.ps1`** — surveille EN DIRECT le launcher + enfants java/python ; à l'instant où
+  `DisneyHeroesLauncher.exe` disparaît (bug #3 g252), dump l'heure exacte + le journal Application (erreurs) + WER
+  → pour capturer la CAUSE du crash, pas seulement des traces après-coup.
+- **`docs/WINDOWS_PILOTING.md`** — guide complet (lancer en debug, découvrir l'UI avec `dump`, recette
+  héberger→compte→jouer en commandes `cdp_drive`, capturer le crash du daemon) + alternative tauri-driver/WebDriver.
+
+**Vérifié end-to-end** (contre un vrai Chromium avec `--remote-debugging-port`, même CDP que WebView2, pas de
+Windows dans ce sandbox) : `targets`/`dump` listent la page + les éléments ; `type` remplit un input ; `clicktext
+"Héberger"` **déclenche réellement le handler onclick** (le DOM résultat `#out` passe à `running:C:\Users\test\
+server`) ; `console` capture un `console.log` réel ; `shot` écrit un PNG. Le pilote fonctionne.
+
+⇒ La session sur le PC Windows de l'util. peut désormais **finir le flux héberger→compte→jouer et traquer le
+crash du daemon (bug #3) sans moyen détourné**. Commit `afed0a5`.
+
 ## 2026-09-02 (g251) — 2 bugs Windows de plus → « PATCH APK » RÉUSSIT (§8 EN JEU) — 3 CIBLES SUR 3 COMPLÈTES
 
 Suite immédiate de g250 (SERVEUR ✅ + CLIENT ✅). Troisième et dernière cible testée : `target=apk` (mode
