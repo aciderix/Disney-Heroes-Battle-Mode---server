@@ -59,7 +59,15 @@ rm -rf "$CLS"
 # → package sans le JDK (lien mort à l'extraction). On DÉRÉFÉRENCE (`-L`) et on copie le CONTENU (`/.`) → vrais fichiers.
 echo "== embarque le JDK ($JAVA_HOME) =="
 mkdir -p "$OUT/runtime/jdk"
-cp -RLp "$JAVA_HOME/." "$OUT/runtime/jdk/"
+# Certains JDK système ont des LIENS SYMBOLIQUES CASSÉS vers des fichiers OPTIONNELS (ex. `src.zip`,
+# `lib/libatk-wrapper.so` — accessibilité GTK). Avec `-L` (déréférence) `cp` échoue dessus ; on TOLÈRE ces fichiers
+# manquants (non requis par javac/jlink/jar) et on ÉCHOUE seulement si un binaire ESSENTIEL manque après coup.
+cp -RLp "$JAVA_HOME/." "$OUT/runtime/jdk/" 2>"$OUT/.jdkcp.warn" || \
+  echo "== JDK : $(grep -c 'cannot stat' "$OUT/.jdkcp.warn" 2>/dev/null || echo '?') lien(s) optionnel(s) cassé(s) ignoré(s) =="
+rm -f "$OUT/.jdkcp.warn"
+for b in javac jar jlink java; do
+  [ -x "$OUT/runtime/jdk/bin/$b" ] || [ -f "$OUT/runtime/jdk/bin/$b.exe" ] || { echo "!! JDK incomplet : bin/$b manquant" >&2; exit 1; }
+done
 
 # --- 3) embarque un CPython relocatable (content_server pur-stdlib) ---
 echo "== télécharge python-build-standalone $PY_VER ($PY_TRIPLE) =="

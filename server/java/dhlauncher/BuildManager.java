@@ -106,11 +106,15 @@ public final class BuildManager {
             if (full) {
                 // 2) décompilation dex2jar (LOURD, Maven/réseau) → libs/game.jar (emplacement standard du pipeline)
                 runStep("decompile", new String[]{"bash", tool("decompile.sh"), apk.getPath()}, null, null);
-                // 3) reframe (StackMapTable valides) → libs/game-framed.jar
+                // 3) reframe (StackMapTable valides) → libs/game-framed.jar. AUTO-SUFFISANT : sur un package FRAIS,
+                //    ni ASM ni ReframeJar.class ne sont présents (artefacts dérivés) → on les prépare ici (télécharge
+                //    ASM 9.7 + compile ReframeJar.java) avant de lancer, comme run-desktop.sh. Utilise le JDK EMBARQUÉ.
                 runStep("reframe", new String[]{"bash", "-c",
-                        "ASM=$(ls " + projectDir + "/tools/reframe/asm-*.jar 2>/dev/null | head -1); "
-                      + "CLS=" + projectDir + "/tools/reframe/classes; "
-                      + "java -cp \"$CLS:$ASM:" + projectDir + "/libs/game.jar\" ReframeJar "
+                        "set -e; RF=" + projectDir + "/tools/reframe; ASM=\"$RF/asm-9.7.jar\"; "
+                      + "[ -f \"$ASM\" ] || curl -fsSL -o \"$ASM\" https://repo1.maven.org/maven2/org/ow2/asm/asm/9.7/asm-9.7.jar; "
+                      + "CLS=\"$RF/classes\"; [ -f \"$CLS/ReframeJar.class\" ] || { mkdir -p \"$CLS\"; "
+                      + "\"" + javaBin("javac") + "\" -cp \"$ASM\" -d \"$CLS\" \"$RF/src/ReframeJar.java\"; }; "
+                      + "\"" + javaBin("java") + "\" -cp \"$CLS:$ASM:" + projectDir + "/libs/game.jar\" ReframeJar "
                       + projectDir + "/libs/game.jar " + projectDir + "/libs/game-framed.jar"}, null, null);
             }
             // 4) PACKAGING clé-en-main : assemble un serveur AUTONOME lançable hors dev (C2a-4-pkg).
@@ -283,9 +287,14 @@ public final class BuildManager {
                 "-C", cls.getPath(), "." }, null, null);
         deleteRec(cls);
 
-        // 3) content_server.py
+        // 3) content_server.py + index.txt (manifeste de contenu). SANS index.txt, content_server meurt
+        //    (« index introuvable ») → /live/index.txt KO → le client ne télécharge aucun asset. run.sh passe --index.
         java.nio.file.Files.copy(new File(projectDir, "server/content_server.py").toPath(),
                 new File(out, "content_server.py").toPath(), java.nio.file.StandardCopyOption.REPLACE_EXISTING);
+        File srvIdx = new File(projectDir, "index.txt");
+        if (srvIdx.isFile()) java.nio.file.Files.copy(srvIdx.toPath(), new File(out, "index.txt").toPath(),
+                java.nio.file.StandardCopyOption.REPLACE_EXISTING);
+        else append("⚠ index.txt absent du projet — le serveur ne pourra pas servir /live/index.txt");
 
         // 4) runtimes embarqués (zéro-install) : JRE (jlink) pour le serveur Java + Python (relocatable) pour le
         //    content-server (désormais pur stdlib, sans `curl`). Best-effort : repli sur les runtimes système sinon.
@@ -428,7 +437,7 @@ public final class BuildManager {
       + "[ -n \"${DH_ADMIN_PORT:-}\" ] && ADMIN_OPTS=\"$ADMIN_OPTS -Ddh.admin.port=$DH_ADMIN_PORT\"\n"
       + "mkdir -p \"$DIR/data\"\n"
       + "\"$PY\" \"$DIR/content_server.py\" --port \"$CONTENT_PORT\" --rewrite-host \"127.0.0.1:$CONTENT_PORT\" \\\n"
-      + "        --game-server \"127.0.0.1:$GAME_PORT\" & CPID=$!\n"
+      + "        --index \"$DIR/index.txt\" --game-server \"127.0.0.1:$GAME_PORT\" & CPID=$!\n"
       + "\"$JAVA\" -XX:TieredStopAtLevel=1 ${DH_SERVER_OPTS:-} $ADMIN_OPTS -Ddh.db=\"$DIR/data/dh-server.db\" \\\n"
       + "     -Ddh.stats=\"$DIR/game-data/stats\" -Ddh.auth.port=\"$AUTH_PORT\" \\\n"
       + "     -cp \"$DIR/lib/*\" dhserver.LoginServer \"$GAME_PORT\" & JPID=$!\n"
@@ -500,7 +509,7 @@ public final class BuildManager {
       + "if not \"%DH_ADMIN_BIND%\"==\"\" set ADMIN_OPTS=%ADMIN_OPTS% -Ddh.admin.bind=%DH_ADMIN_BIND%\r\n"
       + "if not \"%DH_ADMIN_PORT%\"==\"\" set ADMIN_OPTS=%ADMIN_OPTS% -Ddh.admin.port=%DH_ADMIN_PORT%\r\n"
       + "if not exist \"%DIR%data\" mkdir \"%DIR%data\"\r\n"
-      + "start \"dh-content\" \"%PY%\" \"%DIR%content_server.py\" --port %DH_CONTENT_PORT% --rewrite-host 127.0.0.1:%DH_CONTENT_PORT% --game-server 127.0.0.1:%DH_GAME_PORT%\r\n"
+      + "start \"dh-content\" \"%PY%\" \"%DIR%content_server.py\" --port %DH_CONTENT_PORT% --rewrite-host 127.0.0.1:%DH_CONTENT_PORT% --index \"%DIR%index.txt\" --game-server 127.0.0.1:%DH_GAME_PORT%\r\n"
       + "\"%JAVA%\" -XX:TieredStopAtLevel=1 %ADMIN_OPTS% -Ddh.db=\"%DIR%data\\dh-server.db\" -Ddh.stats=\"%DIR%game-data\\stats\" -Ddh.auth.port=%DH_AUTH_PORT% -cp \"%DIR%lib\\*\" dhserver.LoginServer %DH_GAME_PORT%\r\n";
 
     private void runStep(String name, String[] cmd, String envKey, String envVal) throws Exception {

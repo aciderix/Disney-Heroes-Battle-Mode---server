@@ -1,5 +1,32 @@
 # JOURNAL — journal détaillé des modifications
 
+## 2026-09-02 (g243) — TEST INTÉGRATION launcher Linux (comme un user) : 3 vrais bugs d'autonomie trouvés + corrigés
+
+Test end-to-end du package launcher Linux construit avec le même `build_launcher.sh` que le CI (run #9 vert). L'artefact CI
+n'étant pas téléchargeable depuis le sandbox (api.github.com/actions → 403, et le PAT fourni n'a aucun scope), package
+construit localement (identique) et piloté via le daemon comme le ferait le GUI. RÉSULTATS :
+- **CORS (#1) ✓ en vrai** : `/health` du daemon packagé → 200 + `Access-Control-Allow-Origin: *`.
+- **Annuaire GUI (#4) ✓ en vrai** : `/directory` renvoie la liste Supabase → le daemon a bien lu `directory.env` À CÔTÉ DU JAR.
+- **Générer un SERVEUR depuis l'APK** (full) → **DONE** : extract ✓, **decompile SANS maven ✓** (#2, dex2jar via URLs directes),
+  reframe ✓, package ✓. Le serveur généré **démarre** : LoginServer + `/info` SIGNÉ (fiche valide 12.1.0) ✓ ; content_server
+  `/live/index.txt` (URLs réécrites) + `/login` (`data=127.0.0.1:8081`) ✓.
+
+**3 bugs d'autonomie trouvés PAR ce test et corrigés :**
+1. **`build_launcher.sh` — copie du JDK cassée** sur un JDK système avec **liens symboliques cassés** (`src.zip`,
+   `libatk-wrapper.so`) : `cp -RLp` échouait (set -e) → package sans JDK. Fix : tolérer les liens optionnels + **échouer
+   seulement si un binaire essentiel** (javac/jlink/jar) manque.
+2. **Étape `reframe` non auto-suffisante** (`BuildManager`) : sur un package FRAIS, ni `asm-*.jar` ni `ReframeJar.class`
+   n'existent → `Could not find or load main class ReframeJar`. Fix : le step télécharge ASM 9.7 + compile `ReframeJar.java`
+   (JDK embarqué) si absents, avant de lancer — comme run-desktop.sh.
+3. **`index.txt` absent du BUNDLE serveur** → content_server meurt (« index introuvable ») → `/live/index.txt` KO → aucun
+   asset téléchargeable. Fix : `packageServer` copie `index.txt` dans le bundle + `run.sh`/`run.bat` passent `--index`.
+   Validé : après copie + `--index`, `/live/index.txt` → 200 (62 Ko, URLs réécrites).
+
+Reste du test (à suivre) : générer le PORT CLIENT (gradlew #3 + spine archive #4 + garde jar-vide #5) + lancer le jeu ; patch APK.
+
+Fichiers : `tools/build_launcher.sh`, `server/java/dhlauncher/BuildManager.java`, `JOURNAL.md`, `MEMORY.md`.
+
+
 ## 2026-09-01 (g242) — #4 : spine-runtimes sans `git` (archive tar.gz + repli git) → build client PC autonome
 
 Dernier trou d'outil-système du build CLIENT (sur le PC de l'utilisateur, à « Générer le port PC » — PAS en CI) : `build_spine_jar.sh`
