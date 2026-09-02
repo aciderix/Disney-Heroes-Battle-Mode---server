@@ -194,6 +194,7 @@ public final class DesktopLauncher {
             input.drain();          // input synthétique (pilotage) sur le thread render
             app.drainRunnables();   // Gdx.app.postRunnable
             game.render();
+            audio.update();   // streaming des musiques (comme Lwjgl3Application.loop) — no-op si audio muet
             // AUTH (C2a-2 play) : une fois le boot initial passé, bascule sur le compte authentifié (une seule fois).
             // (C2a-2) userID au BOOT via BuildOptions.TEST_USER_ID (login unique). En STRICT (dh.userid.relogin=1),
             // re-login pour que le GET /login reparte avec le userID (mint) → serveur strict accepte.

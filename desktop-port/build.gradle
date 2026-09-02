@@ -11,7 +11,12 @@ ext {
     // BufferUtils/Gdx2DPixmap JNI — version du jeu). PAS de backend libGDX Maven (le core
     // PerBlue est modifié+réduit, cf. desktop-port/PROGRESS.md) : on fournit nos propres shims.
     lwjglVersion = '3.3.4'
-    lwjglNatives = 'natives-linux'
+    // Natifs LWJGL détectés par OS : un client généré SUR Windows/macOS doit tirer SES natifs (GLFW/GL/
+    // OpenAL/STB), sinon rien ne se charge (avant : codé en dur natives-linux → client Windows cassé).
+    def osName = System.getProperty('os.name').toLowerCase()
+    lwjglNatives = osName.contains('win') ? 'natives-windows'
+                 : (osName.contains('mac') || osName.contains('darwin')) ? 'natives-macos'
+                 : 'natives-linux'
     gdxVersion = '1.9.7'
 }
 
@@ -53,6 +58,11 @@ dependencies {
     // Opt.3 (#28) : runtime Java spine (com.esotericsoftware.spine uniquement, aucune classe badlogic →
     // pas de conflit) pour le backend d'animation JavaSpineBackend (alternative à unidbg pour le combat).
     implementation files('../libs/spine-libgdx-perblue.jar')
+
+    // Backend audio OpenAL de libGDX 1.9.7 (paquet com.badlogic.gdx.backends.lwjgl3.audio.* SEUL, auto-contenu) —
+    // le VRAI code audio du jeu (décodage OGG/WAV/MP3 + OpenAL), pas une réécriture (§3/§4). Jar régénéré par
+    // run-desktop.sh (extrait de gdx-backend-lwjgl3-1.9.7.jar), gitignoré (§7). DhAudio y délègue.
+    implementation files('../libs/gdx-lwjgl3-audio.jar')
 }
 
 application {

@@ -57,6 +57,23 @@ if [ ! -f ../libs/spine-libgdx-perblue.jar ]; then
   ( cd .. && tools/build_spine_jar.sh ) || { echo "[desktop] ✖ build_spine_jar.sh a ÉCHOUÉ — client non compilable"; exit 1; }
 fi
 
+# Backend AUDIO : le paquet audio OpenAL de libGDX 1.9.7 (com.badlogic.gdx.backends.lwjgl3.audio.*, AUTO-CONTENU) —
+# le VRAI code du jeu pour décoder OGG/WAV/MP3 + jouer via OpenAL (§3/§4, aucune réécriture). game-logic.jar a
+# strippé com/badlogic/gdx/backends/* → on ré-empaquete SEULEMENT le sous-paquet audio dans un jar dédié dont
+# build.gradle dépend, et DhAudio y délègue. Régénérable (gitignoré libs/*.jar, §7).
+GDXAUDIO="../libs/gdx-lwjgl3-audio.jar"
+if [ ! -f "$GDXAUDIO" ]; then
+  echo "[desktop] fabrication de gdx-lwjgl3-audio.jar (backend audio OpenAL libGDX 1.9.7) ..."
+  mkdir -p "$BUILD"
+  BJ="$BUILD/gdx-backend-lwjgl3-1.9.7.jar"
+  [ -f "$BJ" ] || curl -fsSL -o "$BJ" "$MVN/com/badlogicgames/gdx/gdx-backend-lwjgl3/1.9.7/gdx-backend-lwjgl3-1.9.7.jar" \
+    || { echo "[desktop] ✖ téléchargement gdx-backend-lwjgl3 (audio)"; exit 1; }
+  rm -rf "$BUILD/gdxaudio"; mkdir -p "$BUILD/gdxaudio"
+  ( cd "$BUILD/gdxaudio" && unzip -oq "../gdx-backend-lwjgl3-1.9.7.jar" 'com/badlogic/gdx/backends/lwjgl3/audio/*' )
+  jar cf "$GDXAUDIO" -C "$BUILD/gdxaudio" . \
+    || { echo "[desktop] ✖ empaquetage gdx-lwjgl3-audio.jar"; exit 1; }
+fi
+
 echo "[desktop] compilation ..."
 # NE PAS avaler les erreurs (ancien `2>/dev/null … || true` masquait un échec complet → jar client VIDE, "Jouer"
 # crashait « ClassNotFoundException dhdesktop.DesktopLauncher » sans le moindre message — bug #5). On garde stderr
