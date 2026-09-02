@@ -1,5 +1,51 @@
 # JOURNAL — journal détaillé des modifications
 
+## 2026-09-02 (g251) — 2 bugs Windows de plus → « PATCH APK » RÉUSSIT (§8 EN JEU) — 3 CIBLES SUR 3 COMPLÈTES
+
+Suite immédiate de g250 (SERVEUR ✅ + CLIENT ✅). Troisième et dernière cible testée : `target=apk` (mode
+`redirect`), même machine/XAPK réels.
+
+**Bug #11 — `python3` résout vers le stub Windows « App Execution Alias »**, pas le Python embarqué NI le Python
+système réel. `patch_apk.sh`/`apk_inject_picker.sh` appellent `python3` NU (message : « Python was not found; run
+without arguments to install from the Microsoft Store… »). **Piège découvert en creusant** : un premier correctif
+« PATH-prepend (dossier Python embarqué) + `command -v python3` » a semblé raisonnable mais **échouait pareil** —
+`command -v` ne fait que vérifier qu'un FICHIER existe sur le PATH, or Windows enregistre le stub Store comme un
+**fichier RÉEL** à `%LOCALAPPDATA%\Microsoft\WindowsApps\python3.exe` (`command -v python3` réussit donc à tort).
+Vérifié EN JEU : ce stub s'exécute et **quitte en échec (code 49)** sans rien faire d'utile. Par ailleurs, seul
+`python.exe` existe dans le Python embarqué (aucun `python3.exe` — convention Windows, déjà correctement gérée
+ailleurs dans ce dépôt pour `run.bat`/`run.sh` des bundles serveur). **Correctif définitif** : test par EXÉCUTION
+réelle plutôt que présence de fichier — `PY=python3; "$PY" --version >/dev/null 2>&1 || PY=python` (un vrai
+Python retourne 0, le stub retourne 49) — puis tous les appels `python3` remplacés par `"$PY"`. Complété côté
+`BuildManager.java` par une nouvelle méthode **`embeddedToolsEnv()`** (factorisation du fix PATH JDK du bug #9,
+réutilisée pour `client-build`/`apk-picker`/`apk-patch`) qui fait précéder le PATH par le `bin/` du JDK embarqué
+**et** le dossier du Python embarqué — la combinaison des deux (PATH correct + test d'exécution côté script) est
+nécessaire et suffisante.
+
+**Bug #12 — `UnicodeEncodeError` sur stdout Python (Windows, locale FR = cp1252 par défaut)**. Une fois Python
+correctement résolu, `apk_redirect_smali.py` plantait sur son propre message de log :
+`print(f"... → http://{host}:{port} ...")` — le caractère `→` (U+2192) n'est pas représentable en cp1252 → crash
+AVANT même d'avoir terminé le patch (bien que le patch smali lui-même ait déjà réussi — seul le `print()` final
+échouait, mais `set -e`/l'échec de la commande arrêtait tout le script). Même famille que le fix `javac -encoding
+UTF-8` (g249) mais côté Python. **Correctif** : `embeddedToolsEnv()` pose `PYTHONIOENCODING=utf-8` — centralisé,
+profite automatiquement à TOUS les appels Python du pipeline (patch, picker, ET client-build qui partage la même
+méthode).
+
+**RÉSULTAT FINAL — 3 CIBLES SUR 3 COMPLÈTES, VÉRIFIÉES EN JEU SUR WINDOWS RÉEL avec le VRAI XAPK de l'utilisateur** :
+`target=apk mode=redirect serverHost=127.0.0.1 serverPort=8081` → **`DONE`**. `dh-127.0.0.1.apk` (162,6 Mo) :
+zipalign **success** + **verified**, signature **v2/v3 verified**, et surtout — vérification de CONTENU (pas
+juste « pas de crash ») — **`redirection OK dans l'APK signé (nouvel hôte présent, ancien absent)`**. Le message
+de log lui-même contient maintenant le `→` UTF-8 correctement affiché, preuve vivante que le fix #12 fonctionne.
+
+**Bilan de session (g249+g250+g251) : 12 bugs Windows trouvés, isolés par un test minimal, corrigés, et
+REVÉRIFIÉS sur le pipeline réel avant de passer au suivant — jamais de correctif supposé.** Les 3 cibles du
+launcher (Serveur / Client-port-PC / Patch-APK) génèrent désormais chacune un artefact complet et fonctionnel
+depuis un launcher Windows réel, à partir d'un XAPK réel fourni par l'utilisateur — la promesse « clé-en-main »
+du launcher (`docs/DISTRIBUTION.md`) est maintenant PROUVÉE sur Windows, pas seulement sur Linux.
+
+Fichiers modifiés : `server/java/dhlauncher/BuildManager.java` (`embeddedToolsEnv()` étendu : PATH Python +
+PYTHONIOENCODING, appliqué à apk-picker/apk-patch), `tools/patch_apk.sh` + `tools/apk_inject_picker.sh`
+(résolution `PY` par test d'exécution, tous les `python3` remplacés par `"$PY"`).
+
 ## 2026-09-02 (g250) — 3 bugs Windows de plus → « Générer CLIENT (port PC) » RÉUSSIT DE BOUT EN BOUT (§8 EN JEU)
 
 Suite immédiate de g249 (SERVEUR). Même méthode (§8 : isoler+reproduire+corriger+revérifier avant de passer au
