@@ -1,5 +1,72 @@
 # JOURNAL — journal détaillé des modifications
 
+## 2026-09-02 (g250) — 3 bugs Windows de plus → « Générer CLIENT (port PC) » RÉUSSIT DE BOUT EN BOUT (§8 EN JEU)
+
+Suite immédiate de g249 (SERVEUR). Même méthode (§8 : isoler+reproduire+corriger+revérifier avant de passer au
+suivant), même machine Windows réelle, même XAPK réel de l'utilisateur, cible `target=client` cette fois.
+
+**Bug #8 — `zip` absent de Git for Windows** (seul `unzip` est fourni par défaut). `run-desktop.sh` faisait
+`zip -q -d game-logic.jar 'org/lwjgl/*' 'com/badlogic/gdx/backends/*'` (retire les classes LWJGL2/backends
+réduits que PerBlue embarque dans `game.jar`, qui sinon MASQUENT le vrai LWJGL3 à la compilation) — échouait
+SILENCIEUSEMENT (`|| true`) → `game-logic.jar` gardait ces classes réduites → **81 erreurs `cannot find symbol`**
+sur `GL20.glVertexAttrib3f`/`glUniform4iv`/etc. à `gradle compileJava` (signatures manquantes dans les classes
+réduites). Isolé avec certitude : `javap` a confirmé que le VRAI `lwjgl-opengl-3.3.4.jar` (cache Gradle, bon SHA)
+contient bien ces méthodes — le problème était donc l'absence de retrait, pas un mauvais jar. **2 usages
+similaires trouvés et corrigés PROACTIVEMENT** (avant de les découvrir en jeu) dans le pipeline PATCH APK :
+`tools/apk_inject_picker.sh` et `tools/patch_apk.sh` (`zip -q .../zip -qd ...` pour injecter le dex patché et
+retirer les anciennes signatures avant re-signature).
+- **Premier correctif** (extraction+suppression+réempaquetage via `unzip`+`jar`, sans dépendre de `zip`) a
+  fonctionné mais s'est révélé **extrêmement lent sur Windows** (15+ minutes rien que pour `game-logic.jar`,
+  confirmé actif via CPU croissant — PAS bloqué, juste lent). Cause : ~65k petites entrées = ~130k opérations
+  fichier NTFS individuelles, chacune scannée par **Windows Defender temps réel** (confirmé activé, aucune
+  exclusion visible).
+- **Correctif définitif, bien plus rapide** : `tools/reframe/src/StripJar.java` (nouveau, JDK pur —
+  `java.util.zip.ZipInputStream`/`ZipOutputStream`, AUCUNE dépendance externe) — filtre le jar EN STREAMING
+  zip→zip (2 flux, jamais de fichier individuel écrit sur disque), en excluant les entrées dont le nom commence
+  par les préfixes donnés. **Vérifié EN JEU** : game.jar (73 Mo, 65162 entrées gardées / 972 retirées) → **7
+  secondes** contre 15+ minutes avec l'extraction classique. `run-desktop.sh` et `apk_inject_picker.sh`/
+  `patch_apk.sh` réécrits avec la même approche portable (les 2 derniers gardent extraction+jar, moins critique
+  côté taille/nombre de fichiers pour un APK vs les 65k classes de `game.jar`).
+
+**Bug #9 — PATH incohérent pour les appels `javac`/`java` NUS de `run-desktop.sh`** (`UnsupportedClassVersionError:
+ReframeJar has been compiled by a more recent version…`, class file version 65 [Java 21] vs limite 61 [Java 17]).
+Contrairement à `BuildManager.javaBin()` (déjà corrigé en g249, bug #6), `run-desktop.sh` appelle `javac`/`java`
+NUS en interne (jamais changé) — ces appels résolvent via le **PATH hérité du processus daemon**, qui pointe vers
+le **Java système** (17, Eclipse Adoptium) et NON le **JDK embarqué** (21) du package. Un `ReframeJar.class`
+compilé PAR le JDK embarqué lors d'un test antérieur (donc version 65) se faisait ensuite EXÉCUTER par le Java
+système (limite 61) → erreur. **Correctif** : `BuildManager` fait désormais précéder le `bin/` du JDK EMBARQUÉ
+(`System.getProperty("java.home")`) dans la variable `PATH` transmise au sous-processus `client-build` — TOUS les
+outils nus (`javac`/`java`/`jar`) de `run-desktop.sh` résolvent alors vers LE MÊME JDK cohérent, sans toucher au
+script lui-même. **Vérifié EN JEU** : `[reframe] reframed=63249 kept-original=0 non-class=0` (réussi, cohérent
+avec le côté serveur qui avait 64196 — la différence vient des classes LWJGL/backends retirées côté client).
+
+**Bug #10 — le manifeste `client-manifest.env` contenait des chemins POSIX, mal interprétés côté Java**
+(`jar-client` échouait : `\c\Users\fromt\Desktop\...\classes\java\main\. : fichier ou répertoire introuvable`).
+La fonction `ABS()` de `run-desktop.sh` utilisait `pwd` (Git Bash/MSYS) pour résoudre des chemins absolus — sous
+Windows, `pwd` renvoie la forme POSIX (`/c/Users/...`), écrite TELLE QUELLE dans le manifeste. `BuildManager`
+(Java, lu APRÈS la fin du script bash, aucune traduction MSYS possible) fait `new File("/c/Users/...")` —
+Windows/Java interprète alors `/` comme la racine du **lecteur COURANT** et `"c"` comme un simple **nom de
+dossier** (pas une lettre de lecteur) → chemin cassé `\c\Users\...` (le `C:` a disparu). **Correctif** : `ABS()`
+et la ligne `HOSTSPINE=` passent désormais par `NATIVE()` (le même couple `PSEP`/`NATIVE()` du bug #4, `cygpath
+-w` sous Windows) AVANT d'écrire le manifeste — chaque chemin y est déjà en forme Windows native
+(`C:\Users\...`), directement utilisable par `new File(...)` côté Java sans aucune ambiguïté.
+
+**RÉSULTAT FINAL — pipeline CLIENT complet vérifié EN JEU** : `POST /build/start target=client` avec le VRAI
+XAPK → **`DONE`**. Bundle généré (`C:\Users\fromt\Desktop\disney_client`) : `lib/dhdesktop.jar` (155 Ko, 39
+classes — passe le garde-fou anti-jar-vide), `lib/game-logic-framed.jar` (74,6 Mo, reframe complet 63249
+classes), `native/{libgdx64.so, libspine-native.so, libhostspine64.dll}` (**le backend spine jni RAPIDE — .dll
+prébuild par CI g247 — est bien présent et embarqué**), `assets/` peuplés, `runtime/jre` embarqué, `run.bat`/
+`run.sh`. **Deuxième cible (après SERVEUR) qui réussit de bout en bout sur Windows réel avec un XAPK réel.**
+
+Fichiers modifiés/ajoutés : `tools/reframe/src/StripJar.java` (nouveau), `desktop-port/run-desktop.sh`
+(StripJar + ABS/HOSTSPINE via NATIVE), `server/java/dhlauncher/BuildManager.java` (PATH JDK embarqué pour
+client-build), `tools/apk_inject_picker.sh` + `tools/patch_apk.sh` (fix `zip` proactif, pipeline PATCH APK —
+code corrigé mais **pas encore testé en jeu**, prochaine étape).
+
+**Bilan cumulé g249+g250 : 10 bugs Windows trouvés et corrigés**, chacun isolé et reproduit par un test minimal
+avant correctif, chacun revérifié sur le pipeline réel avant de passer au suivant. SERVEUR et CLIENT génèrent
+tous deux des bundles autonomes complets et fonctionnels depuis le launcher Windows, avec un APK/XAPK réel.
+
 ## 2026-09-02 (g249) — 7 bugs Windows corrigés → « Générer serveur » depuis l'APK RÉUSSIT DE BOUT EN BOUT (§8 EN JEU)
 
 Suite de g248 (fix du launcher lui-même). Une fois le launcher joignable, l'utilisateur a testé « Générer → Serveur
