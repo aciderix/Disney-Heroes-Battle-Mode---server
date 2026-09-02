@@ -108,7 +108,7 @@ public final class HostManager {
                 .start();
 
         // 2) content_server.py (login/contenu HTTP)
-        List<String> cs = new ArrayList<>(List.of("python3",
+        List<String> cs = new ArrayList<>(List.of(pythonBin(),
                 new File(projectDir, "server/content_server.py").getPath(),
                 "--port", String.valueOf(contentPort),
                 "--rewrite-host", "127.0.0.1:" + contentPort,
@@ -117,6 +117,7 @@ public final class HostManager {
                 .directory(new File(projectDir))
                 .redirectErrorStream(true)
                 .redirectOutput(new File(dataDir, "host-content.log"));
+        cpb.environment().put("PYTHONIOENCODING", "utf-8");
         if (strict) {
             cpb.environment().put("DH_AUTH_URL", "http://127.0.0.1:" + authPort);
             cpb.environment().put("DH_MINT_USERID_FILE", mintFile.getPath());
@@ -197,6 +198,36 @@ public final class HostManager {
             }
         }
         return b.append('"').toString();
+    }
+
+    /** Résout un interpréteur Python UTILISABLE : le PYTHON EMBARQUÉ (frère de {@code projectDir}, déposé par
+     *  {@code tools/build_launcher.sh} dans {@code runtime/python/}) en priorité, sinon {@code python3}/{@code python}
+     *  du PATH — mais seulement après un test d'EXÉCUTION réel (pas juste une présence de fichier) : sur Windows,
+     *  "python3"/"python" nus peuvent résoudre vers le stub "App Execution Alias" du Windows Store — un fichier bien
+     *  réel que {@code where}/{@code File.isFile()} trouvent, mais qui échoue au lancement (exit 49, "Python was not
+     *  found… Microsoft Store") si aucune app Store n'y est liée. Même famille que g251 #11 (patch_apk.sh), vue EN
+     *  JEU dans ce code-ci (content_server.py ne démarrait jamais lors de « Héberger »). */
+    private String pythonBin() {
+        boolean win = System.getProperty("os.name", "").toLowerCase().contains("win");
+        File launcherRoot = new File(projectDir).getParentFile();
+        if (launcherRoot != null) {
+            File embedded = win ? new File(launcherRoot, "runtime/python/python.exe")
+                                 : new File(launcherRoot, "runtime/python/bin/python3");
+            if (embedded.isFile()) return embedded.getPath();
+        }
+        for (String cand : new String[]{"python3", "python"}) {
+            if (runsOk(cand)) return cand;
+        }
+        throw new IllegalStateException("Aucun interpréteur Python utilisable (python3/python introuvable, ou stub "
+                + "Windows Store non configuré — Réglages Windows > Applications > Alias d'exécution d'application)");
+    }
+
+    /** Test d'EXÉCUTION (pas de présence) : seul moyen fiable de distinguer un vrai Python d'un stub Windows Store. */
+    private static boolean runsOk(String bin) {
+        try {
+            Process p = new ProcessBuilder(bin, "--version").redirectErrorStream(true).start();
+            return p.waitFor(3, java.util.concurrent.TimeUnit.SECONDS) && p.exitValue() == 0;
+        } catch (Exception e) { return false; }
     }
 
     /** Le port de jeu TCP accepte-t-il des connexions ? (le process peut être vivant mais pas encore en écoute). */

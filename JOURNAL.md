@@ -9023,3 +9023,62 @@ Thèse perf B PROUVÉE.
 unidbg les rend corrects ; le hub (attachements REGION) rend bien. ⇒ chemin mesh de buildVertices faux (world-vertices pondérés /
 indices). Backend rapide FONCTIONNEL+RAPIDE mais pas pixel-fidèle → à corriger (blocage #3).
 SUITE = certification compare (diff vertices mesh HostSpine vs unidbg) → corriger par extraction.
+
+## 2026-09-02 (g252) — Test « comme un user » du flux Héberger→Compte→Jouer de la release Windows : 2 bugs trouvés+corrigés, 1 en cours
+
+Suite de g248-g251 (release `launcher-v0.2.5` re-taguée, téléchargée, testée EN JEU sur le PC Windows réel de l'util. —
+plus de « injoignable »). Étape suivante demandée : héberger un serveur VIA LE LAUNCHER (UI, pas de raccourci API), créer un
+compte, lancer le jeu. Méthode de test : impossible de reconstruire un `.exe` Tauri localement (pas de `cargo`/`rustc` sur la
+machine) → vérification via **daemon réel + `npm run dev` (proxy Vite) + navigateur Chrome piloté par CDP** (WebSocket
+`Runtime.evaluate`, script `cdp_eval.mjs`) : exerce EXACTEMENT le même code React + les mêmes endpoints HTTP loopback que
+l'exe packagé, sans passer par Tauri/Rust (`daemonClient.base()` bascule sur une URL relative en dev navigateur hors Tauri).
+
+**Bug #1 (corrigé) — serveur hébergé invisible partout.** `Host.tsx` appelle `/host/start` mais n'enregistrait JAMAIS le
+serveur démarré dans les favoris (`/servers`), or `Compte`/`Jouer` dépendent tous deux de `selectedServer` (store React,
+alimenté uniquement par la liste des favoris). Résultat exact du rapport util. : « en cours » s'affiche dans Héberger, mais
+rien dans Serveurs, et Compte/Jouer restent bloqués sur « sélectionne un serveur d'abord ». Correctif : nouvel effet dans
+`Host.tsx` qui, au passage à `running:true`, appelle `serverAdd` (ou réutilise un favori existant même host:contentPort) puis
+`select()` — idempotent (ref de garde par cycle de run). **Vérifié via CDP** : après le fix, le clic « Héberger » fait
+apparaître immédiatement « ▸ SERVEUR LOCAL HÉBERGÉ » comme cible sélectionnée, et l'entrée apparaît dans la liste Serveurs.
+
+**Bug #2 (corrigé) — `content_server.py` ne démarrait jamais en mode dev.** En creusant pourquoi le serveur ne passait
+jamais à `running:true` dans mon harnais de test, `host-content.log` montrait : « Python was not found; run without
+arguments to install from the Microsoft Store… ». `HostManager.start()` lançait `content_server.py` via la commande NUE
+`"python3"` (ligne en dur) → même famille que g251 #11 (stub Windows Store « App Execution Alias »), mais dans un endroit du
+code jamais touché par ce fix-là. Correctif : nouvelle méthode `HostManager.pythonBin()` — résout le Python EMBARQUÉ
+(`<launcherRoot>/runtime/python/python.exe` sur Windows, `.../bin/python3` sinon, frère de `projectDir`) en priorité, sinon
+teste `python3`/`python` par EXÉCUTION réelle (`--version`, code 0) et non par présence de fichier (même leçon que g251
+#11) ; lève une erreur explicite si rien n'est utilisable. + `PYTHONIOENCODING=utf-8` posé sur l'environnement du process
+content (même famille que g251 #12). **Vérifié par test isolé** : classpath du daemon corrigé pointant vers la classe
+patchée, `content_server.py` démarre et log `[content] listening on http://0.0.0.0:9080/live/index.txt` (avant le fix :
+échec silencieux, `contentPid` restait à `-1`).
+
+⚠️ **Fausse piste écartée en cours de route** : au départ j'ai testé en « mode dev » (`bundleDir` vide), qui échoue
+TOUJOURS avec `ClassNotFoundException: dhserver.LoginServer` dans la release packagée — `dhlauncher.jar` est délibérément
+**game-free** (juste `dhlauncher.*` + `dhserver.auth.*`/`dhserver.directory.*`, cf. `tools/build_launcher.sh` §1, pour rester
+distribuable sans copyright du jeu) : il ne contient PAS le serveur de jeu. Ce n'est pas un bug — c'est le mode
+« bundle » (`bundleDir` = un serveur préalablement généré via l'onglet « Générer ») qui est le chemin réel pour un joueur.
+**Confirmé par l'util.** : il avait bien généré un bundle serveur (`C:\Users\fromt\Desktop\server`) et l'avait fourni dans
+Héberger — donc PAS le bug qui l'a bloqué. À corriger séparément si utile : soit retirer l'option « mode dev » de l'UI
+packagée, soit documenter clairement qu'elle ne s'adresse qu'au développement depuis les sources.
+
+**Bug #3 (ouvert, EN COURS) — le daemon meurt/disparaît en cours d'hébergement, orphelinant les process enfants.** Rapport
+util. (bundle mode réel, `C:\Users\fromt\Desktop\server`, STRICT) : « en cours » s'affiche, le log content confirme le
+démarrage (`[content] listening on http://0.0.0.0:8080/live/index.txt`), PUIS après un certain temps l'UI repasse à
+« arrêté » (ports encore affichés) et le panneau Admin dit « aucun serveur hébergé ». Investigation process (`Get-CimInstance
+Win32_Process`) : le serveur de jeu (java, port 8081/8082) ET le serveur de contenu (python, port 8080) tournent TOUJOURS,
+mais **`DisneyHeroesLauncher.exe` lui-même n'est plus en mémoire du tout** — le daemon (et son parent Tauri) a disparu,
+laissant ses enfants orphelins et invisibles pour l'UI (`HostManager.isRunning()` dépend d'une référence `Process` en
+mémoire, perdue si le daemon redémarre). **Cause du crash daemon NON ENCORE CAPTURÉE** (pas de crash observé en direct,
+seulement des traces après-coup) — prochaine étape : relancer l'exe réel (pas mon harnais dev) et surveiller le process
+daemon en continu pour choper le crash au moment où il se produit.
+
+**Clarification (pas un bug) — pas d'option pour publier son serveur dans l'annuaire Supabase.** Vérifié dans
+`LauncherDaemon.java` : seuls `GET /directory` (liste) et `POST /directory/verify` (vérif signature d'une fiche) existent.
+Aucun endpoint/bouton pour PUBLIER son propre serveur hébergé — fonctionnalité jamais construite, pas une régression.
+
+Fichiers modifiés : `launcher-ui/src/views/Host.tsx` (auto-enregistrement + sélection), `server/java/dhlauncher/HostManager.java`
+(`pythonBin()` + `PYTHONIOENCODING`). `npm run typecheck` OK. Pas de rebuild Tauri possible dans cet environnement (pas de
+`cargo`) → les 2 fixes sont vérifiés au niveau daemon+frontend réels (CDP) mais **PAS ENCORE dans un `.exe` packagé** :
+prochain re-tag CI nécessaire pour que l'util. les ait dans les mains. **SUITE** : capturer le crash du daemon (bug #3),
+puis re-tag+republier, puis retester héberger→compte→jouer EN JEU sur la release packagée corrigée.
