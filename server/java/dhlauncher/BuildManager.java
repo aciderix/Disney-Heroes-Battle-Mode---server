@@ -395,6 +395,12 @@ public final class BuildManager {
             File py = new File(launcherRoot, "runtime/python");
             if (py.isDirectory()) pre.append(File.pathSeparator).append(py.getPath());
         }
+        // Git for Windows : coreutils (dirname/mkdir/basename/curl…) vivent dans <Git>/usr/bin, git dans <Git>/bin.
+        // Le PATH hérité du daemon (lancé par double-clic, PATH Explorateur mis en cache) peut NE PAS les contenir,
+        // et un `bash <script>` NON-login ne source pas /etc/profile → il ne se rajoute pas /usr/bin tout seul →
+        // « dirname/mkdir/basename: command not found » (code 127) sur client-build ET apk-picker (vu EN JEU g254).
+        // On les ajoute EXPLICITEMENT (dérivés du bash.exe résolu par bashBin()). Sans effet hors Windows.
+        for (String d : windowsGitBinDirs()) pre.append(File.pathSeparator).append(d);
         String inheritedPath = System.getenv("PATH");
         env.put("PATH", pre + File.pathSeparator + (inheritedPath != null ? inheritedPath : ""));
         // Windows (locale FR) : stdout/stdin Python par défaut en cp1252 (PAS UTF-8) → UnicodeEncodeError sur tout
@@ -402,6 +408,33 @@ public final class BuildManager {
         // `javac -encoding UTF-8` (g249). Vérifié EN JEU.
         env.put("PYTHONIOENCODING", "utf-8");
         return env;
+    }
+
+    /** Dossiers Git for Windows à mettre sur le PATH des sous-processus bash (coreutils + git + éventuels outils
+     *  mingw), dérivés du chemin absolu de {@code bash.exe} résolu par {@link #bashBin()}. Vide hors Windows ou si
+     *  bash introuvable. Corrige « dirname/mkdir/basename/curl: command not found » sur les étapes qui utilisent
+     *  {@link #embeddedToolsEnv()} (client-build, apk-picker, apk-patch). */
+    private static java.util.List<String> windowsGitBinDirs() {
+        java.util.List<String> dirs = new java.util.ArrayList<>();
+        if (!System.getProperty("os.name", "").toLowerCase().contains("win")) return dirs;
+        try {
+            File binDir = new File(bashBin()).getParentFile();   // <Git>/bin  ou  <Git>/usr/bin
+            if (binDir == null) return dirs;
+            File gitRoot;
+            if (binDir.getName().equalsIgnoreCase("bin") && binDir.getParentFile() != null
+                    && binDir.getParentFile().getName().equalsIgnoreCase("usr")) {
+                gitRoot = binDir.getParentFile().getParentFile();   // bash etait dans <Git>/usr/bin
+            } else {
+                gitRoot = binDir.getParentFile();                   // bash etait dans <Git>/bin
+            }
+            if (gitRoot != null) {
+                for (String rel : new String[]{"usr\\bin", "bin", "mingw64\\bin"}) {
+                    File d = new File(gitRoot, rel);
+                    if (d.isDirectory()) dirs.add(d.getPath());
+                }
+            }
+        } catch (Exception ignore) { /* bash introuvable → l'étape aura déjà échoué en amont */ }
+        return dirs;
     }
 
     private static String javaBin(String tool) {
