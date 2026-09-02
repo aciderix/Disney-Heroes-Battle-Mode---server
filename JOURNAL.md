@@ -1,5 +1,46 @@
 # JOURNAL — journal détaillé des modifications
 
+## 2026-09-02 (g246) — PERF : backend spine jni rapide embarqué à la génération (Linux .so + Windows .dll)
+
+Demande util. : le port PC généré doit bénéficier des améliorations de perf (backend spine jni ~50×), **Linux ET
+Windows** (majorité des joueurs).
+
+**Diagnostic** : le bundle client généré n'embarquait que `libgdx64.so` + `libspine-native.so` (ARM), PAS
+`libhostspine64.so` (la lib hôte du chemin jni). Or `run.sh`/`run.bat` n'activent jni **que si** ce fichier existe →
+le bundle retombait sur **unidbg (lent)**, alors que le backend spine **jni est le défaut DEV, ~50×, fidélité
+certifiée B3/B5**. `native/build.sh`+`build-hostspine.sh` existaient mais n'étaient jamais appelés à la génération
+(manifeste `HOSTSPINE` vide).
+
+**Correctif** :
+- `run-desktop.sh` (build-only) **construit le backend natif à la génération** si un compilateur C est présent
+  (`build.sh` a besoin de game.jar pour les en-têtes JNI — présent après le decompile de l'APK) ; sinon repli
+  **SILENCIEUX** sur unidbg (client fonctionnel, plus lent), même dégradation gracieuse que Linux sans gcc.
+  **OS-aware** (`uname`) : Linux → `libhostspine64.so` (gcc, `build-hostspine.sh`) ; Windows/Git Bash (MSYS/MinGW) →
+  `libhostspine64.dll` (MinGW, `build-hostspine-win.sh`). Manifeste `HOSTSPINE` résout `.so` OU `.dll`.
+- **WINDOWS** : `native/build-hostspine-win.sh` **cross-compile** le `.dll` via `x86_64-w64-mingw32-gcc` +
+  `native/win/jni_md.h` (jni_md win64 fourni — le JDK Linux n'a que `include/linux`). Mêmes transformations
+  MÉCANIQUES que la version Linux (rename des symboles JNI `Java_com_perblue_heroes_cspine_Native_*` →
+  `Java_dhbackend_jnispine_HostSpine_*` + unification des tables de handles) ; logique C d'origine **inchangée**
+  (§1/§4). `-static-libgcc` → DLL autonome (pas de dépendance libgcc côté joueur).
+- `BuildManager` : préserve l'extension d'origine du hostspine (`.so`/`.dll`) au packaging (avant : toujours `.so`) ;
+  le `run.bat` généré cherche désormais `libhostspine64.dll` (avant : `.so`, jamais trouvé sous Windows).
+
+**Vérif** :
+- **EN JEU (Linux)** : `libhostspine64.so` construit (47 symboles HostSpine) ; client lancé → `[desktop] spine
+  backend = jni` ; **unidbg SORTI du hot-path** (0-5 appels/frame vs tout le rendu spine émulé avant) ; écran de
+  **COMBAT** (`TutorialAttackScreen`) rendu **~30 fps** sous llvmpipe (le plafond ici = GL LOGICIEL, pas spine ; sur
+  un vrai GPU = le gain ~50×). Fidélité jni déjà certifiée B3/B5. Rendu intact (capture).
+- **Windows** : le `.dll` **cross-compile** ici → `PE32+ executable (DLL) x86-64`, **47 symboles JNI** exportés en
+  **noms C nus** `Java_dhbackend_jnispine_HostSpine_*` (exactement ce que la JVM résout ; `_1` = encodage JNI de `_`).
+  **Non exécutable dans le sandbox** (pas de Windows) → §8 EN JEU sur machine Windows **RESTE À FAIRE** (côté user).
+
+**Reste (décision util.)** : délivrance Windows du `.dll` sans compilateur chez le joueur → soit MinGW à la
+génération, soit **prébuild du `.dll` en CI** (le launcher-release tourne déjà par OS) — mais la CI est **game-free**
+et les en-têtes JNI ont besoin de game.jar → il faudrait **committer les en-têtes JNI générés** (prototypes C dérivés
+des signatures natives du jeu). Décision d'archi à valider avant de l'implémenter.
+
+Commit : `abbcfd1`.
+
 ## 2026-09-02 (g245) — SON ACTIVÉ (backend OpenAL réel de libGDX) + natifs LWJGL par OS
 
 Demande util. : activer l'audio de la version PC générée + attaquer les perfs (hostspine Linux **et** Windows).
