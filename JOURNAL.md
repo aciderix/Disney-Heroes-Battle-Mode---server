@@ -1,5 +1,43 @@
 # JOURNAL — journal détaillé des modifications
 
+## 2026-09-02 (g245) — SON ACTIVÉ (backend OpenAL réel de libGDX) + natifs LWJGL par OS
+
+Demande util. : activer l'audio de la version PC générée + attaquer les perfs (hostspine Linux **et** Windows).
+
+**SON — `DhAudio` était un NO-OP** (proxy renvoyant des valeurs par défaut → jeu MUET). Remplacé par le **VRAI
+backend audio OpenAL de libGDX 1.9.7** (la version du jeu). Fidélité §3/§4 : on **exécute le code d'origine** de
+décodage OGG/WAV/MP3 + lecture OpenAL (`com.badlogic.gdx.backends.lwjgl3.audio.*`), zéro ligne réécrite.
+- `game-logic.jar` a strippé `com/badlogic/gdx/backends/*`. Le sous-paquet `audio/**` est **AUTO-CONTENU**
+  (vérifié : aucune réf hors `audio/` vers le backend lwjgl3 ; ne touche que le core gdx + `org.lwjgl.openal`).
+  On le ré-empaquete SEUL dans `libs/gdx-lwjgl3-audio.jar` (23 classes), régénéré par `run-desktop.sh` depuis
+  `gdx-backend-lwjgl3-1.9.7.jar`, **gitignoré** (`libs/*.jar`, §7). `build.gradle` en dépend ; BuildManager le
+  copie dans le bundle (RUNTIME_CP).
+- **Compatibilité d'interfaces** : PerBlue a **réduit** `Audio`/`Sound`/`Music`. Leurs ensembles de méthodes sont
+  des **sous-ensembles** du stock gdx 1.9.7 → `OpenALSound`/`OpenALMusic` (compilés contre le stock) **satisfont**
+  les interfaces PerBlue telles quelles. Prouvé par chargement (`isAssignableFrom` = true pour Sound/Music ; link +
+  verify des décodeurs `Ogg$Sound/Wav$Sound/Ogg$Music` OK). Seule `Audio` diffère assez (méthodes stereo/stopAll,
+  pas de newAudioDevice) → **`DhAudio` reste l'implémentation de l'interface du jeu et DÉLÈGUE** à un `OpenALAudio`
+  interne (device ALC ouvert dans son ctor). `stopAllSounds` = arrêt de chaque son créé (réel, pas no-op). **Repli
+  muet SANS planter** si aucun périphérique audio (headless/CI) — pas une rustine (§2 : l'audio n'est pas requis pour
+  le boot, l'indispo est tracée). `DesktopLauncher` appelle `audio.update()` chaque frame (streaming musique, comme
+  `Lwjgl3Application.loop`).
+- **Vérifié EN JEU** (Linux, client dev contre le serveur qui tourne) : `[DhAudio] OpenAL initialisé (backend audio
+  libGDX 1.9.7)`, `create: SoundManager`, chargement d'un `.ogg` de son (`heist_ui_black_circle.ogg`), **AUCUNE
+  erreur audio** (les SEVERE du log = gaps `.tab` pré-existants sans lien : PatchTalent #34, prime_badge, cosmetic),
+  **MainScreen atteint + intro rendue** (capture 1280×720 identique). Audible final = machine réelle (le sandbox n'a
+  pas de sortie son mais OpenAL s'initialise).
+
+**NATIFS LWJGL par OS** : `build.gradle` codait `lwjglNatives = 'natives-linux'` EN DUR → un client généré **sur
+Windows/macOS** aurait tiré les natifs LWJGL Linux (GLFW/GL/OpenAL/STB) = **client cassé**. Corrigé : détection par
+`os.name` (`natives-windows` / `natives-macos` / `natives-linux`). **Prérequis au client Windows** (au-delà de
+l'audio) — important car la majorité des joueurs seront sur Windows.
+
+**Perf (rappel du diagnostic g244+)** : le backend spine **jni ~50× est certifié (B3/B5) et défaut DEV**, mais le
+bundle généré n'embarque **pas** `libhostspine64.so` → il retombe sur **unidbg (lent)**. À combler = construire
+hostspine à la génération (**Linux + Windows**) — chantier EN COURS (Windows = portage `.dll` MinGW, plus gros).
+
+Commit : `72964d4`.
+
 ## 2026-09-02 (g244) — TEST INTÉGRATION (suite) : générer le CLIENT (port PC) + jeu RENDU EN JEU depuis le bundle généré
 
 Suite du test « comme un user » (g243), côté **génération du CLIENT (port PC)** via le daemon packagé
