@@ -58,7 +58,16 @@ java -jar "$CACHE/smali.jar" assemble "$WORK/smali" -o "$WORK/$DEXNAME" >/dev/nu
 grep -aql "$HOST" "$WORK/$DEXNAME" || { echo "[apk] ✖ l'hôte patché est absent du dex réassemblé"; exit 1; }
 
 # --- 3) remplacer le dex dans l'apk + retirer l'ancienne signature ---
-( cd "$WORK" && zip -q app.apk "$DEXNAME" && zip -qd app.apk 'META-INF/*.RSA' 'META-INF/*.SF' 'META-INF/*.MF' >/dev/null 2>&1 || true )
+# PAS de `zip -q`/`zip -qd` (ajout/retrait d'entrées EN PLACE) : `zip` n'est PAS installé par défaut avec Git for
+# Windows (seul `unzip` l'est) → échouait SILENCIEUSEMENT (`|| true`) → le dex patché n'était jamais injecté ET les
+# anciennes signatures restaient → APK invalide. Correctif PORTABLE (extraire → remplacer/retirer sur le système de
+# fichiers → ré-empaqueter), sans dépendre de `zip` : `unzip`+`jar` suffisent (comme ailleurs dans ce dépôt).
+APKTMP="$WORK/app-extract"; rm -rf "$APKTMP"; mkdir -p "$APKTMP"
+( cd "$APKTMP" && unzip -oq "$WORK/app.apk" )
+cp "$WORK/$DEXNAME" "$APKTMP/$DEXNAME"
+rm -f "$APKTMP"/META-INF/*.RSA "$APKTMP"/META-INF/*.SF "$APKTMP"/META-INF/*.MF 2>/dev/null || true
+( cd "$APKTMP" && jar cf "$WORK/app.apk" . )
+rm -rf "$APKTMP"
 
 # --- 4) zipalign + re-signer (clé debug intégrée ; le signer vérifie lui-même la signature à la fin) ---
 echo "[apk] zipalign + signature ..."

@@ -236,6 +236,14 @@ public final class BuildManager {
             java.util.Map<String,String> cbEnv = new java.util.HashMap<>();
             cbEnv.put("DH_BUILD_ONLY", "1");
             cbEnv.put("DH_APK", apk.getAbsolutePath());
+            // run-desktop.sh appelle "javac"/"java"/"jar" NUS en interne (pas via javaBin()) → résolvent via le
+            // PATH hérité du daemon, qui peut pointer vers un AUTRE JDK système (ex. Java 17) que l'EMBARQUÉ (21)
+            // → UnsupportedClassVersionError sur des artefacts (ex. ReframeJar.class) compilés/exécutés par des
+            // JDK différents selon le contexte. Vérifié EN JEU (Windows). On fait précéder le bin/ du JDK embarqué
+            // dans le PATH transmis à ce sous-processus → tous les outils bare résolvent vers LE MÊME JDK cohérent.
+            String jdkBin = new File(System.getProperty("java.home"), "bin").getPath();
+            String inheritedPath = System.getenv("PATH");
+            cbEnv.put("PATH", jdkBin + File.pathSeparator + (inheritedPath != null ? inheritedPath : ""));
             runStep("client-build", new String[]{bashBin(), new File(projectDir, "desktop-port/run-desktop.sh").getPath()}, cbEnv);
             java.util.Map<String,String> m = new java.util.HashMap<>();
             File manifest = new File(projectDir, "desktop-port/build/client-manifest.env");

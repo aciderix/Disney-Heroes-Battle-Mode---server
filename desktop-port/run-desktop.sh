@@ -41,8 +41,17 @@ GAMELOGIC="../libs/game-logic.jar"
 SRC_GAME="../libs/game.jar"
 if [ ! -f "$GAMELOGIC" ] || [ "$SRC_GAME" -nt "$GAMELOGIC" ]; then
   echo "[desktop] fabrication de game-logic.jar (sans org/lwjgl, sans backends bundlés) ..."
-  cp "$SRC_GAME" "$GAMELOGIC"
-  zip -q -d "$GAMELOGIC" 'org/lwjgl/*' 'com/badlogic/gdx/backends/*' >/dev/null 2>&1 || true
+  # PAS de `zip -d` (retrait d'entrées en place) : `zip` n'est PAS installé par défaut avec Git for Windows (seul
+  # `unzip` l'est) → la commande échouait SILENCIEUSEMENT (`|| true`) → org/lwjgl/** (LWJGL2 réduit embarqué par
+  # PerBlue) restait dans game-logic.jar et MASQUAIT le vrai LWJGL3 à la compilation gradle → « cannot find symbol »
+  # sur des dizaines de méthodes GL* (signatures réduites/absentes). Vérifié EN JEU (Windows).
+  # PAS d'extraction sur disque non plus (unzip puis jar cf) : ~65k petites entrées = ~130k opérations fichier →
+  # sur Windows (NTFS + antivirus temps réel scannant chaque fichier), PLUSIEURS MINUTES. StripJar.java (JDK pur,
+  # java.util.zip) filtre en UN SEUL passage streaming zip→zip (jamais de fichier individuel sur disque) : le MÊME
+  # travail en quelques secondes (vérifié : 73 Mo/~65k entrées → 7 s contre 15+ min). Compilé une fois, mis en cache.
+  SJ_CLS="../tools/reframe/classes"
+  [ -f "$SJ_CLS/StripJar.class" ] || { mkdir -p "$SJ_CLS"; javac -encoding UTF-8 -d "$SJ_CLS" ../tools/reframe/src/StripJar.java; }
+  java -cp "$SJ_CLS" StripJar "$SRC_GAME" "$GAMELOGIC" "org/lwjgl/" "com/badlogic/gdx/backends/"
 fi
 
 # --- Outils de bytecode (ASM) : réframe game-logic + re-cible spine sur l'ABI PerBlue ---
@@ -227,7 +236,12 @@ if [ -n "${DH_BUILD_ONLY:-}" ]; then
       echo "[desktop] compilateur C ($HS_CC) absent → backend jni rapide non construit ; le client utilisera unidbg (plus lent). Installez un compilateur C pour le mode rapide."
     fi
   fi
-  ABS() { (cd "$(dirname "$1")" && printf '%s/%s' "$(pwd)" "$(basename "$1")"); }
+  # `pwd` sous Git Bash/MSYS renvoie une forme POSIX ("/c/Users/...") — écrite telle quelle dans le manifeste puis
+  # lue côté JAVA (BuildManager, hors bash, aucune traduction MSYS) : `new File("/c/Users/...")` sur Windows
+  # traite "/" comme racine du LECTEUR COURANT et "c" comme un simple nom de dossier (pas une lettre de lecteur) →
+  # chemin cassé (`\c\Users\...`, sans "C:"). Vérifié EN JEU. NATIVE() (déjà définie plus haut, `cygpath -w` sous
+  # Windows) convertit en forme native AVANT d'écrire le manifeste.
+  ABS() { (cd "$(dirname "$1")" && NATIVE "$(pwd)/$(basename "$1")"); }
   { echo "RUNTIME_CP=$RUNTIME_CP"
     echo "CLASSES=$(ABS "$BUILD/classes/java/main")"
     echo "FRAMED=$(ABS "$FRAMED")"
@@ -235,7 +249,7 @@ if [ -n "${DH_BUILD_ONLY:-}" ]; then
     echo "ASSETS=$(ABS "$ASSETS")"
     echo "RESD=$(ABS "$RESD")"
     echo "SPINE_LIB=$(ABS "$SPINE_LIB")"
-    echo "HOSTSPINE=$( NB="$(cd .. && pwd)/native/build"; [ -f "$NB/$HS_LIB" ] && echo "$NB/$HS_LIB" || { [ -f "$NB/libhostspine64.so" ] && echo "$NB/libhostspine64.so" || echo ""; } )"
+    echo "HOSTSPINE=$( NB="$(cd .. && pwd)/native/build"; [ -f "$NB/$HS_LIB" ] && NATIVE "$NB/$HS_LIB" || { [ -f "$NB/libhostspine64.so" ] && NATIVE "$NB/libhostspine64.so" || echo ""; } )"
   } > "$BUILD/client-manifest.env"
   echo "[desktop] build-only : manifeste écrit ($BUILD/client-manifest.env)"
   exit 0

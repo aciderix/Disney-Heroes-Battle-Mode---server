@@ -76,8 +76,19 @@ cp "$APK" "$W/out.apk"
 cp "$W/mf/AndroidManifest.xml" "$W/AndroidManifest.xml"
 cp "$W/$GNAME" "$W/patched-$GNAME"
 cp "$W/picker.dex" "$W/classes${NEXT}.dex"
-( cd "$W" && cp "patched-$GNAME" "$GNAME" && zip -q out.apk AndroidManifest.xml "$GNAME" "classes${NEXT}.dex" \
-     && zip -qd out.apk 'META-INF/*.RSA' 'META-INF/*.SF' 'META-INF/*.MF' >/dev/null 2>&1 || true )
+cp "$W/patched-$GNAME" "$W/$GNAME"
+# PAS de `zip -q`/`zip -qd` (ajout/retrait d'entrées EN PLACE) : `zip` n'est PAS installé par défaut avec Git for
+# Windows (seul `unzip` l'est) → échouait SILENCIEUSEMENT (`|| true`) → manifeste/dex jamais injectés ET les
+# anciennes signatures restaient → APK invalide. Correctif PORTABLE (extraire → remplacer/retirer sur le système de
+# fichiers → ré-empaqueter), sans dépendre de `zip` : `unzip`+`jar` suffisent (comme ailleurs dans ce dépôt).
+APKTMP="$W/out-extract"; rm -rf "$APKTMP"; mkdir -p "$APKTMP"
+( cd "$APKTMP" && unzip -oq "$W/out.apk" )
+cp "$W/AndroidManifest.xml" "$APKTMP/AndroidManifest.xml"
+cp "$W/$GNAME" "$APKTMP/$GNAME"
+cp "$W/picker.dex" "$APKTMP/classes${NEXT}.dex"
+rm -f "$APKTMP"/META-INF/*.RSA "$APKTMP"/META-INF/*.SF "$APKTMP"/META-INF/*.MF 2>/dev/null || true
+( cd "$APKTMP" && jar cf "$W/out.apk" . )
+rm -rf "$APKTMP"
 
 # --- 5) zipalign + re-signer ---
 echo "[inj] zipalign + signature ..."
