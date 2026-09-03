@@ -1,5 +1,69 @@
 # JOURNAL — journal détaillé des modifications
 
+## 2026-09-03 (g261ter) — Chantier natif particules ENGAGÉ : blocage historique (.np v3 non certifié) LEVÉ via un oracle d'exécution unidbg (breakpoints), vérifié octet-à-octet sur un vrai fichier
+
+Suite de g261bis (conclusion : seul un portage natif x86 peut réduire le coût `unidbg` en combat,
+même levier que spine g257 ×385). Utilisateur a validé ce chantier (« vas-y, sois méthodique, privilégie
+les approches automatisées plutôt que les réécritures manuelles, par incréments, tests, et non
+régression »). Point de blocage historique documenté (`desktop-port/NP_FORMAT.md`, `native/NATIVE_PLAN.md`) :
+le format binaire `.np` v3 n'a jamais été certifié (2 tentatives de reconstruction MANUELLE du
+désassemblage de `ParticleEmitter::load` → **0/535 EOF-exact** les deux fois, l'ordre exact des ~30 champs
+par emitter restait incertain) — bloquant tout portage C fidèle (§4 interdit d'inventer l'ordre).
+
+**Méthode retenue (automatisée, zéro lecture manuelle du désassemblage complet)** : `qemu` (l'oracle
+d'exécution prévu à l'origine) indisponible sur cette machine Windows → **unidbg comme oracle** (même
+principe validé pour spine cette session). Découverte clé : l'API unidbg expose de VRAIS breakpoints
+(`com.github.unidbg.debugger.Debugger.addBreakPoint(Module, offset, BreakPointCallback)`, confirmé par
+inspection du jar `unidbg-api-0.9.8`). Au lieu de reconstruire À LA MAIN la séquence complète d'appels de
+`ParticleEmitter::load` (2132 octets, source des 2 échecs précédents), on pose des breakpoints sur les 2
+SEULES primitives de lecture atomiques du fichier — dont la convention de registres a été confirmée par
+un désassemblage CIBLÉ de quelques instructions seulement (`native/tools/disasm.py`, corrigé pour
+fonctionner sous Windows — le calcul du chemin du `.so` de référence supposait des `/` Unix) :
+- `read4` (int/float 4o BE) @ `0x1a770` : `r0` = adresse de la variable locale « curseur » ; `*r0` avant
+  l'appel = position de lecture courante dans le buffer `.np`.
+- `readByte` (bool 1o) @ `0x1a0d4` : même convention (r0 pointe vers la paire curseur/longueur adjacente).
+
+À chaque hit, on lit `*r0` : ça donne TYPE (int vs bool, selon quelle adresse a déclenché le hit),
+POSITION FICHIER exacte et VALEUR — **sans avoir besoin de comprendre `readRanged`/`readScaled`/
+`readGradient` en interne** (compositions transparentes des 2 primitives). Outil : nouveau
+`native/unidbg/NpFormatOracle.java`.
+
+**Calibration + vérification** : 1 bug trouvé et corrigé pendant la mise au point (les valeurs lues
+apparaissaient octet-inversées — le hook tire AVANT le `rev` de la fonction native, donc les 4 octets
+sont encore en ordre fichier BE au moment du hit → `Integer.reverseBytes()` ajouté). Puis un décalage
+constant de 2 octets détecté par RECOUPEMENT DIRECT contre les vrais octets du fichier (`arena_promote.np`,
+1056 o) : les 2 premiers octets (magie `0x00`+version `0x03`) sont consommés par un test direct
+`data[0]==0&&data[1]==3`, PAS via les primitives hookées → le 1ᵉʳ hit observé correspond en réalité à
+l'octet fichier 2, pas 0. Après ces 2 corrections, **chaque valeur observée dans l'émulation correspond
+EXACTEMENT à la valeur lue directement dans le fichier réel à l'offset annoncé** (vérifié octet-à-octet).
+
+**Premier décodage certifié** (emitter #0 de `arena_promote.np`) :
+```
+off=2  emitterCount=1
+off=6  minParticleCount=1        (struct 0x7c0)
+off=10 maxParticleCount=4        (struct 0x7c4)
+off=14 delay    = readRanged(0x3d8) : active=0, min=0.0, max=0.0, linked=0   (10 o EXACT, 14..24)
+off=24 duration = readRanged(0x410) : active=1, min=1500.0, max=1500.0, linked=0 (10 o EXACT, 24..34)
+```
+Confirme EXACTEMENT l'ordre déjà pressenti par le désassemblage statique partiel (`read4×2` puis
+`readRanged×2`), mais cette fois **certifié par exécution réelle** (méthode fiable) au lieu d'une lecture
+d'assembleur risquant l'erreur d'attribution (source des échecs précédents) — et les valeurs sont
+sémantiquement cohérentes (effet à durée fixe 1,5 s, sans délai). 276 hits capturés au total pour ce
+fichier (1 emitter) ; le trailer (poolSize/tagLen/pool de floats/nom de région, ~259 o restants) est
+copié en bloc (`memcpy`, invisible aux 2 primitives) — pas encore décodé.
+
+**Portée restante (chantier substantiel, PAS terminé cette session)** : décoder la suite de la séquence
+(readScaled/readNumeric/readGradient/readSpawnShape, mêmes primitives donc même méthode) ; rejouer
+l'oracle sur les 535 `.np` réels pour certifier 535/535 EOF-exact ; décoder le trailer ; écrire
+`cparticle_jni.c` (parsing + simulation portée de `com.badlogic.gdx...ParticleEmitter` EN CLAIR dans
+`game.jar` + rendu 2-couleurs), validé en continu contre CET oracle ; câblage build+Java (miroir exact du
+routage `cspine.Native`→`HostSpine`) ; certification différentielle en combat réel. Le blocage qui
+empêchait de commencer ce chantier (format non certifiable sans deviner) est LEVÉ — la suite est du
+travail mécanique répétitif (même méthode, appliquée à plus de champs/fichiers), pas une inconnue.
+
+Fichiers : `native/tools/disasm.py` (fix chemin Windows), `native/unidbg/NpFormatOracle.java` (NEW,
+outil d'extraction committé pour rejouer/étendre), `desktop-port/NP_FORMAT.md` (résultat documenté).
+
 ## 2026-09-03 (g261bis) — Fix marginal `copyFloats` gardé (correct, zéro risque) mais AUCUN effet mesuré + ventilation par signature : 100% du coût unidbg = interprétation ARM elle-même, pas de la plomberie JNI
 
 Suite immédiate de g261. Piste CPU secondaire flaguée par l'agent tiers (`effectGetVertices` copiait

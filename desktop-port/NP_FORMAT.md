@@ -85,4 +85,75 @@ readBool ×4,                           # attached/continuous/aligned/behind
 3. Une fois l'ordre CERTIFIÉ (535/535), implémenter `cparticle_jni.c` `Effect_create` fidèle,
    puis la simulation (via `ParticleEmitter.update` clair = comportement identique à `updateParticles`)
    et le rendu 2-couleurs (`getTwoColorSprite`), validés contre l'oracle.
+
+## ⭐ RÉSOLU (2026-09-03, g261ter) — Oracle d'exécution via unidbg (pivot qemu→unidbg, §4/§8)
+
+qemu indisponible sur cette machine Windows (déjà noté ailleurs, cf. MEMORY §7 pivot historique) →
+**unidbg sert d'oracle** à la place (même principe : exécuter le VRAI binaire ARM, lire ce qu'il fait
+réellement, zéro supposition). Outil : `native/unidbg/NpFormatOracle.java`.
+
+**Méthode (bien plus directe que la reconstruction manuelle du désassemblage complet, qui avait donné
+0/535 deux fois)** : au lieu de lire à la main les ~2132 octets de `ParticleEmitter::load` et
+reconstituer la séquence d'appels (source d'erreur), on pose des **BREAKPOINTS unidbg**
+(`Emulator.attach().addBreakPoint(Module, offset, callback)`, API réelle d'unidbg — `com.github.unidbg
+.debugger.Debugger`) sur les 2 SEULES primitives atomiques de lecture, dont la sémantique de registres a
+été confirmée par désassemblage CIBLÉ (quelques instructions, haute confiance, pas la fonction entière) :
+- **`read4`** (int/float 4o BE) @ `0x1a770` : `ldr r2,[r0]; ldr r3,[r2],#4; str r2,[r0]; ldr r0,[r1]; subs
+  r0,#4; str r0,[r1]; rev r0,r3; bx lr`. **r0 = adresse de la variable locale "curseur"** (`uint8_t*
+  data`, dans la pile de l'appelant) ; `*r0` **avant** l'appel = position courante dans le buffer.
+- **`readByte`** (bool, 1o) @ `0x1a0d4` : même convention, `r0` pointe vers la paire adjacente
+  `{data, len}` (mêmes variables locales, accès en un seul pointeur au lieu de deux arguments séparés).
+
+Dans les DEUX cas, il suffit de lire `*r0` À CHAQUE hit (dans l'ordre d'exécution réel, capturé par
+unidbg) pour obtenir : (a) le TYPE de lecture (int/float 4o vs bool 1o, selon quelle adresse a déclenché
+le hit), (b) la POSITION FICHIER exacte lue (offset relatif au tout premier hit), (c) la VALEUR lue —
+**sans avoir besoin de comprendre `readRanged`/`readScaled`/`readGradient` en interne** (ce sont des
+compositions des 2 primitives atomiques, transparentes pour cette méthode).
+
+**Calibration vérifiée par recoupement direct contre les octets du fichier réel** (`arena_promote.np`,
+1056 o) : les 2 premiers octets (magie `0x00`+version `0x03`) sont consommés par un test direct
+`data[0]==0 && data[1]==3` dans `ParticleEffect::load`, **PAS** via `read4`/`readByte` → le 1ᵉʳ hit
+observé (à `*r0` = début du curseur suivi par l'oracle) correspond en réalité à l'octet fichier **2**
+(pas 0) → correction `-2` appliquée. Après correction, **chaque valeur observée dans l'émulation
+correspond EXACTEMENT à la valeur lue directement dans le fichier réel à l'offset annoncé** (vérifié
+octet-à-octet sur les 24 premiers hits + spot-checks plus loin dans le fichier).
+
+**Premier décodage certifié** (`arena_promote.np`, emitter #0) :
+```
+off=2  int=1         emitterCount (lu par ParticleEffect::load, PAS dans l'emitter)
+off=6  int=1         minParticleCount  (struct 0x7c0)
+off=10 int=4         maxParticleCount  (struct 0x7c4)
+off=14 bool=0        delay.active      ┐
+off=15 int=0.0       delay.lowMin      │ readRanged(0x3d8) = 10 o EXACT (14..24)
+off=19 int=0.0       delay.lowMax      │
+off=23 bool=0        delay.lowUsesLinkedRange ┘
+off=24 bool=1        duration.active   ┐
+off=25 int=1500.0    duration.lowMin   │ readRanged(0x410) = 10 o EXACT (24..34)
+off=29 int=1500.0    duration.lowMax   │
+off=33 bool=0        duration.lowUsesLinkedRange ┘
+```
+**Confirme EXACTEMENT** l'ordre déjà pressenti par le désassemblage statique partiel de
+`NATIVE_PLAN.md`/§Séquence ci-dessus (`read4×2` puis `readRanged×2` = delay, duration) — mais cette fois
+**certifié par exécution réelle + valeurs sémantiquement cohérentes** (effet à durée fixe 1.5s, sans
+délai), pas une lecture d'assembleur risquant l'erreur d'attribution.
+
+**276 hits capturés au total pour ce fichier** (1 emitter, 1056 o) ; reste après le dernier hit scalaire
+(off=797) = 259 o = bloc trailer (`poolSize`, `atlasTagLen`, pool de floats, nom de région) copié en
+bloc (`memcpy`, invisible aux 2 primitives — cohérent avec la doc existante) — **pas encore décodé
+(prochaine étape)**.
+
+**Portée de ce qui reste** (chantier substantiel, non traité dans cet incrément) :
+1. Décoder méthodiquement la SUITE de la séquence (les ~240 hits restants de ce fichier) pour couvrir
+   tous les types de champs (`readScaled`, `readNumeric`, `readGradient`, `readSpawnShape`) — même
+   méthode, juste plus de lignes à corréler.
+2. Rejouer l'oracle sur les 535 `.np` réels (le script `NpFormatOracle` accepte n'importe quel fichier)
+   pour CERTIFIER l'ordre sur l'ensemble (535/535, critère déjà posé plus haut) — détecte aussi les
+   variations optionnelles (ex. `readSpawnShape` a une taille variable selon `code`).
+3. Décoder le bloc trailer (poolSize/tagLen/pool/tag) — format déjà connu structurellement, à vérifier.
+4. Une fois 535/535 certifié : écrire `cparticle_jni.c::Effect_create` fidèle (parsing), la simulation
+   (`updateParticles`, portée depuis `com.badlogic.gdx...ParticleEmitter` EN CLAIR dans `game.jar`,
+   comportement identique par construction) et le rendu 2-couleurs (`getTCVertices`), le tout validé
+   par diff continu contre CE MÊME oracle (comme `CompareBackend` pour spine).
+5. Câblage build (`native/build-hostspine.sh`/`-win.sh`) + routage Java (`cparticle.Native` → natif,
+   miroir de `cspine.Native`→`HostSpine`) + certification différentielle en combat réel.
 ```

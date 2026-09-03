@@ -16,7 +16,8 @@ import sys
 from elftools.elf.elffile import ELFFile
 from capstone import Cs, CS_ARCH_ARM, CS_MODE_THUMB
 
-SO = __file__.rsplit('/', 2)[0] + '/reference/libspine-native.so'
+import os
+SO = os.path.join(os.path.dirname(os.path.dirname(os.path.abspath(__file__))), 'reference', 'libspine-native.so')
 
 
 def load():
