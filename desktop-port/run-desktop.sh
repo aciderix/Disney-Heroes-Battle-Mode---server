@@ -92,6 +92,24 @@ if [ ! -f "$GDXAUDIO" ]; then
   ( cd "$BUILD/gdxaudio" && unzip -oq "../gdx-backend-lwjgl3-1.9.7.jar" 'com/badlogic/gdx/backends/lwjgl3/audio/*' )
   jar cf "$GDXAUDIO" -C "$BUILD/gdxaudio" . \
     || { echo "[desktop] ✖ empaquetage gdx-lwjgl3-audio.jar"; exit 1; }
+  # PATCH bytecode NON-SÉMANTIQUE, 2 passages (§1/§2, même patron que ReframeJar) : PerBlue a
+  # RÉDUIT le cœur libGDX du jeu (game-logic.jar, qui OMBRAGE ce jar sur le classpath, même nom
+  # pleinement qualifié com.badlogic.gdx.utils.*) → NoSuchMethodError EN JEU sur le premier appel
+  # exercé (OpenALMusic.play, musique de combat — vérifié EN JEU Windows, g255 ; g245 n'avait
+  # vérifié que le SON, pas la MUSIQUE). 1) PatchGdxCalls (déjà dans ce dépôt, commit ae68be6) :
+  # réconcilie GÉNÉRIQUEMENT toute divergence de SIGNATURE (ex. Array.add renvoie boolean chez
+  # PerBlue, void en stock) en indexant les VRAIES signatures depuis game-logic.jar. 2) PatchGdxAudio
+  # (complément ÉTROIT et explicite) : neutralise le seul appel vers une méthode ABSENTE du jeu
+  # (FloatArray.insert) — PAS un no-op générique (dangereux pour les méthodes héritées légitimes).
+  echo "[desktop] correction bytecode gdx-lwjgl3-audio.jar (compat cœur libGDX réduit du jeu) ..."
+  PATCHGDX_CLS="../tools/reframe/classes"
+  [ -f "$PATCHGDX_CLS/PatchGdxCalls.class" ] || javac -encoding UTF-8 -cp "$ASM" -d "$PATCHGDX_CLS" ../tools/reframe/src/PatchGdxCalls.java
+  [ -f "$PATCHGDX_CLS/dhbackend/audiocompat/FloatArrayCompat.class" ] || javac -encoding UTF-8 -d "$PATCHGDX_CLS" ../tools/reframe/src/FloatArrayCompat.java
+  [ -f "$PATCHGDX_CLS/PatchGdxAudio.class" ] || javac -encoding UTF-8 -cp "$ASM$PSEP$PATCHGDX_CLS" -d "$PATCHGDX_CLS" ../tools/reframe/src/PatchGdxAudio.java
+  java -cp "$PATCHGDX_CLS$PSEP$ASM" PatchGdxCalls "$GAMELOGIC" "$GDXAUDIO" "$BUILD/gdx-lwjgl3-audio-p1.jar" \
+    && java -cp "$PATCHGDX_CLS$PSEP$ASM" PatchGdxAudio "$BUILD/gdx-lwjgl3-audio-p1.jar" "$BUILD/gdx-lwjgl3-audio-p2.jar" \
+    && mv -f "$BUILD/gdx-lwjgl3-audio-p2.jar" "$GDXAUDIO" \
+    || { echo "[desktop] ✖ patch gdx-lwjgl3-audio.jar"; exit 1; }
 fi
 
 echo "[desktop] compilation ..."
