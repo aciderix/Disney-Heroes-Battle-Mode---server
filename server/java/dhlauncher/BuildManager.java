@@ -696,9 +696,15 @@ public final class BuildManager {
       // natives-desktop embarque les DEUX sous leur nom natif, run-desktop.sh extrait le bon par OS, g255).
       + "if exist \"%DIR%native\\gdx64.dll\" set JOPTS=%JOPTS% -Ddh.gdxnative=\"%DIR%native\\gdx64.dll\"\r\n"
       + "if exist \"%DIR%native\\libhostspine64.dll\" set JOPTS=%JOPTS% -Ddh.spinebackend=jni -Ddh.hostspine=\"%DIR%native\\libhostspine64.dll\"\r\n"
+      // Bug g256 : PlayManager.java pose DH_USERID en variable d'env (identité du compte choisi dans l'onglet
+      // Compte) mais ce script ne la lisait jamais — « Jouer » bootait TOUJOURS en anonyme, quel que soit le
+      // compte créé. RUN_SH_CLIENT (Linux) la lit déjà (DH_USERID/DH_FRAMES/DH_SHOT) — parité rétablie ici.
+      + "if not \"%DH_USERID%\"==\"\" set JOPTS=%JOPTS% -Ddh.userid=%DH_USERID%\r\n"
+      + "if not \"%DH_FRAMES%\"==\"\" set JOPTS=%JOPTS% -Ddh.frames=%DH_FRAMES%\r\n"
+      + "if not \"%DH_SHOT%\"==\"\" set JOPTS=%JOPTS% -Ddh.shot=\"%DH_SHOT%\"\r\n"
       // FENÊTRE VISIBLE (la fenêtre est créée invisible par défaut, orienté capture headless) — sans ça le joueur Windows
-      // voit la console s'ouvrir mais aucune fenêtre de jeu.
-      + "set JOPTS=%JOPTS% -Ddh.visible=1\r\n"
+      // voit la console s'ouvrir mais aucune fenêtre de jeu. Sauf en mode capture (DH_SHOT posé), comme RUN_SH_CLIENT.
+      + "if \"%DH_SHOT%\"==\"\" set JOPTS=%JOPTS% -Ddh.visible=1\r\n"
       + "\"%JAVA%\" %JOPTS% -cp \"%CP%\" dhdesktop.DesktopLauncher %*\r\n";
 
     private static final String RUN_BAT =
