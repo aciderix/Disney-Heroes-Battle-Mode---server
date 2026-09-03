@@ -1,5 +1,48 @@
 # JOURNAL — journal détaillé des modifications
 
+## 2026-09-03 (g262bis) — Piste de mapping sémantique affinée : `readRanged`/`readScaled` exposent leur pointeur de destination (offset struct) directement au registre d'entrée + 3 champs déjà déterminés par élimination de type
+
+Suite immédiate de g262 (blocage : mapping position certifiée → nom sémantique, désassemblage
+d'`activateParticles` jugé trop risqué car code optimisé/vectorisé). Piste retenue explorée un cran plus
+loin : désassemblage CIBLÉ (pas exhaustif) de `readRanged`(0x19fd0)/`readScaled`(0x1a020) elles-mêmes
+(code séquentiel simple, PAS optimisé/vectorisé — contrairement à `activateParticles`).
+
+**Confirmé** : `readRanged(r0=curseurDonnées, r1=DESTINATION, r2=&restant)` — `r1` est le pointeur vers
+l'OBJET RangedNumericValue/ScaledNumericValue DANS LA STRUCT EMITTER, passé tel quel par l'appelant
+(`ParticleEmitter::load`). `readScaled` DÉLÈGUE ses 10 premiers octets ("low") à `readRanged` en lui
+passant le MÊME `r1` (sous-objet à l'offset 0 de la struct Scaled) puis écrit `highMin`/`highMax`/
+`relative`/`highUsesLinkedRange`/`timelineOffB`/`timelineOffA`/`timelineN` à des offsets fixes
+(`r8+0x1c/0x20/0x25/0x24/0x18/0x14/0x10` relevés) — layout NATIF interne, sans rapport avec l'ordre de
+lecture FICHIER (déjà certifié, pas remis en cause) ni avec le layout de `NpScaled` (notre propre struct
+C, libre). **⇒ Piste viable pour la suite** : hooker l'ENTRÉE de `readRanged`/`readScaled` (au lieu des
+primitives `read4`/`readByte` déjà hookées) donne DIRECTEMENT le pointeur destination (donc l'offset
+struct, une fois soustrait la base de l'emitter) pour CHAQUE occurrence — à coupler avec la position de
+séquence déjà certifiée (g261quater) pour obtenir « position N → offset struct » sans avoir à toucher au
+code optimisé de simulation.
+
+**3 champs déjà déterminés PAR ÉLIMINATION DE TYPE (zéro désassemblage nécessaire)** : la classe
+`ParticleEmitter` ne déclare qu'**un seul** champ de chaque type `NumericValue` (`zToYMultiplierValue`),
+`GradientColorValue` (`tintValue`) et `SpawnShapeValue` (`spawnShapeValue`) — donc `numeric0`→
+`zToYMultiplierValue`, `tint`→`tintValue`, `spawnShape`→`spawnShapeValue` sont CERTAINS sans mapping
+d'offset (déjà utilisés tels quels dans `np_parser.h`, juste pas encore renommés).
+
+**Découverte importante (freine une hypothèse simpliste)** : la classe déclare **7** champs
+`RangedNumericValue` (`delay`, `duration`, `centripetalRadius`, `tangentialRadius`, `xOffset`,
+`yOffset`, `zOffset`) mais la séquence certifiée d'`arena_promote.np` n'en contient que **4** (`delay`,
+`duration` + 2 dans le bloc `rangedC`). Cohérent avec la note déjà posée dans `NP_FORMAT.md`
+(« le writer courant a évolué : ajout `velocityZ`, `zOffset`, `tangential*`, `centripetal*`
+absents/différents en v3 ») — **hypothèse à vérifier empiriquement** (pas encore fait) : le format v3
+pourrait tout simplement ne PAS sérialiser certains champs ajoutés depuis (auquel cas leur valeur runtime
+par défaut serait 0/inactif pour tout `.np` v3, pas une valeur à deviner — cohérent avec `ParticleValue`
+ayant un flag `active` par défaut faux). À confirmer sur plusieurs fichiers `.np` réputés utiliser ces
+effets (recherche de noms comme `*swirl*`/`*vortex*`/`*orbit*` dans les assets, ou inspection visuelle)
+avant d'écrire quoi que ce soit — **pas fait cette session, aucun code écrit sur cette base**.
+
+**Bilan** : piste concrète et outillable pour lever le blocage de g262 (extension de `NpFormatOracle`
+avec des hooks sur `readRanged`/`readScaled`, immédiatement réalisable avec l'infrastructure existante),
+mais NON mise en œuvre cette session (profondeur atteinte suffisante pour un point d'arrêt net). Aucun
+fichier de code committé cet incrément — uniquement de la reconnaissance/désassemblage documentée.
+
 ## 2026-09-03 (g262) — Simulation particules : algorithme de physique confirmé par bytecode, MAIS bloqué sur le mapping sémantique des champs (obstacle réel, pas de code non-vérifié committé)
 
 Suite de g261quinquies (parseur `.np` écrit + vérifié 535/535). Décision util. confirmée : porter depuis
