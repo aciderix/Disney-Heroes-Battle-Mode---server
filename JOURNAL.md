@@ -1,5 +1,52 @@
 # JOURNAL — journal détaillé des modifications
 
+## 2026-09-03 (g259) — Investigation demandée : les 2 divergences résiduelles (`getBoneID`, `setSlotEyeState`) — l'une est une FAUSSE ALERTE, l'autre reste un gap réel non résolu
+
+Suite de g258. Aucun code changé — investigation par oracle uniquement (méthode `unidbg` déjà maîtrisée pour
+le fix #1, réutilisée ici pour 2 questions ciblées).
+
+**`SkeletonData_getBoneID` — FAUSSE ALERTE, aucun fix nécessaire.** Hypothèse initiale (convention d'ID
+1-based côté oracle, 0-based côté candidat, comme pour `getAnimationID`) **confirmée par 5/5 tests directs
+sur l'oracle** (`root`→1, `movement`→2, `cog`→3, `hit_location_bone`→52, nom bidon→0 ; tous exactement
+`index_0_based + 1`). Mais **vérification bout-en-bout AVANT tout changement de code** : `getBoneID(name)`
+alimente `getRawBoneLocation(int)` → `getBoneTransform(int)` **sans AUCUN ajustement** côté Java (confirmé
+par lecture bytecode de `SpineRenderable`/`UnitRenderable`, 23 sites d'appel recensés). Test direct
+comparant la position finale du bone `movement` de `buzz_lightyear` : **oracle** `getBoneTransform(id=2)`
+→ `worldX=31.1359 worldY=411.4398` ; **HOSTSPINE** (notre .dll x86, appelé directement, PAS unidbg)
+`getBoneTransform(id=1)` → **worldX=31.1359 worldY=411.4398 — IDENTIQUE**. Les deux chaînes, malgré des
+conventions d'ID différentes en interne, produisent le MÊME résultat final car `getBoneID` ET
+`getBoneTransform` sont chacun cohérents avec eux-mêmes côté candidat (tous deux 0-based). **Corriger
+`getBoneID` seul (pour matcher l'ID brut de l'oracle) sans aussi ajuster `getBoneTransform` aurait
+introduit un VRAI bug de décalage d'un cran, qui n'existe pas aujourd'hui.** Le diff « 199/199 » remonté
+par `CompareBackend` est donc un artefact de comparaison de valeurs brutes sans signification
+fonctionnelle — aucun changement de code n'est fait ni recommandé ici.
+
+**`Skeleton_setSlotEyeState` — gap réel confirmé, mais IMPACT VISUEL NON DÉMONTRÉ à ce jour.**
+`native/src/cspine_jni.c` l'implémente en stub pur (`return JNI_FALSE`, commentaire d'origine : « extension
+PerBlue — à confirmer sur la lib ARM »). Contexte d'usage retrouvé (bytecode `SpineRenderable.updateSlotTags()`,
+23 sites d'appel identiques dans out le jeu) : contrôle un rendu d'yeux spécial pour les variantes
+`crystalTreatment` (statut « cristallisé ») et `enemyHeroTreatment` (variante ennemie d'un héros) —
+`specialSlots` encode des paires [slot, state]. **Testé sur l'oracle** (buzz_lightyear, les 4 slots
+`eyeball-b/f`/`eyebrow-b/f`, états 0 à 3) : l'oracle retourne bien `true` pour tous (cohérent avec le diff
+CompareBackend `u=true`), **mais AUCUN changement observable dans `getVertices()` pour aucun état testé**
+— soit ce héros n'a pas de variante d'œil alternative authored (l'appel « réussit » mais n'a rien à
+échanger), soit l'effet passe par un canal non capturé par `getVertices` seul. Sans un héros/situation où
+l'effet est OBSERVABLE, impossible de déterminer l'implémentation correcte sans deviner (§2/§4 l'interdit).
+**Reste ouvert** : le stub actuel retourne `false` au lieu de `true` (écart de valeur de retour connu) mais
+aucun symptôme visuel n'a pu être établi sur le cas testé — pas assez de matière pour un fix fondé sur des
+faits. Prochaine piste si repris : trouver un héros/skin avec un statut cristal/ennemi réellement doté
+d'attachments d'yeux alternatifs (probablement listable via les fichiers de skin des .skel), refaire ce même
+test dessus.
+
+**FPS combat (re-creusé sur demande)** : aucune piste supplémentaire non-destructive identifiée au-delà de
+g258 (`dynarmic` déjà écarté, crash confirmé sur le code particules). Pas de nouvelle piste concrète cette
+fois — même conclusion que g258, redite ici car explicitement redemandée.
+
+Outils de sondage `native/unidbg/BoneProbe.java`/`HostSpineProbe.java`/`EyeStateProbe.java` utilisés puis
+retirés (investigation ponctuelle, pas des outils réutilisables committés — mécanique documentée ici si
+besoin de refaire le même genre de test plus tard : cabler `GetDirectBufferAddress`/`Capacity` [230/231]
+comme `UnidbgVM.java`, allouer via `memory.malloc` + `newObject` sur `java/nio/FloatBuffer`/`ShortBuffer`).
+
 ## 2026-09-03 (g258) — Fix #2 (FPS particules) : archi existante VÉRIFIÉE correcte, dynarmic (JIT) testé et écarté — pas de code changé
 
 Suite de g257 (3 fixes traités : #3 DH_USERID, #4 merge_release.sh, #1 CRITIQUE spine jni). Dernier point du
