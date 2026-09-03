@@ -1,5 +1,64 @@
 # JOURNAL — journal détaillé des modifications
 
+## 2026-09-04 (g264-ÉTAT) — CHANTIER PORTAGE NATIF PARTICULES : état complet + reprise (à lire par le successeur)
+
+**But** : remplacer l'émulation unidbg des particules (goulot FPS combat, cf. g261) par un moteur natif
+x86 FIDÈLE (même levier que spine g257, ×385). Le blocage historique (format `.np` v3) est LEVÉ.
+
+**Méthode de vérification (LA clé, réutilisable)** : harnais différentiel `np_certify` — compare la sortie
+de la sim C aux « goldens » (sommets rendus capturés de l'oracle unidbg = le VRAI binaire ARM). Un mapping
+faux = diff LOCALISÉ (frame/sommet/composante). Commandes :
+```
+# 1) golden (référence oracle) pour un .np :
+cd native/unidbg && CP=$(cat build/runtime.cp) && CPW=$(cygpath -wp "$CP")
+javac -cp "$CPW" NpFormatOracle.java
+java -Xverify:none -cp "$CPW;." NpFormatOracle ../reference/libspine-native.so golden <np> <atlas> goldens/x.golden 30 100
+# 2) sim C + certif :
+gcc -O2 -o native/tools/np_certify.exe native/tools/np_certify.c native/src/np_parser.c native/src/np_sim.c -Inative/src -lm
+./native/tools/np_certify.exe native/unidbg/goldens/x.golden <np>
+```
+Outils oracle (`NpFormatOracle`, `native/unidbg/`) : `verify` (format 535/535), `map` (offset struct↔offset
+fichier de chaque champ), `trace`/`disasm.py trace` (désassemblage par exécution réelle), `golden`/
+`goldenall`, `rngprobe` (RNG), `activorder` (ordre de traitement des champs), `vertextest`/`batchtest`/
+`batchval` (patch + diff sommets). `PATH` gcc : `/c/Users/fromt/scoop/apps/gcc/15.2.0/bin`.
+
+**FAIT & VÉRIFIÉ** :
+- Format `.np` v3 CERTIFIÉ 535/535 (2 méthodes indépendantes). Parseur C `native/src/np_parser.c` OK.
+- RNG native BIT-EXACTE (g264) : **seed=1** au départ, `seed = seed*16807u` (32-bit), float =
+  `bitcast((seed&0x7fffff)|0x3f800000)-1.0f`. Seed global unidbg @ module offset 0x49004.
+- **`native/src/np_sim.c`/`.h` (NEW) : moteur de sim** — port de `ParticleEmitter.update()` MULTI-ÉMETTEUR
+  (ralph_skill1_impact = 12 émetteurs, min=max=1, delays échelonnés). **COMPTES de particules CERTIFIÉS
+  EXACTS sur 30 frames** (36,36,36,12,4,0…) → logique temporelle (delay/duration/emission/minParticleCount/
+  vie/mort) FIDÈLE. `np_certify` branché dessus.
+- Mapping champs : structOffsets connus (via `map`, fixes 535/535). velocity=0x110=scaledB[4] CONFIRMÉ +
+  traité EN PREMIER par activateParticles (activorder). emission=scaledA[0]/life=scaledA[1] = hypothèses
+  VALIDÉES par le compte exact. Layout slots parseur (ordre fichier)→structOff dans l'en-tête de np_sim.c.
+
+**RESTE (positions/couleurs/uv — diff localisé par np_certify)** :
+- Sommets = 4 par particule (quad tourné). Format golden confirmé : v0..v3 = 1 quad, uv (atlas), light/dark
+  (couleurs empaquetées ABGR : light=0xffffffff opaque/teinté, dark=0x00000000), x/y = coins tournés.
+- Position x/y (SANS atlas) : `activateParticle` (spawn = x+xOffset+spawnShape[point=code0], size via
+  sizeXValue, rotation, angle, velocity) + `updateParticle` physique (velocity le long de l'angle, wind→vx,
+  gravity→vy, tangential/centripetal/brownian) + géométrie du quad (centre ± size/2 tourné ; drawnWidth =
+  sizeXValue, donc PAS besoin de la largeur du sprite pour x/y). **⚠️ L'ORDRE RNG doit être EXACT** :
+  activateParticle tire 1 random partagé (`linked`) au début, puis chaque champ ACTIF non-linké tire un
+  random en newLow ET newHigh, dans l'ordre JAVA (velocity, velocityZ, angle, sizeX, sizeY, rotation, wind,
+  gravity, tangential, centripetal, brownian, transparency, puis xOffset/yOffset). Le mapping des champs
+  restants (velocityZ/angle/sizeX/sizeY/rotation/wind/gravity/tangential/centripetal/brownian/transparency/
+  xOffset/yOffset) est À CONFIRMER par np_certify (position diverge si faux). `activorder` donne l'ordre
+  des Scaled ACTIFS par émetteur.
+- Couleurs light/dark : tintValue(getColor gradient) × transparencyValue, empaquetage ABGR (cf.
+  packColor de cspine_jni.c pour le format exact).
+- UV : nécessite de parser l'atlas (`.atlas`) pour la région nommée par `atlasTag` (ex. "SmokePuff").
+- Puis : `goldenall` sur les 535 → régression « N/535 PASS » ; `cparticle_jni.c` (remplacer le stub par
+  np_parse+np_sim+rendu) ; extension build (`native/build-hostspine.sh`/`-win.sh` compilent aussi np_*.c) ;
+  routage Java `cparticle.Native`→natif (miroir `cspine.Native`→HostSpine) ; certif en combat + FPS.
+
+**RÈGLES** (rappel, PRINCIPLES §1-8) : §1 modifs minimales du jeu ; §2 pas de rustine (shim RÉEL ou
+documenté) ; §3 serveur exécute le code du jeu ; §4 ne jamais inventer (extraire/vérifier) ; §7 identifiant
+de modèle jamais dans un commit ; §8 travailler sur les FAITS, vérif EN JEU obligatoire. Ici : chaque champ
+est VÉRIFIÉ (np_certify/bytecode) ou marqué HYPOTHÈSE — ne JAMAIS committer un mapping deviné comme certain.
+
 ## 2026-09-04 (g264) — RNG native ENTIÈREMENT décodée : seed initial = 1, `seed *= 16807`, float bit-exact — réplication C triviale
 
 Suite de g263 (harnais posé). Pour écrire la sim, il fallait la RNG exacte. Mode `rngprobe` ajouté à
