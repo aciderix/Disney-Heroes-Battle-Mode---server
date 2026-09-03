@@ -1,5 +1,52 @@
 # JOURNAL — journal détaillé des modifications
 
+## 2026-09-03 (g260) — Admin non fonctionnel en mode bundle CORRIGÉ + indicateur de compte clarifié + FPS particules : piste parallélisme explorée, ÉCARTÉE avec cause précise identifiée
+
+**Admin — bug réel confirmé et corrigé.** Signalé par l'utilisateur ("interface admin bien fonctionnelle").
+`/admin/monitor` renvoyait 503 (« aucun serveur hébergé ») alors qu'un serveur tournait réellement (vérifié
+`/host/status` : `running:true`). Cause exacte : `HostManager.adminBaseUrl()`/`adminToken()` renvoyaient
+`null` **explicitement en mode bundle** (commentaire d'origine : « ADMIN indisponible en mode BUNDLE pour
+l'instant… à venir ») — mode bundle = la manière dont TOUT self-hoster réel héberge (bundle généré via
+« Générer »), le mode dev (classpath courant) n'étant utilisable que depuis le dépôt source. Le panneau
+admin était donc **non fonctionnel pour la quasi-totalité des utilisateurs réels**. Or `RUN_BAT_`/`RUN_SH_`
+(templates serveur, `BuildManager.java`) relaient DÉJÀ `DH_ADMIN_BIND`/`DH_ADMIN_PORT` (`-D`) et
+`DH_ADMIN_TOKEN` (env, lu directement par `LoginServer` — jamais sur la ligne de commande, absent de `ps`,
+choix de sécurité déjà en place) — pur gap de câblage côté `HostManager.startBundle()`, qui ne générait/
+passait jamais ces 3 variables. **Fix (glue uniquement, §1, aucune ligne du script bundle touchée)** :
+même convention que le mode dev (port = authPort+1, jeton aléatoire par session), généré et injecté en env
+dans le process bundle. **Vérifié en jeu** : `/admin/monitor` 200 (au lieu de 503) avec données réelles ;
+les 5 sous-onglets (Monitoring/Ère/Joueurs/Events/Modération) fonctionnent contre le serveur réellement
+hébergé — recherche joueur réelle testée (`#1`, TL 1, 2 héros, données correctes).
+
+**Indicateur de compte ambigu dans la barre du haut — clarifié.** `Shell.tsx` affiche
+`"connecté"`/`"hors ligne"` de façon IDENTIQUE sur CHAQUE page (reflète UNIQUEMENT la session compte, jamais
+le serveur) — mais sur la page Héberger, ce point apparaît juste au-dessus du panneau « État du serveur »
+qui peut afficher « en cours » EN MÊME TEMPS, un contresens visuel direct pour un utilisateur non-technique
+(repéré et reproduit : serveur démarré, pas encore de compte → « hors ligne » tout en haut, « en cours »
+juste en dessous). Fix minimal : préfixe `"Compte : "` ajouté au libellé pour lever l'ambiguïté sans
+changer la logique. Vérifié par `tsc --noEmit` + `vite build` (l'exécutable Tauri packagé nécessiterait
+Rust/cargo pour être reconstruit — indisponible dans cet environnement — donc pas re-testé dans l'app
+packagée réelle, seulement dans le code source/build web).
+
+**FPS particules — nouvelle piste explorée sérieusement (pool de VMs unidbg en parallèle), ÉCARTÉE avec une
+cause précise identifiée (pas juste « pas trouvé »).** Mesure préalable (compteur temporaire
+`effetsVivants`/`max`, retiré après mesure) : **~150 effets particules VIVANTS simultanément** dès l'écran
+de chargement (rafale de création en une frame — `NativeParticlePoolLoader`, un pool précréé par le jeu),
+mais seulement **~5 appels unidbg/frame en régime établi** (2-3 effets réellement actifs à la fois) — un vrai
+potentiel de parallélisme SI on pouvait distribuer les effets actifs sur plusieurs cœurs. **Obstacle
+structurel identifié (pas contourné, pas de rustine tentée)** : le jeu (code non modifiable, §1) itère ses
+renderables et appelle `Effect_update`/`Effect_getVertices` de façon SÉQUENTIELLE et SYNCHRONE, un par un,
+sur le SEUL thread de rendu (confirmé par le thread-dump déjà capturé en g257 :
+`RepresentationManager.updateTransforms()` → boucle simple, aucun point de collecte par lots). Un pool de
+plusieurs VMs unidbg ne peut apporter de gain RÉEL que si on peut lancer plusieurs appels EN PARALLÈLE puis
+attendre leurs résultats ensemble — impossible sans restructurer CETTE boucle, qui est du code du jeu.
+Aucune parallélisation n'est donc atteignable sans patcher la logique du jeu (interdit, §1) ou sans un
+moteur natif réécrit qui gérerait lui-même son propre threading interne (retombe sur le chantier .np v3
+non résolu, g258/`NP_FORMAT.md`). **Conclusion honnête** : la baisse de FPS en combat reste un fait connu,
+sans solution non-destructive disponible aujourd'hui — ni `dynarmic` (g258, crash confirmé) ni le
+parallélisme multi-VM (obstacle structurel ci-dessus) ne sont viables. Rien codé, instrumentation de mesure
+retirée après usage (aucune trace laissée dans le code).
+
 ## 2026-09-03 (g259) — Investigation demandée : les 2 divergences résiduelles (`getBoneID`, `setSlotEyeState`) — l'une est une FAUSSE ALERTE, l'autre reste un gap réel non résolu
 
 Suite de g258. Aucun code changé — investigation par oracle uniquement (méthode `unidbg` déjà maîtrisée pour
