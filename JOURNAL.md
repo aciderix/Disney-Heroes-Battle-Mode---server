@@ -1,5 +1,50 @@
 # JOURNAL — journal détaillé des modifications
 
+## 2026-09-03 (g262septies) — Trace étendue à `updateParticles` (vrai per-particule) + AUTO-CORRECTION honnête : l'attribution wind/gravity par « axe pur » est AMBIGUË (donc rétrogradée en PROBABLE)
+
+Suite de g262sexies. En voulant confirmer plus de champs, j'ai découvert que je hookais la MAUVAISE
+fonction : `SYM_UPDATE_SINGLE`(0x17ef1) n'est JAMAIS appelée ; le vrai per-particule est
+`ParticleEmitter::updateParticles`(0x16589, 3428 o, symbole réel via nm). Corrigé (`NpFormatOracle`
+trace désormais `activateParticles`+`updateParticles`+`update`) → 1091 adresses tracées (vs 585).
+
+**Découverte des pointeurs de champs dans `updateParticles`** (`add rX, r5, #offset`, r5=base emitter) :
+0x110 (velocity, DÉJÀ confirmé), 0x188, 0x1d8, 0x200. Attribution rapide par vertextest :
+- 0x188 (fileOff 489) : divergence **PUREMENT horizontale** (maxDX≈18, maxDY=0).
+
+**⚠️ AUTO-CORRECTION (§8, ne pas se tromper)** : en g262sexies j'avais attribué `wind`=0x210 sur le
+critère « divergence PURE horizontale » (censé être un signal distinctif). Or 0x188 montre EXACTEMENT le
+même critère (pure horizontale) — **donc « pure horizontale » n'identifie PAS un champ de façon unique**
+(au moins 2 champs distincts n'affectent que X). **Conséquence honnête** : les attributions
+`wind`=0x210 et `gravity`=0x238 (g262sexies) sont **RÉTROGRADÉES de CONFIRMÉES à PROBABLES** — leur
+signature axe-pur est nécessaire mais PAS suffisante. Seul `velocity`=0x110 reste CERTAIN (signature
+unique : divergence croissante sur LES DEUX axes + confirmée séparément par patch de VALEUR `lowMin=5000`
+→ maxDX=1081, un signal sans équivalent). Mieux vaut documenter cette incertitude que la cacher (le
+risque exact contre lequel l'utilisateur m'a mis en garde : une attribution rushée qui semble bonne).
+
+**Décision d'ARCHITECTURE pour la suite (§2/§4, réaliste)** : l'attribution champ-par-champ par patch/
+observation atteint ses limites (signatures non-uniques, ~15 champs restants, risque d'erreur croissant).
+La voie PROPRE et AUTO-CORRECTRICE pour écrire la simulation n'est PAS de figer d'abord le nom de chaque
+offset, mais de bâtir un **harnais différentiel** (comme `CompareBackend` l'a fait pour spine, méthode
+approuvée par l'utilisateur) : écrire la sim C portant l'algorithme libGDX (déjà compris, bytecode), la
+faire tourner sur un `.np` parsé, et **comparer sommet-par-sommet sa sortie à celle de l'oracle unidbg**
+sur N frames × plusieurs fichiers ; chaque champ MAL MAPPÉ produit alors un diff LOCALISÉ qui dit
+exactement quoi corriger, et on itère jusqu'à 0 diff. C'est la SEULE méthode qui garantit la fidélité
+SANS deviner (un mapping faux ne « passe » jamais le diff). Ce harnais + la sim complète = le gros du
+chantier restant, non entamé cette session (budget) — mais la voie est claire et dé-risquée.
+
+**État committable** : amélioration réelle de l'outil (trace la BONNE fonction per-particule) + correction
+honnête d'une sur-affirmation de g262sexies. Aucun code de simulation écrit (le header partiel
+`np_particle.h` ébauché a été SUPPRIMÉ — une sim à 4 champs sur ~26 produirait des particules
+visiblement fausses, pas un remplaçant viable de l'unidbg actuel ; §2 « pas de rustine »).
+
+**Récap des faits SOLIDES du chantier particules (g261ter→g262septies)** : format `.np` v3 CERTIFIÉ
+535/535 (2 méthodes indépendantes) + parseur C `np_parser.c` vérifié 535/535 + algorithme de simulation
+COMPRIS (bytecode libGDX stock) + `velocity`=0x110 CERTAIN, `wind`/`gravity`/`duration` PROBABLES +
+outillage oracle complet (`trace`/`map`/`vertextest`/`batchtest`/`batchval`, réutilisable). **Reste**
+(gros, multi-session) : harnais différentiel C↔oracle → sim complète + rendu 2-couleurs + câblage
+JNI/build + activation. Le blocage HISTORIQUE (format non certifiable) est levé ; le reste est de
+l'ingénierie C dé-risquée, pas de l'inconnu.
+
 ## 2026-09-03 (g262sexies) — `wind`/`gravity` confirmés (signature axe-pur), attribution empirique poussée jusqu'à son plafond honnête, pivot vers l'écriture de la simulation
 
 Suite immédiate de g262quinquies. Demande util. : « on poursuit proprement jusqu'au bout ».

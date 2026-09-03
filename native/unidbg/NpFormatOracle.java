@@ -192,7 +192,7 @@ public class NpFormatOracle {
     // g262quater : symboles réels de la simulation (trouvés via nm/pyelftools sur libspine-native.so,
     // JOURNAL g262) -- adresses relatives au module (mod.base ajouté au moment du hook).
     static final long SYM_ACTIVATE_PARTICLES = 0x17331, SZ_ACTIVATE_PARTICLES = 2956;
-    static final long SYM_UPDATE_SINGLE = 0x17ef1, SZ_UPDATE_SINGLE = 1576;
+    static final long SYM_UPDATE_PARTICLES = 0x16589, SZ_UPDATE_PARTICLES = 3428; // per-particle physics (le vrai)
     static final long SYM_UPDATE = 0x1641d, SZ_UPDATE = 360;
 
     /**
@@ -209,7 +209,7 @@ public class NpFormatOracle {
         byte[] atlasBytes = Files.readAllBytes(new File(atlasPath).toPath());
         byte[] npBytes = Files.readAllBytes(new File(npPath).toPath());
         List<Long> sorted = runAndTrace(so, npBytes, atlasBytes);
-        System.out.println("trace: " + sorted.size() + " adresses uniques exécutées (activateParticles+updateSingleParticle+update)");
+        System.out.println("trace: " + sorted.size() + " adresses uniques exécutées (activateParticles+updateParticles+update)");
         try (java.io.PrintWriter pw = new java.io.PrintWriter("trace_addrs.txt")) {
             for (long a : sorted) pw.printf("0x%x%n", a);
         }
@@ -217,7 +217,7 @@ public class NpFormatOracle {
     }
 
     /** Rejoue Effect_create+start+20×update et renvoie les offsets (relatifs au module) RÉELLEMENT
-     *  exécutés dans activateParticles/updateSingleParticle/update, triés. Réutilisé par `trace` et
+     *  exécutés dans activateParticles/updateParticles/update, triés. Réutilisé par `trace` et
      *  `patchtest` (même protocole, pour que les deux runs soient comparables). */
     static List<Long> runAndTrace(String so, byte[] npBytes, byte[] atlasBytes) throws Exception {
         AndroidEmulator emu = newEmulator();
@@ -240,9 +240,9 @@ public class NpFormatOracle {
             @Override public void onAttach(com.github.unidbg.arm.backend.UnHook u) {}
             @Override public void detach() {}
         };
-        long a1 = base + (SYM_ACTIVATE_PARTICLES & ~1L), a2 = base + (SYM_UPDATE_SINGLE & ~1L), a3 = base + (SYM_UPDATE & ~1L);
+        long a1 = base + (SYM_ACTIVATE_PARTICLES & ~1L), a2 = base + (SYM_UPDATE_PARTICLES & ~1L), a3 = base + (SYM_UPDATE & ~1L);
         backend.hook_add_new(hook, a1, a1 + SZ_ACTIVATE_PARTICLES, null);
-        backend.hook_add_new(hook, a2, a2 + SZ_UPDATE_SINGLE, null);
+        backend.hook_add_new(hook, a2, a2 + SZ_UPDATE_PARTICLES, null);
         backend.hook_add_new(hook, a3, a3 + SZ_UPDATE, null);
 
         cPart.callStaticJniMethod(emu, "Effect_start(I)V", effH);
