@@ -32,6 +32,18 @@ mouvement vertical (O[6]=(0,181)) vient probablement de velocityZ mal assigné/m
 numeric0 — vérifier sa valeur et le signe) ; (c) une composante physique manquante (tangential/centripetal
 autour du point d'émission). Outils debug : `NP_DBG_RNG`, `NP_DBG_CENTERS`, `NP_DBG_PHYS` (dans np_sim.c).
 
+**DONNÉES CONCRÈTES pour reprise** (`NP_DBG_START=1`, ralph émetteur 3, `highMax` des champs, `*`=actif) :
+`scaledA hi: 1* 400* 0 0* 0* 0` ; `scaledB hi: 0* 0* -200* 100* 100* 0 -180* 8* -300* 0 0 0` ; `scaledD=1`.
+Donc BEAUCOUP de champs actifs que mon mapping n'utilise PAS : scaledB[2]=0x98=-200, scaledB[3]=0xc0=100,
+scaledB[7]=0xe8=8 (fields AVANT velocity en offset, ordre Java : probablement emission/life/lifeOffset/
+spawnWidth/spawnHeight). Et scaledB[8]=0x188=-300 (que j'appelle sizeX — négatif, suspect). **Le puzzle
+magnitude vient probablement de là** : le vrai déplacement de -54 (O[0]) ne peut pas venir de velocity=100
+seul (→ 10). Un de ces champs (0x98=-200 ? 0x188=-300 ?) porte peut-être une composante de vitesse/offset
+que je n'applique pas. **Vérifier chaque champ actif par vertextest ciblé** (patcher son offset fichier via
+`map`, voir quelle composante x/y bouge) pour l'assigner. NB : velocity=0x110 CONFIRMÉ affecte X (g262qq),
+mais un AUTRE champ actif peut aussi affecter X. `activorder` ne montre que les champs via le helper
+0x17ebc (velocity/sizeX/rotation) ; les champs 0x98/0xc0/0xe8/0x160(angle) passent par d'autres chemins.
+
 **PROCHAINES ÉTAPES CONCRÈTES** : 1) résoudre l'ordre des sommets (comparer ensembles de centres) ; 2)
 distinguer velocityZ/wind/gravity par vertextest ciblé ; 3) affiner la géométrie du quad (taille via
 sizeX/sizeY sur la vie, origine, rotation) jusqu'à POS OK sur ralph frame 0, puis toutes frames ; 4)

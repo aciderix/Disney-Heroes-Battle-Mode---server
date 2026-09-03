@@ -85,9 +85,20 @@ static void restart(NpEmitterRuntime* e) {
     e->delayTimer = 0;
     e->emissionDelta = 0;
 }
+static int g_dbgStart = -1, g_startN = 0;
 void np_sim_start(NpEmitterRuntime* e, NpEmitter* def) {
     memset(e, 0, sizeof(*e));
     e->def = *def;
+    if (g_dbgStart < 0) g_dbgStart = getenv("NP_DBG_START") ? 1 : 0;
+    if (g_dbgStart && g_startN < 12) {
+        fprintf(stderr, "[emit %d] scaledA hi: ", g_startN);
+        for (int k=0;k<6;k++) fprintf(stderr,"%.0f%c ", def->scaledA[k].highMax, def->scaledA[k].low.active?'*':' ');
+        fprintf(stderr, "| scaledB hi: ");
+        for (int k=0;k<12;k++) fprintf(stderr,"%.0f%c ", def->scaledB[k].highMax, def->scaledB[k].low.active?'*':' ');
+        fprintf(stderr, "| scaledC/D: %.0f %.0f %.0f / %.0f\n",
+            def->scaledC[0].highMax, def->scaledC[1].highMax, def->scaledC[2].highMax, def->scaledD.highMax);
+        g_startN++;
+    }
     e->maxParticleCount = def->maxParticleCount > 0 ? def->maxParticleCount : 4;
     e->minParticleCount = def->minParticleCount;
     e->particles = calloc(e->maxParticleCount, sizeof(NpParticle));
