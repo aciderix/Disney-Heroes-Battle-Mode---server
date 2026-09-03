@@ -1,5 +1,66 @@
 # JOURNAL — journal détaillé des modifications
 
+## 2026-09-03 (g261) — FPS combat : hypothèse GPU (fill-rate) d'un agent tiers RÉFUTÉE par la mesure — le goulot est l'ÉMULATION unidbg des particules, pas le rendu
+
+Suite de g258-g260. Un second agent (Linux/dev) a investigué en parallèle via un bench isolé
+(`native/unidbg/ParticlePool.java`, commit `3035386`, pull + lu) mesurant `Effect_update`+`Effect_getVertices`
+sur UNE VM unidbg avec UN SEUL effet (`ralph_skill1_impact`) en régime établi : ~61 µs/effet/frame → concluait
+que l'émulation ne pouvait PAS expliquer les ~58 ms/frame observés (17 fps) et proposait comme hypothèse le
+fill-rate GPU (overdraw de quads transparents), avec un protocole de mesure EN JEU à exécuter sur le vrai GPU
+(Intel UHD 620, cette machine) pour trancher : (1) `unidbg=X` vs `reste=Y` en combat réel + `-Ddh.fps=60` ;
+(2) le test DÉCISIF résolution 960×540 vs plein écran.
+
+**Protocole exécuté EN JEU (§8), sur un VRAI combat, pas une simulation isolée** : compte de test
+`#2262887752026334700` boosté via `/admin/player/unlock` (nouvel endpoint g260 — TL300, 5 héros JAUNE
+niveau 200, chapitre NORMAL 41 débloqué) → serveur `dh-server-v028` relancé en standalone (ports alternatifs
+18080-18083, pour ne pas perturber le serveur hébergé réel de l'util.) → client `dh-client-v029` (backend
+spine **jni**, le vrai chemin joueur) piloté via `campfight 41 19`+`campstart` (API réelle, bouton FIGHT) →
+combat RENDU réel (5 héros vs Madam Mim/Rajah/Captain Barbossa/Jasmine, capture d'écran confirmée, sprites
+parfaitement assemblés — le fix spine g257 tient).
+
+**Résultat MESURÉ (log `[fps]`, moyenne glissante 60 frames, deux runs indépendants)** :
+- **Plein écran (1280×720)**, régime établi : **17,8-18,2 fps** (55-57 ms/frame) — **`unidbg=46-48 ms/frame`
+  (35 appels) vs `reste=8,6-8,8 ms/frame`**. `unidbg` = **~84 % du temps de frame**.
+- **960×540 (¼ des pixels)**, même combat, même compte, même serveur : **18,2 fps** (55,1 ms/frame) —
+  **`unidbg=47,1 ms/frame` (35 appels) vs `reste=8,0 ms/frame`** — **QUASI IDENTIQUE au plein écran** (écart
+  <2 % sur unidbg, <10 % sur reste). Si le goulot était le fill-rate GPU, diviser les pixels par 4 aurait dû
+  faire remonter le FPS fortement (hypothèse explicitement formulée par l'agent tiers) — **AUCUN effet
+  mesuré**.
+- **Corrélation causale directe** (même log, hors combat actif) : dès que l'écran repasse à 0 appel unidbg
+  (entre les tours/animations), le FPS remonte instantanément à **270-330 fps** — la chute suit EXACTEMENT
+  les appels unidbg, frame par frame, pas une charge de rendu constante.
+
+**⇒ Conclusion opposée à l'hypothèse proposée, établie par la mesure, pas par supposition** : sur le VRAI
+GPU (Intel UHD 620), le goulot des ~55 ms/frame est à **~85 % l'émulation ARM des particules (`unidbg`)**,
+PAS le rendu GPU (fill-rate/overdraw réfuté par le test résolution, décisif et négatif). Le bench isolé de
+l'agent tiers (~61 µs/effet, 1 seul type de `.np`, régime établi mono-effet) sous-estime d'un facteur ~20-35×
+le coût réel en combat multi-héros (35 appels/frame ≈ 17-18 effets simultanés de TYPES DIFFÉRENTS — jasmine/
+madam_mim/captain_barbossa/rajah — mesuré à 47 ms/frame ⇒ **~1,3-1,4 ms/effet** en conditions réelles, pas
+61 µs) : écart probablement dû à des `.np` réels plus lourds (plus d'émetteurs/particules par effet que
+`ralph_skill1_impact` 16 Ko) et/ou à la création/destruction continue d'effets (coût de démarrage non capturé
+par une mesure « régime établi » sur des VMs déjà chaudes) — piste à vérifier par l'agent tiers s'il veut
+affiner, mais NE CHANGE PAS la conclusion (mesurée, pas supposée) : le fix doit cibler l'émulation, pas le
+rendu.
+
+**Implication pour le fix** : la piste GPU (passe demi-résolution particules) proposée par l'agent tiers
+n'aurait **quasiment aucun effet mesurable** (déjà testé directement, pas juste déduit) — à ABANDONNER. La
+piste CPU secondaire qu'il avait aussi identifiée (`UnidbgVM.java::effectGetVertices` copie
+`verts.capacity()` floats au lieu de `n×6`) reste À VÉRIFIER (pertinente vu que le goulot est confirmé
+CPU-side) mais pas encore mesurée isolément cette session — prochaine étape naturelle si on reprend ce
+chantier : profiler `effectGetVertices` vs `effectUpdate` séparément en combat réel (le bench isolé les
+distingue déjà : 26 vs 35 µs/effet en synthétique, mais leur poids relatif en combat réel n'est pas confirmé)
+avant de coder quoi que ce soit (§8).
+
+**Méthode notable** : `/admin/player/unlock` (ajouté g260) a permis de fabriquer un compte de combat réel
+(TL300, roster JAUNE) en 1 requête au lieu de jouer la progression manuellement — a rendu ce test possible
+en quelques minutes. Serveur de test lancé en STANDALONE sur ports alternatifs (18080-18083) pour ne jamais
+toucher le serveur réellement hébergé par l'util. (`dh-server-v029`, ports 8080-8083, daemon-géré) — aucune
+interruption du service pendant l'investigation. Tous les process de test proprement arrêtés par PID
+explicite en fin de session (jamais de kill large).
+
+Fichiers modifiés : aucun (investigation pure, §8 — mesurer avant de coder). `native/unidbg/ParticlePool.java`
+(pull de l'agent tiers) conservé tel quel (outil valide, juste incomplet pour représenter le cas réel).
+
 ## 2026-09-03 (g260) — Admin non fonctionnel en mode bundle CORRIGÉ + indicateur de compte clarifié + FPS particules : piste parallélisme explorée, ÉCARTÉE avec cause précise identifiée
 
 **Admin — bug réel confirmé et corrigé.** Signalé par l'utilisateur ("interface admin bien fonctionnelle").
