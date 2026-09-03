@@ -99,7 +99,7 @@ public final class CompareBackend {
     public String getLastSpineError() { return UnidbgVM.get().getLastSpineError(); }
 
     // ================= Atlas
-    public int Atlas_create(byte[] a, boolean pma) { int u = UnidbgVM.get().atlasCreate(a, pma); int j = HostSpine.Atlas_create(a, pma); u2j.put(u, j); return u; }
+    public int Atlas_create(byte[] a, boolean pma) { int u = UnidbgVM.get().atlasCreate(a, pma); HostSpine.ensureTexFlag(); int j = HostSpine.Atlas_create(a, pma); u2j.put(u, j); return u; }
     public void Atlas_dispose(int h) { UnidbgVM.get().atlasDispose(h); HostSpine.Atlas_dispose(tr(h)); u2j.remove(h); }
     public boolean Atlas_getParams(int h, int pg, int[] out) { boolean u = UnidbgVM.get().atlasGetParams(h, pg, out); if (active) { int[] ju = new int[out.length]; cb("Atlas_getParams", u, HostSpine.Atlas_getParams(tr(h), pg, ju)); } return u; }
     public String Atlas_getTexture(int h, int pg) { String u = UnidbgVM.get().atlasGetTexture(h, pg); if (active) { HostSpine.Atlas_getTexture(tr(h), pg); st("Atlas_getTexture").calls.increment(); } return u; }

@@ -30,6 +30,42 @@ public final class HostSpine {
     public static native void Spine_init();
     public static native String getLastSpineError();
 
+    // Bug g256 (personnages "éclatés" en combat) : cspine_jni.c applique un facteur TEXV_SCALE=0.5 sur la
+    // coordonnée V de CHAQUE sommet, en dur, sans condition — ce facteur EST correct mais UNIQUEMENT pour
+    // l'ETC1 (PerBlue empile l'alpha SOUS le RGB faute de canal alpha natif → texture physique 2× la hauteur
+    // déclarée → il faut ramener V dans [0,0.5]). Le jeu (CETTE session, confirmé par
+    // GameMain.initTextureCompressionType()/log applicatif "Final texture compression chosen: ETC2") utilise
+    // l'ETC2, qui a un vrai canal alpha (EAC) et N'A PAS ce besoin — le 0.5 systématique divise alors la VRAIE
+    // coordonnée V par 2, échantillonnant la MAUVAISE moitié verticale de l'atlas pour toute région dont le V
+    // réel dépasse 0.5 → morceaux de sprite visuellement corrects individuellement (texturés depuis le VRAI
+    // atlas) mais mal choisis/mal positionnés relativement les uns aux autres ("éclaté"). Confirmé PAR LE FAIT
+    // (harnais différentiel CompareBackend, pas supposé) : diff systématique et EXACTE ×2 sur la coord V
+    // (position #5) entre oracle unidbg et candidat JNI, sur TOUS les combattants. Fix glue (§1) : le format de
+    // compression ACTUELLEMENT en cours (connu avec certitude côté Java, `GameMain.getTextureCompression()`,
+    // AUCUNE readaptation côté C) est poussé au natif AVANT toute création d'atlas — le 0.5 ne s'applique plus
+    // que si le jeu tourne RÉELLEMENT en ETC1.
+    public static native void Spine_setEtc1AlphaPacked(boolean packed);
+    private static volatile boolean texFlagPushed = false;
+    /** Appelé par TOUT chemin qui crée un atlas (shadow direct ET CompareBackend) avant le premier
+     *  {@code Atlas_create} — une seule fois par process (le format de compression est fixé pour toute
+     *  la session par {@code GameMain.initTextureCompressionType()} au boot, jamais changé ensuite). */
+    public static void ensureTexFlag() {
+        if (texFlagPushed) return;
+        synchronized (HostSpine.class) {
+            if (texFlagPushed) return;
+            boolean etc1;
+            try {
+                Object app = Class.forName("com.perblue.heroes.DH").getField("app").get(null);
+                Object comp = app.getClass().getMethod("getTextureCompression").invoke(app);
+                etc1 = comp != null && "ETC1".equals(comp.toString());
+            } catch (ReflectiveOperationException e) {
+                throw new IllegalStateException("lecture GameMain.getTextureCompression() impossible", e);
+            }
+            Spine_setEtc1AlphaPacked(etc1);
+            texFlagPushed = true;
+        }
+    }
+
     public static native int Atlas_create(byte[] atlasBytes, boolean premultipliedAlpha);
     public static native void Atlas_dispose(int handle);
     public static native boolean Atlas_getParams(int handle, int page, int[] out);

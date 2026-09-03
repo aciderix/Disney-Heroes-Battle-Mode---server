@@ -66,6 +66,7 @@ public class Native {
             // Un atlas est PARTAGÉ spine↔particules. Le spine tourne sur HostSpine (x86), les particules sur unidbg
             // (ARM). On crée donc l'atlas dans les DEUX moteurs d'origine et on ponte les handles (cf. AtlasBridge) →
             // le shadow cparticle traduit le handle pour unidbg. Glue plateforme, aucun moteur réécrit.
+            HostSpine.ensureTexFlag();
             int hj = HostSpine.Atlas_create(a, pma);
             try { int hu = UnidbgVM.get().atlasCreate(a, pma); dhbackend.jnispine.AtlasBridge.map(hj, hu); }
             catch (Throwable t) { System.out.println("[cspine] dual-create atlas unidbg (particules) échec: " + t); }

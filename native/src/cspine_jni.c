@@ -288,8 +288,24 @@ JNIEXPORT void JNICALL Java_com_perblue_heroes_cspine_Native_Skeleton_1getPosedB
  * dans [0, 0.5] : v_out = v_atlas × (512/1024) = v_atlas × 0.5. La lib ARM d'origine (oracle unidbg) applique
  * ce facteur dans getVertices (relevé par le harnais différentiel : notre V valait 2× celui de l'oracle, U
  * identique). page->height reste 512 dans les DEUX moteurs (Atlas_getParams identiques) → le facteur est un
- * ×0.5 explicite à l'émission, PAS une hauteur de page différente. (Extraction fidèle, pas une rustine.) */
-#define TEXV_SCALE 0.5f
+ * ×0.5 explicite à l'émission, PAS une hauteur de page différente. (Extraction fidèle, pas une rustine.)
+ *
+ * BUG g256 : ce facteur était appliqué SANS CONDITION, alors qu'il n'a de sens QUE pour l'ETC1 (empilement
+ * RGB/alpha ci-dessus) — l'ETC2 a un vrai canal alpha (EAC), pas d'empilement, texture physique = hauteur
+ * déclarée, V ne doit PAS être divisé. Avec des assets ETC2 (courant, cf. GameMain.getTextureCompression()),
+ * le 0.5 systématique divisait la VRAIE coord V par deux → mauvaise moitié verticale de l'atlas échantillonnée
+ * pour toute région dont le V réel dépasse 0.5 → sprites "éclatés" (morceaux texturés depuis le vrai atlas
+ * mais au mauvais endroit). Reconfirmé PAR LE FAIT (CompareBackend, diff ×2 EXACT et systématique sur la
+ * coord V, position #5, tous combattants) avant ce correctif. Le format RÉEL est maintenant poussé depuis
+ * Java (HostSpine.ensureTexFlag(), lit GameMain.getTextureCompression() — fait, pas supposition) via
+ * Spine_setEtc1AlphaPacked AVANT toute création d'atlas ; g_etc1AlphaPacked démarre à 0 (pas de scale) —
+ * un atlas créé sans ce flag pré-posé n'aurait de toute façon jamais reçu la bonne valeur avant ce fix. */
+static int g_etc1AlphaPacked = 0;
+#define TEXV_SCALE (g_etc1AlphaPacked ? 0.5f : 1.0f)
+
+JNIEXPORT void JNICALL Java_com_perblue_heroes_cspine_Native_Spine_1setEtc1AlphaPacked(JNIEnv* e, jclass c, jboolean packed) {
+    (void)e; (void)c; g_etc1AlphaPacked = packed ? 1 : 0;
+}
 static float packColor(float r, float g, float b, float a) {
     unsigned int ir=(unsigned int)(r*255), ig=(unsigned int)(g*255), ib=(unsigned int)(b*255), ia=(unsigned int)(a*255);
     if(ir>255)ir=255; if(ig>255)ig=255; if(ib>255)ib=255; if(ia>255)ia=255;

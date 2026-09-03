@@ -1,5 +1,65 @@
 # JOURNAL — journal détaillé des modifications
 
+## 2026-09-03 (g257) — Bug #1 (CRITIQUE) : personnages "éclatés" en combat (backend spine jni) — cause racine tracée au harnais différentiel, corrigée, certifiée 0 diff U/V
+
+Suite de g256 (4 fixes planifiés après la batterie de tests v0.2.8). Signalé par l'utilisateur sur une
+capture d'écran : les personnages (héros ET ennemis) apparaissent en morceaux disloqués en combat, alors
+que les menus sont parfaitement rendus. **Isolé par comparaison directe** : le même combat forcé en
+`unidbg` (oracle ARM émulé, toujours fidèle) rend PARFAITEMENT — le bug est propre au backend `jni`
+(`libhostspine64.dll`), actif par défaut pour la majorité des joueurs (Windows).
+
+**Root cause tracée AU FAIT, pas supposée** : activation du harnais différentiel déjà existant
+(`dhbackend/spine/CompareBackend.java`, `-Ddh.spinebackend=compare` + `DH_SPINEDBG=1`) sur un vrai combat
+Windows avec le vrai `.dll`. Rapport : diff SYSTÉMATIQUE et EXACTE ×2 sur la coordonnée V de sommet
+(position #5) sur TOUS les combattants — `v.u=0.9921875 v.j=0.49609375` (0.99/0.496 = 2.000...), répété à
+l'identique sur des dizaines d'occurrences. `native/src/cspine_jni.c` documentait déjà (commentaire
+existant, non halluciné) un `#define TEXV_SCALE 0.5f` appliqué SANS CONDITION sur V — légitime UNIQUEMENT
+pour l'ETC1 (PerBlue empile l'alpha sous le RGB faute de canal alpha natif → texture physique 2× la
+hauteur déclarée → V doit être ramené dans [0,0.5]). Le jeu tourne en réalité en **ETC2** cette session
+(confirmé par le log applicatif `Final texture compression chosen: ETC2` et `GameMain.getTextureCompression()`
+public) — l'ETC2 a un vrai canal alpha (EAC), aucun besoin de ce facteur. Le 0.5 systématique divisait
+la VRAIE coordonnée V par deux → mauvaise moitié verticale de l'atlas échantillonnée pour toute région
+dont le V réel dépasse 0.5 → morceaux texturés depuis le VRAI atlas (donc visuellement propres
+individuellement) mais montrant le mauvais contenu / mal positionnés relativement les uns aux autres.
+
+**Fix (glue §1, zéro ligne de spine-c/logique métier réécrite)** : `TEXV_SCALE` rendu conditionnel
+(`g_etc1AlphaPacked ? 0.5f : 1.0f`, nouveau global C + export JNI `Spine_setEtc1AlphaPacked`). Le format
+RÉEL (connu avec certitude côté Java, `GameMain.getTextureCompression()`, méthode PUBLIQUE — aucune
+réflexion nécessaire) est poussé au natif une seule fois avant toute création d'atlas
+(`HostSpine.ensureTexFlag()`, appelé depuis les DEUX chemins qui créent un atlas : le shadow direct
+`cspine.Native` et `CompareBackend`).
+
+**Compilateur** : absent de cette machine Windows (`gcc`/MinGW introuvables) → installé via `scoop install
+gcc` (nuwen MinGW, user-space, pas d'admin) → `native/build-hostspine-win.sh MINGW_CC=gcc` a produit un
+`.dll` avec les 47 symboles HostSpine attendus + le nouveau `Spine_1setEtc1AlphaPacked` (vérifié par `nm`/
+`objdump` directement — le compteur de symboles intégré au script affichait à tort 0, faux négatif de son
+propre appel à `x86_64-w64-mingw32-nm`, absent ; sans rapport avec le binaire produit, qui est correct).
+
+**Double vérification (§8), avant/après sur le MÊME combat réel (1588 frames, compte
+`#2262887752026334700`, serveur local hébergé)** :
+- `CompareBackend` (candidat jni vs oracle unidbg) : **`u=0(maxAbs=0,000) v=0(maxAbs=0,000)`** sur
+  l'intégralité de la session — élimination COMPLÈTE de la divergence texture. (Diffs résiduels sans
+  rapport, non corrigés ici — cf. Reste ci-dessous.)
+- Capture d'écran en jeu (mode `jni` normal, launcher réel, bundle régénéré via l'UI réelle,
+  `dh-client-fixtest` puis re-vérifié sur un bundle `dh-client-final` fraîchement généré par « Générer »
+  pour confirmer que le vrai pipeline embarque bien le fix) : personnages PARFAITEMENT assemblés
+  (Wreck-It Ralph, Frozone, Mrs. Incredible + ennemi), comparable trait pour trait au rendu `unidbg`
+  utilisé comme référence visuelle.
+- Bonus perf (mesuré par le même harnais) : hot-path squelettique `unidbg=41851 ms` vs `jni=108,8 ms` sur
+  le même mix d'appels → natif ≈385× plus rapide, confirme l'intérêt du backend jni une fois corrigé.
+
+**Reste (hors scope de CE fix, diffs résiduels du rapport CompareBackend, à traiter séparément)** :
+`Skeleton_setSlotEyeState` (48/48 appels divergents, bool), `SkeletonData_getBoneID` (199/199, résolution
+de nom d'os), petites diffs de position d'os (maxAbs ~6e-5, cohérent avec de l'arrondi flottant ARM↔x86,
+pas un bug de logique) — AUCUN de ces trois n'affecte la coordonnée texture ni l'assemblage visuel du
+sprite (déjà à 0 diff), donc sans lien avec le bug rapporté par l'utilisateur ; à documenter/traiter dans
+un futur incrément si un symptôme visible y est un jour rattaché.
+
+Fichiers modifiés : `native/src/cspine_jni.c`, `desktop-port/src/main/java/dhbackend/jnispine/HostSpine.java`,
+`desktop-port/src/main/java/com/perblue/heroes/cspine/Native.java`, `desktop-port/src/main/java/dhbackend/spine/CompareBackend.java`.
+Le `.dll` reconstruit n'est PAS committé (gitignoré, régénérable §7 — mais le job CI `hostspine` du
+workflow de release doit le rebuild AUTOMATIQUEMENT au prochain tag, aucune action manuelle attendue).
+
 ## 2026-09-03 (g256) — Bug #18 (JOPTS espace-dans-chemin) + Bug #19 (hostspine dev-mode .so codé en dur) + Bug #20 (corruption visuelle ETC2, causé RACINE tracé au bytecode) — CORRIGÉ ET VÉRIFIÉ EN JEU (avant/après sur la même scène)
 
 Suite immédiate de g255 (bug #17 corrigé, utilisateur confirme « Ça ne crash plus » mais signale 2 problèmes restants : corruption
