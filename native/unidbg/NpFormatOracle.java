@@ -471,33 +471,31 @@ public class NpFormatOracle {
         int effH = cPart.callStaticJniMethodInt(emu, "Effect_create([BI)I", new ByteArray(vm, npBytes), atlasH);
 
         Debugger dbg = emu.attach();
-        final long base = mod.base;
         final long[] emitterBase = {0};
-        final java.util.List<Long> order = new ArrayList<>();
-        final boolean[] stop = {false};
-        // entrée activateParticles (0x17331) : r0 = emitter base
+        final java.util.List<long[]> order = new ArrayList<>();  // {emitterBase, offset}
+        // entrée activateParticles (0x17331) : r0 = emitter base -> mise à jour à CHAQUE entrée
         dbg.addBreakPoint(mod, 0x17331, (e, addr) -> {
-            if (emitterBase[0] == 0) {
-                com.github.unidbg.arm.context.Arm32RegisterContext c = (com.github.unidbg.arm.context.Arm32RegisterContext) e.getContext();
-                emitterBase[0] = c.getR0Int() & 0xffffffffL;
-            }
+            com.github.unidbg.arm.context.Arm32RegisterContext c = (com.github.unidbg.arm.context.Arm32RegisterContext) e.getContext();
+            emitterBase[0] = c.getR0Int() & 0xffffffffL;
             return true;
         });
-        // helper champ scaled 0x17ebc : r1 = pointeur du champ
         dbg.addBreakPoint(mod, 0x17ebc, (e, addr) -> {
-            if (stop[0]) return true;
             com.github.unidbg.arm.context.Arm32RegisterContext c = (com.github.unidbg.arm.context.Arm32RegisterContext) e.getContext();
             long ptr = c.getR1Int() & 0xffffffffL;
-            if (emitterBase[0] != 0) { order.add(ptr - emitterBase[0]); if (order.size() >= 40) stop[0] = true; }
+            if (emitterBase[0] != 0 && order.size() < 200) order.add(new long[]{emitterBase[0], ptr - emitterBase[0]});
             return true;
         });
         cPart.callStaticJniMethod(emu, "Effect_start(I)V", effH);
         cPart.callStaticJniMethodInt(emu, "Effect_update(IF)Z", effH, Float.floatToRawIntBits(0.1f));
-        System.out.println("emitter base=0x" + Long.toHexString(emitterBase[0]));
-        System.out.println("ordre des champs Scaled traités par activateParticles (0x17ebc), en offset struct :");
-        for (int i = 0; i < order.size(); i++)
-            System.out.printf("  [%2d] structOff=0x%x (%d)%s%n", i, order.get(i), order.get(i),
-                order.get(i) == 0x110 ? "  <- velocity (ancre)" : "");
+        // regroupe par emitter base, montre l'ordre des offsets par émetteur (UNION = ordre Java complet)
+        java.util.LinkedHashMap<Long, java.util.List<Long>> byEm = new java.util.LinkedHashMap<>();
+        for (long[] o : order) byEm.computeIfAbsent(o[0], k -> new ArrayList<>()).add(o[1]);
+        int ei = 0;
+        for (java.util.Map.Entry<Long, java.util.List<Long>> en : byEm.entrySet()) {
+            StringBuilder sb = new StringBuilder();
+            for (long off : en.getValue()) sb.append(String.format("0x%x ", off));
+            System.out.printf("émetteur#%d (base 0x%x) : %s%n", ei++, en.getKey(), sb);
+        }
     }
 
     static final int NFRAMES = 15;
