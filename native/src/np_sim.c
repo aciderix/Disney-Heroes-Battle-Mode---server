@@ -160,8 +160,11 @@ static void activateParticle(NpEmitterRuntime* e, int index) {
     p->transparency = ranged_newLow((const NpRanged*)F_TRANSPARENCY, value);
     p->transparencyDiff = scaled_newHigh(F_TRANSPARENCY, value) - p->transparency;
 
-    /* spawn : point (spawnShape.code 0) -> position = émetteur (offsets xy absents en v3 -> 0) */
-    p->drawX = e->x; p->drawY = e->y;
+    /* xOffset/yOffset (Ranged rangedC[0]/[1], HYPOTHÈSE) : lus après transparency (ordre Java), active-gated */
+    float sx = e->def.rangedC[0].active ? ranged_newLow(&e->def.rangedC[0], value) : 0;
+    float sy = e->def.rangedC[1].active ? ranged_newLow(&e->def.rangedC[1], value) : 0;
+    /* spawn : point (spawnShape.code 0) -> position = émetteur + offsets */
+    p->drawX = e->x + sx; p->drawY = e->y + sy;
 }
 
 void np_sim_add(NpEmitterRuntime* e, int count) {
@@ -193,8 +196,15 @@ static int updateParticle(NpEmitterRuntime* e, NpParticle* p, int dtMs) {
     p->drawX += vx; p->drawY += vy;
     static int dbg = -1, n = 0;
     if (dbg < 0) dbg = getenv("NP_DBG_PHYS") ? 1 : 0;
-    if (dbg && n < 6) { fprintf(stderr, "[phys %d] vel=%.1f velDiff=%.1f gs=%.3f angle=%.1f vZ=%.1f vx=%.2f vy=%.2f life=%d pct=%.3f\n",
-        n, p->velocity, p->velocityDiff, scaled_getScale(F_VELOCITY, pool, percent), p->angle, p->velocityZ, vx, vy, p->life, percent); n++; }
+    if (dbg && n < 12) {
+        const NpScaled* vf = F_VELOCITY;
+        fprintf(stderr, "[phys %d] velHi=%.1f gs=%.3f angle=%.1f vx=%.2f vy=%.2f | tlN=%d tlA=%d tlB=%d tl=[",
+            n, p->velocityDiff, scaled_getScale(vf, pool, percent), p->angle, vx, vy, vf->timelineN, vf->timelineOffA, vf->timelineOffB);
+        for (int k=0;k<vf->timelineN && k<4;k++) fprintf(stderr,"%.2f ", pool[vf->timelineOffA+k]);
+        fprintf(stderr, "] sc=[");
+        for (int k=0;k<vf->timelineN && k<4;k++) fprintf(stderr,"%.2f ", pool[vf->timelineOffB+k]);
+        fprintf(stderr, "]\n"); n++;
+    }
     return 1;
 }
 static void doParticleUpdate(NpEmitterRuntime* e, int dtMs) {
