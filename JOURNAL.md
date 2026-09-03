@@ -1,5 +1,100 @@
 # JOURNAL — journal détaillé des modifications
 
+## 2026-09-03 (g254) — 4 bugs Windows (#13-#16) : « Générer CLIENT » produit un bundle complet ET le jeu généré démarre réellement
+
+Suite de g252/g253 : session transférée sur le PC Windows réel de l'util. (`C:\Users\fromt\Documents\disney server\...`),
+pilotée via le kit CDP livré en g253 (`tools/cdp_drive.mjs` + `dh-debug-launch.ps1`) — contrôle RÉEL du launcher packagé
+(vrais clics UI, vraie saisie, lecture des vrais logs), pas de simulation. XAPK réel de l'util. (`Disney+Heroes_+Battle+
+Mode_8.0_APKPure.xapk`, "8.0" = numéro de release APKPure, le VRAI jeu est bien 12.1.0, confirmé via `assets/info.txt`
+du merge — `version_name: 12.1.0`). D'abord : tag `launcher-v0.2.7` poussé sur le tip corrigeant la régression CI
+`native/spine-c` (gitlink) → release téléchargée → **fusionnée dans `Desktop\launcher-windows`** en préservant
+`tooling/build/generated-server` (461 Mo, decompile+reframe déjà faits, gitignorés donc jamais dans un nouveau package).
+Piège rencontré : le chemin scratchpad est trop long (MAX_PATH Windows) → extraction tronquée silencieusement (3320/4441
+fichiers `runtime/`) → ré-extrait dans `C:\dhrel` (chemin court) pour contourner. **Capture en direct du bug #3 (g252,
+daemon orphelin)** pendant la fusion : `content_server.py` (pid 18532) tournait seul, son parent (pid 12844, le daemon)
+disparu — verrouillait un log, tué proprement (`Stop-Process`).
+
+**Bug #13 — PATH dupliqué (variantes de casse Windows) survit à `putAll`.** Après le fix g254-avant (742c2f0, ajout de
+Git `usr/bin` au PATH via `embeddedToolsEnv()`), « Générer CLIENT » échouait TOUJOURS avec `dirname/mkdir: command not
+found`, MALGRÉ un PATH Java visiblement correct. **Isolé par harnais réflexif** appelant directement les méthodes
+statiques `bashBin()`/`windowsGitBinDirs()`/`embeddedToolsEnv()` du jar DÉPLOYÉ (compilé dans le tooling embarqué,
+via reflection car privées) : le PATH calculé était PARFAIT — mais lancé depuis l'outil **PowerShell** (PATH restreint,
+proche d'un vrai utilisateur — juste `Git\cmd`, pas `Git\bin`/`usr\bin`) plutôt que depuis l'outil **Bash** (PATH déjà
+riche en Git, biaisant les tests précédents), le bug réapparaissait. Root cause trouvée par test round-trip complet
+(Java→ProcessBuilder→bash) : `pb.environment().putAll(env)` **NE fusionne PAS les variantes de casse** sur ce JDK —
+poser `env.put("PATH", …)` laissait COEXISTER l'ancienne clé héritée `"Path"` (convention Windows) ; vérifié :
+`pb.environment().keySet()` contenait **`[PATH, Path]`** après `putAll` → le sous-processus bash MSYS suivait
+l'ANCIENNE `"Path"` (sans les ajouts Git `usr/bin`). **Fix** : `runStep()` retire explicitement toute clé existante
+correspondant (insensible à la casse) AVANT de poser chaque variable de `env` — pas seulement `PATH`, toute variable.
+Vérifié par test round-trip complet (`pb.environment().keySet()` → `[PATH]` unique après fix, `dirname`/`mkdir`
+résolvent, `exit=0`).
+
+**Bug #14 — `JAVA_HOME` hérité fait compiler Gradle avec le mauvais JDK.** Une fois #13 corrigé, le build progressait
+(StripJar, spine-jar, gradle) puis ÉCHOUAIT DIFFÉREMMENT : `cannot find symbol: class Animation/Skin/Skeleton/
+AnimationState` en compilant `JavaSpineBackend.java` (feature Opt.3, commits `6ea6d27`/`6e59048`, **2026-07-17**, donc
+PRÉ-EXISTANTE et déjà validée par g244/g249/g250 — pas une régression de ce fix). `spine-libgdx-perblue.jar` (98
+classes, contenant bien `Animation.class`/`Skin.class`/`Skeleton.class`/`AnimationState.class` — vérifié par listing)
+était pourtant bien résolu sur le classpath (`./gradlew printRuntimeClasspath` le confirme). Root cause : **Gradle
+Wrapper choisit sa JVM via `JAVA_HOME` EN PRIORITÉ sur PATH** — la machine de dev a `JAVA_HOME` pointant vers Eclipse
+Adoptium **Java 17** (pour un autre projet), alors que `spine-libgdx-perblue.jar` (et les autres jars fabriqués par
+`run-desktop.sh`) sont compilés en **Java 21** (JDK embarqué, via le PATH #13). javac Java 17 REFUSE de lire du
+bytecode classfile version 65 (limite 61) → « cannot find symbol » en cascade sur TOUTES les classes de ces jars
+(symptôme confus, aucune mention explicite de « wrong version » dans l'erreur par défaut de javac). **Vérifié par
+test direct** : `./gradlew --no-daemon compileJava` échoue avec `JAVA_HOME` hérité, **`BUILD SUCCESSFUL` en 47s**
+avec `JAVA_HOME` forcé sur le JDK embarqué. Même principe déjà appliqué à `javaBin()` (« un JDK embarqué ne doit
+JAMAIS dépendre du PATH/de l'environnement ambiant ») — étendu à `JAVA_HOME`. **Fix** : `embeddedToolsEnv()` pose
+`JAVA_HOME` explicitement vers `System.getProperty("java.home")`.
+
+**Bug #15 — extraction d'assets incomplète (UnZip 6.00 de Git for Windows ne récurse pas).** Une fois #13+#14
+corrigés, « Générer CLIENT » atteignait `DONE`, mais le bundle généré avait `assets/` de **3,4 Mo** au lieu des
+~130+ Mo attendus. **Isolé** : `unzip -l universal.apk 'assets/*'` (le motif utilisé par `run-desktop.sh`) ne
+listait que **9 fichiers** (ceux directement à la racine de `assets/`) sur **3046** entrées réelles — l'UnZip 6.00
+(Info-ZIP, 2009) fourni avec Git for Windows **ne récurse PAS** dans les sous-dossiers avec ce motif d'inclusion
+(jamais détecté avant : tout le dev/CI antérieur tournait sur unzip Linux, qui n'a pas cette limitation). Le dossier
+de textures **`ETC/`** disparaissait ENTIÈREMENT (avec lui : `stats/`, `sound/`, `fonts/`, `shaders/`, `joda/`,
+`strings/` — presque tout). ⚠️ Fausse piste explorée puis écartée : le nom `ETC` (pas `ETC1`/`ETC2`) semblait
+suspect au premier abord (rappel g244 : crash « Asset not loaded: ETC1/… ») — mais la décompilation complète de
+`GameMain.initTextureCompressionType()` (bytecode) montre que le jeu **teste dynamiquement l'existence de `ETC/`
+EN PREMIER** (`Gdx.files.internal("ETC").exists()`, avant même ETC1/ETC2) et l'utilise directement si présent (log
+« Using generic 'ETC' variantPath ») — ce n'est PAS un nommage à corriger, juste un dossier manquant à cause du bug
+d'extraction. **Fix** : les deux extractions filtrées par motif (`'assets/*'` inclus côté ASSETS, exclu côté RESD)
+remplacées par UNE SEULE extraction COMPLÈTE (sans motif — vérifié fonctionnelle : 133 Mo, `assets/ETC/` présent)
+vers un dossier de passage, puis répartition par **déplacement de dossiers** (`mv assets → $ASSETS` ; suppression
+`res/lib/META-INF/*.dex/manifest/arsc` ; `mv reste → $RESD`) — fiable, indépendant du motif unzip cassé. Vérifié :
+les autres usages d'unzip à motif dans le repo (`extract_game_data.sh` pour `assets/stats/*`/`assets/strings/*`,
+patch APK pour `classes*.dex`) ciblent des fichiers À PLAT (un seul niveau) → PAS affectés (confirmé empiriquement :
+g249 avait déjà extrait 274 stats + 77 strings avec succès sur cette même machine).
+
+**Bug #16 — natif libGDX codé en dur sur le nom Linux (`libgdx64.so`) casse le lancement Windows.** Une fois #13-#15
+corrigés, le pipeline produisait un bundle COMPLET (`DONE`), mais **lancer réellement le jeu généré** plantait
+immédiatement : `UnsatisfiedLinkError: …\native\libgdx64.so: %1 n'est pas une application Win32 valide`. Root cause :
+le jar `gdx-platform:1.9.7:natives-desktop` embarque les natifs de **toutes** les plateformes sous leur nom NATIF
+(vérifié par listing — 8 fichiers : `gdx64.dll`/`gdx.dll` Windows, `libgdx64.so`/`libgdx.so` Linux, `libgdx64.dylib`/
+`libgdx.dylib` macOS). L'extraction dans `run-desktop.sh` (et le template `RUN_BAT_CLIENT` de `BuildManager.java`)
+était codée en dur sur `"libgdx64.so"` (nom Linux) **quelle que soit la plateforme** — sur Windows, elle extrayait
+bien un fichier NOMMÉ `libgdx64.so`, mais c'est le VRAI binaire ELF Linux (présent tel quel dans le jar sous ce nom)
+→ `System.load()` le rejette (pas un PE Windows valide). **Fix** : sélection OS-aware du nom (`GDXNATIVE_NAME`, même
+motif `uname`-based déjà utilisé pour le choix `.so`/`.dll` de hostspine) dans `run-desktop.sh` (extraction + JOPTS
+du mode dev local) ; `RUN_BAT_CLIENT` (template Windows packagé) cherche désormais `gdx64.dll`. `DesktopLauncher.java`
+n'a pas eu besoin de modif (il charge simplement le chemin donné par la propriété `-Ddh.gdxnative`, agnostique du nom).
+
+**VÉRIFICATION FINALE — LANCEMENT RÉEL du bundle généré** (pas seulement « le pipeline aboutit ») : sortie du jeu
+— `[launcher] natif libGDX chargé: …\native\gdx64.dll` (plus d'erreur), `[launcher] GL 3.2.0 … Intel(R) UHD Graphics
+620` (contexte GL réel initialisé), `[DhAudio] OpenAL initialisé` (backend audio g245 opérationnel), `[launcher]
+game.create() OK`, `[LoadingScreen] Starting to run 16 tasks` → `LoadBootAtlasUI`/`LoadPerBlueUI`/`StartServerLogin`
+tous terminés **SANS AUCUN crash d'assets** (confirme aussi le fix #15 en conditions réelles), tentative de login
+serveur correcte (`GameMain sending login request…`), affichage propre de l'écran **« Our servers are now offline,
+thank you for playing. »** (AUCUN serveur démarré pour ce test précis — comportement attendu, pas un crash). Seul
+reste : un `.ogg` (`friendship_level_up`) en échec de chargement asynchrone non-fatal (le jeu continue) — possible
+gap de contenu (§4bis, aucun serveur de contenu actif pour ce test), pas un bug de mes fixes, à surveiller.
+
+**Bilan session (bugs #13 à #16, 4 bugs Windows indépendants, cumulatifs)** : chaque bug isolé par un test minimal
+AVANT correctif (harnais réflexif direct sur le jar déployé via `Class.forName`+réflexion, `gradlew compileJava`
+direct, `unzip -l` isolé, décompilation bytecode de `GameMain` via `javap`), jamais de correctif supposé, jamais
+deux hypothèses corrigées sans re-tester entre les deux (méthode déjà éprouvée g249-g252). **« Générer CLIENT »
+produit désormais un bundle Windows COMPLET et LE JEU GÉNÉRÉ DÉMARRE RÉELLEMENT** — vérification EN JEU complète,
+pas seulement « le build réussit ». Commits : `05c859a` (#13+#14), `dc501ca` (#15), `baff574` (#16).
+
 ## 2026-09-02 (g253) — KIT DE PILOTAGE WINDOWS : contrôle TOTAL du vrai launcher via CDP (WebView2)
 
 Demande util. : quand une session tourne SUR le PC Windows, pouvoir **utiliser l'app pour de vrai** (vrais clics,
