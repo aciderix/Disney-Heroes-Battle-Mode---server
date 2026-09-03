@@ -1,5 +1,83 @@
 # JOURNAL — journal détaillé des modifications
 
+## 2026-09-03 (g255) — Bug #17 : NoSuchMethodError puis AIOOBE audio (Array.add/FloatArray.insert) — le jeu généré tourne réellement
+
+Suite immédiate de g254 (bugs #13-16, pipeline « Générer CLIENT » complet). Test réel : héberger le serveur généré →
+créer un compte → JOUER avec le bundle client généré, via l'UI réelle du launcher (clics CDP réels). Le jeu boote,
+rend l'intro (avec une corruption visuelle GPU déjà notée — cf. plus bas), progresse dans le tutoriel — puis CRASH :
+
+```
+Exception in thread "main" java.lang.NoSuchMethodError:
+  'void com.badlogic.gdx.utils.Array.add(java.lang.Object)'
+    at com.badlogic.gdx.backends.lwjgl3.audio.OpenALMusic.play(OpenALMusic.java:77)
+    at com.perblue.heroes.util.SoundManager.startAttackMusic(SoundManager.java)
+```
+
+**Root cause (isolée par décompilation, pas supposée)** : PerBlue a RÉDUIT le cœur libGDX du jeu
+(`game-logic-framed.jar`, chargé AVANT `gdx-lwjgl3-audio.jar` sur le classpath — ombrage DÉLIBÉRÉ, cf. commentaire
+`build.gradle` — même nom pleinement qualifié `com.badlogic.gdx.utils.*`). Comparaison EXHAUSTIVE des 9 classes
+gdx.utils/gdx.math que le paquet audio référence (44 symboles distincts, listés un par un via `javap` sur les deux
+côtés) : **SEULES 2 divergent** :
+1. `Array.add(Object)` renvoie **`boolean`** chez PerBlue (implémente `java.util.Collection`), **`void`** en stock
+   gdx 1.9.7 (que `OpenALMusic`/`OpenALAudio` attendent).
+2. `FloatArray.insert(int,float)` **N'EXISTE PAS DU TOUT** chez PerBlue (seulement `add`/`incr`/`set`/`pop`/`clear`/…).
+
+**Fix #1 — réutilisation d'un outil DÉJÀ EXISTANT, jamais branché sur ce pipeline.** En déployant le fichier
+manquant sur la machine de test, découverte de `tools/reframe/src/PatchGdxCalls.java` — présent dans le dépôt depuis
+**juillet** (commit `ae68be6`, écrit à l'époque pour un problème similaire côté spine) : indexe TOUTES les vraies
+signatures `com/badlogic/gdx/*` depuis `game-logic.jar`, puis réécrit GÉNÉRIQUEMENT tout appel dont le descripteur
+diverge (pas seulement `Array.add` — n'importe quelle divergence de type de retour). Jamais utilisé pour l'audio
+jusqu'ici. Câblé dans `run-desktop.sh` (1ʳᵉ passe sur `gdx-lwjgl3-audio.jar`, source de vérité = `$GAMELOGIC`,
+disponible plus tôt dans le script que `$FRAMED`).
+
+**Fix #2 — `PatchGdxAudio` (nouveau), pour le cas que `PatchGdxCalls` NE PEUT PAS couvrir : une méthode ABSENTE**
+(aucune entrée à substituer, contrairement à une divergence de signature). ⚠️ **Première tentative, retirée avant
+push** : neutraliser l'appel `insert()` (POP des arguments, no-op) — SEMBLAIT fonctionner (le jeu bootait, l'audio
+jouait, testé isolément). **FAUX**, découvert en jouant plus longtemps : `renderedSecondsQueue` (le `FloatArray` en
+question) est une VRAIE FILE, consommée ailleurs par `FloatArray.pop()` (**3 sites d'appel** dans `OpenALMusic`,
+vérifiés par décompilation) — neutraliser `insert()` la VIDE en continu SANS JAMAIS LA REMPLIR → après quelques
+secondes de lecture (le temps que le tampon initial s'épuise) :
+```
+Exception in thread "main" java.lang.ArrayIndexOutOfBoundsException: Index -1 out of bounds for length 3
+    at com.badlogic.gdx.utils.FloatArray.pop(FloatArray.java)
+    at com.badlogic.gdx.backends.lwjgl3.audio.OpenALMusic.update(OpenALMusic.java:236)
+```
+§2 (aucune rustine) : un no-op N'ÉTAIT PAS un comportement équivalent, juste un symptôme déplacé plus loin dans le
+temps. **Corrigé en RÉIMPLÉMENTANT FIDÈLEMENT** `insert(0, x)` : décompilation confirme l'unique appel du paquet
+audio est `insert(0, valeur_calculée)` (index TOUJOURS littéral `iconst_0`, sémantique de PRÉPEND). Nouvelle classe
+`FloatArrayCompat.insert0(Object, float)` — **réflexion pure** (aucune dépendance de compilation à `FloatArray`,
+qui n'existe qu'à l'exécution) sur les champs PUBLICS `size`/`items` et la méthode PUBLIQUE `ensureCapacity(int)`
+(TOUS présents et identiques côté PerBlue, vérifiés par décompilation de `ensureCapacity` : grandit `items` si
+besoin via `resize()`, NE TOUCHE PAS `size`, renvoie le tableau `items` courant — sémantique standard confirmée) :
+décale les éléments existants d'un cran, place la nouvelle valeur en tête, incrémente `size`. Le site d'appel
+d'origine est réorienté au niveau bytecode (pile avant l'appel : `[queueRef, 0, valeur]` → `SWAP` → `[queueRef,
+valeur, 0]` → `POP` → `[queueRef, valeur]` → `INVOKESTATIC FloatArrayCompat.insert0`), PAS neutralisé. La classe
+compagnon (compilée par `run-desktop.sh` dans le même dossier que l'outil de patch) est copiée telle quelle dans le
+jar de sortie (lue depuis le classpath d'exécution de l'outil via `getResourceAsStream`, sans étape `jar` séparée).
+
+**VÉRIFIÉ EN JEU** (Windows, machine réelle, tutoriel complet REJOUÉ jusqu'au premier combat + déclenchement de la
+musique de combat — confirmé par l'utilisateur : **« Ça ne crash plus »**). Commit `1839a1d`.
+
+**Bilan cumulé (bugs #13 à #17, session g254-g255)** : **les 3 cibles du launcher Windows (Serveur / Client PC /
+Patch APK) sont COMPLÈTES, et le jeu généré par le launcher TOURNE RÉELLEMENT** — pas seulement « le pipeline de
+génération réussit ». Chaque bug isolé par un test minimal AVANT correctif (jamais de correctif supposé), y compris
+la CORRECTION d'un correctif initialement insuffisant (le no-op) une fois son insuffisance prouvée EN JEU.
+
+**Restent 2 problèmes DISTINCTS, indépendants du build/classpath (pas encore investigués)**, observés par
+l'utilisateur en jouant :
+1. **Corruption visuelle GPU** : capture d'écran confirmée (bruit de pixels façon inférence, texte/sprites du jeu
+   lisibles en dessous — donc le RENDU logique tourne, c'est un problème d'affichage/driver, pas de crash). Piste :
+   `[GLVersion] Invalid version string: 3.2.0 - Build 31.0.101.2140` (Intel UHD Graphics 620) — libGDX/le backend
+   maison échoue à parser la chaîne de version du driver Intel, pouvant dérouter la sélection de chemin de rendu.
+2. **Baisse de FPS spécifiquement EN COMBAT** (menus parfaitement fluides) — cohérent avec un souci autour du rendu
+   squelettique spine (le point chaud déjà documenté, cf. `docs/PHASE2_PLAN.md` chantier B) plutôt qu'un problème
+   général de la boucle de rendu.
+
+**Prochaine étape (l'utilisateur doit s'absenter, mode autonome demandé)** : piloter le port en mode DEV
+(`desktop-port/run-desktop.sh`, PAS le bundle packagé) avec `DH_AUTOTAP`/`DH_FPS`/`DH_SHOT` pour REJOUER le
+tutoriel de façon autonome (sans intervention humaine), collecter des captures + mesures FPS en combat, pour
+investiguer les 2 points ci-dessus sans dépendre de la présence de l'utilisateur.
+
 ## 2026-09-03 (g254) — 4 bugs Windows (#13-#16) : « Générer CLIENT » produit un bundle complet ET le jeu généré démarre réellement
 
 Suite de g252/g253 : session transférée sur le PC Windows réel de l'util. (`C:\Users\fromt\Documents\disney server\...`),
