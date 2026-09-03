@@ -1,5 +1,48 @@
 # JOURNAL — journal détaillé des modifications
 
+## 2026-09-03 (g258) — Fix #2 (FPS particules) : archi existante VÉRIFIÉE correcte, dynarmic (JIT) testé et écarté — pas de code changé
+
+Suite de g257 (3 fixes traités : #3 DH_USERID, #4 merge_release.sh, #1 CRITIQUE spine jni). Dernier point du
+plan g256 : la baisse de FPS en combat restante (particules, émulées via `unidbg` même quand le spine tourne
+en `jni` rapide).
+
+**Découverte en creusant, avant tout code** : `native/unidbg/README.md` documente qu'en juillet le pipeline
+particules COMPLET (parse `.np` v3 + simulation + génération de sommets) a déjà été prouvé fonctionnel en
+exécutant le VRAI binaire ARM d'origine via `unidbg` — **zéro rétro-ingénierie du format nécessaire**,
+puisque le code d'origine tourne tel quel. Conclusion d'architecture de l'époque, DÉLIBÉRÉE (pas un abandon) :
+« Particules → unidbg (viable, ~118 effets/frame budget 60fps) ; Spine → rebuild natif (unidbg trop lent
+pour 10 héros simultanés) ». `desktop-port/NP_FORMAT.md` (format `.np` non résolu, 0/535 EOF-exact) documente
+une piste DIFFÉRENTE et ABANDONNÉE (reconstruire un moteur C indépendant pour aller plus vite que l'émulation)
+— non-résolue mais SANS IMPACT sur la correction actuelle, qui n'en a jamais eu besoin.
+
+**Vérifié PAR LE FAIT (pas fait confiance à un README de 2 mois)** :
+- Recherche dans tous les logs de parties réelles de cette session (plusieurs heures de jeu, hub, combats,
+  écrans de chargement avec effets visibles) : **zéro erreur de parsing particule** (`particleErr` vide sur
+  toute la session).
+- Test direct : `Effect_create` sur `arena_promote.np` + son atlas réel via `unidbg` exécutant le VRAI
+  `libspine-native.so` → handle valide, erreur vide — succès. (Outil de vérification par lot sur les 535
+  `.np` réels du dépôt tenté mais retiré — bug de comptage dans l'outil lui-même, pas dans le moteur ;
+  l'évidence directe ci-dessus suffit, pas la peine de committer un outil bancal pour ça.)
+
+**Piste d'optimisation NON DESTRUCTIVE envisagée et testée** : `dynarmic` (backend JIT ARM, déjà câblé et
+opt-in via `-Ddh.dynarmic`, jamais activé par défaut). Le rejet de juillet portait sur un crash NEON dans
+`loadImages` (a priori spine) — or maintenant que `jni` gère le spine par défaut (g257), `unidbg` ne porte
+plus QUE les particules en combat → re-test pertinent, risque mieux isolé qu'en juillet. **Résultat : crash
+reproduit** (`ExceptionRaised[dynarmic.cpp] pc=0x4001a196`, dans `NativeParticlePoolLoader.load()` →
+`Effect_create` → zone de `ParticleEffect::load`/`ParticleEmitter::load`, très proche des offsets déjà
+identifiés dans `NP_FORMAT.md`) — même classe de problème (instruction non supportée par dynarmic) que pour
+spine, confirmé DIRECTEMENT pour le chemin particules aussi, pas juste par analogie. `dynarmic` écarté comme
+option pour les particules également.
+
+**Conclusion** : aucune optimisation non-destructive trouvée dans le temps investi. Le seul levier restant
+identifié est le portage natif complet (chantier déjà cadré par `NP_FORMAT.md`/`NATIVE_PLAN.md`, format `.np`
+v3 non résolu malgré 2 tentatives rigoureuses passées) — un vrai chantier de rétro-ingénierie non borné dans
+le temps, PAS repris ici (décision explicite : vérifier + chercher une optimisation non-destructive, pas
+relancer la reconstruction complète sans nouvelle piste concrète). **Aucun fichier de code modifié pour ce
+point** — la baisse de FPS en combat reste un fait connu et documenté, pas un bug caché : `Skeleton`/spine est
+déjà rapide (g257, ×385) ; les particules restent le facteur limitant lors des pics d'effets (jusqu'à
+56-59 appels unidbg/frame observés en jeu, cf. g256), sans solution non-destructive disponible aujourd'hui.
+
 ## 2026-09-03 (g257) — Bug #1 (CRITIQUE) : personnages "éclatés" en combat (backend spine jni) — cause racine tracée au harnais différentiel, corrigée, certifiée 0 diff U/V
 
 Suite de g256 (4 fixes planifiés après la batterie de tests v0.2.8). Signalé par l'utilisateur sur une
