@@ -114,6 +114,20 @@ public class NpFormatOracle {
             batchValueTest(so, args[2], args[3], offs, Float.parseFloat(args[5]));
             return;
         }
+        if ("golden".equals(args[1])) {
+            // args: golden <so> <np> <atlas> <out.golden> [nframes] [dt_ms]
+            int nf = args.length > 5 ? Integer.parseInt(args[5]) : 30;
+            float dtMs = args.length > 6 ? Float.parseFloat(args[6]) : 100f;
+            dumpGolden(so, args[2], args[3], args[4], nf, dtMs);
+            return;
+        }
+        if ("goldenall".equals(args[1])) {
+            // args: goldenall <so> <assetsRoot> <outDir> [nframes] [dt_ms]  -- 1 golden par .np (récursif)
+            int nf = args.length > 4 ? Integer.parseInt(args[4]) : 30;
+            float dtMs = args.length > 5 ? Float.parseFloat(args[5]) : 100f;
+            dumpGoldenAll(so, args[2], args[3], nf, dtMs);
+            return;
+        }
         byte[] atlasBytes = Files.readAllBytes(new File(args[1]).toPath());
         byte[] npBytes = Files.readAllBytes(new File(args[2]).toPath());
         System.out.println("np file = " + args[2] + " (" + npBytes.length + " bytes)");
@@ -371,6 +385,91 @@ public class NpFormatOracle {
 
     static final int NFRAMES = 15;
     static final class Traj { float[] x = new float[NFRAMES], y = new float[NFRAMES]; int[] verts = new int[NFRAMES]; }
+
+    /**
+     * GOLDEN (g263) : dumpe la sortie RENDUE de l'oracle (le VRAI binaire ARM via unidbg) pour un `.np`,
+     * N frames, dans un fichier binaire = RÉFÉRENCE ABSOLUE contre laquelle la sim C sera certifiée
+     * (harnais différentiel `np_certify`, comme CompareBackend pour spine). Format binaire little-endian :
+     *   magic "NPGL" (4o) | int32 version=1 | int32 nframes | float32 dt_sec |
+     *   [par frame]: int32 vertCount | float32[vertCount*6] (x,y,light,dark,u,v)
+     * (les draw calls ne sont pas dumpés ici : la fidélité VISUELLE = les sommets ; le regroupement en
+     * draw calls est purement une optim de rendu, testable séparément si besoin.)
+     */
+    static void dumpGolden(String so, String npPath, String atlasPath, String outPath, int nframes, float dtMs) throws Exception {
+        byte[] atlasBytes = Files.readAllBytes(new File(atlasPath).toPath());
+        byte[] npBytes = Files.readAllBytes(new File(npPath).toPath());
+        int total = writeGolden(so, npBytes, atlasBytes, outPath, nframes, dtMs);
+        System.out.println("golden écrit : " + outPath + " (" + nframes + " frames, " + total + " sommets cumulés)");
+    }
+
+    static int writeGolden(String so, byte[] npBytes, byte[] atlasBytes, String outPath, int nframes, float dtMs) throws Exception {
+        AndroidEmulator emu = newEmulator();
+        Memory memory = emu.getMemory();
+        VM vm = emu.createDalvikVM();
+        vm.setVerbose(false);
+        DalvikModule dm = vm.loadLibrary(new File(so), true);
+        installBufferSvc(emu, vm);
+        DvmClass cSpine = vm.resolveClass("com/perblue/heroes/cspine/Native");
+        DvmClass cPart = vm.resolveClass("com/perblue/heroes/cparticle/Native");
+        cSpine.callStaticJniMethod(emu, "Spine_init()V");
+        int atlasH = cSpine.callStaticJniMethodInt(emu, "Atlas_create([BZ)I", new ByteArray(vm, atlasBytes), 1);
+        int effH = cPart.callStaticJniMethodInt(emu, "Effect_create([BI)I", new ByteArray(vm, npBytes), atlasH);
+        cPart.callStaticJniMethod(emu, "Effect_start(I)V", effH);
+
+        com.github.unidbg.memory.MemoryBlock embV = memory.malloc(8192 * 6 * 4, false);
+        com.github.unidbg.memory.MemoryBlock embD = memory.malloc(8192 * 2, false);
+        Object objVerts = vm.resolveClass("java/nio/FloatBuffer").newObject(embV.getPointer());
+        Object objDraw = vm.resolveClass("java/nio/ShortBuffer").newObject(embD.getPointer());
+
+        java.nio.ByteBuffer out = java.nio.ByteBuffer.allocate(64 * 1024 * 1024).order(java.nio.ByteOrder.LITTLE_ENDIAN);
+        out.put((byte) 'N').put((byte) 'P').put((byte) 'G').put((byte) 'L');
+        out.putInt(1);
+        out.putInt(nframes);
+        out.putFloat(dtMs / 1000f);
+        int totalVerts = 0;
+        int dtBits = Float.floatToRawIntBits(dtMs / 1000f);
+        for (int f = 0; f < nframes; f++) {
+            cPart.callStaticJniMethodInt(emu, "Effect_update(IF)Z", effH, dtBits);
+            int n = cPart.callStaticJniMethodInt(emu, "Effect_getVertices(ILjava/nio/FloatBuffer;Ljava/nio/ShortBuffer;)I",
+                effH, objVerts, objDraw);
+            UnidbgPointer vp = embV.getPointer();
+            UnidbgPointer dp = embD.getPointer();
+            int vertCount = n > 0 ? (dp.getShort(n * 3L * 2) & 0xffff) : 0;
+            out.putInt(vertCount);
+            for (int i = 0; i < vertCount * 6; i++) out.putFloat(vp.getFloat(i * 4L));
+            totalVerts += vertCount;
+        }
+        out.flip();
+        byte[] arr = new byte[out.remaining()];
+        out.get(arr);
+        Files.write(new File(outPath).toPath(), arr);
+        return totalVerts;
+    }
+
+    /** Génère un golden par `.np` sous une racine (récursif), 1 atlas bidon partagé (la structure de rendu
+     *  ne dépend pas de l'atlas -- seul le nom de région, hors de notre fenêtre). Nom du golden = chemin
+     *  relatif avec `/`->`__` + `.golden`, sous outDir. */
+    static void dumpGoldenAll(String so, String assetsRoot, String outDir, int nframes, float dtMs) throws Exception {
+        File root = new File(assetsRoot);
+        List<File> files = new ArrayList<>();
+        File[] anyAtlasHolder = new File[1];
+        collectNp(root, files, anyAtlasHolder);
+        java.util.Collections.sort(files);
+        if (files.isEmpty()) { System.out.println("aucun .np sous " + assetsRoot); return; }
+        byte[] atlasBytes = Files.readAllBytes(anyAtlasHolder[0].toPath());
+        new File(outDir).mkdirs();
+        int ok = 0;
+        for (File f : files) {
+            String rel = root.toURI().relativize(f.toURI()).getPath().replace('/', '_');
+            String outPath = outDir + "/" + rel + ".golden";
+            try {
+                byte[] npBytes = Files.readAllBytes(f.toPath());
+                writeGolden(so, npBytes, atlasBytes, outPath, nframes, dtMs);
+                ok++;
+            } catch (Throwable t) { System.out.println("FAIL golden " + f.getName() + " : " + t); }
+        }
+        System.out.println("=== " + ok + "/" + files.size() + " goldens écrits sous " + outDir + " ===");
+    }
 
     static Traj runAndDumpVertices(String so, byte[] npBytes, byte[] atlasBytes, boolean print) throws Exception {
         AndroidEmulator emu = newEmulator();

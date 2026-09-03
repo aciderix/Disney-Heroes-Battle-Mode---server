@@ -1,5 +1,51 @@
 # JOURNAL — journal détaillé des modifications
 
+## 2026-09-03 (g263) — Harnais de certification différentielle des particules : CŒUR posé et prouvé (golden oracle + np_certify C), RNG native déterministe confirmée → certification bit-exacte atteignable
+
+Suite de g262septies. Décision d'archi (validée avec l'utilisateur) : au lieu de continuer l'attribution
+champ-par-champ (signatures non-uniques, risque d'erreur), bâtir un **outil industriel de certification
+différentielle** — écrire la sim C puis la comparer AUTOMATIQUEMENT à l'oracle unidbg (vrai binaire ARM),
+sommet par sommet ; un mapping faux ne peut PAS passer, l'outil localise l'erreur. Même patron que
+`CompareBackend` pour spine. Demande util. : commencer par le CŒUR (boucle de vérif + stub) avant la sim.
+
+**Livré et PROUVÉ FONCTIONNEL (le squelette tourne de bout en bout)** :
+1. **`NpFormatOracle` mode `golden`/`goldenall`** : capture la sortie RENDUE de l'oracle (`Effect_create`+
+   `start`+N×`update`+`getVertices`) pour un `.np` dans un fichier binaire de RÉFÉRENCE (magic `NPGL`,
+   nframes, dt, puis par frame : vertCount + vertCount×6 floats x/y/light/dark/u/v). `goldenall` = 1
+   golden par `.np` récursivement (futur : les 535 = suite de régression).
+2. **`native/tools/np_certify.c`** : lit le golden, parse le `.np` (`np_parser.c`), lance la sim C via
+   l'interface `np_sim_run` (STUB pour l'instant : 0 sommet), compare frame par frame et imprime un
+   rapport STRUCTURÉ (par frame : vertCount oracle vs sim ; sur divergence de valeur : sommet + composante
+   [x/y/light/dark/u/v] + écart max) + verdict PASS/FAIL. Build : `gcc np_certify.c np_parser.c`.
+
+**Démonstration** (`ralph_skill1_impact`, golden 30 frames) : `np_certify` sort exactement le diff attendu
+du squelette — frames 0-4 « oracle=36/36/36/12/4 sommets vs sim=0 » (le stub ne rend rien), frames 5-29
+« OK (0 vs 0) », verdict FAIL localisé. La BOUCLE DE VÉRIFICATION est donc opérationnelle AVANT toute
+ligne de simulation — exactement le cœur demandé.
+
+**FAIT CRITIQUE confirmé : la RNG native est DÉTERMINISTE.** Deux générations successives du même golden
+donnent des fichiers BYTE-IDENTIQUES (`cmp` = 0) → l'émulateur re-graine le `seed` global à la même valeur
+à chaque run. Combiné à la RNG décodée (désassemblage `activateParticles` @0x173b2 : LCG
+`seed = seed*16807`, puis `f = bitcast(0x3f800000 | (seed & mask)) - 1.0f`, un Lehmer/Park-Miller
+classique), cela rend la certification **BIT-EXACTE atteignable** : une sim C répliquant ce LCG avec la
+même graine initiale + le même ORDRE d'appels produira les mêmes sommets que l'oracle, exactement. Le
+harnais différentiel n'aura donc PAS besoin de tolérance floue sur la RNG — 0 diff strict est le critère.
+
+**Ce que ça débloque** : la boucle d'itération devient RAPIDE et FIABLE — `np_certify` tourne en
+millisecondes (pur C, pas d'unidbg), compare exhaustivement, et LOCALISE chaque divergence. Écrire la sim
+devient « meilleure hypothèse → certify → l'outil pointe l'erreur → corriger → re-run », au lieu de
+deviner + eyeballer un sommet. Un mapping de champ faux ne peut jamais « passer » (il crée un diff).
+
+**Reste** (le gros, mais désormais dé-risqué et mesurable) : (a) répliquer le LCG + trouver la graine
+initiale ; (b) écrire `np_sim.c` (spawn `activateParticle` + physique `updateParticle` + rendu 2-couleurs
+`getTCVertices`), le champ-mapping étant guidé/vérifié par `np_certify` à chaque étape ; (c) `goldenall`
+sur les 535 → régression « N/535 PASS » ; (d) câblage JNI/build + activation. Le format était le blocage
+inconnu (levé) ; ceci est de l'ingénierie C avec un filet de sécurité automatique.
+
+Fichiers : `native/unidbg/NpFormatOracle.java` (modes `golden`/`goldenall` NEW), `native/tools/
+np_certify.c` (NEW, harnais + interface sim + stub), `.gitignore`/`native/unidbg/.gitignore` (goldens +
+binaires C régénérables ignorés).
+
 ## 2026-09-03 (g262septies) — Trace étendue à `updateParticles` (vrai per-particule) + AUTO-CORRECTION honnête : l'attribution wind/gravity par « axe pur » est AMBIGUË (donc rétrogradée en PROBABLE)
 
 Suite de g262sexies. En voulant confirmer plus de champs, j'ai découvert que je hookais la MAUVAISE
