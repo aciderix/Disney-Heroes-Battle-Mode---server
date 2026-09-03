@@ -1,5 +1,64 @@
 # JOURNAL — journal détaillé des modifications
 
+## 2026-09-03 (g262) — Simulation particules : algorithme de physique confirmé par bytecode, MAIS bloqué sur le mapping sémantique des champs (obstacle réel, pas de code non-vérifié committé)
+
+Suite de g261quinquies (parseur `.np` écrit + vérifié 535/535). Décision util. confirmée : porter depuis
+l'algorithme RÉEL de `com.badlogic.gdx.graphics.g2d.ParticleEmitter` (stock libGDX, EN CLAIR dans
+`game.jar` — même précédent que spine, qui utilise le runtime spine-c OFFICIEL plutôt qu'une
+retranscription depuis l'ARM) en VÉRIFIANT chaque bloc contre le vrai bytecode du jeu — approuvé
+explicitement par l'utilisateur plutôt que la retranscription intégrale ligne à ligne (méthode (a) vs
+(b), cf. question posée).
+
+**Lecture bytecode extensive** (`javap -c` sur `ParticleEmitter.class` + `RangedNumericValue`/
+`ScaledNumericValue`/`Particle` — plusieurs milliers de lignes parcourues) :
+- `RangedNumericValue.newLowValue`/`ScaledNumericValue.newHighValue` : `min + (max-min) * (linked ? rnd : MathUtils.random())` — CONFIRMÉ instruction par instruction.
+- `ScaledNumericValue.getScale(percent)` : interpolation linéaire par morceaux sur `timeline[]`/`scaling[]` — algorithme standard libGDX, CONFIRMÉ.
+- `activateParticle`/`updateParticle` (~2000 lignes à elles deux) : structure CONFIRMÉE identique au
+  libGDX standard (vélocité scalaire→vecteur via angle, wind/gravity additifs, spawn shape SQUARE/LINE/
+  ELLIPSE avec rejet pour le remplissage, animation par frame, teinte via gradient ou capturée) **+ les
+  extensions PerBlue confirmées par bytecode** (absentes du libGDX stock, donc PAS supposables sans
+  lecture directe) : `velocityZ` (couplé à `drawY` via `zToYMultiplierValue`, actif SEULEMENT dans la
+  boucle de mise à jour — dans `activateParticle` sa lecture est faite puis le résultat est **jeté**
+  [`pop`], donc SANS effet au spawn, uniquement au tick — piège évité en lisant le bytecode plutôt qu'en
+  supposant symétrique) ; `tangentialForce`/`centripetalForce` (force perpendiculaire/radiale autour du
+  point d'émission, échelle interpolée sur `distance/rayon` — PAS sur `%vie` comme les autres champs) ;
+  `brownianValue` (accélération aléatoire intégrée, position += accel×dt²).
+- `update(float)` (boucle d'émission publique) : accumulateur en millisecondes, `firstUpdate`→
+  `addParticle()`, `durationTimer` vs `continuous`/`restart()`, taux d'émission = `emission +
+  emissionDiff×emissionValue.getScale(%durée)` — CONFIRMÉ, motif standard libGDX.
+
+**Obstacle réel rencontré (PAS un guess non vérifié — arrêté avant d'écrire du code incorrect, §4/§8)** :
+pour écrire un parseur qui alimente CORRECTEMENT la simulation, il faut savoir quel `Scaled`/`Ranged` à
+quelle POSITION certifiée (g261quater) correspond à quel champ SÉMANTIQUE (`velocityValue`, `lifeValue`,
+`emissionValue`…). L'ordre du writer courant (`saveBinary`, lu en g261quinquies) ≠ l'ordre v3 certifié
+pour le bloc du milieu (déjà noté) → mapping positionnel invalide. Tentative de résolution par
+désassemblage ARM de `ParticleEmitter::activateParticles` (symbole réel trouvé via `nm`/pyelftools :
+`_ZN15ParticleEmitter17activateParticlesEjj` @ `0x17331`, 2956 o — ainsi que `updateParticles` @
+`0x16589` [confirme la taille déjà notée dans `NATIVE_PLAN.md`, 3428 o] et `updateSingleParticle` @
+`0x17ef1`) : **code ARM fortement optimisé/vectorisé par le compilateur C++** (traite PLUSIEURS
+particules en parallèle, accès mémoire entrelacés, `vmla.f32`/`vdiv.f32` NEON) — **contrairement au
+parseur `.np` (code séquentiel simple, RE directe)**, extraire le nom sémantique de chaque offset de
+struct depuis CE code demanderait un désassemblage bien plus long et risqué (erreur d'attribution
+plausible sur du code optimisé). **Décision : ne PAS deviner, ne PAS committer de code de simulation non
+vérifié** (`np_simulate.c`/`np_particle.h` rédigés puis SUPPRIMÉS après avoir buté sur ce mapping —
+mieux vaut rien committer qu'un mapping de champs faux qui produirait une physique silencieusement
+incorrecte, §2 « pas de rustine »).
+
+**Piste retenue pour la suite (pas engagée cette session)** : au lieu de désassembler le code optimisé
+d'`activateParticles`, étendre `NpFormatOracle` (déjà existant, séquentiel, déjà maîtrisé) pour capturer
+l'ADRESSE D'ÉCRITURE (pas seulement la valeur lue) de chaque champ pendant le PARSING
+(`ParticleEmitter::load`, code simple) — donne directement « position certifiée N → offset struct »,
+recoupable avec les quelques offsets déjà connus (`NATIVE_PLAN.md` : `0x7c0`/`0x7c4` min/max,
+`0x3d8`/`0x410` delay/duration) sans avoir besoin de comprendre le code optimisé de simulation du tout ;
+un recoupement CIBLÉ (grep des offsets connus dans le désassemblage d'`activateParticles`, pas une
+lecture intégrale) confirmerait ensuite quel champ correspond à quel calcul physique.
+
+**Bilan honnête de l'incrément** : aucun code natif nouveau committé (le parsing `.np` de g261quinquies
+reste la dernière pièce fonctionnelle+vérifiée) ; progrès réel mais NON committable en l'état
+(compréhension de l'algorithme + localisation exacte des symboles ARM de simulation + le blocage précis
+identifié + le plan pour le lever). Conforme à la discipline du projet : mieux vaut un arrêt net et
+documenté qu'un code plausible mais non vérifié.
+
 ## 2026-09-03 (g261quinquies) — Lecteur `.np` C écrit et VÉRIFIÉ (535/535, indépendamment de l'oracle Java)
 
 Suite de g261quater (format certifié 535/535 via l'oracle unidbg). Demande util. : « Poursuit » → passage
