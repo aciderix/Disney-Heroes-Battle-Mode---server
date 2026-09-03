@@ -1,5 +1,28 @@
 # JOURNAL — journal détaillé des modifications
 
+## 2026-09-04 (g264) — RNG native ENTIÈREMENT décodée : seed initial = 1, `seed *= 16807`, float bit-exact — réplication C triviale
+
+Suite de g263 (harnais posé). Pour écrire la sim, il fallait la RNG exacte. Mode `rngprobe` ajouté à
+`NpFormatOracle` (WriteHook unidbg sur le `seed` global) → capture CHAQUE avance de graine (tous sites
+confondus : inline d'activateParticles + `pr_rand`, qui partagent le MÊME global). Résultats DÉCISIFS :
+- **`seed` global** = module offset **0x49004** (mod.base=0x40000000, donc 0x40049004).
+- **Graine INITIALE = 1** : la toute 1ère écriture du seed pendant `start()`+`update()` est `0x41a7` =
+  16807 = 1×16807 → prouve que seed valait 1 juste avant (à l'échelle d'un effet sur émulateur frais).
+- **Récurrence PURE `newseed = seed × 16807`** (32-bit wrapping) entre TOUS les draws consécutifs
+  (vérifié : `allMul=true` sur 16 draws ; 342 draws au total pour la frame 0 de ralph).
+- **Float** = `bitcast((seed & 0x7FFFFF) | 0x3F800000) - 1.0f` (mantisse = 23 bits bas du seed) — décodé
+  du désassemblage de `pr_rand` (0x1618c) ET de l'inline (`bfi r3,#0x7f,#0x17,#9`).
+
+⇒ **Réplication C triviale et bit-exacte** : `uint32_t seed=1; float r(){ seed*=16807u; uint32_t b=
+(seed&0x7fffff)|0x3f800000; float f; memcpy(&f,&b,4); return f-1.0f; }`. Le SEUL enjeu restant pour la
+fidélité RNG = consommer les randoms dans le MÊME ORDRE que le natif (déterminé par la logique
+d'`activateParticle`/`updateParticle`, comprise au bytecode) — et le harnais `np_certify` le VÉRIFIE
+(un ordre faux = diff de sommets). Note : `pr_rand` PAS appelée pour la frame 0 de ralph (seul l'inline
+d'activateParticles tire) — mais les 2 partagent le seed, donc peu importe pour la réplication.
+
+Reste inchangé : écrire `np_sim.c` (spawn+physique+rendu 2-couleurs, mapping des champs guidé par
+`np_certify`), puis `goldenall` 535 + câblage. La RNG n'est plus un inconnu.
+
 ## 2026-09-03 (g263) — Harnais de certification différentielle des particules : CŒUR posé et prouvé (golden oracle + np_certify C), RNG native déterministe confirmée → certification bit-exacte atteignable
 
 Suite de g262septies. Décision d'archi (validée avec l'utilisateur) : au lieu de continuer l'attribution

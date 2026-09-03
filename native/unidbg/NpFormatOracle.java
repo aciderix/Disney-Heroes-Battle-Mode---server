@@ -121,6 +121,11 @@ public class NpFormatOracle {
             dumpGolden(so, args[2], args[3], args[4], nf, dtMs);
             return;
         }
+        if ("rngprobe".equals(args[1])) {
+            // args: rngprobe <so> <np> <atlas>
+            rngProbe(so, args[2], args[3]);
+            return;
+        }
         if ("goldenall".equals(args[1])) {
             // args: goldenall <so> <assetsRoot> <outDir> [nframes] [dt_ms]  -- 1 golden par .np (récursif)
             int nf = args.length > 4 ? Integer.parseInt(args[4]) : 30;
@@ -381,6 +386,60 @@ public class NpFormatOracle {
         runAndDumpVertices(so, orig, atlasBytes, true);
         System.out.println("=== PATCHÉ ===");
         runAndDumpVertices(so, patched, atlasBytes, true);
+    }
+
+    /**
+     * RNG PROBE (g263) : vérifie si l'inline LCG d'activateParticles (0x173c4, str newseed) et pr_rand
+     * (0x1619e) écrivent le MÊME `seed` global (un seul flux RNG partagé) ou deux distincts. Dumpe aussi
+     * la graine INITIALE + les premières valeurs. Décisif pour répliquer la RNG en C : 1 flux ou 2 ?
+     */
+    static void rngProbe(String so, String npPath, String atlasPath) throws Exception {
+        byte[] atlasBytes = Files.readAllBytes(new File(atlasPath).toPath());
+        byte[] npBytes = Files.readAllBytes(new File(npPath).toPath());
+        AndroidEmulator emu = newEmulator();
+        Memory memory = emu.getMemory();
+        VM vm = emu.createDalvikVM();
+        vm.setVerbose(false);
+        DalvikModule dm = vm.loadLibrary(new File(so), true);
+        Module mod = dm.getModule();
+        installBufferSvc(emu, vm);
+        DvmClass cSpine = vm.resolveClass("com/perblue/heroes/cspine/Native");
+        DvmClass cPart = vm.resolveClass("com/perblue/heroes/cparticle/Native");
+        cSpine.callStaticJniMethod(emu, "Spine_init()V");
+        int atlasH = cSpine.callStaticJniMethodInt(emu, "Atlas_create([BZ)I", new ByteArray(vm, atlasBytes), 1);
+        int effH = cPart.callStaticJniMethodInt(emu, "Effect_create([BI)I", new ByteArray(vm, npBytes), atlasH);
+
+        final long SEED_ADDR = 0x40049004L;   // trouvé par rngprobe précédent (déterministe)
+        System.out.printf("mod.base=0x%x seed_offset=0x%x%n", mod.base, SEED_ADDR - mod.base);
+        Backend backend = emu.getBackend();
+        final java.util.List<Integer> seeds = new ArrayList<>();
+        backend.hook_add_new(new com.github.unidbg.arm.backend.WriteHook() {
+            @Override public void hook(Backend b, long address, int size, long value, Object user) {
+                if (address == SEED_ADDR) seeds.add((int) value);
+            }
+            @Override public void onAttach(com.github.unidbg.arm.backend.UnHook u) {}
+            @Override public void detach() {}
+        }, SEED_ADDR, SEED_ADDR + 4, null);
+
+        cPart.callStaticJniMethod(emu, "Effect_start(I)V", effH);
+        cPart.callStaticJniMethodInt(emu, "Effect_update(IF)Z", effH, Float.floatToRawIntBits(0.1f));
+        cPart.callStaticJniMethodInt(emu, "Effect_getVertices(ILjava/nio/FloatBuffer;Ljava/nio/ShortBuffer;)I",
+            effH, vm.resolveClass("java/nio/FloatBuffer").newObject(memory.malloc(8192*6*4, false).getPointer()),
+            vm.resolveClass("java/nio/ShortBuffer").newObject(memory.malloc(8192*2, false).getPointer()));
+        System.out.println("total seed advances (draws) frame0 = " + seeds.size());
+        int prev = 0; boolean allMul = true;
+        for (int i = 0; i < Math.min(16, seeds.size()); i++) {
+            int s = seeds.get(i);
+            String rec = (i > 0) ? (((prev * 16807) == s) ? "=prev*16807" : "!=prev*16807") : "";
+            System.out.printf("  [%2d] newseed=0x%08x f=%.6f %s%n", i, s, lcgFloat(s), rec);
+            if (i > 0 && (prev * 16807) != s) allMul = false;
+            prev = s;
+        }
+        System.out.println("récurrence pure *16807 entre draws consécutifs ? " + allMul);
+    }
+    static float lcgFloat(int newseed) {
+        int bits = (newseed & 0x7fffff) | 0x3f800000;
+        return Float.intBitsToFloat(bits) - 1.0f;
     }
 
     static final int NFRAMES = 15;
