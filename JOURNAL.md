@@ -1,5 +1,57 @@
 # JOURNAL — journal détaillé des modifications
 
+## 2026-09-03 (g261quinquies) — Lecteur `.np` C écrit et VÉRIFIÉ (535/535, indépendamment de l'oracle Java)
+
+Suite de g261quater (format certifié 535/535 via l'oracle unidbg). Demande util. : « Poursuit » → passage
+à l'écriture du natif proprement dite, en commençant par le parsing (§4, extraction pas réécriture —
+mais ici il s'agit de TRADUIRE une grammaire déjà certifiée en C, pas de la deviner).
+
+**Vocabulaire de champs obtenu par lecture directe de bytecode** (`javap -c` sur
+`com.badlogic.gdx.graphics.g2d.ParticleEmitter.saveBinary(ParticleEffectPacker)`, `game.jar` EN CLAIR,
+§4) : confirme les tailles exactes de chaque type de valeur (`RangedNumericValue`=10o,
+`ScaledNumericValue`=32o, `NumericValue`=5o, `GradientColorValue`=13o, `SpawnShapeValue`=2 ou 4o) et,
+PRÉCIEUX, la fin de séquence EXACTE (`frameDuration` float isolé, puis `attached`/`continuous`/`aligned`/
+un octet de flags packés `additive|premultipliedAlpha<<1|multiply<<2`/`behind` — 5 lectures d'1 octet)
+qui matche EXACTEMENT les 5 derniers hits bool certifiés par l'oracle (valeurs plausibles : effet
+« arena_promote » additif, sans early-return). ⚠️ L'ordre du writer COURANT (`saveBinary`) ≠ l'ordre v3
+certifié pour le bloc du milieu (confirmé en comparant les 2 séquences) — le bloc « valeurs milieu » du
+nouveau parseur C garde donc des noms POSITIONNELS (`scaledA[6]`, `scaledB[12]`, etc.) plutôt que des
+noms Java devinés — l'ORDRE/la TAILLE (ce qui compte pour parser correctement) est certifié, le nom
+sémantique exact de chaque champ est un TODO explicite non bloquant (à affiner via un oracle sur
+`updateParticles`, même méthode, quand la simulation sera portée).
+
+**`native/src/np_parser.c`/`.h` (NEW)** : lecteur C autonome (indépendant de JNI/unidbg), traduction
+MÉCANIQUE de la grammaire certifiée (mêmes primitives `rd_i32`/`rd_bool`/`rd_ranged`/`rd_scaled`/
+`rd_numeric`/`rd_gradient`/`rd_spawnshape` que les 5 motifs identifiés par le classifieur g261quater).
+Alloue et remplit une struct `NpEffect`/`NpEmitter` par fichier ; gère le trailer (pool de timelines +
+nom de région d'atlas) ; ne DEVINE jamais une valeur en cas de fichier tronqué (retourne 0).
+
+**Double vérification, complètement INDÉPENDANTE de l'oracle Java** (langage différent, code différent) :
+1. `np_parser_test <file>` sur `arena_promote.np` → **CORRESPONDANCE EXACTE, champ par champ**, avec le
+   décodage déjà certifié par l'oracle unidbg (minParticleCount=1, maxParticleCount=4, delay inactif,
+   duration=1500/1500, spawnShape ellipse, tint N=3, frameDuration=0.1, attached/continuous actifs,
+   additif, `atlasTag="fireworks_b"`, poolSize=62) — recoupement total.
+2. `np_parser_test verify <assets>` (parcours récursif C, `dirent.h`, MinGW déjà installé cette session)
+   sur **les 535 `.np` réels** :
+```
+=== RESULTAT C : 535/535 parses OK (EOF-exact garanti par construction du parseur) ===
+```
+**Le format `.np` v3 est maintenant DOUBLEMENT certifié** : par l'oracle d'exécution (observation du
+vrai binaire ARM) ET par un parseur C indépendant qui le lit correctement de bout en bout sur tous les
+fichiers réels — la certification ne repose plus sur un seul outil/une seule méthode.
+
+**Portée restante (chantier substantiel, PAS traité dans cet incrément)** : câblage JNI (`Effect_create`
+doit appeler `np_parse` + gérer une table de handles, miroir de `cspine_jni.c`) ; **la simulation**
+(`updateParticles`, la partie la plus grosse — porter fidèlement `com.badlogic.gdx...ParticleEmitter`
+EN CLAIR dans `game.jar`, avec le mapping sémantique exact des champs du milieu à confirmer) ; le rendu
+2-couleurs (`getTCVertices`) ; extension du build (`build-hostspine.sh`/`-win.sh` ne compilent
+aujourd'hui QUE `cspine_jni.c`) ; routage Java (`cparticle.Native` route actuellement 100% vers
+unidbg — aucun chemin natif n'existe encore, contrairement à spine) ; certification différentielle en
+combat réel + mesure du gain FPS.
+
+Fichiers : `native/src/np_parser.c` (NEW), `native/src/np_parser.h` (NEW), `native/tools/
+np_parser_test.c` (NEW, harnais de test/vérification, binaire compilé non committé).
+
 ## 2026-09-03 (g261quater) — Format `.np` v3 CERTIFIÉ 535/535 EOF-exact (blocage historique définitivement levé)
 
 Suite immédiate de g261ter (oracle unidbg opérationnel, calibré, vérifié sur 1 fichier). Demande util. :
