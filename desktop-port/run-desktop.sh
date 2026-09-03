@@ -305,36 +305,36 @@ fi
 # sur le bytecode issu de dex2jar (GraphKit::use_exception_state) — bug JIT, pas notre logique.
 # game-logic-framed.jar a des StackMapTable valides → plus besoin de -Xverify:none. On garde
 # -XX:TieredStopAtLevel=1 (C1 seul) par prudence sur le bytecode dex2jar (le C2 avait planté).
-JOPTS="-XX:TieredStopAtLevel=1 -Dorg.lwjgl.util.Debug=false -Ddh.rundir=$BUILD/run"
+JOPTS=("-XX:TieredStopAtLevel=1" "-Dorg.lwjgl.util.Debug=false" "-Ddh.rundir=$BUILD/run")
 # Binaire natif ARM d'origine chargé par UnidbgVM (spine + particules via unidbg).
-JOPTS="$JOPTS -Ddh.spinelib=$(cd .. && pwd)/native/reference/libspine-native.so"
-[ -f "$NATDIR/$GDXNATIVE_NAME" ] && JOPTS="$JOPTS -Ddh.gdxnative=$(NATIVE "$NATDIR/$GDXNATIVE_NAME")"
-[ -n "${DH_SERVER:-}" ] && JOPTS="$JOPTS -Ddh.server=$DH_SERVER"
-[ -n "${DH_USERID:-}" ] && JOPTS="$JOPTS -Ddh.userid=$DH_USERID"   # AUTH play : force le compte (BuildOptions.TEST_USER_ID au boot)
-[ -n "${DH_USERID_RELOGIN:-}" ] && JOPTS="$JOPTS -Ddh.userid.relogin=$DH_USERID_RELOGIN"   # STRICT : re-login /login pour le mint
-[ -n "${DH_AUTOTAP:-}" ] && JOPTS="$JOPTS -Ddh.autotap=$DH_AUTOTAP"
-[ -n "${DH_FPS:-}" ] && JOPTS="$JOPTS -Ddh.fps=$DH_FPS"
-[ -n "${DH_AUTOFIGHT:-}" ] && JOPTS="$JOPTS -Ddh.autofight=$DH_AUTOFIGHT"
-[ -n "${DH_TUTODBG:-}" ] && JOPTS="$JOPTS -Ddh.tutodrive.debug=$DH_TUTODBG"
-[ -n "${DH_AUTOEQUIP:-}" ] && JOPTS="$JOPTS -Ddh.autoequip=$DH_AUTOEQUIP"
-[ -n "${DH_GOSIGNIN:-}" ] && JOPTS="$JOPTS -Ddh.gosignin=$DH_GOSIGNIN"
-[ -n "${DH_CLICKFILE:-}" ] && JOPTS="$JOPTS -Ddh.clickfile=$DH_CLICKFILE"
-[ -n "${DH_FRAMES:-}" ] && JOPTS="$JOPTS -Ddh.frames=$DH_FRAMES"
-[ -n "${DH_SHOT:-}" ] && JOPTS="$JOPTS -Ddh.shot=$DH_SHOT"
-[ -n "${DH_SHOTEVERY:-}" ] && JOPTS="$JOPTS -Ddh.shotevery=$DH_SHOTEVERY"
-[ -n "${DH_TUTOREC:-}" ] && JOPTS="$JOPTS -Ddh.tutorec=$DH_TUTOREC"
-[ -n "${DH_TAPHOLD:-}" ] && JOPTS="$JOPTS -Ddh.taphold=$DH_TAPHOLD"
-[ -n "${DH_MAPPROBE:-}" ] && JOPTS="$JOPTS -Ddh.mapprobe=$DH_MAPPROBE"
-[ -n "${DH_PROBEACTOR:-}" ] && JOPTS="$JOPTS -Ddh.probeactor=$DH_PROBEACTOR"
+JOPTS+=("-Ddh.spinelib=$(cd .. && pwd)/native/reference/libspine-native.so")
+[ -f "$NATDIR/$GDXNATIVE_NAME" ] && JOPTS+=("-Ddh.gdxnative=$(NATIVE "$NATDIR/$GDXNATIVE_NAME")")
+[ -n "${DH_SERVER:-}" ] && JOPTS+=("-Ddh.server=$DH_SERVER")
+[ -n "${DH_USERID:-}" ] && JOPTS+=("-Ddh.userid=$DH_USERID")   # AUTH play : force le compte (BuildOptions.TEST_USER_ID au boot)
+[ -n "${DH_USERID_RELOGIN:-}" ] && JOPTS+=("-Ddh.userid.relogin=$DH_USERID_RELOGIN")   # STRICT : re-login /login pour le mint
+[ -n "${DH_AUTOTAP:-}" ] && JOPTS+=("-Ddh.autotap=$DH_AUTOTAP")
+[ -n "${DH_FPS:-}" ] && JOPTS+=("-Ddh.fps=$DH_FPS")
+[ -n "${DH_AUTOFIGHT:-}" ] && JOPTS+=("-Ddh.autofight=$DH_AUTOFIGHT")
+[ -n "${DH_TUTODBG:-}" ] && JOPTS+=("-Ddh.tutodrive.debug=$DH_TUTODBG")
+[ -n "${DH_AUTOEQUIP:-}" ] && JOPTS+=("-Ddh.autoequip=$DH_AUTOEQUIP")
+[ -n "${DH_GOSIGNIN:-}" ] && JOPTS+=("-Ddh.gosignin=$DH_GOSIGNIN")
+[ -n "${DH_CLICKFILE:-}" ] && JOPTS+=("-Ddh.clickfile=$DH_CLICKFILE")
+[ -n "${DH_FRAMES:-}" ] && JOPTS+=("-Ddh.frames=$DH_FRAMES")
+[ -n "${DH_SHOT:-}" ] && JOPTS+=("-Ddh.shot=$DH_SHOT")
+[ -n "${DH_SHOTEVERY:-}" ] && JOPTS+=("-Ddh.shotevery=$DH_SHOTEVERY")
+[ -n "${DH_TUTOREC:-}" ] && JOPTS+=("-Ddh.tutorec=$DH_TUTOREC")
+[ -n "${DH_TAPHOLD:-}" ] && JOPTS+=("-Ddh.taphold=$DH_TAPHOLD")
+[ -n "${DH_MAPPROBE:-}" ] && JOPTS+=("-Ddh.mapprobe=$DH_MAPPROBE")
+[ -n "${DH_PROBEACTOR:-}" ] && JOPTS+=("-Ddh.probeactor=$DH_PROBEACTOR")
 # DEV : spike Opt.2 (#27) — exécuter le vrai HeadlessCombat dans le client headless (mesure + oracle).
-[ -n "${DH_COMBATSPIKE:-}" ] && JOPTS="$JOPTS -Ddh.combatspike=$DH_COMBATSPIKE"
-[ -n "${DH_COMBATSPIKE_EXIT:-}" ] && JOPTS="$JOPTS -Ddh.combatspike.exit=$DH_COMBATSPIKE_EXIT"
-[ -n "${DH_COMBATSPIKE_CH:-}" ] && JOPTS="$JOPTS -Ddh.combatspike.ch=$DH_COMBATSPIKE_CH"
-[ -n "${DH_COMBATSPIKE_LV:-}" ] && JOPTS="$JOPTS -Ddh.combatspike.lv=$DH_COMBATSPIKE_LV"
-[ -n "${DH_COMBATSPIKE_SEED:-}" ] && JOPTS="$JOPTS -Ddh.combatspike.seed=$DH_COMBATSPIKE_SEED"
-[ -n "${DH_COMBATSPIKE_N:-}" ] && JOPTS="$JOPTS -Ddh.combatspike.n=$DH_COMBATSPIKE_N"
-[ -n "${DH_CSPINEPROFILE:-}" ] && JOPTS="$JOPTS -Ddh.cspineprofile=$DH_CSPINEPROFILE"
-[ -n "${DH_DYNARMIC:-}" ] && JOPTS="$JOPTS -Ddh.dynarmic=$DH_DYNARMIC"
+[ -n "${DH_COMBATSPIKE:-}" ] && JOPTS+=("-Ddh.combatspike=$DH_COMBATSPIKE")
+[ -n "${DH_COMBATSPIKE_EXIT:-}" ] && JOPTS+=("-Ddh.combatspike.exit=$DH_COMBATSPIKE_EXIT")
+[ -n "${DH_COMBATSPIKE_CH:-}" ] && JOPTS+=("-Ddh.combatspike.ch=$DH_COMBATSPIKE_CH")
+[ -n "${DH_COMBATSPIKE_LV:-}" ] && JOPTS+=("-Ddh.combatspike.lv=$DH_COMBATSPIKE_LV")
+[ -n "${DH_COMBATSPIKE_SEED:-}" ] && JOPTS+=("-Ddh.combatspike.seed=$DH_COMBATSPIKE_SEED")
+[ -n "${DH_COMBATSPIKE_N:-}" ] && JOPTS+=("-Ddh.combatspike.n=$DH_COMBATSPIKE_N")
+[ -n "${DH_CSPINEPROFILE:-}" ] && JOPTS+=("-Ddh.cspineprofile=$DH_CSPINEPROFILE")
+[ -n "${DH_DYNARMIC:-}" ] && JOPTS+=("-Ddh.dynarmic=$DH_DYNARMIC")
 # DEV : backend spine Opt.3 (#28) — router l'animation du combat vers le runtime Java (spine-libgdx-perblue)
 # au lieu d'unidbg. Le runtime Java (SkeletonBinary) exige DataInput.readString(), absent du stub 215o de
 # game-logic (dex2jar) : on fait gagner le DataInput COMPLET de gdx-1.9.7 en le déposant dans le dir de classes
@@ -344,7 +344,15 @@ JOPTS="$JOPTS -Ddh.spinelib=$(cd .. && pwd)/native/reference/libspine-native.so"
 # (dhserver.LoginServer, process SÉPARÉ sans -Ddh.spinebackend) reste sur unidbg BIT-EXACT pour l'AUTORITÉ de
 # combat (§3/§8). Repli explicite : DH_SPINEBACKEND=unidbg. Repli AUTO si la lib native manque (checkout sans build).
 DH_SPINEBACKEND="${DH_SPINEBACKEND:-jni}"
-HOSTLIB="$(cd .. && pwd)/native/build/libhostspine64.so"
+# Bug #19 : ce chemin (mode DEV, PAS le bundle packagé — run.bat gère déjà .dll correctement, cf.
+# BuildManager RUN_BAT_CLIENT) codait en dur ".so" alors que la détection OS-aware ci-dessus (pour la
+# PHASE DE BUILD, lignes ~257-264) produit ".dll" sous Windows — même motif que le bug #16 (gdx64.dll).
+# Résultat : même un .dll correctement construit n'était jamais trouvé ici → repli silencieux unidbg.
+case "$(uname -s 2>/dev/null || echo linux)" in
+  MINGW*|MSYS*|CYGWIN*) DEV_HS_LIB="libhostspine64.dll" ;;
+  *)                    DEV_HS_LIB="libhostspine64.so" ;;
+esac
+HOSTLIB="$(cd .. && pwd)/native/build/$DEV_HS_LIB"
 if { [ "$DH_SPINEBACKEND" = "jni" ] || [ "$DH_SPINEBACKEND" = "compare" ]; } && [ ! -f "$HOSTLIB" ]; then
   echo "[desktop] WARN: $HOSTLIB introuvable → repli sur unidbg (build : native/build.sh puis native/build-hostspine.sh)"
   DH_SPINEBACKEND=unidbg
@@ -353,9 +361,9 @@ if [ "$DH_SPINEBACKEND" = "jni" ] || [ "$DH_SPINEBACKEND" = "compare" ]; then
   # jni : le VRAI spine-c officiel 3.6 (colle cspine_jni.c) compilé HÔTE x86-64, en JNI réel (pas d'émulation).
   # compare : harnais différentiel — le jeu tourne sur unidbg (oracle), le JNI tourne en parallèle et on diffe.
   # Les deux ont besoin de libhostspine64.so (classe HostSpine).
-  JOPTS="$JOPTS -Ddh.spinebackend=${DH_SPINEBACKEND} -Ddh.hostspine=$HOSTLIB"
+  JOPTS+=("-Ddh.spinebackend=${DH_SPINEBACKEND}" "-Ddh.hostspine=$HOSTLIB")
 elif [ "${DH_SPINEBACKEND:-}" = "java" ]; then
-  JOPTS="$JOPTS -Ddh.spinebackend=java"
+  JOPTS+=("-Ddh.spinebackend=java")
   # libGDX vient de game-logic.jar (PerBlue), STRIPPÉ par ProGuard : certaines classes utilitaires ont perdu
   # des méthodes que spine-libgdx-perblue utilise (ex. DataInput.readString, IntSet.clear). Le gdx-1.9.7 COMPLET
   # (cache gradle) les a → on dépose SES versions dans le dir de classes (PREMIER sur le CP), qui ombragent les
@@ -373,9 +381,9 @@ echo "[desktop] spine backend = ${DH_SPINEBACKEND:-unidbg} (défaut jni ; serveu
 echo "[desktop] lancement (GameMain via backend LWJGL3 maison) ..."
 set +e
 if [ -n "${DH_TIMEOUT:-}" ]; then
-  timeout "${DH_TIMEOUT}" java $JOPTS -cp "$CP" dhdesktop.DesktopLauncher
+  timeout "${DH_TIMEOUT}" java "${JOPTS[@]}" -cp "$CP" dhdesktop.DesktopLauncher
 else
-  java $JOPTS -cp "$CP" dhdesktop.DesktopLauncher
+  java "${JOPTS[@]}" -cp "$CP" dhdesktop.DesktopLauncher
 fi
 RC=$?
 set -e

@@ -50,8 +50,25 @@ public final class DhGraphics implements Graphics {
             String ver = org.lwjgl.opengl.GL11.glGetString(org.lwjgl.opengl.GL11.GL_VERSION);
             String vendor = org.lwjgl.opengl.GL11.glGetString(org.lwjgl.opengl.GL11.GL_VENDOR);
             String rend = org.lwjgl.opengl.GL11.glGetString(org.lwjgl.opengl.GL11.GL_RENDERER);
+            // Bug g255 (corruption visuelle ETC2) : on annonce ApplicationType.Android (ci-dessus) pour rester
+            // sur le chemin Android du jeu — GLVersion (stock gdx, exécuté tel quel) exige alors que la chaîne
+            // matche EXACTEMENT "OpenGL ES (\d(\.\d){0,2})". Or glGetString(GL_VERSION) sur desktop renvoie une
+            // chaîne desktop ("3.2.0 - Build 31.0.101.2140" sur Intel, mais NE COMMENCE JAMAIS par "OpenGL ES "
+            // sur AUCUN GPU desktop) → le regex ne matche JAMAIS → majorVersion retombe silencieusement à 2
+            // (repli codé en dur dans GLVersion.extractVersion) → ETC2TextureData.hasETC2Support() (exige
+            // majorVersion>=3 côté GLES) renvoie systématiquement false → le jeu (code stock, inchangé) prend
+            // sa branche de repli et décode les données RÉELLEMENT ETC2 avec le décodeur ETC1 (qui ne connaît
+            // pas les nouveaux modes de bloc T/H/Planar d'ETC2) → texture corrompue. Vérifié par décompilation
+            // bytecode de GLVersion/ETC2TextureData/GameMain (javap), pas supposé. Fix PLATEFORME uniquement
+            // (§1) : on reformate la VRAIE version détectée en chaîne "OpenGL ES major.minor" AVANT de la
+            // passer à GLVersion, pour que son regex (code stock, non modifié) la parse correctement.
+            String glesVer = "OpenGL ES 2.0";
+            if (ver != null) {
+                java.util.regex.Matcher m = java.util.regex.Pattern.compile("^(\\d+)\\.(\\d+)").matcher(ver.trim());
+                if (m.find()) glesVer = "OpenGL ES " + m.group(1) + "." + m.group(2);
+            }
             glVersion = new GLVersion(com.badlogic.gdx.Application.ApplicationType.Android,
-                    ver != null ? ver : "2.0", vendor != null ? vendor : "", rend != null ? rend : "");
+                    glesVer, vendor != null ? vendor : "", rend != null ? rend : "");
         }
         return glVersion;
     }

@@ -1,5 +1,78 @@
 # JOURNAL — journal détaillé des modifications
 
+## 2026-09-03 (g256) — Bug #18 (JOPTS espace-dans-chemin) + Bug #19 (hostspine dev-mode .so codé en dur) + Bug #20 (corruption visuelle ETC2, causé RACINE tracé au bytecode) — CORRIGÉ ET VÉRIFIÉ EN JEU (avant/après sur la même scène)
+
+Suite immédiate de g255 (bug #17 corrigé, utilisateur confirme « Ça ne crash plus » mais signale 2 problèmes restants : corruption
+visuelle + baisse de FPS en combat, et demande le mode « autopilot » car il doit s'absenter). Investigation autonome menée EN
+ENTIER sans intervention humaine, sur le PC Windows réel de l'util.
+
+**Bug #18 — `JOPTS` (mode DEV, `run-desktop.sh`) cassé par un chemin contenant un espace.** Le dépôt est cloné sous
+`...\disney server\...` (espace dans le nom). `JOPTS="$JOPTS -Dfoo=$BAR"` puis `java $JOPTS` : le bash word-splitting NON QUOTÉ
+scinde une valeur contenant un espace en DEUX arguments distincts au moment de l'appel final → `ClassNotFoundException` sur un nom
+de classe tronqué. **Fix** : les ~30 affectations `JOPTS="$JOPTS ..."` converties en tableau bash (`JOPTS+=("...")`), invocation
+`java "${JOPTS[@]}"`. Vérifié : `bash -n` OK, démarrage dev-mode réussi (tutoriel + combat atteints).
+
+**Bug #19 — `run-desktop.sh` (mode DEV, PAS le bundle packagé) cherche `libhostspine64.so` codé en dur → repli silencieux sur
+`unidbg` même quand le `.dll` Windows existe.** Même motif que le bug #16 (g254, `libgdx64.so`) : la détection OS-aware existe déjà
+pour la PHASE DE BUILD (lignes ~257-264, produit `.dll` sous Windows via `uname -s`), mais le check RUNTIME (`HOSTLIB`, utilisé
+uniquement par le lancement direct dev, PAS par `run.bat` packagé qui gère déjà `.dll` correctement dans `BuildManager`) restait
+codé en dur sur `.so`. **Fix** : même détection OS-aware (`MINGW*|MSYS*|CYGWIN*` → `.dll`) appliquée à `HOSTLIB`.
+
+**Bug #20 — corruption visuelle (texture ETC2 rendue en bruit) — CAUSE RACINE TRACÉE AU BYTECODE, pas supposée.** Décompilation
+successive de 3 classes (`javap` sur `GLVersion`, `ETC2TextureData`, `GameMain`, toutes issues de `libs/game.jar` = code STOCK
+libGDX / jeu, exécuté tel quel, jamais patché) :
+1. `DhGraphics.getGLVersion()` (notre backend plateforme, §1) annonce délibérément `ApplicationType.Android` (commentaire
+   d'origine : « pour rester sur le chemin de détection Android du jeu ») → `GLVersion` (stock gdx) fixe alors son `Type` interne
+   à `GLES`, ce qui sélectionne le regex de parsing `"OpenGL ES (\d(\.\d){0,2})"` (bytecode du ctor `GLVersion`, vérifié).
+2. Mais on lui passe la chaîne DESKTOP brute de `glGetString(GL_VERSION)` (ex. `"3.2.0 - Build 31.0.101.2140"` sur Intel UHD 620)
+   — qui ne commence JAMAIS par `"OpenGL ES "` sur AUCUN GPU desktop (pas spécifique à Intel). Le `Matcher.find()` échoue TOUJOURS
+   → `GLVersion.extractVersion()` (bytecode, branche `ifeq 100`) retombe silencieusement sur `majorVersion=2` (repli codé en dur,
+   `iconst_2`), avec un log `[GLVersion] Invalid version string: ...` (déjà repéré en g255 mais cause pas encore élucidée alors).
+3. `ETC2TextureData.checkForETC2Support` = `true` par défaut (`ConstantValue` du champ, vérifié via `javap -v` — pas un
+   `<clinit>` vide comme il y paraît au premier coup d'œil). Donc `consumeCustomData()` évalue TOUJOURS
+   `hasETC2Support()` : côté `GLES`, exige `majorVersion>=3` — FAUX à cause du repli ci-dessus → prend la branche de repli
+   (bytecode confirmé) : décode les octets — RÉELLEMENT ETC2 (confirmé par `GameMain.initTextureCompressionType()`, log
+   applicatif `Final texture compression chosen: ETC2, buildVariantPath:ETC/`) — avec `ETC1.decodeImage()`, qui ne connaît PAS
+   les nouveaux modes de bloc T/H/Planar introduits par ETC2 → bruit de type damier RVB, texte/formes de base reconnaissables
+   (motif EXACTEMENT décrit par l'util. : « on reconnaît mais tout est corrompu »).
+4. **Fix PLATEFORME uniquement (§1, zéro ligne de `GLVersion`/`ETC2TextureData`/`GameMain` touchée)** : `DhGraphics.getGLVersion()`
+   reformate la VRAIE version détectée (regex `^(\d+)\.(\d+)` sur la chaîne desktop brute) en chaîne `"OpenGL ES major.minor"`
+   AVANT de la passer à `GLVersion` — son regex (code stock, inchangé) la parse alors correctement.
+
+**Piège méthodologique rencontré PENDANT la vérification (documenté pour la suite, §8)** : le premier build « Générer CLIENT »
+déclenché via l'UI réelle du launcher a semblé confirmer le fix (écran-titre chargé de textures, parfaitement propre) — mais un
+second test, PLUS LOIN dans le tutoriel (fond de ville derrière un dialogue « TAP TO CONTINUE »), montrait TOUJOURS la
+corruption. Cause : le launcher PACKAGÉ (`C:\Users\fromt\Desktop\launcher-windows\tooling\...`) est une COPIE SÉPARÉE du dépôt
+(celle livrée dans la release, fusionnée en g254), **distincte du dépôt git en cours d'édition** — mes modifications de code
+n'y étaient PAS synchronisées, le premier build « propre » observé utilisait donc l'ANCIEN code (vérifié après coup par
+décompilation du `.class` déployé : chaîne `"OpenGL ES "` absente). Après synchronisation manuelle des 2 fichiers modifiés vers
+la copie « tooling » et RECONSTRUCTION via l'UI réelle (bouton réel, pas un raccourci API), `javap` sur le nouveau `.class`
+déployé confirme la présence du fix, ET la MÊME scène (même texte de dialogue, même fond de ville) qui montrait le damier avant
+correction s'affiche PARFAITEMENT PROPRE après — **comparaison avant/après sur l'IDENTIQUE asset, cause corrigée confirmée par le
+fait, pas par supposition.**
+
+**Mesure FPS combat (2ᵉ problème signalé)** : avec le backend `jni` actif (confirmé par log `spine backend = jni` et présence de
+`native/libhostspine64.dll` dans le bundle généré, prébuild CI g247), mesuré EN JEU (`TutorialAttackScreen`, vrai bundle
+packagé, pas le mode dev) : **~70-85 fps** (`[fps]` log intégré), unidbg (particules uniquement, le spine est en jni) ne coûtant
+que ~10-12 ms/frame. Sensiblement meilleur que ce que rapportait l'util. — hypothèse la plus probable : son test précédent (avant
+cette session) utilisait un bundle généré SANS le `.dll` hostspine correctement embarqué (repli auto sur `unidbg`, ~50× plus lent
+sur le spine), scénario désormais couvert par le prébuild CI (g247) + ce correctif (#19, mode dev seulement — le bundle packagé
+gérait déjà `.dll` correctement via `BuildManager`, cf. `RUN_BAT_CLIENT`).
+
+**⚠️ Incident opérationnel pendant cette session (transparence §2)** : pour nettoyer des process de test, un `taskkill` trop
+large (tous les `java.exe`) a aussi tué le DAEMON du launcher ET le serveur hébergé par l'utilisateur (actif depuis 39+ minutes
+avant cette session). Diagnostiqué immédiatement (`curl` → connexion refusée sur le port daemon), corrigé en relançant l'exe
+(nouveau daemon) puis en régénérant + hébergeant un VRAI bundle serveur (`Générer` → cible `server`) — l'ancien serveur tournait
+en fait en « mode dev (classpath courant) », qui ne peut PAS fonctionner depuis le launcher packagé (`dhlauncher.jar` est
+délibérément sans `dhserver.LoginServer`, cf. g252) : la tentative de simple redémarrage à l'identique a d'abord échoué
+(`ClassNotFoundException: dhserver.LoginServer`, log `host-server.log`), révélant que la configuration dev-mode de l'util.
+n'aurait de toute façon pas survécu à un redémarrage de l'app. État final : serveur RÉEL (bundle généré) hébergé et vérifié
+(`gamePortListening:true`, contenu servi), plus robuste que la config précédente.
+
+Commits à suivre. Reste : `dh.frames`/pilotage passés en arguments APRÈS la classe principale dans `run.bat`/invocation directe
+ne sont PAS lus comme flags JVM (erreur d'usage, pas un bug produit — noté pour la prochaine fois : toujours placer `-D` AVANT
+`-cp`/la classe principale).
+
 ## 2026-09-03 (g255) — Bug #17 : NoSuchMethodError puis AIOOBE audio (Array.add/FloatArray.insert) — le jeu généré tourne réellement
 
 Suite immédiate de g254 (bugs #13-16, pipeline « Générer CLIENT » complet). Test réel : héberger le serveur généré →
