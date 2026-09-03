@@ -1,5 +1,54 @@
 # JOURNAL — journal détaillé des modifications
 
+## 2026-09-03 (g262sexies) — `wind`/`gravity` confirmés (signature axe-pur), attribution empirique poussée jusqu'à son plafond honnête, pivot vers l'écriture de la simulation
+
+Suite immédiate de g262quinquies. Demande util. : « on poursuit proprement jusqu'au bout ».
+
+**`batchtest`/`batchval` (NEW, `NpFormatOracle`)** : automatisent `vertextest` sur une LISTE d'offsets
+contre un seul fichier de référence, résumé en 1 ligne (1ᵉʳ frame de divergence, frame de mort avant/
+après, delta X/Y max) — accélère le passage en revue des champs restants. `batchval` patche la VALEUR
+`lowMin` (4 octets après `active`) au lieu du flag `active` — nécessaire pour les champs lus SANS
+branchement conditionnel dans le bytecode Java (ex. `life`/`angle`/`sizeX`/`sizeY`, cf. JOURNAL g262) :
+pour ceux-là, `newLowValue` calcule TOUJOURS une valeur (juste `min+(max-min)×rand`), indépendamment
+d'`active` — le patcher ne change donc rien tant qu'on ne touche pas la VALEUR elle-même.
+
+**2 champs de PLUS confirmés, signature physique sans ambiguïté** (`ralph_skill1_impact.np`, `batchtest`
+sur 23 offsets candidats) :
+- `structOff=528` (fileOff=130) : divergence **PUREMENT horizontale** (maxDX=250, maxDY=0,00) →
+  correspond EXACTEMENT à `windValue` (bytecode confirmé : `vx += (wind+...)×dt`, aucun terme vertical).
+- `structOff=568` (fileOff=162) : divergence **PUREMENT verticale** (maxDX=0,00, maxDY=20) →
+  `gravityValue` (bytecode confirmé : `vy += (gravity+...)×dt`, aucun terme horizontal).
+Ces 2 sont les SEULS champs de toute la liste dont l'effet est mathématiquement contraint à un seul axe
+(vent/gravité = forces constantes ajoutées directement à vx OU vy ; tout le reste — vélocité, angle,
+tangentiel, centripète — implique une décomposition cos/sin sur LES DEUX axes) → signature suffisamment
+distinctive pour ne pas nécessiter d'autre confirmation.
+
+**Vérification de méthode (sanity check)** : `batchval` réappliqué au champ `velocityValue` DÉJÀ confirmé
+(offset 361) avec `lowMin=5000` → divergence ÉNORME (maxDX=1081), confirmant que le décalage `off+1` (le
+`lowMin` suit directement le `active`) est correct — la méthode elle-même est saine.
+
+**Plafond honnête atteint pour cet incrément** : les ~15 champs restants (`life`, `lifeOffset`, `angle`,
+`sizeX`, `sizeY`, `rotation`, `transparency`, `emission`, `spawnWidth`, `spawnHeight`,
+`tangentialInfluence`/`Force`, `centripetalInfluence`/`Force`, `brownian`) ont été testés (flag `active`
+ET valeur `lowMin=5000`) sur les offsets candidats restants — **AUCUN effet mesurable** sur la position du
+1ᵉʳ sommet NI sur la frame de mort, sur `ralph_skill1_impact.np` (effet TRÈS court, 5 frames). Ce n'est
+PAS une preuve que ces champs sont sans effet — plusieurs candidats plausibles (transparence = couleur,
+pas position ; taille = étalement autour du centre, pas forcément visible sur UN SEUL sommet suivi ;
+`lifeOffset`/`emission` = calendrier, invisibles sur un test à 1 particule) — juste que CE test précis
+(1 sommet suivi, 15 frames, 1 fichier à vie courte) n'est pas assez sensible pour les distinguer. Aller
+plus loin demanderait soit un fichier de test différent (vie plus longue, effet visible en taille), soit
+suivre PLUSIEURS sommets/particules simultanément, soit désassembler `activateParticles` avec le
+séquencement des appels `bl 0x17ebc` un par un (déjà jugé risqué en g262quater) — chantier séparé.
+
+**Décision (§8)** : ne pas insister davantage sur l'attribution exhaustive avant d'avoir une simulation
+FONCTIONNELLE à tester dans son ensemble (qui pourra elle-même servir de nouveau signal de vérification,
+plus riche qu'un test champ par champ isolé). Pivot vers l'écriture de `np_simulate.c` avec les champs
+RIGOUREUSEMENT confirmés (`velocityValue`@0x110, `windValue`@0x210, `gravityValue`@0x238, `duration`/
+`durationTimer`@0x874/0x878) ; le reste est PARSÉ (donc jamais perdu) mais son EFFET reste un TODO
+explicite, non deviné, jusqu'à nouvelle preuve.
+
+Fichiers : `native/unidbg/NpFormatOracle.java` (modes `batchtest`/`batchval` NEW).
+
 ## 2026-09-03 (g262quinquies) — `velocityValue` confirmé EMPIRIQUEMENT (struct 0x110) via divergence de sortie rendue ; méthode `map`+`patchtest`+`vertextest` opérationnelle
 
 Suite immédiate de g262quater. Demande util. : « poursuit ». Constat de départ : la trace d'adresses

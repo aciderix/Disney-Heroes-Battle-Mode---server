@@ -98,6 +98,22 @@ public class NpFormatOracle {
             vertexTest(so, args[2], args[3], Integer.parseInt(args[4]), Integer.parseInt(args[5]));
             return;
         }
+        if ("batchtest".equals(args[1])) {
+            // args: batchtest <so> <np> <atlas> <off1,off2,off3,...>
+            String[] parts = args[4].split(",");
+            int[] offs = new int[parts.length];
+            for (int i = 0; i < parts.length; i++) offs[i] = Integer.parseInt(parts[i].trim());
+            batchVertexTest(so, args[2], args[3], offs);
+            return;
+        }
+        if ("batchval".equals(args[1])) {
+            // args: batchval <so> <np> <atlas> <off1,off2,...> <testVal>
+            String[] parts = args[4].split(",");
+            int[] offs = new int[parts.length];
+            for (int i = 0; i < parts.length; i++) offs[i] = Integer.parseInt(parts[i].trim());
+            batchValueTest(so, args[2], args[3], offs, Float.parseFloat(args[5]));
+            return;
+        }
         byte[] atlasBytes = Files.readAllBytes(new File(args[1]).toPath());
         byte[] npBytes = Files.readAllBytes(new File(args[2]).toPath());
         System.out.println("np file = " + args[2] + " (" + npBytes.length + " bytes)");
@@ -348,12 +364,15 @@ public class NpFormatOracle {
         patched[fileOffsetActive] = (byte) newVal;
 
         System.out.println("=== ORIGINAL ===");
-        runAndDumpVertices(so, orig, atlasBytes);
+        runAndDumpVertices(so, orig, atlasBytes, true);
         System.out.println("=== PATCHÉ ===");
-        runAndDumpVertices(so, patched, atlasBytes);
+        runAndDumpVertices(so, patched, atlasBytes, true);
     }
 
-    static void runAndDumpVertices(String so, byte[] npBytes, byte[] atlasBytes) throws Exception {
+    static final int NFRAMES = 15;
+    static final class Traj { float[] x = new float[NFRAMES], y = new float[NFRAMES]; int[] verts = new int[NFRAMES]; }
+
+    static Traj runAndDumpVertices(String so, byte[] npBytes, byte[] atlasBytes, boolean print) throws Exception {
         AndroidEmulator emu = newEmulator();
         Memory memory = emu.getMemory();
         VM vm = emu.createDalvikVM();
@@ -372,7 +391,8 @@ public class NpFormatOracle {
         Object objVerts = vm.resolveClass("java/nio/FloatBuffer").newObject(embV.getPointer());
         Object objDraw = vm.resolveClass("java/nio/ShortBuffer").newObject(embD.getPointer());
 
-        for (int f = 0; f < 15; f++) {
+        Traj t = new Traj();
+        for (int f = 0; f < NFRAMES; f++) {
             cPart.callStaticJniMethodInt(emu, "Effect_update(IF)Z", effH, Float.floatToRawIntBits(0.1f));
             int n = cPart.callStaticJniMethodInt(emu, "Effect_getVertices(ILjava/nio/FloatBuffer;Ljava/nio/ShortBuffer;)I",
                 effH, objVerts, objDraw);
@@ -381,13 +401,76 @@ public class NpFormatOracle {
             UnidbgPointer vp = embV.getPointer();
             UnidbgPointer dp = embD.getPointer();
             int vertCount = n > 0 ? (dp.getShort(n * 3L * 2) & 0xffff) : 0;
-            StringBuilder sb = new StringBuilder();
-            int nShow = Math.min(3, vertCount);
-            for (int i = 0; i < nShow; i++) {
-                float x = vp.getFloat(i * 6L * 4), y = vp.getFloat(i * 6L * 4 + 4);
-                sb.append(String.format("(%.2f,%.2f) ", x, y));
+            t.verts[f] = vertCount;
+            if (vertCount > 0) { t.x[f] = vp.getFloat(0); t.y[f] = vp.getFloat(4); }
+            if (print) {
+                StringBuilder sb = new StringBuilder();
+                int nShow = Math.min(3, vertCount);
+                for (int i = 0; i < nShow; i++) {
+                    float x = vp.getFloat(i * 6L * 4), y = vp.getFloat(i * 6L * 4 + 4);
+                    sb.append(String.format("(%.2f,%.2f) ", x, y));
+                }
+                System.out.printf("frame %2d: drawCalls=%-3d verts=%-4d %s%n", f, n, vertCount, sb);
             }
-            System.out.printf("frame %2d: drawCalls=%-3d verts=%-4d %s%n", f, n, vertCount, sb);
+        }
+        return t;
+    }
+
+    /** BATCH (g262sexies) : applique `vertextest` (résumé seulement) à une LISTE d'offsets fichier
+     *  `active`, contre le MÊME fichier -- pour dérouler rapidement l'attribution des champs restants
+     *  sans relire 15 lignes à chaque fois. Résumé : 1ᵉʳ frame où ça diverge, frame de "mort" (verts=0)
+     *  originale vs patchée, delta de position au dernier frame commun. */
+    static void batchVertexTest(String so, String npPath, String atlasPath, int[] offsets) throws Exception {
+        byte[] atlasBytes = Files.readAllBytes(new File(atlasPath).toPath());
+        byte[] orig = Files.readAllBytes(new File(npPath).toPath());
+        Traj base = runAndDumpVertices(so, orig, atlasBytes, false);
+        int baseDeath = deathFrame(base);
+        for (int off : offsets) {
+            byte[] patched = orig.clone();
+            byte origVal = orig[off];
+            patched[off] = (byte) (origVal == 0 ? 1 : 0);
+            Traj p = runAndDumpVertices(so, patched, atlasBytes, false);
+            int pDeath = deathFrame(p);
+            int firstDiv = -1;
+            float maxDx = 0, maxDy = 0;
+            for (int f = 0; f < NFRAMES; f++) {
+                if (base.verts[f] == 0 || p.verts[f] == 0) continue;
+                float dx = Math.abs(base.x[f] - p.x[f]), dy = Math.abs(base.y[f] - p.y[f]);
+                if ((dx > 0.01f || dy > 0.01f) && firstDiv < 0) firstDiv = f;
+                maxDx = Math.max(maxDx, dx); maxDy = Math.max(maxDy, dy);
+            }
+            System.out.printf("off=%-5d (%d->%d) firstDiv=%-3s death %d->%d  maxDX=%.2f maxDY=%.2f%n",
+                off, origVal, patched[off], firstDiv < 0 ? "-" : String.valueOf(firstDiv), baseDeath, pDeath, maxDx, maxDy);
+        }
+    }
+    static int deathFrame(Traj t) { for (int f = 0; f < NFRAMES; f++) if (t.verts[f] == 0) return f; return -1; }
+
+    /** Comme batchVertexTest, mais patche la VALEUR (lowMin, 4 octets juste après `active`) au lieu du
+     *  flag `active` -- nécessaire pour les champs lus SANS `ifeq` dans le bytecode Java (life/angle/
+     *  sizeX/sizeY, cf. JOURNAL g262) : `active` ne gate rien pour eux, `newLowValue` calcule toujours
+     *  une valeur (juste `min+(max-min)*rand`, indépendant du flag) -- seule la VALEUR compte. */
+    static void batchValueTest(String so, String npPath, String atlasPath, int[] offsets, float testVal) throws Exception {
+        byte[] atlasBytes = Files.readAllBytes(new File(atlasPath).toPath());
+        byte[] orig = Files.readAllBytes(new File(npPath).toPath());
+        Traj base = runAndDumpVertices(so, orig, atlasBytes, false);
+        int baseDeath = deathFrame(base);
+        int bits = Float.floatToRawIntBits(testVal);
+        for (int off : offsets) {
+            byte[] patched = orig.clone();
+            int lm = off + 1; // lowMin = juste après le bool `active`
+            patched[lm] = (byte) (bits >>> 24); patched[lm + 1] = (byte) (bits >>> 16);
+            patched[lm + 2] = (byte) (bits >>> 8); patched[lm + 3] = (byte) bits;
+            Traj p = runAndDumpVertices(so, patched, atlasBytes, false);
+            int pDeath = deathFrame(p);
+            float maxDx = 0, maxDy = 0; int firstDiv = -1;
+            for (int f = 0; f < NFRAMES; f++) {
+                if (base.verts[f] == 0 || p.verts[f] == 0) continue;
+                float dx = Math.abs(base.x[f] - p.x[f]), dy = Math.abs(base.y[f] - p.y[f]);
+                if ((dx > 0.01f || dy > 0.01f) && firstDiv < 0) firstDiv = f;
+                maxDx = Math.max(maxDx, dx); maxDy = Math.max(maxDy, dy);
+            }
+            System.out.printf("off=%-5d lowMin->%.1f  firstDiv=%-3s death %d->%d  maxDX=%.2f maxDY=%.2f%n",
+                off, testVal, firstDiv < 0 ? "-" : String.valueOf(firstDiv), baseDeath, pDeath, maxDx, maxDy);
         }
     }
 
