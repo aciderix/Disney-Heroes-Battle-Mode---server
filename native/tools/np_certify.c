@@ -106,24 +106,16 @@ int main(int argc, char** argv) {
             continue;
         }
         /* diff séparé : POSITION (x,y = comp 0,1) vs COULEUR/UV (comp 2..5) pour itérer proprement */
-        double maxPos = 0, maxCol = 0; int worstPI = -1, worstPC = -1;
+        double maxPos = 0, maxCol = 0;
         for (int i = 0; i < oc * 6; i++) {
             double d = fabs((double)g.frames[f].verts[i] - (double)sim[f].verts[i]);
-            int c = i % 6;
-            if (c < 2) { if (d > maxPos) { maxPos = d; worstPI = i/6; worstPC = c; } }
-            else       { if (d > maxCol) maxCol = d; }
+            if (i % 6 < 2) { if (d > maxPos) maxPos = d; }
+            else           { if (d > maxCol) maxCol = d; }
         }
-        const char* comp[] = {"x","y"};
         int posOk = maxPos <= 0.05;
-        if (!posOk || maxCol > 0.01) {
-            printf("frame %2d: %d som, POS %s (max %.3f%s) | COL/UV max %.3g\n",
-                f, oc, posOk ? "OK" : "DIFF", maxPos,
-                posOk ? "" : (worstPC>=0 ? (worstPC==0?" x@som":" y@som") : ""), maxCol);
-            if (!posOk) fails++;
-            if (maxPos > worst) worst = maxPos;
-        } else {
-            printf("frame %2d: %d som, POS OK COL OK\n", f, oc);
-        }
+        printf("frame %2d: %d som, POS %s (max %.3f) | COL/UV max %.3g\n",
+            f, oc, posOk ? "OK" : "DIFF", maxPos, maxCol);
+        if (!posOk) { fails++; if (maxPos > worst) worst = maxPos; }
     }
     printf("=== VERDICT : %s (%d/%d frames divergentes, écart max %.4f) ===\n",
         fails == 0 ? "PASS" : "FAIL", fails, g.nframes, worst);

@@ -8,6 +8,7 @@ typedef struct {
     int life, currentLife;
     float drawX, drawY, z;
     float velocity, velocityDiff;
+    float velocityZ, velocityZDiff;
     float angle, angleDiff, angleCos, angleSin;
     float scaleX, scaleXDiff, scaleY, scaleYDiff;     /* échelle relative (÷ largeur sprite annulé -> = taille px) */
     float rotation, rotationDiff, drawRotation;

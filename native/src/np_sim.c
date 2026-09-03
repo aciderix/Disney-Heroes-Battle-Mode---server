@@ -117,7 +117,11 @@ static void activateParticle(NpEmitterRuntime* e, int index) {
         if (!F_VELOCITY->relative) p->velocityDiff -= p->velocity;
     }
     /* velocityZ (active-gated) */
-    if (F_VELOCITYZ->low.active) { ranged_newLow((const NpRanged*)F_VELOCITYZ, value); scaled_newHigh(F_VELOCITYZ, value); }
+    if (F_VELOCITYZ->low.active) {
+        p->velocityZ = ranged_newLow((const NpRanged*)F_VELOCITYZ, value);
+        p->velocityZDiff = scaled_newHigh(F_VELOCITYZ, value);
+        if (!F_VELOCITYZ->relative) p->velocityZDiff -= p->velocityZ;
+    }
 
     /* angle : UNCONDITIONNEL (Java) */
     p->angle = ranged_newLow((const NpRanged*)F_ANGLE, value);
@@ -173,11 +177,24 @@ static int updateParticle(NpEmitterRuntime* e, NpParticle* p, int dtMs) {
     const float* pool = e->def.timelinePool;
     float percent = 1.0f - p->currentLife / (float)p->life;
     /* velocity le long de l'angle figé (angleCos/Sin) */
-    float v = (p->velocity + p->velocityDiff * scaled_getScale(F_VELOCITY, pool, percent)) * dt;
-    float vx = p->angleCos * v, vy = p->angleSin * v;
+    float vx = 0, vy = 0;
+    if (F_VELOCITY->low.active) {
+        float v = (p->velocity + p->velocityDiff * scaled_getScale(F_VELOCITY, pool, percent)) * dt;
+        vx = p->angleCos * v; vy = p->angleSin * v;
+    }
     if (F_WIND->low.active)    vx += (p->wind + p->windDiff * scaled_getScale(F_WIND, pool, percent)) * dt;
     if (F_GRAVITY->low.active) vy += (p->gravity + p->gravityDiff * scaled_getScale(F_GRAVITY, pool, percent)) * dt;
+    if (F_VELOCITYZ->low.active) {
+        float vz = (p->velocityZ + p->velocityZDiff * scaled_getScale(F_VELOCITYZ, pool, percent)) * dt;
+        p->z += vz;
+        float mult = e->def.numeric0.active ? e->def.numeric0.value : 0;
+        vy += vz * mult;   /* velocityZ couplé à drawY via zToYMultiplier (BYTECODE updateParticle) */
+    }
     p->drawX += vx; p->drawY += vy;
+    static int dbg = -1, n = 0;
+    if (dbg < 0) dbg = getenv("NP_DBG_PHYS") ? 1 : 0;
+    if (dbg && n < 6) { fprintf(stderr, "[phys %d] vel=%.1f velDiff=%.1f gs=%.3f angle=%.1f vZ=%.1f vx=%.2f vy=%.2f life=%d pct=%.3f\n",
+        n, p->velocity, p->velocityDiff, scaled_getScale(F_VELOCITY, pool, percent), p->angle, p->velocityZ, vx, vy, p->life, percent); n++; }
     return 1;
 }
 static void doParticleUpdate(NpEmitterRuntime* e, int dtMs) {
