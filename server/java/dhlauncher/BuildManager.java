@@ -692,7 +692,9 @@ public final class BuildManager {
       + "if \"%DH_SERVER%\"==\"\" set DH_SERVER=127.0.0.1:8080\r\n"
       + "set CP=%DIR%lib\\dhdesktop.jar;%DIR%lib\\game-logic-framed.jar;%DIR%native;%DIR%assets;%DIR%resources;%DIR%lib\\runtime\\*\r\n"
       + "set JOPTS=-XX:TieredStopAtLevel=1 -Ddh.rundir=\"%DIR%data\\run\" -Ddh.spinelib=\"%DIR%native\\libspine-native.so\" -Ddh.server=%DH_SERVER%\r\n"
-      + "if exist \"%DIR%native\\libgdx64.so\" set JOPTS=%JOPTS% -Ddh.gdxnative=\"%DIR%native\\libgdx64.so\"\r\n"
+      // gdx64.dll (PAS libgdx64.so — celui-ci est l'ELF Linux, invalide sous Win32 ; le jar gdx-platform
+      // natives-desktop embarque les DEUX sous leur nom natif, run-desktop.sh extrait le bon par OS, g255).
+      + "if exist \"%DIR%native\\gdx64.dll\" set JOPTS=%JOPTS% -Ddh.gdxnative=\"%DIR%native\\gdx64.dll\"\r\n"
       + "if exist \"%DIR%native\\libhostspine64.dll\" set JOPTS=%JOPTS% -Ddh.spinebackend=jni -Ddh.hostspine=\"%DIR%native\\libhostspine64.dll\"\r\n"
       // FENÊTRE VISIBLE (la fenêtre est créée invisible par défaut, orienté capture headless) — sans ça le joueur Windows
       // voit la console s'ouvrir mais aucune fenêtre de jeu.

@@ -206,12 +206,23 @@ if added_total: print(f"[desktop] overlay chaînes : {added_total} clé(s) manqu
 PY
 fi
 
-# Extrait le natif libGDX (libgdx64.so) du jar gdx-platform natives-desktop du classpath.
+# Extrait le natif libGDX (Matrix4/BufferUtils/Gdx2DPixmap JNI) du jar gdx-platform natives-desktop
+# du classpath. Ce jar embarque TOUTES les plateformes sous leur nom NATIF (gdx64.dll / gdx.dll sur
+# Windows, libgdx64.so sur Linux, libgdx64.dylib sur macOS — vérifié : `unzip -l` liste les 8 fichiers).
+# OS-aware (bug trouvé EN JEU, g255) : le nom était codé en dur "libgdx64.so" (Linux) même sur Windows
+# → `System.load("...\native\libgdx64.so")` échouait `UnsatisfiedLinkError: %1 n'est pas une application
+# Win32 valide` (le contenu est un vrai ELF Linux, pas un PE Windows). GDXNATIVE_NAME est aussi utilisé
+# par le manifeste + BuildManager (packaging) pour que run.bat cherche le bon fichier.
+case "$(uname -s 2>/dev/null || echo linux)" in
+  MINGW*|MSYS*|CYGWIN*) GDXNATIVE_NAME="gdx64.dll" ;;
+  Darwin*)              GDXNATIVE_NAME="libgdx64.dylib" ;;
+  *)                    GDXNATIVE_NAME="libgdx64.so" ;;
+esac
 NATDIR="$BUILD/native"
-if [ ! -f "$NATDIR/libgdx64.so" ]; then
+if [ ! -f "$NATDIR/$GDXNATIVE_NAME" ]; then
   mkdir -p "$NATDIR"
   GDXJAR=$(echo "$RUNTIME_CP" | tr "$PSEP" '\n' | grep 'gdx-platform.*natives-desktop.jar' | head -1)
-  [ -n "$GDXJAR" ] && unzip -oq "$GDXJAR" 'libgdx64.so' -d "$NATDIR" || echo "[desktop] WARN: gdx-platform natives introuvable"
+  [ -n "$GDXJAR" ] && unzip -oq "$GDXJAR" "$GDXNATIVE_NAME" -d "$NATDIR" || echo "[desktop] WARN: gdx-platform natives introuvable"
 fi
 # (Plus de spine-native64.so : spine/particules passent par unidbg + le binaire ARM d'origine.)
 
@@ -279,7 +290,7 @@ fi
 JOPTS="-XX:TieredStopAtLevel=1 -Dorg.lwjgl.util.Debug=false -Ddh.rundir=$BUILD/run"
 # Binaire natif ARM d'origine chargé par UnidbgVM (spine + particules via unidbg).
 JOPTS="$JOPTS -Ddh.spinelib=$(cd .. && pwd)/native/reference/libspine-native.so"
-[ -f "$NATDIR/libgdx64.so" ] && JOPTS="$JOPTS -Ddh.gdxnative=$NATDIR/libgdx64.so"
+[ -f "$NATDIR/$GDXNATIVE_NAME" ] && JOPTS="$JOPTS -Ddh.gdxnative=$(NATIVE "$NATDIR/$GDXNATIVE_NAME")"
 [ -n "${DH_SERVER:-}" ] && JOPTS="$JOPTS -Ddh.server=$DH_SERVER"
 [ -n "${DH_USERID:-}" ] && JOPTS="$JOPTS -Ddh.userid=$DH_USERID"   # AUTH play : force le compte (BuildOptions.TEST_USER_ID au boot)
 [ -n "${DH_USERID_RELOGIN:-}" ] && JOPTS="$JOPTS -Ddh.userid.relogin=$DH_USERID_RELOGIN"   # STRICT : re-login /login pour le mint
