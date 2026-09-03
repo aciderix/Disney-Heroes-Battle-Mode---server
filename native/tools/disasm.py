@@ -10,6 +10,12 @@ Ex.   : python3 native/tools/disasm.py _ZN14ParticleEffect4loadEPhj
         python3 native/tools/disasm.py 0x1a770 120     # sous-parseur d'emitter .np
         python3 native/tools/disasm.py list            # liste les symboles utiles
 
+Mode TRACE (g262quater) : décode UNE INSTRUCTION À LA FOIS une liste d'adresses réellement EXÉCUTÉES
+(capturées par NpFormatOracle mode `trace`, hook_add_new(CodeHook)) -- évite le piège des pools de
+constantes flottantes embarqués dans le code, qui cassent le désassemblage LINÉAIRE (cf. JOURNAL g262ter :
+une adresse jamais exécutée n'est par définition jamais une instruction réelle, donc jamais dans la trace) :
+        python3 native/tools/disasm.py trace native/unidbg/trace_addrs.txt
+
 Dépendances : pip install capstone pyelftools.
 """
 import sys
@@ -43,6 +49,19 @@ def fileoff(secs, va):
 def main():
     f, syms, secs = load()
     arg = sys.argv[1] if len(sys.argv) > 1 else 'list'
+    if arg == 'trace':
+        addrs = [int(l.strip(), 16) for l in open(sys.argv[2]) if l.strip()]
+        md = Cs(CS_ARCH_ARM, CS_MODE_THUMB)
+        for va in addrs:
+            off = fileoff(secs, va)
+            f.seek(off); code = f.read(4)  # une instruction Thumb fait 2 ou 4 o -> 4 suffit toujours
+            insns = list(md.disasm(code, va))
+            if insns:
+                i = insns[0]
+                print(f"  {i.address:#08x}: {i.mnemonic:8} {i.op_str}")
+            else:
+                print(f"  {va:#08x}: <?>")
+        return
     if arg == 'list':
         for n in sorted(syms):
             if 'Particle' in n or 'Native_' in n or 'Skeleton' in n:

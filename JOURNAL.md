@@ -1,5 +1,54 @@
 # JOURNAL — journal détaillé des modifications
 
+## 2026-09-03 (g262quater) — Trace d'exécution réelle (au lieu du désassemblage statique) : méthode qui MARCHE, 2 champs confirmés, le reste identifié mais pas encore nommé individuellement (arrêt volontaire avant risque d'erreur)
+
+Suite de g262ter. Le désassemblage STATIQUE linéaire d'`activateParticles` calait après ~950 o (pool de
+constantes flottantes embarqué dans le code, mal interprété comme instructions → garbage). Demande util. :
+« essayer encore sans contourner, être malin, ne pas se tromper ». Solution PROPRE (pas un contournement) :
+au lieu de deviner où s'arrête le code valide, utiliser la MÊME philosophie que tout le chantier (l'exécution
+réelle EST la vérité) — `Backend.hook_add_new(CodeHook, begin, end)` (API unidbg trouvée par inspection du
+jar, `hook_add_new` = équivalent `UC_HOOK_CODE` d'Unicorn) hooke CHAQUE instruction réellement exécutée
+dans la plage d'une fonction : une adresse jamais exécutée n'est par construction JAMAIS une instruction
+réelle (une donnée n'est jamais exécutée), donc plus aucun risque de tomber sur un pool de constantes.
+
+**Outillage** : `NpFormatOracle` mode `trace` (NEW) — lance un VRAI `Effect_create`+`Effect_start`+20×
+`Effect_update(0.1)`, hooke l'exécution dans `activateParticles`(`0x17331`, symbole réel trouvé en
+g262)/`updateSingleParticle`(`0x17ef1`)/`update`(`0x1641d`), écrit les adresses UNIQUES exécutées
+(dédupliquées, triées) dans `trace_addrs.txt`. `native/tools/disasm.py` mode `trace` (NEW) — décode CETTE
+LISTE d'adresses UNE PAR UNE (capstone sur une instruction connue-valide à la fois, jamais de scan linéaire
+à travers une zone inconnue) → désassemblage PROPRE, complet, sans aucun garbage.
+
+**Résultat sur 2 fichiers réels** (`arena_promote.np` : 455 adresses ; `ralph_skill1_impact.np`, un VRAI
+effet de combat : 585 adresses, dont 492 dans `activateParticles` seul) :
+- **`duration`/`durationTimer`** (champs FLOAT runtime, PAS les `RangedNumericValue` `delayValue`/
+  `durationValue`) confirmés aux offsets absolus **`0x874`**/**`0x878`** — recoupés dans les DEUX fichiers,
+  dans `update()` ET référencés cohéremment ailleurs.
+- **Découverte qui invalide une hypothèse antérieure** : AUCUNE des adresses réellement exécutées (dans
+  les 2 fichiers, y compris le fichier de combat riche en features) ne touche la plage `0x3d8`-`0x6b8` où
+  `NATIVE_PLAN.md` (désassemblage STATIQUE de juillet, jamais vérifié — le même qui avait donné 0/535 deux
+  fois) plaçait `delayValue`/`durationValue`/le bloc `scaledA`. **La formule `absolu = relatif + 0x3d8`
+  posée en g262ter reposait sur cet ancien offset non vérifié — elle est probablement FAUSSE, à
+  abandonner** (bon exemple de pourquoi on vérifie tout par le fait, §8 : une vieille note non confirmée
+  a failli être traitée comme une ancre fiable).
+- **Les VRAIS offsets des champs `ScaledNumericValue` d'`activateParticle`** (life/velocity/velocityZ/
+  angle/sizeX/sizeY/rotation/wind/gravity/tangentialInfluence/centripetalInfluence/brownian, lus dans CET
+  ordre par le bytecode Java, cf. g262) apparaissent regroupés dans la plage **`0x10`-`0x2b8`**, comme
+  pointeurs calculés (`add.w r1, r8, #offset`) juste avant un appel à une fonction PARTAGÉE
+  (`bl 0x17ebc`, probablement un traitement PAR LOT newLow/newHighValue pour tous les particules activées
+  d'un coup — cohérent avec le nom C++ `activateParticleS`, pluriel) — **10-12 offsets distincts repérés**
+  (`0x10, 0x48, 0x98, 0x110, 0x160, 0x188, 0x1d8, 0x210, 0x238, 0x260, 0x290, 0x2b8`) mais **PAS encore
+  attribués individuellement avec certitude** à un nom Java précis : l'ordre d'apparition dans le
+  désassemblage ne suit PAS un ordre monotone simple (le compilateur a réordonné/groupé certains appels),
+  et le code traite un LOT de particules (indices de tableau, boucles imbriquées) — une attribution
+  RUSHÉE ici serait exactement le genre d'erreur à éviter (consigne explicite util.).
+
+**Décision (§8, ne pas se tromper plutôt que d'insister)** : arrêt à ce point de contrôle. La MÉTHODE est
+maintenant PROUVÉE fonctionnelle (contrairement aux 3 tentatives précédentes de g262/g262bis/g262ter, qui
+avaient toutes buté sur un obstacle réel et documenté) et 2 champs sont confirmés avec certitude ; le
+reste demande un travail plus lent et méthodique (corréler l'ORDRE exact des appels `bl 0x17ebc` avec la
+séquence Java field-par-field, en tenant compte du traitement par lot) — pas fait cette session pour ne
+pas produire une attribution non fiable. Outils committés (fonctionnels, aucune fausse déduction dedans).
+
 ## 2026-09-03 (g262ter) — Offsets struct capturés et STABLES entre fichiers ; confirme le stride 0x904 ET que v3 ne sérialise que 4 des 7 `RangedNumericValue` déclarés
 
 Suite immédiate de g262bis. Piste mise en œuvre : `NpFormatOracle` étendu avec un mode `offsets`

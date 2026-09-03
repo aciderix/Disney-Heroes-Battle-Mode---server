@@ -2,6 +2,8 @@ import com.github.unidbg.AndroidEmulator;
 import com.github.unidbg.Emulator;
 import com.github.unidbg.Module;
 import com.github.unidbg.arm.ArmSvc;
+import com.github.unidbg.arm.backend.Backend;
+import com.github.unidbg.arm.backend.CodeHook;
 import com.github.unidbg.debugger.BreakPointCallback;
 import com.github.unidbg.debugger.Debugger;
 import com.github.unidbg.linux.android.AndroidEmulatorBuilder;
@@ -78,6 +80,10 @@ public class NpFormatOracle {
             offsetsBatch(so, args[2], args.length > 3 ? args[3] : null);
             return;
         }
+        if ("trace".equals(args[1])) {
+            traceRun(so, args[2], args[3]);
+            return;
+        }
         byte[] atlasBytes = Files.readAllBytes(new File(args[1]).toPath());
         byte[] npBytes = Files.readAllBytes(new File(args[2]).toPath());
         System.out.println("np file = " + args[2] + " (" + npBytes.length + " bytes)");
@@ -151,6 +157,64 @@ public class NpFormatOracle {
         dbg.addBreakPoint(mod, ADDR_READBYTE, cbShared);
         for (long off : new long[] { ADDR_INLINE1 }) attachInline(dbg, mod, hits, off, 1);
         for (long off : new long[] { ADDR_INLINE2, ADDR_INLINE3 }) attachInline(dbg, mod, hits, off, 2);
+    }
+
+    // g262quater : symboles réels de la simulation (trouvés via nm/pyelftools sur libspine-native.so,
+    // JOURNAL g262) -- adresses relatives au module (mod.base ajouté au moment du hook).
+    static final long SYM_ACTIVATE_PARTICLES = 0x17331, SZ_ACTIVATE_PARTICLES = 2956;
+    static final long SYM_UPDATE_SINGLE = 0x17ef1, SZ_UPDATE_SINGLE = 1576;
+    static final long SYM_UPDATE = 0x1641d, SZ_UPDATE = 360;
+
+    /**
+     * TRACE D'EXÉCUTION (g262quater) -- au lieu de désassembler STATIQUEMENT (linéaire, se fait piéger
+     * par les pools de constantes flottantes embarquées dans le code -> décodage garbage après ~950 o,
+     * cf. JOURNAL g262ter), on hooke l'EXÉCUTION RÉELLE (`Backend.hook_add_new(CodeHook,...)`, un hook
+     * par INSTRUCTION dans la plage donnée) pendant un VRAI appel Effect_create+start+update. Chaque PC
+     * capturé est par construction une VRAIE instruction (jamais une donnée -- une donnée n'est jamais
+     * exécutée) : on n'a plus besoin de deviner où s'arrêter, la trace elle-même EST la réponse. Les
+     * adresses collectées sont ensuite redonnées une par une à `disasm.py` (capstone, robuste sur un
+     * point précis) pour un désassemblage propre, dans l'ordre d'exécution réel.
+     */
+    static void traceRun(String so, String npPath, String atlasPath) throws Exception {
+        byte[] atlasBytes = Files.readAllBytes(new File(atlasPath).toPath());
+        byte[] npBytes = Files.readAllBytes(new File(npPath).toPath());
+        AndroidEmulator emu = newEmulator();
+        VM vm = emu.createDalvikVM();
+        vm.setVerbose(false);
+        DalvikModule dm = vm.loadLibrary(new File(so), true);
+        Module mod = dm.getModule();
+        installBufferSvc(emu, vm);
+        DvmClass cSpine = vm.resolveClass("com/perblue/heroes/cspine/Native");
+        DvmClass cPart = vm.resolveClass("com/perblue/heroes/cparticle/Native");
+        cSpine.callStaticJniMethod(emu, "Spine_init()V");
+        int atlasH = cSpine.callStaticJniMethodInt(emu, "Atlas_create([BZ)I", new ByteArray(vm, atlasBytes), 1);
+        int effH = cPart.callStaticJniMethodInt(emu, "Effect_create([BI)I", new ByteArray(vm, npBytes), atlasH);
+        System.out.println("effH=" + effH);
+
+        Backend backend = emu.getBackend();
+        final java.util.LinkedHashSet<Long> trace = new java.util.LinkedHashSet<>();
+        final long base = mod.base;
+        CodeHook hook = new CodeHook() {
+            @Override public void hook(Backend b, long address, int size, Object user) { trace.add(address - base); }
+            @Override public void onAttach(com.github.unidbg.arm.backend.UnHook u) {}
+            @Override public void detach() {}
+        };
+        long a1 = base + (SYM_ACTIVATE_PARTICLES & ~1L), a2 = base + (SYM_UPDATE_SINGLE & ~1L), a3 = base + (SYM_UPDATE & ~1L);
+        backend.hook_add_new(hook, a1, a1 + SZ_ACTIVATE_PARTICLES, null);
+        backend.hook_add_new(hook, a2, a2 + SZ_UPDATE_SINGLE, null);
+        backend.hook_add_new(hook, a3, a3 + SZ_UPDATE, null);
+
+        cPart.callStaticJniMethod(emu, "Effect_start(I)V", effH);
+        for (int i = 0; i < 20; i++) {
+            cPart.callStaticJniMethodInt(emu, "Effect_update(IF)Z", effH, Float.floatToRawIntBits(0.1f));
+        }
+        System.out.println("trace: " + trace.size() + " adresses uniques exécutées (activateParticles+updateSingleParticle+update)");
+        java.util.List<Long> sorted = new ArrayList<>(trace);
+        java.util.Collections.sort(sorted);
+        try (java.io.PrintWriter pw = new java.io.PrintWriter("trace_addrs.txt")) {
+            for (long a : sorted) pw.printf("0x%x%n", a);
+        }
+        System.out.println("écrit trace_addrs.txt (" + sorted.size() + " adresses, triées)");
     }
 
     /** Sites inline (0x19848/0x19874/0x19a2c) : le registre `reg` tient DIRECTEMENT l'adresse du
