@@ -84,6 +84,20 @@ public class NpFormatOracle {
             traceRun(so, args[2], args[3]);
             return;
         }
+        if ("map".equals(args[1])) {
+            mapFields(so, args[2], args[3]);
+            return;
+        }
+        if ("patchtest".equals(args[1])) {
+            // args: patchtest <so> <np> <atlas> <fileOffsetActiveByte> <0|1>
+            patchTest(so, args[2], args[3], Integer.parseInt(args[4]), Integer.parseInt(args[5]));
+            return;
+        }
+        if ("vertextest".equals(args[1])) {
+            // args: vertextest <so> <np> <atlas> <fileOffsetActiveByte> <0|1>
+            vertexTest(so, args[2], args[3], Integer.parseInt(args[4]), Integer.parseInt(args[5]));
+            return;
+        }
         byte[] atlasBytes = Files.readAllBytes(new File(args[1]).toPath());
         byte[] npBytes = Files.readAllBytes(new File(args[2]).toPath());
         System.out.println("np file = " + args[2] + " (" + npBytes.length + " bytes)");
@@ -178,6 +192,18 @@ public class NpFormatOracle {
     static void traceRun(String so, String npPath, String atlasPath) throws Exception {
         byte[] atlasBytes = Files.readAllBytes(new File(atlasPath).toPath());
         byte[] npBytes = Files.readAllBytes(new File(npPath).toPath());
+        List<Long> sorted = runAndTrace(so, npBytes, atlasBytes);
+        System.out.println("trace: " + sorted.size() + " adresses uniques exécutées (activateParticles+updateSingleParticle+update)");
+        try (java.io.PrintWriter pw = new java.io.PrintWriter("trace_addrs.txt")) {
+            for (long a : sorted) pw.printf("0x%x%n", a);
+        }
+        System.out.println("écrit trace_addrs.txt (" + sorted.size() + " adresses, triées)");
+    }
+
+    /** Rejoue Effect_create+start+20×update et renvoie les offsets (relatifs au module) RÉELLEMENT
+     *  exécutés dans activateParticles/updateSingleParticle/update, triés. Réutilisé par `trace` et
+     *  `patchtest` (même protocole, pour que les deux runs soient comparables). */
+    static List<Long> runAndTrace(String so, byte[] npBytes, byte[] atlasBytes) throws Exception {
         AndroidEmulator emu = newEmulator();
         VM vm = emu.createDalvikVM();
         vm.setVerbose(false);
@@ -189,7 +215,6 @@ public class NpFormatOracle {
         cSpine.callStaticJniMethod(emu, "Spine_init()V");
         int atlasH = cSpine.callStaticJniMethodInt(emu, "Atlas_create([BZ)I", new ByteArray(vm, atlasBytes), 1);
         int effH = cPart.callStaticJniMethodInt(emu, "Effect_create([BI)I", new ByteArray(vm, npBytes), atlasH);
-        System.out.println("effH=" + effH);
 
         Backend backend = emu.getBackend();
         final java.util.LinkedHashSet<Long> trace = new java.util.LinkedHashSet<>();
@@ -208,13 +233,162 @@ public class NpFormatOracle {
         for (int i = 0; i < 20; i++) {
             cPart.callStaticJniMethodInt(emu, "Effect_update(IF)Z", effH, Float.floatToRawIntBits(0.1f));
         }
-        System.out.println("trace: " + trace.size() + " adresses uniques exécutées (activateParticles+updateSingleParticle+update)");
-        java.util.List<Long> sorted = new ArrayList<>(trace);
+        List<Long> sorted = new ArrayList<>(trace);
         java.util.Collections.sort(sorted);
-        try (java.io.PrintWriter pw = new java.io.PrintWriter("trace_addrs.txt")) {
-            for (long a : sorted) pw.printf("0x%x%n", a);
+        return sorted;
+    }
+
+    /**
+     * CORRÉLATION (g262quinquies) : rejoue Effect_create en hookant EN MÊME TEMPS readRanged/readScaled
+     * (destPtr = offset struct) ET read4/readByte/inline (position fichier), dans un flux d'ÉVÉNEMENTS
+     * UNIQUE (ordre d'exécution réel préservé) -- pour chaque occurrence Ranged/Scaled, le TOUT PREMIER
+     * hit qui suit son entrée readRanged/readScaled est par construction son octet `active` (vérifié :
+     * `active` est lu via le MÊME helper partagé 0x1a0c4 que readByte, à travers un fin wrapper 0x1a8d4 --
+     * donc déjà capturé par le hook readByte existant). Donne directement, pour CHAQUE champ, la paire
+     * (offset struct, offset fichier de son octet `active`) -- utile pour cibler un `patchtest` précis.
+     */
+    static void mapFields(String so, String npPath, String atlasPath) throws Exception {
+        byte[] atlasBytes = Files.readAllBytes(new File(atlasPath).toPath());
+        byte[] npBytes = Files.readAllBytes(new File(npPath).toPath());
+        AndroidEmulator emu = newEmulator();
+        VM vm = emu.createDalvikVM();
+        vm.setVerbose(false);
+        DalvikModule dm = vm.loadLibrary(new File(so), true);
+        Module mod = dm.getModule();
+        installBufferSvc(emu, vm);
+        DvmClass cSpine = vm.resolveClass("com/perblue/heroes/cspine/Native");
+        DvmClass cPart = vm.resolveClass("com/perblue/heroes/cparticle/Native");
+        cSpine.callStaticJniMethod(emu, "Spine_init()V");
+        int atlasH = cSpine.callStaticJniMethodInt(emu, "Atlas_create([BZ)I", new ByteArray(vm, atlasBytes), 1);
+
+        // flux d'événements unique : chaque callback ajoute un Object (Hit ou FieldDest) à la MÊME liste,
+        // dans l'ordre réel d'exécution (tous les hooks tournent sur le même emulator/thread).
+        List<Object> events = new ArrayList<>();
+        List<Hit> hitsView = new ArrayList<Hit>() { public boolean add(Hit h) { events.add(h); return true; } };
+        attachHooks(emu, mod, hitsView);
+        Debugger dbg = emu.attach();
+        final long[] lastScaledDest = { -1 };
+        dbg.addBreakPoint(mod, ADDR_READ_SCALED, (e, addr) -> {
+            UnidbgPointer dest = e.getContext().getPointerArg(1);
+            long d = dest == null ? -1 : dest.peer;
+            lastScaledDest[0] = d;
+            events.add(new FieldDest("Scaled", d));
+            return true;
+        });
+        dbg.addBreakPoint(mod, ADDR_READ_RANGED, (e, addr) -> {
+            UnidbgPointer dest = e.getContext().getPointerArg(1);
+            long d = dest == null ? -1 : dest.peer;
+            if (d == lastScaledDest[0]) { lastScaledDest[0] = -1; return true; }
+            events.add(new FieldDest("Ranged", d));
+            return true;
+        });
+
+        int effH = cPart.callStaticJniMethodInt(emu, "Effect_create([BI)I", new ByteArray(vm, npBytes), atlasH);
+        System.out.println("effH=" + effH + " events=" + events.size());
+
+        long fileBase = -1;
+        for (Object o : events) if (o instanceof Hit) { fileBase = ((Hit) o).cursor - 2; break; }
+        long structBase = -1;
+        for (Object o : events) if (o instanceof FieldDest) { structBase = ((FieldDest) o).destPtr; break; }
+
+        for (int i = 0; i < events.size(); i++) {
+            Object o = events.get(i);
+            if (!(o instanceof FieldDest)) continue;
+            FieldDest fd = (FieldDest) o;
+            // le tout prochain Hit dans le flux = son octet `active`
+            long fileOff = -1;
+            for (int j = i + 1; j < events.size(); j++) {
+                if (events.get(j) instanceof Hit) { fileOff = ((Hit) events.get(j)).cursor - fileBase; break; }
+            }
+            System.out.printf("%-6s structOff=%-6d(0x%x abs=0x%x)  fileOff(active)=%d%n",
+                fd.kind, fd.destPtr - structBase, fd.destPtr - structBase, fd.destPtr, fileOff);
         }
-        System.out.println("écrit trace_addrs.txt (" + sorted.size() + " adresses, triées)");
+    }
+
+    /**
+     * TEST EMPIRIQUE (g262quinquies) : patche l'octet `active` d'UN champ (offset fichier donné, trouvé
+     * via `map`) à 0 ou 1 dans une COPIE du fichier, rejoue le MÊME protocole (`runAndTrace`) sur
+     * l'ORIGINAL et sur la version PATCHÉE, et affiche la DIFFÉRENCE d'adresses exécutées -- montre
+     * EXACTEMENT quel bloc de code (donc quel offset struct / quelle fonction newLowValue/newHighValue)
+     * s'active/se désactive avec ce champ. Confirmation empirique, pas une lecture d'assembleur devinée.
+     */
+    static void patchTest(String so, String npPath, String atlasPath, int fileOffsetActive, int newVal) throws Exception {
+        byte[] atlasBytes = Files.readAllBytes(new File(atlasPath).toPath());
+        byte[] orig = Files.readAllBytes(new File(npPath).toPath());
+        byte[] patched = orig.clone();
+        System.out.println("octet @ " + fileOffsetActive + " : " + orig[fileOffsetActive] + " -> " + newVal);
+        patched[fileOffsetActive] = (byte) newVal;
+
+        List<Long> t1 = runAndTrace(so, orig, atlasBytes);
+        List<Long> t2 = runAndTrace(so, patched, atlasBytes);
+        java.util.Set<Long> s1 = new java.util.TreeSet<>(t1), s2 = new java.util.TreeSet<>(t2);
+        java.util.Set<Long> onlyOrig = new java.util.TreeSet<>(s1); onlyOrig.removeAll(s2);
+        java.util.Set<Long> onlyPatched = new java.util.TreeSet<>(s2); onlyPatched.removeAll(s1);
+        System.out.println("original: " + s1.size() + " adresses, patché: " + s2.size() + " adresses");
+        System.out.println("--- présentes SEULEMENT dans l'ORIGINAL (disparues avec le patch) ---");
+        for (long a : onlyOrig) System.out.printf("  0x%x%n", a);
+        System.out.println("--- présentes SEULEMENT dans le PATCHÉ (apparues avec le patch) ---");
+        for (long a : onlyPatched) System.out.printf("  0x%x%n", a);
+    }
+
+    /**
+     * TEST EMPIRIQUE PAR LA SORTIE RENDUE (g262quinquies) : certains champs sont traités SANS
+     * branchement conditionnel (pas de `ifeq` sur `active` dans le bytecode Java -- ex. life/angle/
+     * sizeX/sizeY, cf. JOURNAL g262) -> le patch de leur octet `active` ne fait AUCUNE différence de
+     * trace d'ADRESSES (le code tourne pareil), seule la VALEUR change. Signal plus fort : comparer les
+     * SOMMETS RÉELLEMENT RENDUS (`Effect_getVertices`, comme le fait le jeu) image par image entre
+     * l'original et le patché -- si les positions divergent (ou pas), ça révèle un effet MESURABLE,
+     * pas déduit d'un désassemblage. Dump les 2 premiers sommets (x,y) sur N frames pour les 2 versions.
+     */
+    static void vertexTest(String so, String npPath, String atlasPath, int fileOffsetActive, int newVal) throws Exception {
+        byte[] atlasBytes = Files.readAllBytes(new File(atlasPath).toPath());
+        byte[] orig = Files.readAllBytes(new File(npPath).toPath());
+        byte[] patched = orig.clone();
+        System.out.println("octet @ " + fileOffsetActive + " : " + orig[fileOffsetActive] + " -> " + newVal);
+        patched[fileOffsetActive] = (byte) newVal;
+
+        System.out.println("=== ORIGINAL ===");
+        runAndDumpVertices(so, orig, atlasBytes);
+        System.out.println("=== PATCHÉ ===");
+        runAndDumpVertices(so, patched, atlasBytes);
+    }
+
+    static void runAndDumpVertices(String so, byte[] npBytes, byte[] atlasBytes) throws Exception {
+        AndroidEmulator emu = newEmulator();
+        Memory memory = emu.getMemory();
+        VM vm = emu.createDalvikVM();
+        vm.setVerbose(false);
+        DalvikModule dm = vm.loadLibrary(new File(so), true);
+        installBufferSvc(emu, vm);
+        DvmClass cSpine = vm.resolveClass("com/perblue/heroes/cspine/Native");
+        DvmClass cPart = vm.resolveClass("com/perblue/heroes/cparticle/Native");
+        cSpine.callStaticJniMethod(emu, "Spine_init()V");
+        int atlasH = cSpine.callStaticJniMethodInt(emu, "Atlas_create([BZ)I", new ByteArray(vm, atlasBytes), 1);
+        int effH = cPart.callStaticJniMethodInt(emu, "Effect_create([BI)I", new ByteArray(vm, npBytes), atlasH);
+        cPart.callStaticJniMethod(emu, "Effect_start(I)V", effH);
+
+        com.github.unidbg.memory.MemoryBlock embV = memory.malloc(8192 * 6 * 4, false);
+        com.github.unidbg.memory.MemoryBlock embD = memory.malloc(8192 * 2, false);
+        Object objVerts = vm.resolveClass("java/nio/FloatBuffer").newObject(embV.getPointer());
+        Object objDraw = vm.resolveClass("java/nio/ShortBuffer").newObject(embD.getPointer());
+
+        for (int f = 0; f < 15; f++) {
+            cPart.callStaticJniMethodInt(emu, "Effect_update(IF)Z", effH, Float.floatToRawIntBits(0.1f));
+            int n = cPart.callStaticJniMethodInt(emu, "Effect_getVertices(ILjava/nio/FloatBuffer;Ljava/nio/ShortBuffer;)I",
+                effH, objVerts, objDraw);
+            // n = nombre de DRAW CALLS (pas de sommets, cf. UnidbgVM.java) -- le vrai compte de sommets est
+            // le short à l'offset n*3 du buffer drawCalls (3 shorts/appel + 1 short total à la fin).
+            UnidbgPointer vp = embV.getPointer();
+            UnidbgPointer dp = embD.getPointer();
+            int vertCount = n > 0 ? (dp.getShort(n * 3L * 2) & 0xffff) : 0;
+            StringBuilder sb = new StringBuilder();
+            int nShow = Math.min(3, vertCount);
+            for (int i = 0; i < nShow; i++) {
+                float x = vp.getFloat(i * 6L * 4), y = vp.getFloat(i * 6L * 4 + 4);
+                sb.append(String.format("(%.2f,%.2f) ", x, y));
+            }
+            System.out.printf("frame %2d: drawCalls=%-3d verts=%-4d %s%n", f, n, vertCount, sb);
+        }
     }
 
     /** Sites inline (0x19848/0x19874/0x19a2c) : le registre `reg` tient DIRECTEMENT l'adresse du

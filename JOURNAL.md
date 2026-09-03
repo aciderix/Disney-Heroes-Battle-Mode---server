@@ -1,5 +1,55 @@
 # JOURNAL — journal détaillé des modifications
 
+## 2026-09-03 (g262quinquies) — `velocityValue` confirmé EMPIRIQUEMENT (struct 0x110) via divergence de sortie rendue ; méthode `map`+`patchtest`+`vertextest` opérationnelle
+
+Suite immédiate de g262quater. Demande util. : « poursuit ». Constat de départ : la trace d'adresses
+(g262quater) montrait `structOff=0x110` gated par un bit `updateFlags` correspondant à VELOCITY (hypothèse
+tirée d'une lecture de bits, pas encore confirmée) — mais un premier `patchtest` (bascule de l'octet
+`active` de ce champ) n'a montré **aucune différence de trace** (mêmes 585 adresses des deux côtés).
+**Ce résultat négatif est cohérent, pas un échec de méthode** : `velocityValue` EST gaté par un `ifeq`
+dans le bytecode Java (confirmé g262), mais le bloc conditionnel est visiblement trop petit/partagé pour
+créer une différence d'ADRESSES détectable dans les 3 fonctions tracées — la trace de code ne capture que
+les effets sur le CONTRÔLE DE FLUX, pas sur les VALEURS calculées.
+
+**Outillage** : 3 nouveaux modes `NpFormatOracle`.
+- `map` : rejoue Effect_create en hookant EN MÊME TEMPS `readRanged`/`readScaled` (offset struct) ET les
+  primitives `read4`/`readByte`/inline (offset fichier) dans un flux d'événements UNIQUE (ordre
+  d'exécution réel préservé) → pour chaque champ, le TOUT PREMIER hit qui suit son entrée readRanged/
+  readScaled est par construction son octet `active` (confirmé : `active` passe par le MÊME helper
+  partagé `0x1a0c4` que `readByte`, via un fin wrapper `0x1a8d4` — déjà capturé par le hook existant).
+  Donne directement, pour CHAQUE champ d'un fichier réel, la paire (offset struct, offset fichier `active`).
+- `patchtest` : bascule l'octet `active` d'UN champ (trouvé via `map`) dans une COPIE du fichier, rejoue
+  `runAndTrace` sur l'original et le patché, diffuse la DIFFÉRENCE d'adresses exécutées.
+- `vertextest` (NEW, signal plus fort) : au lieu de comparer les ADRESSES exécutées, compare les VRAIS
+  SOMMETS RENDUS (`Effect_getVertices`, comme le fait le jeu) image par image entre original et patché —
+  capture les effets sur les VALEURS, pas seulement le flux de contrôle. Bug corrigé en le construisant :
+  la valeur de retour de `Effect_getVertices` = nombre de DRAW CALLS, PAS le nombre de sommets (déjà
+  documenté dans `UnidbgVM.java` mais oublié en premier jet) — le vrai compte de sommets est le short à
+  l'offset `n*3` du buffer `drawCalls`.
+
+**Résultat CONFIRMÉ** (`ralph_skill1_impact.np`, champ à `structOff=0x110`/fileOff=361) : `vertextest`
+montre une divergence de position **NULLE aux frames 0-1 puis CROISSANTE** (delta X : 0 → 9 → 29 sur les
+frames 2/3/4) entre original et patché (`active`: 1→0) — signature EXACTE d'un terme de VÉLOCITÉ retiré
+(l'erreur de position s'accumule frame après frame quand la vitesse est mise à 0, pas un décalage
+constant comme le serait un champ statique). **`structOff=0x110` (272 décimal) = `velocityValue`,
+confirmé par un signal comportemental mesuré, pas déduit d'un désassemblage.**
+
+**Résultat NÉGATIF documenté honnêtement** : `patchtest`/`vertextest` sur `duration` (`structOff=0x38`,
+fileOff=24) ne montrent AUCUNE différence sur 15 frames — cohérent a posteriori (`duration` gère le
+CALENDRIER D'ÉMISSION de l'émetteur — combien de temps il continue à faire naître de nouvelles particules
+— pas la physique des particules déjà nées ; un test sur une fenêtre plus longue serait nécessaire pour
+l'observer). La confirmation de `duration`/`durationTimer` @ `0x874`/`0x878` (g262quater, via `update()`)
+reste acquise par une méthode différente et n'est pas remise en cause.
+
+**Bilan** : 2ᵉ champ confirmé avec certitude (`velocityValue`), méthode `map`+`patchtest`+`vertextest`
+opérationnelle et RÉUTILISABLE pour le reste (10 champs `Scaled` + quelques `Ranged` encore à attribuer).
+Chantier PAS terminé (attribution complète des ~26 champs), mais la méthode est maintenant éprouvée sur 2
+cas et le prochain travail est répétitif (appliquer `map`+`vertextest` à chaque offset restant), pas
+exploratoire.
+
+Fichiers : `native/unidbg/NpFormatOracle.java` (modes `map`/`vertextest` NEW, `patchtest` du tour
+précédent gardé).
+
 ## 2026-09-03 (g262quater) — Trace d'exécution réelle (au lieu du désassemblage statique) : méthode qui MARCHE, 2 champs confirmés, le reste identifié mais pas encore nommé individuellement (arrêt volontaire avant risque d'erreur)
 
 Suite de g262ter. Le désassemblage STATIQUE linéaire d'`activateParticles` calait après ~950 o (pool de
