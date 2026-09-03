@@ -126,6 +126,11 @@ public class NpFormatOracle {
             rngProbe(so, args[2], args[3]);
             return;
         }
+        if ("activorder".equals(args[1])) {
+            // args: activorder <so> <np> <atlas>
+            activOrder(so, args[2], args[3]);
+            return;
+        }
         if ("goldenall".equals(args[1])) {
             // args: goldenall <so> <assetsRoot> <outDir> [nframes] [dt_ms]  -- 1 golden par .np (récursif)
             int nf = args.length > 4 ? Integer.parseInt(args[4]) : 30;
@@ -440,6 +445,59 @@ public class NpFormatOracle {
     static float lcgFloat(int newseed) {
         int bits = (newseed & 0x7fffff) | 0x3f800000;
         return Float.intBitsToFloat(bits) - 1.0f;
+    }
+
+    /**
+     * ACTIV ORDER (g264) : capture l'ORDRE d'exécution des champs ScaledNumericValue traités par
+     * `activateParticles` (via le helper 0x17ebc, r1 = pointeur champ) pendant un vrai spawn. Corrélé aux
+     * offsets struct (via l'emitter base capturé à l'entrée 0x17331, r0), donne l'ordre JAVA de lecture
+     * des champs -> avec map (structOff -> slot parseur), le MAPPING sémantique complet. Le 1er émetteur
+     * qui spawn suffit (tous ont le même layout). velocity=0x110 sert d'ancre de validation.
+     */
+    static void activOrder(String so, String npPath, String atlasPath) throws Exception {
+        byte[] atlasBytes = Files.readAllBytes(new File(atlasPath).toPath());
+        byte[] npBytes = Files.readAllBytes(new File(npPath).toPath());
+        AndroidEmulator emu = newEmulator();
+        Memory memory = emu.getMemory();
+        VM vm = emu.createDalvikVM();
+        vm.setVerbose(false);
+        DalvikModule dm = vm.loadLibrary(new File(so), true);
+        Module mod = dm.getModule();
+        installBufferSvc(emu, vm);
+        DvmClass cSpine = vm.resolveClass("com/perblue/heroes/cspine/Native");
+        DvmClass cPart = vm.resolveClass("com/perblue/heroes/cparticle/Native");
+        cSpine.callStaticJniMethod(emu, "Spine_init()V");
+        int atlasH = cSpine.callStaticJniMethodInt(emu, "Atlas_create([BZ)I", new ByteArray(vm, atlasBytes), 1);
+        int effH = cPart.callStaticJniMethodInt(emu, "Effect_create([BI)I", new ByteArray(vm, npBytes), atlasH);
+
+        Debugger dbg = emu.attach();
+        final long base = mod.base;
+        final long[] emitterBase = {0};
+        final java.util.List<Long> order = new ArrayList<>();
+        final boolean[] stop = {false};
+        // entrée activateParticles (0x17331) : r0 = emitter base
+        dbg.addBreakPoint(mod, 0x17331, (e, addr) -> {
+            if (emitterBase[0] == 0) {
+                com.github.unidbg.arm.context.Arm32RegisterContext c = (com.github.unidbg.arm.context.Arm32RegisterContext) e.getContext();
+                emitterBase[0] = c.getR0Int() & 0xffffffffL;
+            }
+            return true;
+        });
+        // helper champ scaled 0x17ebc : r1 = pointeur du champ
+        dbg.addBreakPoint(mod, 0x17ebc, (e, addr) -> {
+            if (stop[0]) return true;
+            com.github.unidbg.arm.context.Arm32RegisterContext c = (com.github.unidbg.arm.context.Arm32RegisterContext) e.getContext();
+            long ptr = c.getR1Int() & 0xffffffffL;
+            if (emitterBase[0] != 0) { order.add(ptr - emitterBase[0]); if (order.size() >= 40) stop[0] = true; }
+            return true;
+        });
+        cPart.callStaticJniMethod(emu, "Effect_start(I)V", effH);
+        cPart.callStaticJniMethodInt(emu, "Effect_update(IF)Z", effH, Float.floatToRawIntBits(0.1f));
+        System.out.println("emitter base=0x" + Long.toHexString(emitterBase[0]));
+        System.out.println("ordre des champs Scaled traités par activateParticles (0x17ebc), en offset struct :");
+        for (int i = 0; i < order.size(); i++)
+            System.out.printf("  [%2d] structOff=0x%x (%d)%s%n", i, order.get(i), order.get(i),
+                order.get(i) == 0x110 ? "  <- velocity (ancre)" : "");
     }
 
     static final int NFRAMES = 15;
