@@ -169,11 +169,40 @@ emitter doit retomber EXACTEMENT sur le 1ᵉʳ octet du suivant, ou sur EOF pour
 taille de champ erronée aurait échoué sur au moins un des 535 fichiers réels (tailles/contenus tous
 différents), donc ce résultat n'est PAS un hasard statistique.
 
+## Grammaire complète du champ « emitter » (auto-dérivée, zéro trou)
+
+Un classifieur automatique (segmentation gloutonne, plus-long-motif-d'abord, sur la SUITE DE TYPES bruts
+bool/int capturée par l'oracle — PAS une relecture manuelle) a segmenté l'INTÉGRALITÉ des 277 hits de
+l'emitter #0 de `arena_promote.np` en motifs composites CONNUS (`readRanged`=biib, `readScaled`=
+biibiibbiii, `readNumeric`=bi, `readGradient`=biii, `readSpawnShape`=bb[bb si code==3/ellipse]) — **zéro
+position non reconnue**, jusqu'à retomber exactement sur `poolSize`/`tagLen`. Résultat (valeurs de
+`arena_promote.np`, confirme quasi-exactement l'ordre déjà PRESSENTI (mais jamais validé) dans
+`native/NATIVE_PLAN.md` §Séquence) :
+```
+read4       minParticleCount=1, maxParticleCount=4        (après emitterCount, lu hors emitter)
+Ranged      delay    : active=0 min=0 max=0 linked=0
+Ranged      duration : active=1 min=1500 max=1500 linked=0
+Scaled ×6                                                  (ex. emission/life/lengthLife/lengthValue/xScale/yScale — noms à confirmer contre la source gdx claire)
+Numeric     active=0 value=0                                (ex. rotation ou wind — à confirmer)
+SpawnShape  active=1 code=3(ellipse) edges=0 side=0
+Scaled ×12                                                  (spawnWidth/Height, xOffset/yOffset, spriteMode params, etc.)
+Ranged  Scaled ×2  Ranged  Scaled                            (bloc répété, 4 valeurs de plus)
+Gradient    active=1 N=3 offColors=44 offTimeline=47         (tint color)
+Scaled      + read4 seul                                     (dernier scaled + 1 float isolé)
+bool ×5     (attached/continuous/aligned/behind + 1 de plus) (regroupement exact à affiner)
+poolSize=62 tagLen=11 → tag="fireworks_b"
+```
+**Statut** : la STRUCTURE (bornes exactes de chaque champ, en octets, certifiée 535/535) est acquise ;
+l'attribution des NOMS précis de chaque `Scaled`/`Numeric` à son champ Java (`emissionValue`,
+`lifeOffsetValue`, `xScaleValue`, …) reste à faire par comparaison directe avec l'ordre d'écriture de
+`com.badlogic.gdx....ParticleEmitter.save()`/le convertisseur clair de `game.jar` (PRINCIPLES §4 :
+extraction, pas invention) — nécessaire pour écrire un parseur LISIBLE/maintenable, mais PAS bloquant
+pour un parseur fonctionnel (on peut déjà lire/réécrire les octets dans le bon ordre sans connaître le
+nom de chaque champ, comme le fait le classifieur ci-dessus).
+
 **Portée de ce qui reste** (chantier substantiel, PAS traité dans cet incrément) :
-1. Nommer précisément CHAQUE champ de la séquence (actuellement on sait où sont les frontières et les
-   TYPES bruts — bool/int/pool/tag — mais pas encore l'attribution complète à chaque nom sémantique du
-   struct `0x904` ; delay/duration/minCount/maxCount déjà faits, le reste est mécanique — même méthode,
-   juste du temps à dérouler la séquence complète + croiser avec la struct 0x904 octets/emitter).
+1. Mapper chaque `Scaled`/`Numeric` à son nom Java exact (lecture ciblée de `game.jar` décompilé, pas
+   deviné) — améliore la lisibilité du futur C, non bloquant pour le parsing lui-même.
 2. Écrire `cparticle_jni.c::Effect_create` fidèle (parsing certifié), la simulation (`updateParticles`,
    portée depuis `com.badlogic.gdx...ParticleEmitter` EN CLAIR dans `game.jar`, comportement identique
    par construction) et le rendu 2-couleurs (`getTCVertices`), le tout validé en CONTINU contre CET
