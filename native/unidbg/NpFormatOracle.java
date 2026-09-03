@@ -56,14 +56,26 @@ public class NpFormatOracle {
     static final long ADDR_INLINE1 = 0x19848; // ldrb r2,[r1],#1 -- r1 = curseur direct
     static final long ADDR_INLINE2 = 0x19874; // ldrb r0,[r2],#1 -- r2 = curseur direct
     static final long ADDR_INLINE3 = 0x19a2c; // ldrb r0,[r2],#1 -- r2 = curseur direct
+    // g262bis : readRanged/readScaled elles-mêmes (PAS les primitives read4/readByte) -- code séquentiel
+    // simple (contrairement à activateParticles, optimisé/vectorisé). r1 à l'ENTRÉE = pointeur de
+    // DESTINATION dans la struct emitter (RangedNumericValue*/ScaledNumericValue*), passé tel quel par
+    // ParticleEmitter::load -- donne l'offset struct de CHAQUE occurrence sans toucher au code de sim.
+    static final long ADDR_READ_RANGED = 0x19fd0;
+    static final long ADDR_READ_SCALED = 0x1a020;
 
     static final class Hit { final boolean isInt; final long cursor; final int val;
         Hit(boolean isInt, long cursor, int val) { this.isInt = isInt; this.cursor = cursor; this.val = val; } }
+    static final class FieldDest { final String kind; final long destPtr;
+        FieldDest(String kind, long destPtr) { this.kind = kind; this.destPtr = destPtr; } }
 
     public static void main(String[] args) throws Exception {
         String so = args[0];
         if ("verify".equals(args[1])) {
             verifyBatch(so, args[2], args.length > 3 ? args[3] : null);
+            return;
+        }
+        if ("offsets".equals(args[1])) {
+            offsetsBatch(so, args[2], args.length > 3 ? args[3] : null);
             return;
         }
         byte[] atlasBytes = Files.readAllBytes(new File(args[1]).toPath());
@@ -151,6 +163,88 @@ public class NpFormatOracle {
             hits.add(new Hit(false, cAddr, val));
             return true;
         });
+    }
+
+    /** Hooke readRanged/readScaled : capture (kind, destPtr) dans l'ORDRE d'exécution. readScaled
+     *  délègue ses 10 premiers octets à readRanged en lui passant le MÊME r1 (sous-objet "low") --
+     *  filtré ici (destPtr identique au dernier "Scaled" vu -> c'est la délégation interne, pas un
+     *  Ranged autonome). */
+    static void attachDestHooks(AndroidEmulator emu, Module mod, List<FieldDest> dests) {
+        Debugger dbg = emu.attach();
+        final long[] lastScaledDest = { -1 };
+        dbg.addBreakPoint(mod, ADDR_READ_SCALED, (e, addr) -> {
+            UnidbgPointer dest = e.getContext().getPointerArg(1);
+            long d = dest == null ? -1 : dest.peer;
+            lastScaledDest[0] = d;
+            dests.add(new FieldDest("Scaled", d));
+            return true;
+        });
+        dbg.addBreakPoint(mod, ADDR_READ_RANGED, (e, addr) -> {
+            UnidbgPointer dest = e.getContext().getPointerArg(1);
+            long d = dest == null ? -1 : dest.peer;
+            if (d == lastScaledDest[0]) { lastScaledDest[0] = -1; return true; } // délégation interne de readScaled -- ignorée
+            dests.add(new FieldDest("Ranged", d));
+            return true;
+        });
+    }
+
+    /** Rejoue plusieurs `.np` réels et imprime, pour chacun, la liste des occurrences Ranged/Scaled avec
+     *  leur offset struct RELATIF au premier (= delay, toujours 1er par construction, cf. séquence
+     *  certifiée g261quater) -- permet de voir si l'ensemble d'offsets est stable entre fichiers (champ
+     *  toujours au même endroit) et si des fichiers "riches" (tangentiel/centripète actifs) en révèlent
+     *  PLUS que les simples (vérifie l'hypothèse g262bis : v3 ne sérialise peut-être pas tous les champs
+     *  RangedNumericValue déclarés dans la classe actuelle). */
+    static void offsetsBatch(String so, String npRoot, String limitArg) throws Exception {
+        File root = new File(npRoot);
+        List<File> files = new ArrayList<>();
+        File[] anyAtlasHolder = new File[1];
+        collectNp(root, files, anyAtlasHolder);
+        java.util.Collections.sort(files);
+        if (files.isEmpty()) { System.out.println("aucun .np trouvé sous: " + npRoot); return; }
+        int limit = limitArg != null ? Integer.parseInt(limitArg) : files.size();
+
+        AndroidEmulator emu = newEmulator();
+        VM vm = emu.createDalvikVM();
+        vm.setVerbose(false);
+        DalvikModule dm = vm.loadLibrary(new File(so), true);
+        Module mod = dm.getModule();
+        installBufferSvc(emu, vm);
+        DvmClass cSpine = vm.resolveClass("com/perblue/heroes/cspine/Native");
+        DvmClass cPart = vm.resolveClass("com/perblue/heroes/cparticle/Native");
+        cSpine.callStaticJniMethod(emu, "Spine_init()V");
+        byte[] dummyAtlas = Files.readAllBytes(anyAtlasHolder[0].toPath());
+        int atlasH = cSpine.callStaticJniMethodInt(emu, "Atlas_create([BZ)I", new ByteArray(vm, dummyAtlas), 1);
+
+        java.util.Map<String, Integer> rangedOffsetFreq = new java.util.TreeMap<>();
+        java.util.Map<String, Integer> scaledOffsetFreq = new java.util.TreeMap<>();
+        int maxRanged = 0, maxScaled = 0;
+        for (int fi = 0; fi < Math.min(limit, files.size()); fi++) {
+            File f = files.get(fi);
+            byte[] npBytes = Files.readAllBytes(f.toPath());
+            List<FieldDest> dests = new ArrayList<>();
+            attachDestHooks(emu, mod, dests);
+            try {
+                cPart.callStaticJniMethodInt(emu, "Effect_create([BI)I", new ByteArray(vm, npBytes), atlasH);
+            } catch (Throwable t) { continue; }
+            if (dests.isEmpty()) continue;
+            long base = dests.get(0).destPtr; // 1er champ Ranged/Scaled = delay, toujours (séquence certifiée)
+            int nR = 0, nS = 0;
+            StringBuilder line = new StringBuilder();
+            for (FieldDest d : dests) {
+                long rel = d.destPtr - base;
+                String key = d.kind + "@" + rel;
+                line.append(key).append(' ');
+                if ("Ranged".equals(d.kind)) { nR++; rangedOffsetFreq.merge(String.valueOf(rel), 1, Integer::sum); }
+                else { nS++; scaledOffsetFreq.merge(String.valueOf(rel), 1, Integer::sum); }
+            }
+            maxRanged = Math.max(maxRanged, nR); maxScaled = Math.max(maxScaled, nS);
+            System.out.printf("%-70s Ranged=%d Scaled=%d : %s%n", f.getName(), nR, nS, line);
+        }
+        System.out.println("=== offsets Ranged (relatif à delay) vus, avec fréquence ===");
+        for (java.util.Map.Entry<String, Integer> e : rangedOffsetFreq.entrySet()) System.out.println("  " + e.getKey() + " : " + e.getValue() + "x");
+        System.out.println("=== offsets Scaled (relatif à delay) vus, avec fréquence ===");
+        for (java.util.Map.Entry<String, Integer> e : scaledOffsetFreq.entrySet()) System.out.println("  " + e.getKey() + " : " + e.getValue() + "x");
+        System.out.println("max Ranged/fichier=" + maxRanged + " max Scaled/fichier=" + maxScaled);
     }
 
     /** Vérifie RÉCURSIVEMENT tout un dossier (et ses sous-dossiers) de `.np` réels : compte

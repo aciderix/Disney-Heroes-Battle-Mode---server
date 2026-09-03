@@ -1,5 +1,44 @@
 # JOURNAL — journal détaillé des modifications
 
+## 2026-09-03 (g262ter) — Offsets struct capturés et STABLES entre fichiers ; confirme le stride 0x904 ET que v3 ne sérialise que 4 des 7 `RangedNumericValue` déclarés
+
+Suite immédiate de g262bis. Piste mise en œuvre : `NpFormatOracle` étendu avec un mode `offsets`
+(`attachDestHooks`, hooks sur l'ENTRÉE de `readRanged`(0x19fd0)/`readScaled`(0x1a020) — capture `r1` =
+pointeur de destination dans la struct emitter ; `readScaled` délègue ses 10 premiers octets à
+`readRanged` en passant le MÊME `r1` → filtré par déduplication sur le dernier destPtr "Scaled" vu, pour
+ne pas compter deux fois la même occurrence).
+
+**Rejoué sur `arena_promote.np` (1 emitter), `battlepass_claimable.np` (4 emitters),
+`battlepass_claim_reward.np` (11 emitters)** :
+- **Le motif d'offsets (relatif au premier champ = `delay`) est EXACTEMENT IDENTIQUE dans les 3
+  fichiers**, répété une fois par emitter — confirme que le layout struct est un **format C fixe**,
+  stable sur des fichiers de tailles/contenus totalement différents (pas un hasard).
+- **Le pas entre 2 emitters consécutifs = exactement 2308 octets (`0x904`)** — confirme
+  INDÉPENDAMMENT la taille de struct déjà documentée (`NATIVE_PLAN.md`, désassemblage statique de
+  juillet : « alloue count × 0x904 octets/emitter »). Recoupement croisé réussi entre 2 méthodes.
+- **Seulement 4 occurrences `Ranged` par emitter** (`@0`=delay, `@56`=duration, `@792`, `@888`) sur les
+  **7** champs `RangedNumericValue` déclarés dans la classe Java actuelle (`delay`, `duration`,
+  `centripetalRadius`, `tangentialRadius`, `xOffset`, `yOffset`, `zOffset`) — **confirme l'hypothèse
+  g262bis** : le format v3 ne sérialise PAS tous les champs de la classe ACTUELLE (writer plus récent
+  qu'à l'époque de v3, cf. note déjà posée dans `NP_FORMAT.md`). Les 2 `Ranged` non identifiés
+  (`@792`/`@888`) sont probablement 2 des 5 « nouveaux » champs, ou 2 champs plus anciens — reste à
+  déterminer, mais la STRUCTURE (4 occurrences, pas 7) est maintenant un FAIT mesuré sur 3 fichiers
+  différents, pas une supposition.
+- **Formule offset relatif → offset ABSOLU struct établie et vérifiée** : `absolu = relatif + 0x3d8`
+  (puisque `delay` — le point de référence relatif 0 — est déjà connu à l'offset ABSOLU `0x3d8` par
+  l'ancien désassemblage statique de juillet, `NATIVE_PLAN.md`). Vérifié : `duration` relatif `56` →
+  absolu `0x3d8+56=0x410` — **correspond EXACTEMENT** à l'offset déjà noté pour `duration` dans
+  `NATIVE_PLAN.md` (`readRanged(0x410)`) — recoupement à l'octet près entre 2 méthodes indépendantes
+  (désassemblage statique de juillet vs oracle d'exécution de cette session).
+
+**Portée** : donne maintenant l'offset ABSOLU exact de chacune des ~26 occurrences Ranged/Scaled par
+emitter (calculable directement depuis les logs `offsets`). Reste à attribuer un NOM sémantique à
+chaque offset (recherche CIBLÉE de la valeur d'offset dans le désassemblage d'`activateParticles`/
+`update`/`updateParticle` — beaucoup plus tractable que comprendre le code optimisé dans son ensemble,
+puisqu'on cherche maintenant une constante précise, pas la structure générale) — PAS fait cette session
+(prochaine étape naturelle). Outil committé (`NpFormatOracle.java`, mode `offsets`), aucune donnée
+inventée.
+
 ## 2026-09-03 (g262bis) — Piste de mapping sémantique affinée : `readRanged`/`readScaled` exposent leur pointeur de destination (offset struct) directement au registre d'entrée + 3 champs déjà déterminés par élimination de type
 
 Suite immédiate de g262 (blocage : mapping position certifiée → nom sémantique, désassemblage
