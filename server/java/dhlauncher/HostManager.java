@@ -52,8 +52,15 @@ public final class HostManager {
         if (!script.isFile()) throw new IOException("bundle invalide (run script absent): " + script);
         this.contentPort = contentPort; this.gamePort = gamePort; this.authPort = authPort;
         this.strict = strict; this.bundleMode = true; this.content = null;
-        // ADMIN indisponible en mode BUNDLE pour l'instant : le run.sh généré ne relaie pas encore DH_ADMIN_* (à venir).
-        this.adminPort = 0; this.adminToken = null; this.dataDir = dir;
+        // ADMIN en mode BUNDLE (g260) : RUN_BAT_/RUN_SH_ (BuildManager) relaient DÉJÀ DH_ADMIN_BIND/DH_ADMIN_PORT
+        // (-D) + DH_ADMIN_TOKEN (env, lu directement par LoginServer — jamais sur la ligne de commande, absent de
+        // `ps`) depuis longtemps (chantier F, admin distant) — seul HostManager ne les générait/passait jamais
+        // pour SON PROPRE lancement bundle local. Même convention que le mode dev : port = authPort+1, jeton
+        // aléatoire par session. Glue uniquement (§1) : le script du bundle n'est pas modifié, on finit de
+        // câbler ce qu'il sait déjà faire.
+        this.adminPort = authPort + 1;
+        this.adminToken = java.util.UUID.randomUUID().toString().replace("-", "");
+        this.dataDir = dir;
 
         ProcessBuilder pb = new ProcessBuilder(win
                 ? new java.util.ArrayList<>(List.of("cmd", "/c", script.getPath()))
@@ -63,6 +70,9 @@ public final class HostManager {
         pb.environment().put("DH_CONTENT_PORT", String.valueOf(contentPort));
         pb.environment().put("DH_GAME_PORT", String.valueOf(gamePort));
         pb.environment().put("DH_AUTH_PORT", String.valueOf(authPort));
+        pb.environment().put("DH_ADMIN_BIND", "127.0.0.1");
+        pb.environment().put("DH_ADMIN_PORT", String.valueOf(adminPort));
+        pb.environment().put("DH_ADMIN_TOKEN", adminToken);
         if (strict) pb.environment().put("DH_SERVER_OPTS", "-Ddh.auth=on");
         server = pb.start();
         startedAt = System.currentTimeMillis();
@@ -147,15 +157,15 @@ public final class HostManager {
     }
 
     /** ADMIN — base de l'AdminService du serveur hébergé (proxy {@code /admin/*}), ou {@code null} si indisponible
-     *  (arrêté, ou mode bundle non encore câblé). Loopback : le serveur écoute {@code 127.0.0.1:adminPort}. */
+     *  (arrêté). Loopback : le serveur écoute {@code 127.0.0.1:adminPort} (mode dev ET mode bundle, g260). */
     public synchronized String adminBaseUrl() {
-        if (!isRunning() || bundleMode || adminPort <= 0) return null;
+        if (!isRunning() || adminPort <= 0) return null;
         return "http://127.0.0.1:" + adminPort;
     }
 
     /** ADMIN — jeton opérateur à injecter dans les requêtes proxifiées vers l'AdminService, ou {@code null}. */
     public synchronized String adminToken() {
-        return (isRunning() && !bundleMode) ? adminToken : null;
+        return isRunning() ? adminToken : null;
     }
 
     /**

@@ -47,7 +47,12 @@ export function Shell({ lang }: { lang: Lang }) {
       <main className="main">
         <div className="topbar">
           <h1 style={{ margin: 0, fontSize: 18 }}>{t(lang, current.label)}</h1>
-          <span className="row"><StatusDot state={session ? "ok" : "warn"} /><span className="muted">{session ? "connecté" : "hors ligne"}</span></span>
+          {/* g260 : libellé explicite ("Compte : ...") -- ce point ne reflète QUE l'état du COMPTE (session
+              joueur), pas celui du serveur hébergé. Affiché identique sur toutes les pages (y compris
+              Héberger/Admin, qui ont LEUR PROPRE indicateur "État du serveur" séparé) -- sans le préfixe,
+              un joueur qui vient d'héberger un serveur (en cours) mais n'a pas encore de compte voyait
+              "hors ligne" en haut de la page Héberger, contredisant visuellement "en cours" juste en dessous. */}
+          <span className="row"><StatusDot state={session ? "ok" : "warn"} /><span className="muted">Compte : {session ? "connecté" : "hors ligne"}</span></span>
         </div>
         {current.view}
       </main>
