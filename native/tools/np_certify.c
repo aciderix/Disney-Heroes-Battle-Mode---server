@@ -23,6 +23,7 @@
 #include <string.h>
 #include <math.h>
 #include "../src/np_parser.h"
+#include "../src/np_sim.h"
 
 /* ------------------------------------------------------------------ lecture golden (LE, cf. writeGolden) */
 typedef struct { int vertCount; float* verts; } GFrame;   /* verts = vertCount*6 (x,y,light,dark,u,v) */
@@ -62,15 +63,12 @@ static int loadGolden(const char* path, Golden* g) {
  * frames[f].verts doit être malloc'd par l'implémentation (vertCount*6 floats), ou vertCount=0.
  * STUB actuel (g263) : parse le .np (prouve que le parseur tourne dans ce contexte) puis 0 sommet.
  */
-int np_sim_run(const unsigned char* npData, int npLen, int nframes, float dt, GFrame* frames);
-
 int np_sim_run(const unsigned char* npData, int npLen, int nframes, float dt, GFrame* frames) {
-    (void)dt;
-    NpEffect* eff = np_parse(npData, npLen);
-    if (!eff) { fprintf(stderr, "np_sim: parse échec\n"); return -1; }
-    /* STUB : aucune particule rendue pour l'instant (la vraie sim ira ici). */
-    for (int f = 0; f < nframes; f++) { frames[f].vertCount = 0; frames[f].verts = 0; }
-    np_free(eff);
+    int* counts = malloc(sizeof(int) * nframes);
+    float** verts = malloc(sizeof(float*) * nframes);
+    np_sim_run_frames(npData, npLen, nframes, dt, counts, verts);
+    for (int f = 0; f < nframes; f++) { frames[f].vertCount = counts[f]; frames[f].verts = verts[f]; }
+    free(counts); free(verts);
     return 0;
 }
 
