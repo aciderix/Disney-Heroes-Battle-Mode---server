@@ -1,5 +1,49 @@
 # JOURNAL — journal détaillé des modifications
 
+## 2026-09-03 (g261bis) — Fix marginal `copyFloats` gardé (correct, zéro risque) mais AUCUN effet mesuré + ventilation par signature : 100% du coût unidbg = interprétation ARM elle-même, pas de la plomberie JNI
+
+Suite immédiate de g261. Piste CPU secondaire flaguée par l'agent tiers (`effectGetVertices` copiait
+`verts.capacity()` floats — le buffer max du jeu — au lieu du nombre RÉEL de sommets produits par l'effet)
+**corrigée** (`UnidbgVM.java` : nouveau `effectVertCount(n)` lit le nombre réel de sommets écrit par le
+natif d'origine dans `embDraw` à l'offset `n*3`, `copyFloats` copie exactement `vertN*6` floats au lieu de
+la capacité ; `copyFloats` durci pour toujours réinitialiser `limit()` même à n=0, évite un bug de rendu
+« frame précédente qui traîne »). **Compilée, testée EN JEU sur le MÊME combat réel** (41-19, compte
+boosté) : rendu visuellement IDENTIQUE (capture confirmée, aucune régression), mais **AUCUN gain de FPS
+mesuré** (18,3-18,5 fps, `unidbg=47-48 ms/frame`, quasi identique à avant fix). Fix gardé quand même
+(correct, réduit un vrai gaspillage mémoire/CPU même si ce n'est pas le facteur dominant ICI) — cohérent
+avec §1 (glue seulement, zéro risque sémantique).
+
+**Diagnostic supplémentaire (temporaire, retiré après usage)** : ventilation du temps `unidbg` PAR
+SIGNATURE JNI (`rec(sig, t)` dans `UnidbgVM`, dump dans `[fps]`) sur le même combat réel. Résultat NET,
+sur une fenêtre de 60 frames en régime établi (73 appels/frame, unidbg=95ms/frame) :
+- `Effect_update(IF)Z` : **39,4 ms/frame** (822 appels/fenêtre, ~2,9 ms/appel) — **41 % du coût**.
+- `Effect_getVertices(...)` : **31,5 ms/frame** (822 appels/fenêtre, ~2,3 ms/appel) — **33 % du coût**.
+- Le reste (`setPositionXY`/`setRotation`/`usesMultiply`/`clone`/…) : ~25 % cumulés, petits appels mais
+  nombreux (~14/frame chacun).
+**Point clé** : `pi()` (le helper qui chronomètre) ne mesure QUE l'appel JNI natif lui-même
+(`cPart.callStaticJniMethodInt(...)`) — `copyFloats`/`copyShorts` s'exécutent APRÈS, HORS du chrono. Le
+fix `effectVertCount` ci-dessus ne pouvait donc **structurellement pas** apparaître dans la mesure
+`unidbg=`, ce qui explique et confirme le résultat négatif : **100 % du temps `unidbg` mesuré est le
+temps d'INTERPRÉTATION ARM elle-même** (Unicorn, pas de JIT — `dynarmic` crashe, g258) à l'intérieur de
+`Effect_update`/`Effect_getVertices`/etc., pas un coût de marshalling Java↔natif.
+
+**⇒ Conclusion actionnable** : aucune optimisation côté plomberie (Java/JNI) ne peut réduire ce coût — il
+est intégralement dans l'exécution émulée du VRAI code ARM. Le seul levier déjà PROUVÉ dans ce projet pour
+ce type de problème est le même que celui qui a réglé spine (g257) : un **portage natif x86 fidèle**
+(recompilation vérifiée par désassemblage, §4) du moteur de particules dans `native/src/cparticle_jni.c`
+(actuellement un stub no-op, cf. `native/build-hostspine.sh`/`-win.sh`), routé depuis
+`com.perblue.heroes.cparticle.Native` exactement comme `cspine.Native`→`HostSpine`. Spine a gagné ~385×
+avec ce même schéma. C'est un chantier de portage substantiel (le format `.np` v3 n'est PAS documenté
+byte-à-byte à ce jour, `NP_FORMAT.md` — mais unidbg exécute déjà le VRAI binaire ARM en continu et peut
+servir d'ORACLE de certification, comme `CompareBackend` pour spine, ce qui le rend praticable sans deviner
+le format sur papier). Pas engagé cette session (scope à valider avec l'utilisateur avant de s'y lancer) —
+décision arrêtée aux FAITS mesurés, pas repoussée par manque de piste (§8).
+
+Fichiers modifiés (gardés) : `desktop-port/src/main/java/dhbackend/unidbg/UnidbgVM.java` (`copyFloats`
+durci + `effectVertCount`). Diagnostic par signature retiré après usage (`git checkout` partiel, code non
+committé). `desktop-port/src/main/java/dhdesktop/DesktopLauncher.java` inchangé (diagnostic temporaire
+ajouté puis retiré, jamais committé).
+
 ## 2026-09-03 (g261) — FPS combat : hypothèse GPU (fill-rate) d'un agent tiers RÉFUTÉE par la mesure — le goulot est l'ÉMULATION unidbg des particules, pas le rendu
 
 Suite de g258-g260. Un second agent (Linux/dev) a investigué en parallèle via un bench isolé

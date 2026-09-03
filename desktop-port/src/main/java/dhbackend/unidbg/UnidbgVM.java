@@ -116,14 +116,20 @@ public final class UnidbgVM {
 
     private static String str(DvmObject<?> o) { return o == null ? null : (String) o.getValue(); }
 
-    /** Copie N floats de la mémoire émulée vers un FloatBuffer direct du jeu (LE), position/limit posés. */
+    /** Copie N floats de la mémoire émulée vers un FloatBuffer direct du jeu (LE), position/limit posés.
+     *  N doit être le nombre RÉEL de floats produits par cet appel (pas la capacité du buffer destination) —
+     *  copier la capacité entière (souvent dimensionnée pour le pire cas, ex. 4000 sommets × 6 floats) à
+     *  CHAQUE appel alors qu'un effet n'en produit typiquement que quelques dizaines coûte cher en combat
+     *  réel (mesuré g261 : unidbg domine le temps de frame). Reset systématique du buffer (clear+limit)
+     *  même si n=0, pour ne jamais laisser un `limit()` périmé d'un appel précédent (bug de rendu sinon). */
     private static void copyFloats(MemoryBlock src, FloatBuffer dst, int n) {
-        if (dst == null || n <= 0) return;
-        byte[] raw = src.getPointer().getByteArray(0, n * 4);
-        ByteBuffer bb = ByteBuffer.wrap(raw).order(ByteOrder.LITTLE_ENDIAN);
+        if (dst == null) return;
         dst.clear();
+        if (n <= 0) { dst.limit(0); return; }
         int cap = dst.capacity();
         int cnt = Math.min(n, cap);
+        byte[] raw = src.getPointer().getByteArray(0, cnt * 4);
+        ByteBuffer bb = ByteBuffer.wrap(raw).order(ByteOrder.LITTLE_ENDIAN);
         for (int i = 0; i < cnt; i++) dst.put(i, bb.getFloat(i * 4));
         dst.position(0); dst.limit(cnt);
     }
@@ -276,20 +282,27 @@ public final class UnidbgVM {
     // on copie n*3+1 shorts. (≠ spine : 2 shorts/pair.) Le nombre de sommets à l'index n*3 est écrit
     // par le natif d'origine.
     private static int drawShorts(int n) { return n > 0 ? n * 3 + 1 : 0; }
+    // Le nombre RÉEL de sommets produits est écrit par le natif d'origine dans embDraw à l'offset n*3
+    // (cf. commentaire drawShorts ci-dessus) — lu DIRECTEMENT en mémoire émulée (indépendant de l'ordre
+    // d'appel copyFloats/copyShorts et du buffer `draws` fourni par le jeu, qui peut être null).
+    private int effectVertCount(int n) {
+        if (n <= 0) return 0;
+        return embDraw.getPointer().getShort(n * 3 * 2L) & 0xffff;
+    }
     public synchronized int effectGetVertices(int h, FloatBuffer verts, ShortBuffer draws) {
         int n = pi("Effect_getVertices(ILjava/nio/FloatBuffer;Ljava/nio/ShortBuffer;)I", h, objVerts, objDraw);
         if (!loggedEff) { loggedEff = true; System.out.println("[UnidbgVM] 1er Effect_getVertices (particules d'origine via unidbg) -> n=" + n); }
-        copyFloats(embVerts, verts, verts == null ? 0 : verts.capacity());
+        copyFloats(embVerts, verts, effectVertCount(n) * 6);
         copyShorts(embDraw, draws, drawShorts(n));
         return n;
     }
     public synchronized int effectGetVerticesAboveZ(int h, float z, FloatBuffer verts, ShortBuffer draws) {
         int n = pi("Effect_getVerticesAboveZ(IFLjava/nio/FloatBuffer;Ljava/nio/ShortBuffer;)I", h, fb(z), objVerts, objDraw);
-        copyFloats(embVerts, verts, verts == null ? 0 : verts.capacity()); copyShorts(embDraw, draws, drawShorts(n)); return n;
+        copyFloats(embVerts, verts, effectVertCount(n) * 6); copyShorts(embDraw, draws, drawShorts(n)); return n;
     }
     public synchronized int effectGetVerticesBelowZ(int h, float z, FloatBuffer verts, ShortBuffer draws) {
         int n = pi("Effect_getVerticesBelowZ(IFLjava/nio/FloatBuffer;Ljava/nio/ShortBuffer;)I", h, fb(z), objVerts, objDraw);
-        copyFloats(embVerts, verts, verts == null ? 0 : verts.capacity()); copyShorts(embDraw, draws, drawShorts(n)); return n;
+        copyFloats(embVerts, verts, effectVertCount(n) * 6); copyShorts(embDraw, draws, drawShorts(n)); return n;
     }
     public synchronized void effectStart(int h) { pv("Effect_start(I)V", h); }
     public synchronized void effectReset(int h) { pv("Effect_reset(I)V", h); }
