@@ -1,5 +1,44 @@
 # JOURNAL — journal détaillé des modifications
 
+## 2026-09-04 (g264-PHYS) — Sim particules : RNG en SYNC PARFAIT (mapping validé), physique partielle — point de reprise précis
+
+Suite du travail sur `native/src/np_sim.c` (voir « g264-ÉTAT » ci-dessous pour le contexte complet + commandes).
+
+**ACQUIS ET VÉRIFIÉ cette étape** :
+- La séquence RNG de la sim C **matche EXACTEMENT l'oracle** (les 16+ premiers `rng_next()` identiques :
+  `NP_DBG_RNG=1 ./np_certify ...` vs les valeurs de `NpFormatOracle rngprobe`). ⇒ l'ORDRE des tirages
+  (donc l'ordre Java des champs + leurs flags active/linked lus du fichier) est CORRECT.
+- Mapping des champs (validé par la sync RNG + `activorder`) : velocity=scaledB[4], velocityZ=scaledB[5],
+  angle=scaledB[6], sizeX=scaledB[8], sizeY=scaledB[9], rotation=scaledD, wind=scaledA[3], gravity=
+  scaledA[4], tangential=scaledA[5], centripetal=scaledB[0], brownian=scaledB[1], transparency=scaledB[11],
+  emission=scaledA[0], life=scaledA[1]. Ces macros sont dans `np_sim.c`.
+- `np_certify` sépare le diff **POSITION (x/y)** du diff **COULEUR/UV** (`frame N: POS OK/DIFF | COL/UV max`).
+  Comptes de particules toujours EXACTS.
+
+**LE PIÈGE À COMPRENDRE (crucial pour la reprise)** : la sync RNG valide l'ORDRE des tirages mais **PAS
+quel EFFET PHYSIQUE porte chaque champ active-gated**. velocityZ/wind/gravity/tangential/centripetal ont
+tous le même motif de tirage (2 randoms si actif) → ils sont PERMUTABLES entre eux sans casser la sync
+RNG. **Seul le diff POSITION de np_certify les distingue.** Donc : velocity=0x110 est CONFIRMÉ (vertextest
+g262quinquies, patch → X croît), mais l'assignation velocityZ/wind/gravity parmi {0x138,0x210,0x238,...}
+reste à VÉRIFIER un par un via vertextest/batchtest (patcher chaque champ, voir quelle composante bouge).
+
+**PUZZLE POSITION en cours** (diagnostic fait, non résolu) : sur ralph frame 0, les déplacements oracle
+vont jusqu'à ~249 px (O[1]=(-238,74)) mais ma sim plafonne à ~50 px (velocity max 500 × dt 0.1 × getScale
+1.0 = 50). La timeline velocity est plate (scaling=[1,1]). Les ratios oracle/sim ne sont PAS constants
+→ ce n'est pas un simple facteur d'échelle. Pistes : (a) l'ORDRE des sommets sim vs oracle diffère peut-être
+(l'oracle ordonne les émetteurs/particules autrement → on compare des particules différentes ; VÉRIFIER
+via `NP_DBG_CENTERS=1` en comparant les ENSEMBLES de centres, pas position par position) ; (b) le gros
+mouvement vertical (O[6]=(0,181)) vient probablement de velocityZ mal assigné/mal couplé (zToYMultiplier =
+numeric0 — vérifier sa valeur et le signe) ; (c) une composante physique manquante (tangential/centripetal
+autour du point d'émission). Outils debug : `NP_DBG_RNG`, `NP_DBG_CENTERS`, `NP_DBG_PHYS` (dans np_sim.c).
+
+**PROCHAINES ÉTAPES CONCRÈTES** : 1) résoudre l'ordre des sommets (comparer ensembles de centres) ; 2)
+distinguer velocityZ/wind/gravity par vertextest ciblé ; 3) affiner la géométrie du quad (taille via
+sizeX/sizeY sur la vie, origine, rotation) jusqu'à POS OK sur ralph frame 0, puis toutes frames ; 4)
+généraliser à d'autres `.np` (`goldenall`) ; 5) couleurs (tint gradient × transparency, ABGR — cf.
+packColor de cspine_jni.c) ; 6) uv (parser l'atlas pour la région `atlasTag`) ; 7) régression 535 ; 8)
+`cparticle_jni.c` (brancher np_parse+np_sim+rendu) + build + routage Java + certif combat + FPS.
+
 ## 2026-09-04 (g264-ÉTAT) — CHANTIER PORTAGE NATIF PARTICULES : état complet + reprise (à lire par le successeur)
 
 **But** : remplacer l'émulation unidbg des particules (goulot FPS combat, cf. g261) par un moteur natif
