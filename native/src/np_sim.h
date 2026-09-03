@@ -8,7 +8,12 @@ typedef struct {
     int life, currentLife;
     float drawX, drawY, z;
     float velocity, velocityDiff;
-    float vx, vy;
+    float angle, angleDiff, angleCos, angleSin;
+    float scaleX, scaleXDiff, scaleY, scaleYDiff;     /* échelle relative (÷ largeur sprite annulé -> = taille px) */
+    float rotation, rotationDiff, drawRotation;
+    float wind, windDiff, gravity, gravityDiff;
+    float transparency, transparencyDiff;
+    float tint[3];
 } NpParticle;
 
 typedef struct {
@@ -16,14 +21,13 @@ typedef struct {
     NpParticle* particles;
     int maxParticleCount, minParticleCount;
     int activeCount;
-    float accumulator;      /* accumulateur d'émission global (ms) */
-    float emissionDelta;    /* accumulateur du taux d'émission (ms) */
-    int emission, emissionDiff;   /* figés à restart() depuis emissionValue (int) */
-    int life, lifeDiff;           /* figés à restart() depuis lifeValue (int) */
+    float accumulator, emissionDelta;
+    int emission, emissionDiff;
+    int life, lifeDiff;
     float duration, durationTimer;
     float delay, delayTimer;
     int firstUpdate, continuous;
-    float x, y;             /* position de l'émetteur */
+    float x, y, rotationEmitter;
 } NpEmitterRuntime;
 
 void np_sim_start(NpEmitterRuntime* em, NpEmitter* def);

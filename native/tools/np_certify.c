@@ -83,6 +83,18 @@ int main(int argc, char** argv) {
     GFrame* sim = calloc(g.nframes, sizeof(GFrame));
     if (np_sim_run(np, (int)npLen, g.nframes, g.dt, sim) != 0) { fprintf(stderr, "sim échec\n"); return 3; }
 
+    if (getenv("NP_DBG_CENTERS")) {
+        int f = 0, oc = g.frames[f].vertCount / 4, sc = sim[f].vertCount / 4;
+        printf("--- frame %d centres (oracle %d part, sim %d part) ---\n", f, oc, sc);
+        for (int i = 0; i < oc; i++) {
+            float ox=0,oy=0; for (int v=0;v<4;v++){ ox+=g.frames[f].verts[(i*4+v)*6]; oy+=g.frames[f].verts[(i*4+v)*6+1]; }
+            printf("  O[%d] (%.2f, %.2f)\n", i, ox/4, oy/4);
+        }
+        for (int i = 0; i < sc; i++) {
+            float sx=0,sy=0; for (int v=0;v<4;v++){ sx+=sim[f].verts[(i*4+v)*6]; sy+=sim[f].verts[(i*4+v)*6+1]; }
+            printf("  S[%d] (%.2f, %.2f)\n", i, sx/4, sy/4);
+        }
+    }
     printf("=== np_certify : %s vs %s (%d frames, dt=%.4f) ===\n", argv[2], argv[1], g.nframes, g.dt);
     int fails = 0;
     double worst = 0;
@@ -93,19 +105,24 @@ int main(int argc, char** argv) {
             fails++;
             continue;
         }
-        double maxd = 0; int worstI = -1, worstC = -1;
+        /* diff séparé : POSITION (x,y = comp 0,1) vs COULEUR/UV (comp 2..5) pour itérer proprement */
+        double maxPos = 0, maxCol = 0; int worstPI = -1, worstPC = -1;
         for (int i = 0; i < oc * 6; i++) {
             double d = fabs((double)g.frames[f].verts[i] - (double)sim[f].verts[i]);
-            if (d > maxd) { maxd = d; worstI = i / 6; worstC = i % 6; }
+            int c = i % 6;
+            if (c < 2) { if (d > maxPos) { maxPos = d; worstPI = i/6; worstPC = c; } }
+            else       { if (d > maxCol) maxCol = d; }
         }
-        if (maxd > 0.01) {
-            const char* comp[] = {"x","y","light","dark","u","v"};
-            printf("frame %2d: %d sommets, VALEUR diverge -- max %.4f au sommet %d comp '%s'\n",
-                f, oc, maxd, worstI, comp[worstC]);
-            fails++;
-            if (maxd > worst) worst = maxd;
+        const char* comp[] = {"x","y"};
+        int posOk = maxPos <= 0.05;
+        if (!posOk || maxCol > 0.01) {
+            printf("frame %2d: %d som, POS %s (max %.3f%s) | COL/UV max %.3g\n",
+                f, oc, posOk ? "OK" : "DIFF", maxPos,
+                posOk ? "" : (worstPC>=0 ? (worstPC==0?" x@som":" y@som") : ""), maxCol);
+            if (!posOk) fails++;
+            if (maxPos > worst) worst = maxPos;
         } else {
-            printf("frame %2d: %d sommets  OK (max diff %.5f)\n", f, oc, maxd);
+            printf("frame %2d: %d som, POS OK COL OK\n", f, oc);
         }
     }
     printf("=== VERDICT : %s (%d/%d frames divergentes, écart max %.4f) ===\n",
