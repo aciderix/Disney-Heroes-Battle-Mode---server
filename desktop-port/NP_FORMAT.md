@@ -137,23 +137,47 @@ off=33 bool=0        duration.lowUsesLinkedRange ┘
 **certifié par exécution réelle + valeurs sémantiquement cohérentes** (effet à durée fixe 1.5s, sans
 délai), pas une lecture d'assembleur risquant l'erreur d'attribution.
 
-**276 hits capturés au total pour ce fichier** (1 emitter, 1056 o) ; reste après le dernier hit scalaire
-(off=797) = 259 o = bloc trailer (`poolSize`, `atlasTagLen`, pool de floats, nom de région) copié en
-bloc (`memcpy`, invisible aux 2 primitives — cohérent avec la doc existante) — **pas encore décodé
-(prochaine étape)**.
+**Trailer décodé** (`poolSize`/`tagLen` sont eux-mêmes lus via `read4` — donc DÉJÀ dans la séquence
+capturée, ce sont simplement les 2 DERNIERS hits `int` contigus avant le trou — seuls le pool de floats
+qui suit et le nom de région (`tag`, UTF-8) sont copiés en bloc/`memcpy`, invisibles aux hooks) :
+pour `arena_promote.np`, `poolSize=62` `tagLen=11` → `tag="fireworks_b"` (un VRAI nom de région d'atlas,
+vérifié) → `poolEnd + tagLen` tombe EXACTEMENT sur `EOF` (1056).
 
-**Portée de ce qui reste** (chantier substantiel, non traité dans cet incrément) :
-1. Décoder méthodiquement la SUITE de la séquence (les ~240 hits restants de ce fichier) pour couvrir
-   tous les types de champs (`readScaled`, `readNumeric`, `readGradient`, `readSpawnShape`) — même
-   méthode, juste plus de lignes à corréler.
-2. Rejouer l'oracle sur les 535 `.np` réels (le script `NpFormatOracle` accepte n'importe quel fichier)
-   pour CERTIFIER l'ordre sur l'ensemble (535/535, critère déjà posé plus haut) — détecte aussi les
-   variations optionnelles (ex. `readSpawnShape` a une taille variable selon `code`).
-3. Décoder le bloc trailer (poolSize/tagLen/pool/tag) — format déjà connu structurellement, à vérifier.
-4. Une fois 535/535 certifié : écrire `cparticle_jni.c::Effect_create` fidèle (parsing), la simulation
-   (`updateParticles`, portée depuis `com.badlogic.gdx...ParticleEmitter` EN CLAIR dans `game.jar`,
-   comportement identique par construction) et le rendu 2-couleurs (`getTCVertices`), le tout validé
-   par diff continu contre CE MÊME oracle (comme `CompareBackend` pour spine).
-5. Câblage build (`native/build-hostspine.sh`/`-win.sh`) + routage Java (`cparticle.Native` → natif,
-   miroir de `cspine.Native`→`HostSpine`) + certification différentielle en combat réel.
+**3 sites de lecture INLINE trouvés et câblés** (en scannant TOUT `ldrb rX,[rY],#1` dans
+`ParticleEmitter::load`, 0x19755..0x19fc9, via `disasm.py`) — le parseur ne lit PAS 100% de ses octets
+via le helper partagé `readByte` : 3 endroits lisent un octet directement en ligne (`0x19848`, `0x19874`,
+`0x19a2c`), conditionnels (visibles seulement si un branchement précédent les atteint) — cohérent avec
+des champs OPTIONNELS de `readSpawnShape` (`code`, puis `edges`/`side` si ellipse). Sans ces 3 hooks,
+la séquence capturée avait des trous d'1 octet non expliqués → **une fois ajoutés, `arena_promote.np`
+ET `battlepass_claimable.np` (4 emitters) passent EOF-exact.**
+
+## ⭐⭐ CERTIFIÉ 535/535 EOF-exact (2026-09-03, g261quater)
+
+`NpFormatOracle verify <racine assets>` (parcours RÉCURSIF, un seul atlas bidon réutilisé pour tous les
+fichiers — la structure ne dépend pas du contenu de l'atlas, seule la résolution de région APRÈS notre
+fenêtre d'observation en a besoin) sur **les 535 `.np` réels de l'APK** (tous, toutes les 29
+sous-arborescences confondues — UI, unités/héros, environnements) :
+```
+=== RÉSULTAT : 535/535 EOF-exact ===
+```
+**Le format `.np` v3 est CERTIFIÉ** au sens du critère posé dès l'origine de ce document (§ »Étape
+suivante », point 2 : « l'ordre correct = celui qui donne 535/535 EOF-exact + offsets cohérents »).
+Vérification AUTOMATIQUE (`eofExactMultiEmitter`, `native/unidbg/NpFormatOracle.java`) : pour chaque
+fichier, la séquence de lectures scalaires + les trailers déduits (poolSize/tagLen/pool/tag) doivent
+couvrir l'INTÉGRALITÉ du fichier sans reste ni chevauchement, y compris multi-emitters (le trailer d'un
+emitter doit retomber EXACTEMENT sur le 1ᵉʳ octet du suivant, ou sur EOF pour le dernier) — un ordre/une
+taille de champ erronée aurait échoué sur au moins un des 535 fichiers réels (tailles/contenus tous
+différents), donc ce résultat n'est PAS un hasard statistique.
+
+**Portée de ce qui reste** (chantier substantiel, PAS traité dans cet incrément) :
+1. Nommer précisément CHAQUE champ de la séquence (actuellement on sait où sont les frontières et les
+   TYPES bruts — bool/int/pool/tag — mais pas encore l'attribution complète à chaque nom sémantique du
+   struct `0x904` ; delay/duration/minCount/maxCount déjà faits, le reste est mécanique — même méthode,
+   juste du temps à dérouler la séquence complète + croiser avec la struct 0x904 octets/emitter).
+2. Écrire `cparticle_jni.c::Effect_create` fidèle (parsing certifié), la simulation (`updateParticles`,
+   portée depuis `com.badlogic.gdx...ParticleEmitter` EN CLAIR dans `game.jar`, comportement identique
+   par construction) et le rendu 2-couleurs (`getTCVertices`), le tout validé en CONTINU contre CET
+   ORACLE (comme `CompareBackend` pour spine) — le blocage qui empêchait de commencer est levé.
+3. Câblage build (`native/build-hostspine.sh`/`-win.sh`) + routage Java (`cparticle.Native` → natif,
+   miroir de `cspine.Native`→`HostSpine`) + certification différentielle en combat réel + gain FPS mesuré.
 ```

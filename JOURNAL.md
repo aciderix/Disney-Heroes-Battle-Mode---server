@@ -1,5 +1,56 @@
 # JOURNAL — journal détaillé des modifications
 
+## 2026-09-03 (g261quater) — Format `.np` v3 CERTIFIÉ 535/535 EOF-exact (blocage historique définitivement levé)
+
+Suite immédiate de g261ter (oracle unidbg opérationnel, calibré, vérifié sur 1 fichier). Demande util. :
+« Vérifie puis une fois sûr de toi poursuit » → passage à l'échelle avant de conclure quoi que ce soit.
+
+**Bug trouvé en généralisant à un 2ᵉ fichier puis en essayant la vérification automatique** : des
+« trous » d'1 octet apparaissaient par endroits dans la séquence capturée (ex. entre offsets 786 et 788
+sur `arena_promote.np`), cassant la reconstruction EOF-exact. **Cause identifiée par désassemblage
+CIBLÉ** (scan systématique de TOUT `ldrb rX,[rY],#1` dans `ParticleEmitter::load`, 2132 o,
+`native/tools/disasm.py`) : le parseur ne lit PAS 100% de ses octets via le helper partagé `readByte`
+(0x1a0d4) — **3 lectures d'octet sont INLINE** (0x19848, 0x19874, 0x19a2c), chacune derrière un
+branchement conditionnel (`cbz`) → cohérent avec des champs OPTIONNELS de `readSpawnShape` (`code`, puis
+`edges`/`side` seulement si forme = ellipse). Convention de registre différente des 2 primitives
+partagées : ici le registre tient DIRECTEMENT l'adresse du curseur (simple déréférence), chargée par
+l'instruction juste avant depuis un slot de pile fixe (`[sp,#0x50]`) — pas de double indirection comme
+pour `read4`/`readByte`. 3 nouveaux breakpoints ajoutés (`attachInline`, `native/unidbg/
+NpFormatOracle.java`) avec cette sémantique.
+
+**Vérificateur automatique EOF-exact écrit** (`eofExactMultiEmitter`) : consomme les hits contigus, et à
+chaque « trou » calcule le trailer attendu (`poolSize`/`tagLen` = les 2 DERNIERS hits `int` avant le
+trou — ils sont eux-mêmes lus via `read4`, PAS un pré-champ séparé comme supposé initialement dans une
+1ʳᵉ version buguée du vérificateur — puis `poolSize×4 + tagLen` octets de bloc memcpy) et vérifie que ça
+retombe PILE sur le hit suivant (emitter suivant) ou sur `EOF` (dernier emitter) — gère nativement les
+fichiers multi-emitters. Décodage confirmé en clair : `arena_promote.np` → trailer `poolSize=62
+tagLen=11` → `tag="fireworks_b"` (un VRAI nom de région d'atlas).
+
+**Certification à l'échelle** (`NpFormatOracle verify <racine>`, parcours récursif ajouté, un seul atlas
+bidon réutilisé pour tous les fichiers puisque la structure binaire ne dépend pas du contenu de
+l'atlas — seule la résolution de région, hors de notre fenêtre d'observation, en aurait besoin) sur
+**les 535 `.np` réels de l'APK, TOUTES les 29 sous-arborescences confondues (UI, unités/héros,
+environnements)** :
+```
+=== RÉSULTAT : 535/535 EOF-exact ===
+```
+**Le format `.np` v3 est CERTIFIÉ**, au sens du critère posé dès juillet dans `NP_FORMAT.md` (« l'ordre
+correct = celui qui donne 535/535 EOF-exact »), après 2 tentatives manuelles infructueuses (0/535
+chacune). La vérification n'est pas un hasard statistique : une taille/un ordre de champ faux aurait
+fait échouer AU MOINS un des 535 fichiers réels (contenus/tailles tous différents) — le fait que TOUS
+passent, y compris les fichiers multi-emitters où le trailer doit retomber pile sur l'emitter suivant,
+est une preuve forte.
+
+**Portée restante (chantier substantiel, PAS terminé cette session)** : nommer chaque champ de la
+séquence complète (structure déjà connue : bornes + types) ; écrire `cparticle_jni.c` (parsing certifié
++ simulation portée de `com.badlogic.gdx...ParticleEmitter` EN CLAIR + rendu 2-couleurs), validé en
+continu contre cet oracle ; câblage build+Java (miroir `cspine.Native`→`HostSpine`) ; certification
+différentielle en combat réel + mesure du gain FPS. Le blocage historique (format non certifiable sans
+deviner) est DÉFINITIVEMENT levé — la suite est un travail d'ingénierie C classique, plus une inconnue.
+
+Fichiers : `native/unidbg/NpFormatOracle.java` (3 hooks inline + `verify` récursif + vérificateur
+EOF-exact multi-emitter robuste), `desktop-port/NP_FORMAT.md` (résultat certifié documenté).
+
 ## 2026-09-03 (g261ter) — Chantier natif particules ENGAGÉ : blocage historique (.np v3 non certifié) LEVÉ via un oracle d'exécution unidbg (breakpoints), vérifié octet-à-octet sur un vrai fichier
 
 Suite de g261bis (conclusion : seul un portage natif x86 peut réduire le coût `unidbg` en combat,
