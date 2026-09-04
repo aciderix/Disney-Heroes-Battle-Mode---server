@@ -1,5 +1,38 @@
 # JOURNAL — journal détaillé des modifications
 
+## 2026-09-04 (g273) — VRAIE fonction de position localisée (~0x179da–0x17c6c) + formule décodée + mécanisme zToYMultiplier
+
+Le store de drawX=-220 (Phase 1) est à modoff **0x17c26/0x17c54** — **HORS `updateParticles`** (0x16589–
+0x172ed) : c'est une AUTRE fonction (~0x179da–0x17c6c), la vraie `updateParticle` par-particule. Désassemblage
+(vérifié) du store de position :
+```
+0x17bd2 vnmls s0, s6, s4      ; s0 -= s6*s4     (s6=velocity, s4=direction≈angle+s24)
+0x17bd6 vnmls s8, s6, s2      ; s8 -= s6*s2
+0x17bda vadd  s18, s18, s8    ; s18 += s8   (accumulateur vitesse Y)
+0x17bde vadd  s16, s16, s0    ; s16 += s0   (accumulateur vitesse X)   [boucle -> plusieurs contributions]
+...
+0x17c32 vadd  s2, s21, s16    ; drawX = prevX([sl]) + accumVelX(s16)
+0x17c36 vadd  s4, s23, s4     ; drawY = prevY([sl+4]) + accumVelY
+0x17c2e ldrb  r0,[r8,#0x288]  ; flag zToYMultiplier
+0x17c3a cbz   r0, 0x17c44     ; si 0 -> saute
+0x17c3c vldr  s6,[r8,#0x28c]  ; s6 = zToYMultiplier
+0x17c40 vmla  s4, s0, s6      ; drawY += z(s0) * zToYMultiplier   <-- couplage velZ->Y
+0x17c54 vstr  s2,[r0]         ; ÉCRIT drawX   (r0 = émetteur+0x894 + idx*8)
+0x17c58 vstr  s4,[r0,#4]      ; ÉCRIT drawY
+0x17c66 vstr  s0,[émetteur+0x8a4 + idx*4] ; stocke z (1 float/particule)
+```
+**MÉCANISME CONFIRMÉ** : `drawX = prevX + Σvitesse_X`, `drawY = prevY + Σvitesse_Y + z·zToYMultiplier`
+(ce dernier terme SEULEMENT si flag émetteur+0x288≠0). **Pour em3 le flag est 0** → velZ ne bouge pas drawY
+(drawY=100 constant) — **explique enfin l'observation g266** avec le mécanisme exact. La composante Z est
+stockée séparément à émetteur+0x8a4 et projetée sur Y via zToYMultiplier quand actif.
+
+**RESTE (bien cerné)** : (1) la boucle d'accumulation `s16/s18 += -(velocity·dir)` — combien d'itérations /
+quelles contributions donnent -220 (velocity=100 seul donnerait -10) ; candidats : sous-pas, ou vitesse
+intégrée sur la vie ; (2) constantes s24 (dir), s28, et le helper sincos 0x14600 ; (3) la Phase 2 offset
+(-31.329). Une fois la boucle comprise → réécrire `updateParticle` (np_sim.c). Outils : `drawxhook`,
+`disasm.py 0x179da 200`. Symboles : cette fonction n'est pas `updateParticles` — chercher son symbole réel
+(`disasm.py list` / nm) pour la borner proprement.
+
 ## 2026-09-04 (g272) — Modèle position SIMPLIFIÉ : drawPos = position_vitesse(-220,100) PUIS += offset(-31.329,0) en place
 
 Précision de g270/g271 : au combine 0x17118, **r5 (le « posAccum ») == l'adresse de drawX elle-même**
