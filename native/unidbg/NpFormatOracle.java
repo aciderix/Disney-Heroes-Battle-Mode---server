@@ -136,6 +136,12 @@ public class NpFormatOracle {
             scaledProbe(so, args[2], args[3]);
             return;
         }
+        if ("drawxhook".equals(args[1])) {
+            // args: drawxhook <so> <np> <atlas>  -- WriteHook : capture les écritures dont la valeur float
+            // est proche de -251 (drawX cible em3) + le PC de l'instruction -> localise le calcul de position.
+            drawxHook(so, args[2], args[3]);
+            return;
+        }
         if ("goldenall".equals(args[1])) {
             // args: goldenall <so> <assetsRoot> <outDir> [nframes] [dt_ms]  -- 1 golden par .np (récursif)
             int nf = args.length > 4 ? Integer.parseInt(args[4]) : 30;
@@ -544,6 +550,46 @@ public class NpFormatOracle {
         for (int o = 0; o < 0x100; o += 4) { float v = Float.intBitsToFloat(pp.getInt(o));
             if (Math.abs(v) > 0.01 && Math.abs(v) < 1e6) System.out.printf("[0x%x]=%.2f ", o, v); }
         System.out.println();
+    }
+
+    /** WriteHook : loggue chaque écriture mémoire dont la valeur (interprétée float) est proche de la cible
+     *  drawX em3 (~-251 / -240) + le PC de l'instruction (reg_read) -> localise le calcul de position. */
+    static void drawxHook(String so, String npPath, String atlasPath) throws Exception {
+        byte[] atlasBytes = Files.readAllBytes(new File(atlasPath).toPath());
+        byte[] npBytes = Files.readAllBytes(new File(npPath).toPath());
+        AndroidEmulator emu = newEmulator();
+        Memory memory = emu.getMemory();
+        VM vm = emu.createDalvikVM();
+        vm.setVerbose(false);
+        DalvikModule dm = vm.loadLibrary(new File(so), true);
+        Module mod = dm.getModule();
+        installBufferSvc(emu, vm);
+        DvmClass cSpine = vm.resolveClass("com/perblue/heroes/cspine/Native");
+        DvmClass cPart = vm.resolveClass("com/perblue/heroes/cparticle/Native");
+        cSpine.callStaticJniMethod(emu, "Spine_init()V");
+        int atlasH = cSpine.callStaticJniMethodInt(emu, "Atlas_create([BZ)I", new ByteArray(vm, atlasBytes), 1);
+        int effH = cPart.callStaticJniMethodInt(emu, "Effect_create([BI)I", new ByteArray(vm, npBytes), atlasH);
+        final Backend backend = emu.getBackend();
+        final long modbase = mod.base;
+        final int[] n = {0};
+        backend.hook_add_new(new com.github.unidbg.arm.backend.WriteHook() {
+            @Override public void hook(Backend b, long address, int size, long value, Object user) {
+                if (size != 4 || n[0] >= 40) return;
+                float f = Float.intBitsToFloat((int) value);
+                if (f > -260 && f < -230) {   // fenêtre autour de drawX em3 (-251/-240)
+                    long pc = b.reg_read(unicorn.ArmConst.UC_ARM_REG_PC).longValue();
+                    System.out.printf("WRITE @0x%x = %.3f  (PC=0x%x modoff=0x%x)%n",
+                        address, f, pc, pc - modbase);
+                    n[0]++;
+                }
+            }
+            @Override public void onAttach(com.github.unidbg.arm.backend.UnHook u) {}
+            @Override public void detach() {}
+        }, modbase, modbase + 0x400000, null);   // large fenêtre heap+module
+        System.out.println("=== Effect_start ===");
+        cPart.callStaticJniMethod(emu, "Effect_start(I)V", effH);
+        System.out.println("=== Effect_update frame0 ===");
+        cPart.callStaticJniMethodInt(emu, "Effect_update(IF)Z", effH, Float.floatToRawIntBits(0.1f));
     }
 
     /**

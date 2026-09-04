@@ -1,5 +1,38 @@
 # JOURNAL — journal détaillé des modifications
 
+## 2026-09-04 (g269) — Écriture de drawX/drawY LOCALISÉE à l'instruction (WriteHook + PC) : `pos += vel×delta`, vitesse X ≈ -2513
+
+**Correction/précision de g268** : le dump d'entrée d'`updateParticles#3` ne montrait pas 0x40 → **drawX=0
+au spawn** ; le -251 est calculé **pendant** le 1ᵉʳ `updateParticles` (physique), PAS un offset de spawn.
+
+**Nouvel outil `drawxhook`** (NpFormatOracle) : `WriteHook` sur toute la fenêtre module+heap, filtre les
+écritures dont la valeur float ∈ [-260,-230] (cible drawX em3) et loggue le **PC** (`reg_read UC_ARM_REG_PC`).
+Résultat : **1 seule** écriture = `@0x4022f080 (=part+0x40) = -251.329, PC modoff 0x1701e`.
+
+**Désassemblage autour (updateParticles 0x16589..0x172ed)** — LES instructions de position (ancres VÉRIFIÉES) :
+```
+0x017000: vldr s4,[r0]         ; s4 = drawX courant           (r0 = &particule.drawX = part+0x40)
+0x017004: vldr s6,[r0,#4]      ; s6 = drawY courant
+0x017008: vmla.f32 s4, s2, s16 ; drawX += s2 * s16
+0x01700c: vmla.f32 s6, s0, s16 ; drawY += s0 * s16
+0x017010: vstr s4,[r0]         ; ÉCRIT drawX   <-- le store capturé
+0x017014: vstr s6,[r0,#4]      ; ÉCRIT drawY
+```
+et **`s16 = delta = 0.1`** (chargé à `0x0165b6: vmov s16, r1`, r1 = argument delta d'updateParticles).
+
+**CONCLUSION (fait mesuré)** : `drawX += vx·delta` avec `vx = s2`, `drawY += vy·delta` avec `vy = s0`. Comme
+drawX passe de 0 à -251.329 en une frame (delta 0.1), **vx ≈ -2513** — PAS -100 (velocity 100 × cos(-180)).
+Donc la vitesse `s2` **ACCUMULE d'autres termes** (velocityZ projeté ? wind/gravity/tangential/centripetal ?)
+dans le loop vectorisé situé AVANT 0x017000. Rappel du lien numérique : -251.329 ≈ velocityZ(-300) × 0.8378
+→ velocityZ est un candidat fort pour le gros de vx (projection Z→écran), à confirmer.
+
+**PROCHAINE ÉTAPE (successeur, décisive)** : décoder le calcul de `s2`/`s0` (vx/vy) — data-flow des registres
+NEON dans `updateParticles` juste avant 0x017000 (le loop qui somme les composantes de vitesse). Outil :
+`drawxhook` (adapter la fenêtre de valeur) + `disasm.py 0x16589 460`. Une fois vx/vy connus → corriger
+`updateParticle` dans `np_sim.c` (la physique, pas le spawn) puis `np_certify`. Le spawn EST (0,0) (ma sim est
+correcte là-dessus) ; c'est la FORMULE DE VITESSE qui manque des termes. Mapping vitesse (0x138/0x160/0x188)
+toujours à revérifier en parallèle (cf. g266/g268).
+
 ## 2026-09-04 (g268) — Cross-validation RÉFUTE scaledB[3]=yOffset ; le spawn est PAR-ÉMETTEUR et CALCULÉ (pas stocké)
 
 **Suite g267, §8 : vérifier avant d'implémenter.** Suivi simultané des particules[0] des émetteurs #3 ET #5 :
