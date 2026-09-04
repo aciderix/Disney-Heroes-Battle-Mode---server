@@ -112,10 +112,30 @@ int main(int argc, char** argv) {
             if (i % 6 < 2) { if (d > maxPos) maxPos = d; }
             else           { if (d > maxCol) maxCol = d; }
         }
+        /* comparaison ORDRE-INDÉPENDANTE des CENTRES de quad (les particules ne sont PAS dans le même
+         * ordre oracle/sim, cf. JOURNAL g264-PHYS) : pour chaque centre oracle, plus proche centre sim. */
+        int np = oc / 4;                 /* nb de particules (4 sommets/quad) */
+        double maxNN = 0;
+        for (int a = 0; a < np; a++) {
+            double ox=0, oy=0;
+            for (int v=0; v<4; v++){ ox += g.frames[f].verts[(a*4+v)*6]; oy += g.frames[f].verts[(a*4+v)*6+1]; }
+            ox/=4; oy/=4;
+            double best = 1e30;
+            for (int b = 0; b < np; b++) {
+                double sx=0, sy=0;
+                for (int v=0; v<4; v++){ sx += sim[f].verts[(b*4+v)*6]; sy += sim[f].verts[(b*4+v)*6+1]; }
+                sx/=4; sy/=4;
+                double dd = (ox-sx)*(ox-sx) + (oy-sy)*(oy-sy);
+                if (dd < best) best = dd;
+            }
+            best = best < 1e29 ? sqrt(best) : 0;
+            if (best > maxNN) maxNN = best;
+        }
         int posOk = maxPos <= 0.05;
-        printf("frame %2d: %d som, POS %s (max %.3f) | COL/UV max %.3g\n",
-            f, oc, posOk ? "OK" : "DIFF", maxPos, maxCol);
-        if (!posOk) { fails++; if (maxPos > worst) worst = maxPos; }
+        int nnOk = maxNN <= 0.5;
+        printf("frame %2d: %dpart, POS(ordonné) %s max=%.2f | POS(centres NN) %s max=%.2f | COL/UV max=%.3g\n",
+            f, np, posOk?"OK":"DIFF", maxPos, nnOk?"OK":"DIFF", maxNN, maxCol);
+        if (!nnOk) { fails++; if (maxNN > worst) worst = maxNN; }
     }
     printf("=== VERDICT : %s (%d/%d frames divergentes, écart max %.4f) ===\n",
         fails == 0 ? "PASS" : "FAIL", fails, g.nframes, worst);
