@@ -67,10 +67,9 @@ static float scaled_getScale(const NpScaled* s, const float* pool, float percent
 #define F_VELOCITY     (&e->def.scaledB[4])
 #define F_VELOCITYZ    (&e->def.scaledB[5])
 #define F_ANGLE        (&e->def.scaledB[6])
-/* g276 : xOffset/yOffset = champs SCALED à émetteur+0x98/+0xc0 = scaledB[2]/[3] (map + oracle : drawY spawn
- * = champ 0xc0 exactement). AVANT mappé à tort à rangedC[0]/[1] (inactifs) -> spawn (0,0), cause du diff. */
-#define F_XOFFSET      (&e->def.scaledB[2])
-#define F_YOFFSET      (&e->def.scaledB[3])
+/* NB (g279) : scaledB[2]=0x98 / scaledB[3]=0xc0 NE SONT PAS xOffset/yOffset (hypothèse g276 RÉFUTÉE par
+ * NP_DBG_CENTERS : émetteur 2 a scaledB[2]=500 mais reste près de l'origine dans l'oracle). Rôle réel à
+ * déterminer. Ne pas ré-utiliser comme offset sans validation multi-émetteurs. */
 #define F_SIZEX        (&e->def.scaledB[8])
 #define F_SIZEY        (&e->def.scaledB[9])
 #define F_TRANSPARENCY (&e->def.scaledB[11])
@@ -178,13 +177,13 @@ static void activateParticle(NpEmitterRuntime* e, int index) {
     p->transparency = ranged_newLow((const NpRanged*)F_TRANSPARENCY, value);
     p->transparencyDiff = scaled_newHigh(F_TRANSPARENCY, value) - p->transparency;
 
-    /* xOffset/yOffset = scaledB[2]/[3] (g276, offsets 0x98/0xc0 confirmés par map+oracle). Valeur de spawn =
-     * newLowValue (low range), tirage LIÉ (value partagé) -> ne désynchronise pas la RNG (validé NP_DBG_RNG). */
-    float sx = F_XOFFSET->low.active ? ranged_newLow((const NpRanged*)F_XOFFSET, value) : 0;
-    float sy = F_YOFFSET->low.active ? ranged_newLow((const NpRanged*)F_YOFFSET, value) : 0;
-    /* spawn : position = émetteur + xOffset/yOffset (g276). Le terme vitesse-au-spawn t=0.2 (g277) a été
-     * RÉVOQUÉ : contredit par l'oracle (NP_DBG_CENTERS montre l'oracle garde presque tout près de l'origine,
-     * ma sim dispersait à 300/500). La vitesse est appliquée en update, PAS au spawn. */
+    /* xOffset/yOffset : RÉVOQUÉ (g279) le mapping scaledB[2]/[3] de g276/g277. RÉFUTÉ par NP_DBG_CENTERS :
+     * scaledB[2] collait à em3 (-200≈oracle -238) mais l'émetteur 2 a scaledB[2]=500 alors que l'oracle le
+     * garde près de l'origine (O[2]=(7,34)) -> un mapping fixe ne peut être xOffset pour l'un et pas l'autre.
+     * Donc scaledB[2] != xOffset. Source réelle de la position de spawn d'em3 (-220) encore à identifier
+     * (cf. activateParticles 0x179da, g273-g276). Spawn laissé à l'origine (rangedC inactifs) en attendant. */
+    float sx = e->def.rangedC[0].active ? ranged_newLow(&e->def.rangedC[0], value) : 0;
+    float sy = e->def.rangedC[1].active ? ranged_newLow(&e->def.rangedC[1], value) : 0;
     p->drawX = e->x + sx; p->drawY = e->y + sy;
 }
 

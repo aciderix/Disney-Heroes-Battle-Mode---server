@@ -1,5 +1,36 @@
 # JOURNAL — journal détaillé des modifications
 
+## 2026-09-04 (g279) — xOffset=scaledB[2] (g276) RÉFUTÉ par comparaison multi-émetteurs → RÉVOQUÉ ; le vrai gap = TEMPS/âge de spawn
+
+**Auto-correction rigoureuse (§8).** `NP_DBG_PHYS` montre que `updateParticle` applique la vitesse
+CORRECTEMENT (vx/vy petits par frame : -10, -30, -50, 50...). Les S[2]=300/S[4]=500 de g278 venaient du
+**spawn** (mon fix xOffset g277 appliquant scaledB[2]). Or `NP_DBG_CENTERS` (sim↔oracle) réfute ce fix :
+- em3 : scaledB[2]=-200 ≈ oracle O[1]=-238 (semblait bon).
+- **émetteur 2 : scaledB[2]=500 MAIS oracle O[2]=(7,34) près de l'origine** → si scaledB[2] était xOffset,
+  l'émetteur 2 serait à x≈500. Il ne l'est pas. **Un mapping fixe ne peut pas être xOffset pour em3 et pas
+  pour l'émetteur 2 → scaledB[2] ≠ xOffset.** g276/g277 RÉFUTÉS et **RÉVOQUÉS** (retour à rangedC/spawn origine).
+
+**Vérifié après revert** : plus de dispersion (S centres petits : (0,2.5),(0,0)...), diff ordonné revenu à 490.
+
+**LE VRAI GAP (nouveau constat)** : après revert, comparaison sim↔oracle frame 0 :
+```
+oracle : O[1](-238,74) O[3](0.6,99) O[6](0.4,181) O[7](-0.5,121)  (déplacements GRANDS sur certains)
+sim    : tout petit (≈ velocity·delta d'UNE frame : -10,-30,-50,50)
+```
+⇒ Les particules de l'oracle ont **bien plus bougé** que 1 frame de vitesse. Ce n'est PAS un offset de spawn :
+c'est que dans le natif, à la frame 0, ces particules ont accumulé **plus de temps de déplacement** (âge de
+spawn sous-frame / temps accumulé depuis l'apparition, cf. le pas de temps « partiel » évoqué g273-g276). Ma
+sim spawn tout à frame 0 et n'applique qu'un delta. **C'est la piste : le TIMING d'émission / l'âge initial
+des particules**, pas la position de spawn.
+
+**PROCHAINE ÉTAPE (successeur)** : décoder comment le natif date/vieillit les particules au spawn (temps
+accumulé appliqué en rattrapage). Vérifier `activateParticles` : la position -220 d'em3 (mesurée au spawn)
+inclut peut-être déjà ce rattrapage de vitesse. Comparer, pour UN émetteur simple, l'âge/le nombre d'updates
+que le natif applique vs ma sim. Outils : NP_DBG_CENTERS/NP_DBG_PHYS + drawxhook. NE PAS re-tenter xOffset=
+scaledB[2] (réfuté). Acquis : architecture position (g273-276), RNG sync, format 535/535, comptes exacts.
+**Bilan session g266-g279** : décodage approfondi + 1 hypothèse (xOffset) émise puis honnêtement réfutée par
+l'oracle ; np_sim.c revenu à son état d'avant (net = 0 régression), connaissances documentées avancées.
+
 ## 2026-09-04 (g278) — Terme vitesse-au-spawn RÉVOQUÉ (faux) + vrai bug isolé : `updateParticle` SUR-APPLIQUE la vitesse
 
 `NP_DBG_CENTERS` (comparaison directe des centres sim↔oracle, frame 0) révèle le VRAI état :
