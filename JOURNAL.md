@@ -1,5 +1,33 @@
 # JOURNAL — journal détaillé des modifications
 
+## 2026-09-04 (g274) — La position -220 est calculée dans `activateParticles` (SPAWN) + offsets de champs CONFIRMÉS
+
+**Correction majeure** : la fonction 0x179da–0x17c6c est **DANS `activateParticles`** (symbole
+`_ZN15ParticleEmitter17activateParticlesEjj` @0x17331, 2956 o, fin 0x17ebd) — donc **(-220,100) est produit
+au SPAWN**, pas en update. Mon ancienne « spawn=(0,0) » (g267) était une LECTURE FAUSSE (drawX lu à l'entrée
+d'updateParticles quand la particule n'existait pas encore). **Le vrai bug : mon np_sim spawn à (0,0) et
+n'applique les forces qu'en update ; le natif les applique DÈS le spawn.**
+
+**Boucle de spawn (0x179da, r4=index particule)** — offsets de champs lus (CONFIRME le mapping np_sim) :
+```
+wind        = émetteur+0x210   (scaledA[3])   [sp+0x20]
+gravity     = émetteur+0x238   (scaledA[4])   [sp+0x2c]
+tangential  = émetteur+0x260   (scaledA[5])   sb
+centripetal = émetteur+0x290   (scaledB[0])   [sp+0x14]
+brownian    = émetteur+0x2b8   (scaledB[1])   [sp+0x18]
+rotation    = émetteur+0x1d8   (scaledD)      via 0x17ebc
+```
+Chaque champ actif : `s0 = valeur/particule ; bl 0x16368 (getScale) ; s16/s18 = contribution` puis
+accumulation `s16 += -(velocity·dir)` (vnmls, cf. g273) → `drawX = base([sl]) + s16`, `drawY = base + s18
+(+ z·zToYMult si flag 0x288)`. Les constantes s26/s28/s30/s19 viennent du pool (à lire). Helper `0x16368` =
+getScale par-champ ; `0x17ebc` = helper par-particule (rotation).
+
+**CE QUE ÇA CHANGE POUR LE PORT** : dans `np_sim.c`, `activateParticle` doit calculer la position de spawn en
+sommant les contributions de wind/gravity/tangential/centripetal/brownian/velocity (via getScaled) — PAS
+spawner à (0,0). Le mapping des champs est bon ; il manque l'application au spawn + le pas de temps partiel
+(le facteur qui fait -220 vs -10). **PROCHAINE ÉTAPE** : décoder le facteur temps de la boucle (constantes
+s26/s28 + helper 0x16368) et le terme `base([sl])`, puis réécrire `activateParticle` et valider par np_certify.
+
 ## 2026-09-04 (g273) — VRAIE fonction de position localisée (~0x179da–0x17c6c) + formule décodée + mécanisme zToYMultiplier
 
 Le store de drawX=-220 (Phase 1) est à modoff **0x17c26/0x17c54** — **HORS `updateParticles`** (0x16589–
