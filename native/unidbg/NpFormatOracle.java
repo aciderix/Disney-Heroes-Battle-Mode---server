@@ -660,17 +660,24 @@ public class NpFormatOracle {
             @Override public void onAttach(com.github.unidbg.arm.backend.UnHook u) {}
             @Override public void detach() {}
         }, uStart2, uStart2 + SZ_UPDATE_PARTICLES, null);
-        // 0x17c32 : s2 = s21 + s16 (drawX = base + accumForce). Lit s16/s18 (accumulateur) — teste reg_read S.
+        // getScale 0x16368 : r0 = champ (Scalar). Log l'offset-émetteur des champs sommés au spawn d'em3.
+        final long e3b = modbase + 0x21cb0c;
         backend.hook_add_new(new CodeHook() {
             @Override public void hook(Backend b, long address, int size, Object user) {
-                float s16 = Float.intBitsToFloat(b.reg_read(unicorn.ArmConst.UC_ARM_REG_S16).intValue());
-                float s18 = Float.intBitsToFloat(b.reg_read(unicorn.ArmConst.UC_ARM_REG_S18).intValue());
-                if (Math.abs(s16) > 50 || Math.abs(s18) > 50)
-                    System.out.printf("[0x17c32] accumForce s16(X)=%.3f s18(Y)=%.3f%n", s16, s18);
+                long r0 = b.reg_read(unicorn.ArmConst.UC_ARM_REG_R0).longValue() & 0xffffffffL;
+                if (r0 >= e3b && r0 < e3b + 0x904)
+                    System.out.printf("[getScale 0x16368] champ@em3+0x%x%n", r0 - e3b);
             }
             @Override public void onAttach(com.github.unidbg.arm.backend.UnHook u) {}
             @Override public void detach() {}
-        }, modbase + 0x17c32, modbase + 0x17c34, null);
+        }, modbase + 0x16368, modbase + 0x1636a, null);
+        // Dump des champs sommés au spawn (0x98/0xc0/0xe8/0x110/0x160/0x188) dans le struct émetteur em3.
+        UnidbgPointer e3p = UnidbgPointer.pointer(emu, modbase + 0x21cb0c);
+        for (int off : new int[]{0x98, 0xc0, 0xe8, 0x110, 0x138, 0x160, 0x188, 0x1b0}) {
+            System.out.printf("em3 champ@0x%x : ", off);
+            for (int k = 0; k < 10; k++) System.out.printf("%.2f ", Float.intBitsToFloat(e3p.getInt(off + k*4)));
+            System.out.println();
+        }
         System.out.println("=== Effect_update frame0 ===");
         cPart.callStaticJniMethodInt(emu, "Effect_update(IF)Z", effH, Float.floatToRawIntBits(0.1f));
     }

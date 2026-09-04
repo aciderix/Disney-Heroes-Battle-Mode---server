@@ -1,5 +1,36 @@
 # JOURNAL — journal détaillé des modifications
 
+## 2026-09-04 (g276) — ⭐ CAUSE RACINE TROUVÉE : xOffset=émetteur+0x98, yOffset=émetteur+0xc0 (champs SCALED, pas rangedC)
+
+En hookant `getScale 0x16368` (r0=champ, registre lisible) pendant le spawn d'em3, les champs SOMMÉS dans la
+position sont : **0x98, 0xc0, 0xe8**, 0x110(velocity), 0x160(angle), 0x188, 0x1d8(rotation), 0x210(wind),
+0x238(gravity). Les 3 premiers (0x98/0xc0/0xe8) n'étaient PAS dans le mapping. Valeurs lues (struct émetteur
+em3, constante à offset+0x1c) :
+```
+0x98 = -200    0xc0 = 100    0xe8 = 8    0x110(velocity)=100    0x160(angle)=-180    0x188 = -300
+```
+**DÉCOMPOSITION VÉRIFIÉE de la position de spawn em3 (-220, 100)** :
+- **drawY = 100 = champ 0xc0 (=100)** EXACTEMENT + velocity·sin(-180°)=0 → **0xc0 = yOffset**.
+- **drawX = -220 = champ 0x98 (-200) + velocity·cos(-180°)·t** = -200 + 100·(-1)·0.2 = -220 → **0x98 = xOffset**
+  (facteur t≈0.2 à confirmer : sous-pas de spawn / 2·delta ?).
+
+**⭐ CAUSE RACINE du diff de position** : `xOffset`/`yOffset` sont des **champs SCALED à émetteur+0x98 / +0xc0**,
+PAS des Ranged. Or `np_sim.c::activateParticle` les lit dans `rangedC[0]/[1]` — **INACTIFS pour tous les
+émetteurs** (g268) → ma sim spawn à (0,0). Voilà pourquoi la position diverge. `drawY=100=champ0xc0` le prouve
+sans ambiguïté. (Réconcilie tout : g266/g268 avaient raison que rangedC était faux ; la vraie source est
+0x98/0xc0 en Scaled.)
+
+**CORRECTION du mapping (offsets = vérité terrain via hooks, stride 0x28)** : à partir de velocity=0x110 :
+0x98 et 0xc0 sont 3 et 2 slots AVANT velocity. Si scaledB[4]=0x110 : **scaledB[1]=0x98=xOffset**,
+**scaledB[2]=0xc0=yOffset**, scaledB[3]=0xe8, scaledB[5]=0x138, scaledB[6]=0x160=angle, scaledB[7]=0x188
+(≠ scaledB[8] que np_sim croyait !). ⚠️ Vérifier la correspondance offset↔slot-parseur via `map` avant de
+committer (l'ordre du parseur ≠ ordre mémoire potentiellement).
+
+**PROCHAINE ÉTAPE (implémentation)** : dans `np_sim.c::activateParticle`, spawn `drawX = getScaled(xOffset@0x98)
++ velocity·cos(angle)·t`, `drawY = getScaled(yOffset@0xc0) + velocity·sin(angle)·t` (déterminer t via
+np_certify). Corriger les macros F_XOFFSET/F_YOFFSET (→ les slots Scaled de 0x98/0xc0, pas rangedC). Puis
+np_certify → viser POS NN OK. Rôle de 0xe8=8 et 0x188=-300 à confirmer (velocityZ / autres).
+
 ## 2026-09-04 (g275) — Spawn em3 : base=(0,0)/angle=0 → position = pur cumul de forces ; reg_read S-regs KO (note outillage)
 
 Mesures finales du spawn em3 (store 0x17c54, filtré dest==drawXAddr) :
