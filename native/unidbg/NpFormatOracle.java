@@ -588,6 +588,32 @@ public class NpFormatOracle {
         }, modbase, modbase + 0x400000, null);   // large fenêtre heap+module
         System.out.println("=== Effect_start ===");
         cPart.callStaticJniMethod(emu, "Effect_start(I)V", effH);
+        // Adresse de drawX de la particule em3 (déterministe) : émetteur module off 0x21cb0c, particles @+0x8bc, +0x40.
+        UnidbgPointer em3 = UnidbgPointer.pointer(emu, modbase + 0x21cb0c);
+        final long drawXAddr = (em3.getInt(0x8bc) & 0xffffffffL) + 0x40;
+        System.out.printf("drawXAddr em3 = 0x%x (valeur avant update = %.3f)%n",
+            drawXAddr, Float.intBitsToFloat(UnidbgPointer.pointer(emu, drawXAddr).getInt(0)));
+        // combine final (0x17118) : r5 -> posAccum[idx] (x@0, y@4) ; r1 -> offset array (x@-8, y@-4 après adds r1,#8).
+        final long comb = modbase + 0x17118;
+        final int[] cc = {0};
+        backend.hook_add_new(new CodeHook() {
+            @Override public void hook(Backend b, long address, int size, Object user) {
+                long r5 = b.reg_read(unicorn.ArmConst.UC_ARM_REG_R5).longValue() & 0xffffffffL;
+                long r1 = b.reg_read(unicorn.ArmConst.UC_ARM_REG_R1).longValue() & 0xffffffffL;
+                long r2 = b.reg_read(unicorn.ArmConst.UC_ARM_REG_R2).longValue() & 0xffffffffL;
+                if ((r2 - 4) != drawXAddr) return;   // seulement em3
+                UnidbgPointer pp5 = UnidbgPointer.pointer(emu, r5);
+                UnidbgPointer pp1 = UnidbgPointer.pointer(emu, r1);
+                float px = Float.intBitsToFloat(pp5.getInt(0)), py = Float.intBitsToFloat(pp5.getInt(4));
+                System.out.printf("[0x17118 EM3 #%d] posAccum=(%.3f,%.3f) | offsetArr[r1-12..r1+4]= %.3f %.3f %.3f %.3f%n",
+                    cc[0], px, py,
+                    Float.intBitsToFloat(pp1.getInt(-12)), Float.intBitsToFloat(pp1.getInt(-8)),
+                    Float.intBitsToFloat(pp1.getInt(-4)), Float.intBitsToFloat(pp1.getInt(0)));
+                cc[0]++;
+            }
+            @Override public void onAttach(com.github.unidbg.arm.backend.UnHook u) {}
+            @Override public void detach() {}
+        }, comb, comb + 2, null);
         System.out.println("=== Effect_update frame0 ===");
         cPart.callStaticJniMethodInt(emu, "Effect_update(IF)Z", effH, Float.floatToRawIntBits(0.1f));
     }

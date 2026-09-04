@@ -1,5 +1,38 @@
 # JOURNAL — journal détaillé des modifications
 
+## 2026-09-04 (g270) — Architecture de la position DÉCODÉE : drawX/drawY = posAccum + offset (2 boucles additives)
+
+Suite g269. Via `drawxhook` (single-step de `updateParticles` surveillant l'adresse mémoire de drawX +
+CodeHook lisant r5/r1 au combine final) — tout mesuré à l'exécution, rien de deviné.
+
+**FORMULE STRUCTURELLE (vérifiée sur em3)** : la position finale est la somme de DEUX tableaux SoA par
+particule, assemblés par la boucle finale `0x170fe..0x17124` :
+```
+0x17110 vldr s4,[r5]        ; posAccum.x           (tableau émetteur+0x894)
+0x17118 vadd s0, s4, s0     ; drawX = posAccum.x + offset.x
+0x17120 vstr s0,[r2,#-4]    ; ÉCRIT drawX
+```
+Valeurs runtime em3 : **posAccum=(-220, 100)**, **offset=(-31.329, 0)** → drawX=-251.329, drawY=100. ✓✓
+
+**Les 2 contributions** :
+1. **posAccum** (boucle `0x17068..0x170ea`) = intégration de vitesse. Chaque champ de type vitesse fait :
+   `s0 = getScaled(champ) * delta` (0x1709c `vmul s0,s0,s16`), puis
+   `posAccum += s0 * mult` (0x170d6 `vmla s4,s0,s2`), où **mult = zToYMultiplier** si actif (flag octet
+   `émetteur+0x288`, valeur `émetteur+0x28c`) sinon **s18 = 0.0** (défaut, pool 0x172d8). Le champ traité ici
+   est à **émetteur+0x138** (0x1704c `add r0,r1,#0x138`) → confirme velocityZ≈0x138.
+2. **offset** (tableau `[sp+0x30]`) = -31.329 pour em3 (déplacement « brut » z/vitesse d'une frame, ajouté
+   à la fin). Source exacte encore à isoler (l'autre boucle 0x16f4e/0x17000 qui écrit `émetteur+0x8a8`).
+
+**Cross-check RNG (bonus)** : le pool littéral de `updateParticles` contient **0x172e0 = 282475249 = 16807²**
+(multiplicateur double-tirage) et **0x172dc = 0x7fffff** (masque) → re-confirme le décodage RNG (g264) et que
+`updateParticles` tire 2 randoms/particule (mouvement brownien : `vx += vel*randX`, `vy += vel*randY`).
+
+**PROCHAINE ÉTAPE** : isoler les valeurs exactes qui font -220 (posAccum) et -31.329 (offset) — lire à
+l'exécution (a) le résultat getScaled de chaque champ vitesse et son `mult`, (b) le remplissage du tableau
+offset `[sp+0x30]`. Puis réécrire `updateParticle` (np_sim.c) selon `pos = Σ(velScaled·delta·mult) + offsetZ`.
+Attention : zToYMultiplier (émetteur+0x28c) et son flag (+0x288) doivent être PARSÉS depuis le .np (vérifier
+que `numeric0` du parseur = ce champ). Outils prêts : `drawxhook` (adapter les adresses), `disasm.py`.
+
 ## 2026-09-04 (g269) — Écriture de drawX/drawY LOCALISÉE à l'instruction (WriteHook + PC) : `pos += vel×delta`, vitesse X ≈ -2513
 
 **Correction/précision de g268** : le dump d'entrée d'`updateParticles#3` ne montrait pas 0x40 → **drawX=0
