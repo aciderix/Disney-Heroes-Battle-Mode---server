@@ -67,6 +67,10 @@ static float scaled_getScale(const NpScaled* s, const float* pool, float percent
 #define F_VELOCITY     (&e->def.scaledB[4])
 #define F_VELOCITYZ    (&e->def.scaledB[5])
 #define F_ANGLE        (&e->def.scaledB[6])
+/* g276 : xOffset/yOffset = champs SCALED à émetteur+0x98/+0xc0 = scaledB[2]/[3] (map + oracle : drawY spawn
+ * = champ 0xc0 exactement). AVANT mappé à tort à rangedC[0]/[1] (inactifs) -> spawn (0,0), cause du diff. */
+#define F_XOFFSET      (&e->def.scaledB[2])
+#define F_YOFFSET      (&e->def.scaledB[3])
 #define F_SIZEX        (&e->def.scaledB[8])
 #define F_SIZEY        (&e->def.scaledB[9])
 #define F_TRANSPARENCY (&e->def.scaledB[11])
@@ -174,9 +178,10 @@ static void activateParticle(NpEmitterRuntime* e, int index) {
     p->transparency = ranged_newLow((const NpRanged*)F_TRANSPARENCY, value);
     p->transparencyDiff = scaled_newHigh(F_TRANSPARENCY, value) - p->transparency;
 
-    /* xOffset/yOffset (Ranged rangedC[0]/[1], HYPOTHÈSE) : lus après transparency (ordre Java), active-gated */
-    float sx = e->def.rangedC[0].active ? ranged_newLow(&e->def.rangedC[0], value) : 0;
-    float sy = e->def.rangedC[1].active ? ranged_newLow(&e->def.rangedC[1], value) : 0;
+    /* xOffset/yOffset = scaledB[2]/[3] (g276, offsets 0x98/0xc0 confirmés par map+oracle). Valeur de spawn =
+     * newLowValue (low range), tirage LIÉ (value partagé) -> ne désynchronise pas la RNG (validé NP_DBG_RNG). */
+    float sx = F_XOFFSET->low.active ? ranged_newLow((const NpRanged*)F_XOFFSET, value) : 0;
+    float sy = F_YOFFSET->low.active ? ranged_newLow((const NpRanged*)F_YOFFSET, value) : 0;
     /* spawn : point (spawnShape.code 0) -> position = émetteur + offsets */
     p->drawX = e->x + sx; p->drawY = e->y + sy;
 }

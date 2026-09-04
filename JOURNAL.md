@@ -1,5 +1,26 @@
 # JOURNAL — journal détaillé des modifications
 
+## 2026-09-04 (g277) — FIX appliqué : xOffset/yOffset = scaledB[2]/[3] (mapping corrigé) — amélioration PARTIELLE
+
+`map` confirme (ancre velocity=scaledB[4]=0x110, ordre parse par fileOff) : **scaledB[2]=0x98=xOffset,
+scaledB[3]=0xc0=yOffset** (et scaledB[0]=centripetal/0x290, scaledB[1]=brownian/0x2b8 — cohérent). Valeurs
+np_parser em3 : scaledB[2]=-200, scaledB[3]=100 → **identiques aux offsets 0x98/0xc0 natifs**. ⇒ mapping certifié.
+
+**Correctif np_sim.c** : `F_XOFFSET=scaledB[2]`, `F_YOFFSET=scaledB[3]` ; `activateParticle` spawn désormais
+`drawX=e->x + newLow(xOffset)`, `drawY=e->y + newLow(yOffset)` (au lieu de rangedC[0]/[1] inactifs). Tirage
+**LIÉ** (value partagé) → **RNG reste en SYNC** (valeurs `[rng]` identiques aux valeurs validées g264).
+
+**RÉSULTAT (honnête, mesuré np_certify)** : la position CHANGE (diff ordonné bouge) et s'améliore pour les
+émetteurs QUI ONT un xOffset/yOffset, MAIS le **max POS(centres NN) reste ~221 px** car il est dominé par un
+émetteur SANS offset (spawn=(0,0) chez moi), dont la position vient de la **vitesse appliquée au spawn** — le
+terme `velocity·cos(angle)·t` (t≈0.2, cf. g276 : em3 drawX=-220=-200+velocity·(-1)·0.2) que je n'applique PAS
+encore. Donc fix nécessaire mais INSUFFISANT seul.
+
+**PROCHAINE ÉTAPE** : ajouter au spawn le terme vitesse `drawX += velocity·cos(angle_rad)·t`,
+`drawY += velocity·sin(angle_rad)·t` (+ velocityZ→Z, wind/gravity au spawn), déterminer t exactement via
+np_certify (essayer t=0.2 ; candidats : 2·delta, ou fraction de vie au spawn). angle en RADIANS (×π/180=s28).
+Puis viser POS NN OK sur tous les émetteurs. Le mapping xOffset/yOffset est acquis (ne pas re-deviner).
+
 ## 2026-09-04 (g276) — ⭐ CAUSE RACINE TROUVÉE : xOffset=émetteur+0x98, yOffset=émetteur+0xc0 (champs SCALED, pas rangedC)
 
 En hookant `getScale 0x16368` (r0=champ, registre lisible) pendant le spawn d'em3, les champs SOMMÉS dans la
