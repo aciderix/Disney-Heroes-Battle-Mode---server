@@ -1,5 +1,32 @@
 # JOURNAL — journal détaillé des modifications
 
+## 2026-09-04 (g275) — Spawn em3 : base=(0,0)/angle=0 → position = pur cumul de forces ; reg_read S-regs KO (note outillage)
+
+Mesures finales du spawn em3 (store 0x17c54, filtré dest==drawXAddr) :
+- **base(sl) = (0.000, 0.000)**, `[sl+0xc]` angleDeg = 0.000 → aucune rotation par-particule (beq pris).
+- Donc **drawX=-220 et drawY=100 sont ENTIÈREMENT l'accumulateur de forces** (s16=drawX, s18=drawY), sommé
+  dans la boucle 0x179da (velocity + wind/gravity/tangential/centripetal/brownian, direction angle°→rad
+  via s28=π/180 → sincos 0x14600). base et angle par-particule = 0 ici.
+
+**NOTE OUTILLAGE (importante pour la suite)** : `backend.reg_read(unicorn.ArmConst.UC_ARM_REG_S16/S18/...)`
+renvoie du **GARBAGE** (ex. 3.09e19) dans ce backend unidbg — **les registres NEON S ne sont PAS lisibles
+par reg_read**. Seuls les registres généraux (R0-R12, SP) et la MÉMOIRE sont fiables. ⇒ pour décoder la
+décomposition par-force de l'accumulateur, il faut lire la MÉMOIRE (valeurs stockées) et non les S-regs, ou
+faire du dataflow statique. C'est pourquoi les hooks lisant s2/s4/s16 n'ont rien donné (g269+).
+
+**BILAN POSITION (architecture COMPLÈTE et vérifiée)** : `drawX = base + Σforces_X`,
+`drawY = base + Σforces_Y + z·zToYMult(si flag 0x288)`, calculé au SPAWN (`activateParticles` 0x179da),
+puis update ajoute un petit offset. Forces = velocity(0x110)+wind(0x210)+gravity(0x238)+tangential(0x260)+
+centripetal(0x290)+brownian(0x2b8), direction = angle(deg)×π/180→sincos. Mapping des champs CONFIRMÉ. Il
+reste UNIQUEMENT le facteur temps/échelle exact de l'accumulation (pourquoi velocity=100→ contribue autant)
++ quelles forces sont actives pour em3.
+
+**PROCHAINE ÉTAPE RECOMMANDÉE (successeur)** : plutôt que continuer le probing (S-regs illisibles), **écrire**
+dans `np_sim.c::activateParticle` l'application des forces au spawn (getScaled déjà en place, direction
+angle→rad→sincos, base+Σ), puis **itérer via `np_certify`** : le harnais différentiel révèle le facteur exact
+(si la position sort à un facteur constant près, on lit le facteur = fait, pas devinette — §8). Hooker le
+helper getScale `0x16368` pendant le spawn (lecture MÉMOIRE, pas S-reg) donne la liste des forces actives.
+
 ## 2026-09-04 (g274) — La position -220 est calculée dans `activateParticles` (SPAWN) + offsets de champs CONFIRMÉS
 
 **Correction majeure** : la fonction 0x179da–0x17c6c est **DANS `activateParticles`** (symbole

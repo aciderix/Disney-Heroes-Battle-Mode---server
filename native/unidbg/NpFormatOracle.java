@@ -576,7 +576,7 @@ public class NpFormatOracle {
             @Override public void hook(Backend b, long address, int size, long value, Object user) {
                 if (size != 4 || n[0] >= 40) return;
                 float f = Float.intBitsToFloat((int) value);
-                if (f > -260 && f < -230) {   // fenêtre autour de drawX em3 (-251/-240)
+                if (address == 0x4022f080L && f > -260 && f < -210) {   // drawX em3 : capte -220 ET -251
                     long pc = b.reg_read(unicorn.ArmConst.UC_ARM_REG_PC).longValue();
                     System.out.printf("WRITE @0x%x = %.3f  (PC=0x%x modoff=0x%x)%n",
                         address, f, pc, pc - modbase);
@@ -660,6 +660,17 @@ public class NpFormatOracle {
             @Override public void onAttach(com.github.unidbg.arm.backend.UnHook u) {}
             @Override public void detach() {}
         }, uStart2, uStart2 + SZ_UPDATE_PARTICLES, null);
+        // 0x17c32 : s2 = s21 + s16 (drawX = base + accumForce). Lit s16/s18 (accumulateur) — teste reg_read S.
+        backend.hook_add_new(new CodeHook() {
+            @Override public void hook(Backend b, long address, int size, Object user) {
+                float s16 = Float.intBitsToFloat(b.reg_read(unicorn.ArmConst.UC_ARM_REG_S16).intValue());
+                float s18 = Float.intBitsToFloat(b.reg_read(unicorn.ArmConst.UC_ARM_REG_S18).intValue());
+                if (Math.abs(s16) > 50 || Math.abs(s18) > 50)
+                    System.out.printf("[0x17c32] accumForce s16(X)=%.3f s18(Y)=%.3f%n", s16, s18);
+            }
+            @Override public void onAttach(com.github.unidbg.arm.backend.UnHook u) {}
+            @Override public void detach() {}
+        }, modbase + 0x17c32, modbase + 0x17c34, null);
         System.out.println("=== Effect_update frame0 ===");
         cPart.callStaticJniMethodInt(emu, "Effect_update(IF)Z", effH, Float.floatToRawIntBits(0.1f));
     }
