@@ -1,5 +1,35 @@
 # JOURNAL — journal détaillé des modifications
 
+## 2026-09-04 (g266) — scaledprobe corrigé (émetteur dynamique + atlas RÉEL) → champ 0x188 = velocityZ (PAS sizeX), composante position expliquée
+
+**Correctif outil** : `scaledprobe` (NpFormatOracle) filtrait sur une adresse d'émetteur **codée en dur**
+(`em3base=0x21cb0c`) et utilisait un atlas quelconque → dump VIDE (les particules ne spawnent pas si
+l'atlas ne contient pas les régions). Corrigé : (1) dump des 6 premiers `updateParticles` par **détection
+dynamique** de l'émetteur (r0) + struct particule complet ; (2) **utiliser le VRAI atlas**
+`ETC/world/units/ralph/vfx/particles-DEFAULT.atlas` (les régions résolvent → spawn réel).
+
+**DONNÉES DÉCISIVES (émetteur #3 = base module 0x21cb0c, particule[0] au spawn)** — via `valPtrModOff`
+(offset émetteur du champ lu par getScaled) + struct particule :
+- **3 champs Scaled actifs** : `0x110` velocity (diff=100) ; `0x188` (diff=**-300**) ; `0x1d8` rotation (diff=1).
+- Struct particule : `0xc=100` (velocity), `0x10=-180` (angle), `0x14=-1` (**angleCos=cos(-180°)** ✓ ancre),
+  `0x28=-300` (= valeur du champ `0x188`), `0x0=0x4=400` (sizeX/sizeY du sprite).
+- getScaled du champ `0x188` : base=0 diff=-300 percent=0.250 → **-13.29** ⇒ **getScale(0.25)=0.0443**
+  (timeline DÉCROISSANTE), alors que velocity `0x110` a getScale(0.25)=1.0 (timeline plate).
+
+**CONCLUSION (§8, fait mesuré, pas supposition)** : le champ émetteur **`0x188`** — noté « sizeX » dans le
+mapping actuel de `np_sim.c` — est en réalité évalué comme un **2ᵉ champ de type vitesse** (juste après
+velocity dans l'ordre d'activation), avec une **timeline décroissante** (signature d'un **velocityZ** qui
+retombe) et stocké dans la particule à `0x28` comme une vitesse. **Une taille ne décroît pas à 4 %.**
+⇒ Le mapping `0x188=sizeX` est très probablement **FAUX** ; `0x188` = **velocityZ**. C'EST la composante
+position manquante (velocityZ→z→drawY via `numeric0` zToYMultiplier). Corollaire : `velocityZ` que j'avais
+mappé à `0x138` est faux aussi → il faut **re-vérifier tout le bloc vitesse** (0x138/0x160/0x188) par
+`vertextest`/`activorder` avant de re-committer un mapping.
+
+**PROCHAINE ÉTAPE (décisive)** : `vertextest` en patchant la VALEUR du champ `0x188` (via son offset FICHIER,
+obtenu par `map`) → observer si **drawY** bouge (confirme velocityZ) ou si la **taille du quad** change
+(confirmerait sizeX). Puis corriger les macros F_* dans `np_sim.c`, re-`np_certify`. Ordre d'activation réel
+à re-extraire par `activorder` (les champs actifs varient par émetteur : #5 a des champs actifs à 0x98/0xc0).
+
 ## 2026-09-04 (g265-HANDOFF) — Transmission au successeur (compression de contexte imminente) — LIRE EN PREMIER
 
 **⚠️ SUCCESSEUR : AVANT TOUTE CHOSE, applique la PROCÉDURE DE REPRISE (haut de `MEMORY.md`) EN ENTIER,

@@ -471,20 +471,24 @@ public class NpFormatOracle {
         int effH = cPart.callStaticJniMethodInt(emu, "Effect_create([BI)I", new ByteArray(vm, npBytes), atlasH);
         Debugger dbg = emu.attach();
         final int[] cnt = {0};
-        // updateParticles entry (0x16589) : r0=emitter. À CET INSTANT la particule vient de spawner
-        // (activateParticles déjà passé) mais PAS encore bougée -> lire drawX(0x40)=position de SPAWN.
-        final long em3base = mod.base + 0x21cb0c;
+        final int[] upc = {0};
+        // updateParticles entry (0x16589) : r0=emitter. Dump des 6 premiers appels (émetteur + delta +
+        // struct particule[0] complet 0x00..0x80) pour localiser la composante position manquante (§4).
         dbg.addBreakPoint(mod, 0x16589, (e, addr) -> {
+            if (upc[0] >= 6) return true;
             com.github.unidbg.arm.context.Arm32RegisterContext c = (com.github.unidbg.arm.context.Arm32RegisterContext) e.getContext();
             long r0 = c.getR0Int() & 0xffffffffL;
-            if (r0 == em3base) {
-                long partArr = UnidbgPointer.pointer(emu, r0).getInt(0x8bc) & 0xffffffffL;
+            long partArr = UnidbgPointer.pointer(emu, r0).getInt(0x8bc) & 0xffffffffL;
+            System.out.printf("[updateParticles #%d] emitter=0x%x delta=%.3f partArr=0x%x%n",
+                upc[0], r0, Float.intBitsToFloat(c.getR1Int()), partArr);
+            if (partArr != 0) {
                 UnidbgPointer pp = UnidbgPointer.pointer(emu, partArr);
-                System.out.printf("[updateParticles em3 ENTREE] delta=%.3f | SPAWN drawX(0x40)=%.2f drawY(0x44)=%.2f | 0x34=%.2f 0x38=%.2f%n",
-                    Float.intBitsToFloat(c.getR1Int()),
-                    Float.intBitsToFloat(pp.getInt(0x40)), Float.intBitsToFloat(pp.getInt(0x44)),
-                    Float.intBitsToFloat(pp.getInt(0x34)), Float.intBitsToFloat(pp.getInt(0x38)));
+                System.out.print("   part[0] non-nuls : ");
+                for (int o = 0; o < 0x80; o += 4) { float v = Float.intBitsToFloat(pp.getInt(o));
+                    if (Math.abs(v) > 0.001 && Math.abs(v) < 1e7) System.out.printf("[0x%x]=%.3f ", o, v); }
+                System.out.println();
             }
+            upc[0]++;
             return true;
         });
         dbg.addBreakPoint(mod, 0x17309, (e, addr) -> {
