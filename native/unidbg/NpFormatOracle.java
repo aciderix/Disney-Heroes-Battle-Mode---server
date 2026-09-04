@@ -131,6 +131,11 @@ public class NpFormatOracle {
             activOrder(so, args[2], args[3]);
             return;
         }
+        if ("scaledprobe".equals(args[1])) {
+            // args: scaledprobe <so> <np> <atlas>  -- hooke getScaled(0x17309) : r1=base, r2=diff, [sp]=percent
+            scaledProbe(so, args[2], args[3]);
+            return;
+        }
         if ("goldenall".equals(args[1])) {
             // args: goldenall <so> <assetsRoot> <outDir> [nframes] [dt_ms]  -- 1 golden par .np (récursif)
             int nf = args.length > 4 ? Integer.parseInt(args[4]) : 30;
@@ -445,6 +450,72 @@ public class NpFormatOracle {
     static float lcgFloat(int newseed) {
         int bits = (newseed & 0x7fffff) | 0x3f800000;
         return Float.intBitsToFloat(bits) - 1.0f;
+    }
+
+    /** Hooke getScaled(0x17309) : r1=base(low), r2=diff, r3=&value, [sp]=percent. Dump les valeurs
+     *  EXACTES de vitesse/etc. utilisées à l'exécution -> comparer à ma sim. */
+    static void scaledProbe(String so, String npPath, String atlasPath) throws Exception {
+        byte[] atlasBytes = Files.readAllBytes(new File(atlasPath).toPath());
+        byte[] npBytes = Files.readAllBytes(new File(npPath).toPath());
+        AndroidEmulator emu = newEmulator();
+        Memory memory = emu.getMemory();
+        VM vm = emu.createDalvikVM();
+        vm.setVerbose(false);
+        DalvikModule dm = vm.loadLibrary(new File(so), true);
+        Module mod = dm.getModule();
+        installBufferSvc(emu, vm);
+        DvmClass cSpine = vm.resolveClass("com/perblue/heroes/cspine/Native");
+        DvmClass cPart = vm.resolveClass("com/perblue/heroes/cparticle/Native");
+        cSpine.callStaticJniMethod(emu, "Spine_init()V");
+        int atlasH = cSpine.callStaticJniMethodInt(emu, "Atlas_create([BZ)I", new ByteArray(vm, atlasBytes), 1);
+        int effH = cPart.callStaticJniMethodInt(emu, "Effect_create([BI)I", new ByteArray(vm, npBytes), atlasH);
+        Debugger dbg = emu.attach();
+        final int[] cnt = {0};
+        // updateParticles entry (0x16589) : r1=delta1, r2=delta2 (floats)
+        dbg.addBreakPoint(mod, 0x16589, (e, addr) -> {
+            com.github.unidbg.arm.context.Arm32RegisterContext c = (com.github.unidbg.arm.context.Arm32RegisterContext) e.getContext();
+            System.out.printf("[updateParticles] delta1(r1)=%.4f delta2(r2)=%.4f%n",
+                Float.intBitsToFloat(c.getR1Int()), Float.intBitsToFloat(c.getR2Int()));
+            return true;
+        });
+        dbg.addBreakPoint(mod, 0x17309, (e, addr) -> {
+            if (cnt[0] < 20) {
+                com.github.unidbg.arm.context.Arm32RegisterContext c = (com.github.unidbg.arm.context.Arm32RegisterContext) e.getContext();
+                float base = Float.intBitsToFloat(c.getR1Int());
+                float diff = Float.intBitsToFloat(c.getR2Int());
+                long valPtr = c.getR3Int() & 0xffffffffL;
+                long off = valPtr - (mod.base); // offset absolu module (pas emitter, indicatif)
+                UnidbgPointer sp = c.getStackPointer();
+                float percent = Float.intBitsToFloat(sp.getInt(0));
+                System.out.printf("[getScaled %2d] base=%.2f diff=%.2f percent=%.3f valPtrModOff=0x%x",
+                    cnt[0], base, diff, percent, off);
+                cnt[0]++;
+            }
+            return true;
+        });
+        // retour de getScaled (0x1732c pop) : r0 = résultat = base + diff*getScale(percent)
+        dbg.addBreakPoint(mod, 0x1732c, (e, addr) -> {
+            if (cnt[0] <= 20) {
+                com.github.unidbg.arm.context.Arm32RegisterContext c = (com.github.unidbg.arm.context.Arm32RegisterContext) e.getContext();
+                System.out.printf(" => result=%.2f%n", Float.intBitsToFloat(c.getR0Int()));
+            }
+            return true;
+        });
+        cPart.callStaticJniMethod(emu, "Effect_start(I)V", effH);
+        cPart.callStaticJniMethodInt(emu, "Effect_update(IF)Z", effH, Float.floatToRawIntBits(0.1f));
+        cPart.callStaticJniMethodInt(emu, "Effect_getVertices(ILjava/nio/FloatBuffer;Ljava/nio/ShortBuffer;)I",
+            effH, vm.resolveClass("java/nio/FloatBuffer").newObject(memory.malloc(8192*6*4, false).getPointer()),
+            vm.resolveClass("java/nio/ShortBuffer").newObject(memory.malloc(8192*2, false).getPointer()));
+        // dump emitter 3 (base 0x4021cb0c) particle 0 : cherche drawX≈-54, drawY≈-5.5. particles ptr @ +0x8bc.
+        long em3 = mod.base + 0x21cb0c;
+        UnidbgPointer emp = UnidbgPointer.pointer(emu, em3);
+        long partArr = emp.getInt(0x8bc) & 0xffffffffL;
+        System.out.printf("emitter3 particles ptr=0x%x%n", partArr);
+        UnidbgPointer pp = UnidbgPointer.pointer(emu, partArr);   // tableau de structs Particle
+        System.out.print("particle0 floats @0..0x100 (recherche -54/-5.5) : ");
+        for (int o = 0; o < 0x100; o += 4) { float v = Float.intBitsToFloat(pp.getInt(o));
+            if (Math.abs(v) > 0.01 && Math.abs(v) < 1e6) System.out.printf("[0x%x]=%.2f ", o, v); }
+        System.out.println();
     }
 
     /**
