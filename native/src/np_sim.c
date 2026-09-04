@@ -95,8 +95,11 @@ void np_sim_start(NpEmitterRuntime* e, NpEmitter* def) {
         for (int k=0;k<6;k++) fprintf(stderr,"%.0f%c ", def->scaledA[k].highMax, def->scaledA[k].low.active?'*':' ');
         fprintf(stderr, "| scaledB hi: ");
         for (int k=0;k<12;k++) fprintf(stderr,"%.0f%c ", def->scaledB[k].highMax, def->scaledB[k].low.active?'*':' ');
-        fprintf(stderr, "| scaledC/D: %.0f %.0f %.0f / %.0f\n",
+        fprintf(stderr, "| scaledC/D: %.0f %.0f %.0f / %.0f",
             def->scaledC[0].highMax, def->scaledC[1].highMax, def->scaledC[2].highMax, def->scaledD.highMax);
+        fprintf(stderr, " | rangedC[0] act=%d lowMin=%.1f lowMax=%.1f | rangedC[1] act=%d lowMin=%.1f lowMax=%.1f\n",
+            def->rangedC[0].active, def->rangedC[0].lowMin, def->rangedC[0].lowMax,
+            def->rangedC[1].active, def->rangedC[1].lowMin, def->rangedC[1].lowMax);
         g_startN++;
     }
     e->maxParticleCount = def->maxParticleCount > 0 ? def->maxParticleCount : 4;

@@ -1,5 +1,40 @@
 # JOURNAL — journal détaillé des modifications
 
+## 2026-09-04 (g267) — CORRECTION de g266 + LA cause position trouvée : le spawn est (-240,100), offsets = champs SCALED
+
+**AUTO-CORRECTION honnête de g266** (§8, ne jamais laisser une conclusion fausse) : en suivant la
+particule[0] de l'émetteur #3 sur 6 frames (`scaledprobe` corrigé, dump drawX/drawY par frame) :
+```
+frame 0 : drawX=-251.33 drawY=100.00 | 0x34(disp)=-11.33 | vel=100 velZ(0x28)=-300
+frame 1 : drawX=-286.32 drawY=100.00 | 0x34=-14.99
+frame 2 : drawX=-327.97 drawY=100.00 | 0x34=-21.65   (puis figé = mort/fin émission)
+```
+- **drawY = 100.00 CONSTANT** alors que velZ(0x28)=-300 ⇒ **velocityZ ne pilote PAS drawY ici** →
+  ma conclusion g266 (« 0x188 pilote drawY ») est **FAUSSE**, rétractée. (numeric0/zToYMultiplier=0 pour
+  cet effet, donc velocityZ n'a aucun effet position visible — cohérent avec ma sim qui met vy=0 si numeric0
+  inactif.)
+- **drawX = -251.33 au spawn**, or le displacement velocity (0x34) n'est que -11.33 →
+  **position de SPAWN = -251.33 − (-11.33) = -240.00** (pas (0,0) !). Golden O[1]=(-238,74) ≈ centre
+  (drawX=-251, drawY=100) confirme 0x40=drawX / 0x44=drawY.
+
+**LA CAUSE RACINE de l'écart position** (vérifiée) : la particule **spawn à (-240, 100)**, pas (0,0). Ma sim
+spawn à (0,0) car elle lit xOffset/yOffset dans `rangedC[0]/[1]` — or `NP_DBG_START` montre **rangedC[0] et
+rangedC[1] act=0 pour LES 12 émetteurs** → mauvaise source. Les vrais offsets de spawn sont des champs
+**SCALED** : émetteur #3 a `scaledB[2]=-200*` et `scaledB[3]=100*` actifs, et **drawY réel = 100 = scaledB[3]**
+exactement ; drawX spawn -240 ≈ scaledB[2]=-200 (à un facteur getScale près au spawn). ⇒ **xOffsetValue /
+yOffsetValue = scaledB[2] / scaledB[3]** (Scaled, pas Ranged) — À CONFIRMER par vertextest avant de committer.
+
+**PROCHAINE ÉTAPE (décisive, pour le successeur)** :
+1. `vertextest` en patchant la valeur de `scaledB[2]` (offset fichier via `map`) → drawX spawn doit bouger ;
+   idem `scaledB[3]` → drawY. Confirme xOffset/yOffset = scaledB[2]/[3].
+2. Corriger `activateParticle` dans `np_sim.c` : spawn `drawX = e->x + getScaled(F_XOFFSET=scaledB[2])`,
+   `drawY = e->y + getScaled(F_YOFFSET=scaledB[3])` au lieu de rangedC[0]/[1]. Retirer l'hypothèse rangedC.
+3. Re-vérifier l'ordre des tirages RNG (scaledB[2]/[3] sont-ils tirés au spawn ? ils sont actifs donc oui,
+   mais leur POSITION dans l'ordre Java doit rester synchronisée — re-`NP_DBG_RNG` après le changement).
+4. `np_certify` → viser POS(centres NN) OK. Puis coleurs/uv (cf. g264-ÉTAT).
+Note : le mapping `scaledB[8]=sizeX`/`scaledB[5]=velocityZ` reste à revérifier aussi (le bloc vitesse/taille
+est ambigu) — mais scaledB[2]/[3]=spawn offset est la priorité (c'est LE bloqueur position mesuré).
+
 ## 2026-09-04 (g266) — scaledprobe corrigé (émetteur dynamique + atlas RÉEL) → champ 0x188 = velocityZ (PAS sizeX), composante position expliquée
 
 **Correctif outil** : `scaledprobe` (NpFormatOracle) filtrait sur une adresse d'émetteur **codée en dur**

@@ -515,17 +515,24 @@ public class NpFormatOracle {
             return true;
         });
         cPart.callStaticJniMethod(emu, "Effect_start(I)V", effH);
-        cPart.callStaticJniMethodInt(emu, "Effect_update(IF)Z", effH, Float.floatToRawIntBits(0.1f));
-        cPart.callStaticJniMethodInt(emu, "Effect_getVertices(ILjava/nio/FloatBuffer;Ljava/nio/ShortBuffer;)I",
-            effH, vm.resolveClass("java/nio/FloatBuffer").newObject(memory.malloc(8192*6*4, false).getPointer()),
-            vm.resolveClass("java/nio/ShortBuffer").newObject(memory.malloc(8192*2, false).getPointer()));
-        // dump emitter 3 (base 0x4021cb0c) particle 0 : cherche drawX≈-54, drawY≈-5.5. particles ptr @ +0x8bc.
+        // Suivi de la particule[0] de l'émetteur #3 (module off 0x21cb0c) sur 6 frames : si velocityZ(0x188)
+        // pilote la position, drawY(0x44) doit croître vers la valeur golden. drawX(0x40) = velocity.
         long em3 = mod.base + 0x21cb0c;
         UnidbgPointer emp = UnidbgPointer.pointer(emu, em3);
-        long partArr = emp.getInt(0x8bc) & 0xffffffffL;
-        System.out.printf("emitter3 particles ptr=0x%x%n", partArr);
-        UnidbgPointer pp = UnidbgPointer.pointer(emu, partArr);   // tableau de structs Particle
-        System.out.print("particle0 floats @0..0x100 (recherche -54/-5.5) : ");
+        for (int frame = 0; frame < 6; frame++) {
+            cPart.callStaticJniMethodInt(emu, "Effect_update(IF)Z", effH, Float.floatToRawIntBits(0.1f));
+            long pa = emp.getInt(0x8bc) & 0xffffffffL;
+            if (pa == 0) { System.out.printf("frame %d : pas de particule%n", frame); continue; }
+            UnidbgPointer p0 = UnidbgPointer.pointer(emu, pa);
+            System.out.printf("frame %d em3 part[0] : drawX(0x40)=%.2f drawY(0x44)=%.2f | 0x34=%.2f 0x38=%.2f | vel0xc=%.2f velZ0x28=%.2f life0x4=%.3f%n",
+                frame,
+                Float.intBitsToFloat(p0.getInt(0x40)), Float.intBitsToFloat(p0.getInt(0x44)),
+                Float.intBitsToFloat(p0.getInt(0x34)), Float.intBitsToFloat(p0.getInt(0x38)),
+                Float.intBitsToFloat(p0.getInt(0xc)), Float.intBitsToFloat(p0.getInt(0x28)),
+                Float.intBitsToFloat(p0.getInt(0x4)));
+        }
+        UnidbgPointer pp = UnidbgPointer.pointer(emu, emp.getInt(0x8bc) & 0xffffffffL);
+        System.out.print("particle0 floats @0..0x100 (fin) : ");
         for (int o = 0; o < 0x100; o += 4) { float v = Float.intBitsToFloat(pp.getInt(o));
             if (Math.abs(v) > 0.01 && Math.abs(v) < 1e6) System.out.printf("[0x%x]=%.2f ", o, v); }
         System.out.println();
