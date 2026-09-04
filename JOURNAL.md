@@ -44,7 +44,27 @@ que je n'applique pas. **Vérifier chaque champ actif par vertextest ciblé** (p
 mais un AUTRE champ actif peut aussi affecter X. `activorder` ne montre que les champs via le helper
 0x17ebc (velocity/sizeX/rotation) ; les champs 0x98/0xc0/0xe8/0x160(angle) passent par d'autres chemins.
 
-**PROCHAINES ÉTAPES CONCRÈTES** : 1) résoudre l'ordre des sommets (comparer ensembles de centres) ; 2)
+**DIAGNOSTIC APPROFONDI (g264, mode `scaledprobe` + dump struct particule natif)** — ISOLE le bug position :
+- `getScaled(0x17309)` hooké (r1=base, r2=diff, [sp]=percent, retour=r0) + `updateParticles(0x16589)` (r1=
+  delta1=0.1, r2=delta2=100). Pour l'émetteur 3, velocity : base=0, diff=100, percent=0.25, **result=100**
+  → getScale(0.25)=1.0. **CONFIRME EXACTEMENT ma sim** (velocity=100, delta=0.1, getScale=1). La FORMULE
+  velocity est bonne.
+- **DÉCOUVERTE 1 — ordre des sommets DIFFÈRE** : le struct particule natif de l'émetteur 3 (base module
+  0x21cb0c, +0x8bc=ptr tableau particules) a **drawX≈-251** (offset 0x40) ≈ golden **O[1]=(-238,74)**, PAS
+  O[0]. Donc mon diff POSITION dans np_certify comparait les MAUVAISES particules → **ajouter une
+  comparaison ordre-indépendante (plus-proche-voisin) dans np_certify AVANT de conclure sur la physique.**
+- **DÉCOUVERTE 2 — offset de spawn manquant** : la particule est à drawX=-251 mais le déplacement velocity
+  n'est que -11.33 (offset 0x34) → elle a SPAWNÉ à ~-240, pas à (0,0). spawnShape=point(code 0) devrait
+  spawner à l'origine. Le champ 0x188 (émetteur) = -300 (que j'appelle sizeX) × ~0.83 ≈ -250 → **0x188 est
+  probablement un champ de POSITION/OFFSET de spawn, PAS sizeX.** À confirmer : hooker l'écriture de drawX
+  dans activateParticles, ou tester le rôle de 0x188 par vertextest.
+- **Layout struct particule natif** (taille ~0x80) : life/currentLife @0x4=400, velocity @0xc=100, angle
+  @0x10=-180, angleCos @0x14=-1, vx(déplacement) @0x34, **drawX @0x40**, uv @0x5c-0x68, taille sprite
+  (drawSizeX/origin) @0x70-0x78. Utile pour lire directement l'état oracle par particule.
+
+**PROCHAINES ÉTAPES CONCRÈTES** : 0) **ajouter comparaison ordre-indépendante à np_certify** (les
+particules ne sont PAS dans l'ordre émetteur) ; 0bis) résoudre l'offset de spawn (rôle de 0x188) — c'est
+LE bloquant position ; 1) résoudre l'ordre des sommets (comparer ensembles de centres) ; 2)
 distinguer velocityZ/wind/gravity par vertextest ciblé ; 3) affiner la géométrie du quad (taille via
 sizeX/sizeY sur la vie, origine, rotation) jusqu'à POS OK sur ralph frame 0, puis toutes frames ; 4)
 généraliser à d'autres `.np` (`goldenall`) ; 5) couleurs (tint gradient × transparency, ABGR — cf.

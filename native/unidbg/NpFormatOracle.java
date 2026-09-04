@@ -471,11 +471,20 @@ public class NpFormatOracle {
         int effH = cPart.callStaticJniMethodInt(emu, "Effect_create([BI)I", new ByteArray(vm, npBytes), atlasH);
         Debugger dbg = emu.attach();
         final int[] cnt = {0};
-        // updateParticles entry (0x16589) : r1=delta1, r2=delta2 (floats)
+        // updateParticles entry (0x16589) : r0=emitter. À CET INSTANT la particule vient de spawner
+        // (activateParticles déjà passé) mais PAS encore bougée -> lire drawX(0x40)=position de SPAWN.
+        final long em3base = mod.base + 0x21cb0c;
         dbg.addBreakPoint(mod, 0x16589, (e, addr) -> {
             com.github.unidbg.arm.context.Arm32RegisterContext c = (com.github.unidbg.arm.context.Arm32RegisterContext) e.getContext();
-            System.out.printf("[updateParticles] delta1(r1)=%.4f delta2(r2)=%.4f%n",
-                Float.intBitsToFloat(c.getR1Int()), Float.intBitsToFloat(c.getR2Int()));
+            long r0 = c.getR0Int() & 0xffffffffL;
+            if (r0 == em3base) {
+                long partArr = UnidbgPointer.pointer(emu, r0).getInt(0x8bc) & 0xffffffffL;
+                UnidbgPointer pp = UnidbgPointer.pointer(emu, partArr);
+                System.out.printf("[updateParticles em3 ENTREE] delta=%.3f | SPAWN drawX(0x40)=%.2f drawY(0x44)=%.2f | 0x34=%.2f 0x38=%.2f%n",
+                    Float.intBitsToFloat(c.getR1Int()),
+                    Float.intBitsToFloat(pp.getInt(0x40)), Float.intBitsToFloat(pp.getInt(0x44)),
+                    Float.intBitsToFloat(pp.getInt(0x34)), Float.intBitsToFloat(pp.getInt(0x38)));
+            }
             return true;
         });
         dbg.addBreakPoint(mod, 0x17309, (e, addr) -> {
