@@ -1,5 +1,23 @@
 # JOURNAL — journal détaillé des modifications
 
+## 2026-09-04 (g272) — Modèle position SIMPLIFIÉ : drawPos = position_vitesse(-220,100) PUIS += offset(-31.329,0) en place
+
+Précision de g270/g271 : au combine 0x17118, **r5 (le « posAccum ») == l'adresse de drawX elle-même**
+(0x4022f080). Donc il n'y a PAS de tableau posAccum séparé : la boucle finale ajoute l'offset **en place**
+sur drawPos. Modèle net (2 phases dans updateParticles) :
+```
+Phase 1 (boucle vitesse) : drawX,drawY  = position intégrée par la vitesse   = (-220, 100)   [em3]
+Phase 2 (boucle offset)  : drawX,drawY += offset (z/brownien)                 += (-31.329, 0)
+                           => drawX=-251.329, drawY=100
+```
+(Le single-step de g269 le montrait déjà : drawX 0→-220 puis -220→-251.329, deux stores distincts.)
+
+**RESTE à décoder** : (1) la Phase 1 (comment velocity=100/angle=-180/champ0x188 donnent (-220,100)) ;
+(2) la Phase 2 offset (-31.329). L'index de la particule dans les boucles SoA n'était pas 0 (le calcul
+`idx=9116` affiché est faux car r0 base ≠ émetteur+0x894 — c'est un autre struct pointant vers drawPos) →
+pour tracer la Phase 1 champ par champ, filtrer par **adresse de destination = drawXAddr** (comme au combine,
+via r2), pas par index. Outils : `drawxhook` (déjà en place, hooks combine 0x17118 + getScaled + single-step).
+
 ## 2026-09-04 (g271) — Recette getScaled d'em3 mesurée + blocage = indexation des tableaux compactés
 
 Suite g270, mesures runtime supplémentaires (`drawxhook` : hooks getScaled 0x17309/0x1732c filtrés em3).

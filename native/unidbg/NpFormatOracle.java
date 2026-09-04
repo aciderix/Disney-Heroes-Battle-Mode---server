@@ -605,10 +605,10 @@ public class NpFormatOracle {
                 UnidbgPointer pp5 = UnidbgPointer.pointer(emu, r5);
                 UnidbgPointer pp1 = UnidbgPointer.pointer(emu, r1);
                 float px = Float.intBitsToFloat(pp5.getInt(0)), py = Float.intBitsToFloat(pp5.getInt(4));
-                System.out.printf("[0x17118 EM3 #%d] posAccum=(%.3f,%.3f) | offsetArr[r1-12..r1+4]= %.3f %.3f %.3f %.3f%n",
-                    cc[0], px, py,
-                    Float.intBitsToFloat(pp1.getInt(-12)), Float.intBitsToFloat(pp1.getInt(-8)),
-                    Float.intBitsToFloat(pp1.getInt(-4)), Float.intBitsToFloat(pp1.getInt(0)));
+                long e3 = modbase + 0x21cb0c;
+                System.out.printf("[0x17118 EM3 #%d] posAccumAddr=0x%x (em3+0x%x, idx=%d) offsetArrAddr=0x%x | posAccum=(%.3f,%.3f) offset=(%.3f,%.3f)%n",
+                    cc[0], r5, r5-e3, (r5-(e3+0x894))/8, r1-12, px, py,
+                    Float.intBitsToFloat(pp1.getInt(-12)), Float.intBitsToFloat(pp1.getInt(-8)));
                 cc[0]++;
             }
             @Override public void onAttach(com.github.unidbg.arm.backend.UnHook u) {}
