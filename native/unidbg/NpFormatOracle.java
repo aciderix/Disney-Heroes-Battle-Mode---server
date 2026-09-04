@@ -614,6 +614,52 @@ public class NpFormatOracle {
             @Override public void onAttach(com.github.unidbg.arm.backend.UnHook u) {}
             @Override public void detach() {}
         }, comb, comb + 2, null);
+        // getScaled pendant l'update, filtré émetteur em3 (champ ptr r3 dans [em3base, em3base+0x904]) :
+        // donne la recette exacte (champ -> valeur scaled) qui compose posAccum/offset.
+        final long em3base = modbase + 0x21cb0c;
+        final boolean[] pending = {false};
+        backend.hook_add_new(new CodeHook() {
+            @Override public void hook(Backend b, long address, int size, Object user) {
+                long r3 = b.reg_read(unicorn.ArmConst.UC_ARM_REG_R3).longValue() & 0xffffffffL;
+                if (r3 < em3base || r3 >= em3base + 0x904) return;
+                float base = Float.intBitsToFloat(b.reg_read(unicorn.ArmConst.UC_ARM_REG_R1).intValue());
+                float diff = Float.intBitsToFloat(b.reg_read(unicorn.ArmConst.UC_ARM_REG_R2).intValue());
+                long sp = b.reg_read(unicorn.ArmConst.UC_ARM_REG_SP).longValue() & 0xffffffffL;
+                float pct = Float.intBitsToFloat(UnidbgPointer.pointer(emu, sp).getInt(0));
+                System.out.printf("[getScaled UPD] champ@em3+0x%x base=%.3f diff=%.3f pct=%.4f",
+                    r3 - em3base, base, diff, pct);
+                pending[0] = true;
+            }
+            @Override public void onAttach(com.github.unidbg.arm.backend.UnHook u) {}
+            @Override public void detach() {}
+        }, modbase + 0x17309, modbase + 0x1730b, null);
+        backend.hook_add_new(new CodeHook() {
+            @Override public void hook(Backend b, long address, int size, Object user) {
+                if (!pending[0]) return;
+                float r0 = Float.intBitsToFloat(b.reg_read(unicorn.ArmConst.UC_ARM_REG_R0).intValue());
+                System.out.printf(" => %.4f%n", r0);
+                pending[0] = false;
+            }
+            @Override public void onAttach(com.github.unidbg.arm.backend.UnHook u) {}
+            @Override public void detach() {}
+        }, modbase + 0x1732c, modbase + 0x1732e, null);
+        // Surveille posAccum.x (em3base+0x894) et offset via single-step : voir la construction de -220.
+        final long posAccAddr = em3base + 0x894;
+        final long uStart2 = modbase + (SYM_UPDATE_PARTICLES & ~1L);
+        final float[] lastPA = { Float.intBitsToFloat(UnidbgPointer.pointer(emu, posAccAddr).getInt(0)) };
+        final long[] lpc = {0};
+        backend.hook_add_new(new CodeHook() {
+            @Override public void hook(Backend b, long address, int size, Object user) {
+                float cur = Float.intBitsToFloat(UnidbgPointer.pointer(emu, posAccAddr).getInt(0));
+                if (cur != lastPA[0]) {
+                    System.out.printf("posAccum.x %.3f -> %.3f  (instr préc modoff=0x%x)%n", lastPA[0], cur, lpc[0]-modbase);
+                    lastPA[0] = cur;
+                }
+                lpc[0] = address;
+            }
+            @Override public void onAttach(com.github.unidbg.arm.backend.UnHook u) {}
+            @Override public void detach() {}
+        }, uStart2, uStart2 + SZ_UPDATE_PARTICLES, null);
         System.out.println("=== Effect_update frame0 ===");
         cPart.callStaticJniMethodInt(emu, "Effect_update(IF)Z", effH, Float.floatToRawIntBits(0.1f));
     }

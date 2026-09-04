@@ -1,5 +1,34 @@
 # JOURNAL — journal détaillé des modifications
 
+## 2026-09-04 (g271) — Recette getScaled d'em3 mesurée + blocage = indexation des tableaux compactés
+
+Suite g270, mesures runtime supplémentaires (`drawxhook` : hooks getScaled 0x17309/0x1732c filtrés em3).
+
+**Recette getScaled pendant l'update d'em3** (champ@offset-émetteur, base, diff, résultat) :
+```
+champ@0x48  diff=400  => 400      (life)
+champ@0x10  diff=0    => 0
+champ@0x70  diff=1    => 1        (emission)
+champ@0x110 diff=100  => 100      (velocity)     <-- non scalé (getScale=1)
+champ@0x188 diff=-300 => -13.29   (getScale=0.0443, timeline décroissante)
+champ@0x1d8 diff=1    => 1        (rotation)
+```
+**Valeurs cibles em3** : posAccum=(-220, 100), offset=(-31.329, 0) → drawX=-251.329, drawY=100.
+Pistes numériques (NON confirmées) : drawY=100=velocity(100) ; offset.x=-31.329 ≈ champ0x188_raw(-300)×0.1044 ;
+posAccum.x=-220 = ? (pas encore relié proprement à velocity/0x188).
+
+**BLOCAGE pour l'arithmétique exacte** : les tableaux SoA (posAccum @émetteur+0x894, offset @[sp+0x30]) sont
+**COMPACTÉS et INDEXÉS** via des tableaux d'index (registres sl/r3 dans les boucles) — la particule d'em3
+n'est PAS à l'index 0, donc surveiller `émetteur+0x894+0*8` ne capte rien. Pour lire la construction champ par
+champ il faut d'abord résoudre l'index de la particule (lire le tableau d'index, ou filtrer par adresse de
+destination comme au combine 0x17118 via r2). C'est la prochaine marche concrète.
+
+**NOTE §8** : `champ@0x188` (diff=-300) est bien évalué comme un champ de VITESSE pendant l'update (après
+velocity 0x110), timeline décroissante → cohérent avec velocityZ, PAS sizeX (re-confirme le doute g266 sur
+le mapping `0x188=sizeX` de np_sim.c). Le champ velocityZ que np_sim mappe à 0x138 n'est PAS évalué (inactif
+ici) → à re-vérifier : 0x188 pourrait être le vrai velocityZ. Ne rien committer dans np_sim tant que
+l'arithmétique posAccum/offset n'est pas reproduite et validée par np_certify.
+
 ## 2026-09-04 (g270) — Architecture de la position DÉCODÉE : drawX/drawY = posAccum + offset (2 boucles additives)
 
 Suite g269. Via `drawxhook` (single-step de `updateParticles` surveillant l'adresse mémoire de drawX +
