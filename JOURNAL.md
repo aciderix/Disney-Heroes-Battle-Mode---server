@@ -23,8 +23,18 @@ spawn sous-frame / temps accumulé depuis l'apparition, cf. le pas de temps « p
 sim spawn tout à frame 0 et n'applique qu'un delta. **C'est la piste : le TIMING d'émission / l'âge initial
 des particules**, pas la position de spawn.
 
-**PROCHAINE ÉTAPE (successeur)** : décoder comment le natif date/vieillit les particules au spawn (temps
-accumulé appliqué en rattrapage). Vérifier `activateParticles` : la position -220 d'em3 (mesurée au spawn)
+**⚠️ PRÉCISION sur la réfutation (rigueur §8)** : l'argument « émetteur 2 scaledB[2]=500 mais oracle O[2] près
+de l'origine » compare S[k]↔O[k] par INDICE, or les ordres sim/oracle DIFFÈRENT (piège récurrent) → cet
+argument n'est PAS rigoureux à lui seul. Le fait ROBUSTE qui justifie le revert : le fix xOffset n'a **PAS
+réduit le max-NN** (métrique ordre-indépendante : O[1]=-238 reste sans voisin sim proche — aucune particule
+sim n'a atterri près de -200) TOUT en ajoutant de la dispersion (300/500) → **amélioration non démontrée →
+révoqué** en attendant une validation PAR IDENTITÉ D'ÉMETTEUR (pas par ordre de collecte). Donc xOffset=
+scaledB[2] est **NON CONFIRMÉ** (ni prouvé ni réfuté proprement), pas « faux avec certitude ».
+
+**PROCHAINE ÉTAPE (successeur)** : (0) rendre la comparaison rigoureuse — apparier sim↔oracle PAR ÉMETTEUR
+(identité), pas par ordre, pour attribuer correctement (quel émetteur produit O[1]=-238 ? a-t-il scaledB[2]=
+-200 ?). Puis décoder comment le natif date/vieillit les particules au spawn (temps accumulé appliqué en
+rattrapage). Vérifier `activateParticles` : la position -220 d'em3 (mesurée au spawn)
 inclut peut-être déjà ce rattrapage de vitesse. Comparer, pour UN émetteur simple, l'âge/le nombre d'updates
 que le natif applique vs ma sim. Outils : NP_DBG_CENTERS/NP_DBG_PHYS + drawxhook. NE PAS re-tenter xOffset=
 scaledB[2] (réfuté). Acquis : architecture position (g273-276), RNG sync, format 535/535, comptes exacts.
