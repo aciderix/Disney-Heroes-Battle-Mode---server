@@ -182,7 +182,9 @@ static void activateParticle(NpEmitterRuntime* e, int index) {
      * newLowValue (low range), tirage LIÉ (value partagé) -> ne désynchronise pas la RNG (validé NP_DBG_RNG). */
     float sx = F_XOFFSET->low.active ? ranged_newLow((const NpRanged*)F_XOFFSET, value) : 0;
     float sy = F_YOFFSET->low.active ? ranged_newLow((const NpRanged*)F_YOFFSET, value) : 0;
-    /* spawn : point (spawnShape.code 0) -> position = émetteur + offsets */
+    /* spawn : position = émetteur + xOffset/yOffset (g276). Le terme vitesse-au-spawn t=0.2 (g277) a été
+     * RÉVOQUÉ : contredit par l'oracle (NP_DBG_CENTERS montre l'oracle garde presque tout près de l'origine,
+     * ma sim dispersait à 300/500). La vitesse est appliquée en update, PAS au spawn. */
     p->drawX = e->x + sx; p->drawY = e->y + sy;
 }
 

@@ -1,5 +1,31 @@
 # JOURNAL — journal détaillé des modifications
 
+## 2026-09-04 (g278) — Terme vitesse-au-spawn RÉVOQUÉ (faux) + vrai bug isolé : `updateParticle` SUR-APPLIQUE la vitesse
+
+`NP_DBG_CENTERS` (comparaison directe des centres sim↔oracle, frame 0) révèle le VRAI état :
+```
+oracle : O[0](-54,-5) O[1](-238,74) O[2](7,34) O[3](0.6,99) O[4](0,30) O[5](0,-30) O[6](0.4,181) O[7](-0.5,121) O[8](0,30)
+sim    : S[0](-10,0)  S[1](-30,0)   S[2](300,102) S[3](0,-50) S[4](500,0) S[5](500,0) S[6](0,50) S[7](0,50) S[8](0,50)
+```
+**L'oracle garde PRESQUE TOUT près de l'origine** (|x|<10, y jusqu'à 181 ; seul O[1] est loin en x=-238).
+**Ma sim disperse énormément** : S[2]=(300,102), S[4]=S[5]=(500,0). ⇒ 2 conclusions :
+1. Le terme **vitesse-au-spawn t=0.2 (g277) est FAUX** (contredit : l'oracle ne projette pas la vitesse loin
+   au spawn) → **RÉVOQUÉ** dans np_sim.c. (Vérifié : le révoquer ne change pas S[2]/S[4] → ces valeurs ne
+   venaient PAS de ce terme mais de l'update.)
+2. **VRAI bug restant** : ma sim S[4]=(500,0) alors que velocity de cet émetteur ≈ 500 → **`updateParticle`
+   SUR-APPLIQUE la vitesse** (applique ~velocity·1 au lieu de velocity·delrésiduel petit). L'oracle, lui,
+   garde la particule près de l'origine à la 1ʳᵉ frame (petit déplacement). Mon `drawX += velocity·angleCos·dt`
+   donne un déplacement bien trop grand OU la vitesse stockée est mal échelonnée.
+
+**ÉTAT np_sim.c après cette session** : fix xOffset/yOffset=scaledB[2]/[3] CONSERVÉ (mapping certifié, correct) ;
+terme vitesse-spawn retiré. Position toujours fausse à cause de l'over-apply en update.
+
+**PROCHAINE ÉTAPE (successeur)** : déboguer `updateParticle` — pourquoi S=500 alors que l'oracle reste petit.
+Comparer le déplacement/frame de MA sim au natif (le natif : `drawX += Σvitesse·delta` avec delta=0.1, cf.
+g273/g275 ; vérifier que ma sim applique bien ·delta et pas la vitesse brute, et que `velocity` stockée n'est
+pas déjà multipliée). Utiliser `NP_DBG_PHYS`/`NP_DBG_CENTERS` + le harnais. L'architecture (g273-g276) et le
+mapping xOffset (g276) sont acquis ; ne pas re-deviner.
+
 ## 2026-09-04 (g277) — FIX appliqué : xOffset/yOffset = scaledB[2]/[3] (mapping corrigé) — amélioration PARTIELLE
 
 `map` confirme (ancre velocity=scaledB[4]=0x110, ordre parse par fileOff) : **scaledB[2]=0x98=xOffset,
