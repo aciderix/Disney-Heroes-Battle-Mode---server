@@ -1,5 +1,68 @@
 # JOURNAL — journal détaillé des modifications
 
+## 2026-09-04 (g265-HANDOFF) — Transmission au successeur (compression de contexte imminente) — LIRE EN PREMIER
+
+**⚠️ SUCCESSEUR : AVANT TOUTE CHOSE, applique la PROCÉDURE DE REPRISE (haut de `MEMORY.md`) EN ENTIER,
+puis fais un RÉCAP à l'utilisateur AVANT de reprendre le code.** Concrètement, dans l'ordre :
+1. **Lis** : `MEMORY.md` (entier) ; `git log --oneline -25` ; les entrées JOURNAL **g265-HANDOFF (ci-dessous),
+   g264-PHYS, g264-ÉTAT** (les 3 plus récentes = tout le contexte particules) ; `docs/PRINCIPLES.md` (§1-§8) ;
+   `docs/SHIMS.md` ; et le plan `~/.claude/plans/valiant-marinating-badger.md` (les 4 correctifs — le portage
+   particules est le chantier #2, étape 4).
+2. **Énumère les 8 règles obligatoires** (§1 mods minimales ; §2 pas de rustine — shim RÉEL ou PARTIAL/NO-OP
+   documenté ; §3 le serveur EXÉCUTE le code du jeu ; §4 ne JAMAIS inventer une valeur/règle, l'extraire/vérifier ;
+   §5 multi-serveur ; §6 persistance complète ; §7 reproductibilité + **identifiant de modèle JAMAIS dans un
+   commit** [mais trailer `Co-Authored-By:`/`Claude-Session:` requis] ; §8 vérification EN JEU obligatoire,
+   travailler sur des FAITS). Rappelle-les à l'utilisateur dans le récap.
+3. **Fais un récap** de l'état (ci-dessous) puis reprends.
+
+**ÉTAT CERTIFIÉ (ne pas re-vérifier, c'est acquis)** :
+- Format `.np` v3 : **535/535 EOF-exact** (2 méthodes indépendantes).
+- **RNG native décodée + bit-exacte EN SYNC** avec l'oracle : `seed=1` initial, `seed = seed*16807u`
+  (wrap 32 bits), `float = bitcast((seed & 0x7fffff)|0x3f800000) - 1.0f`. Goldens déterministes (2 goldens
+  successifs `cmp`=0). La sync RNG **valide l'ordre des tirages donc le mapping des champs**.
+- **Comptes de particules (émission/vie/mort) CERTIFIÉS EXACTS** sur 30 frames vs oracle.
+- Mapping champs, struct particule natif, helpers natifs : tous dans g264-PHYS/g264-ÉTAT.
+- Harnais différentiel complet (`NpFormatOracle golden` + `np_certify`) opérationnel, avec depuis ce commit
+  une **comparaison position ORDRE-INDÉPENDANTE** (centres de quad, plus-proche-voisin — car l'ordre des
+  particules diffère oracle/sim).
+
+**LE BLOQUANT UNIQUE = la physique de POSITION** (couleurs/uv pas encore commencés, viennent après) :
+- Mesuré : la particule **spawn à (0,0)** (confirmé), puis en 1 update va à `drawX≈-251` alors que la
+  velocity ne contribue que `≈-11`. Il **manque une composante de position ≈-241 px**.
+- Corrélation forte trouvée : le champ émetteur `0x188` (=`scaledB[8]`, mappé « sizeX ») vaut **-300** sur
+  cette particule, et `-300 × ~0.837 ≈ -251`. À CREUSER : soit `0x188` n'est PAS sizeX mais un champ de
+  position/offset, soit une autre contribution (`0x0=300` du struct × ~-0.837 = -251 aussi — ambigu).
+- `updateParticles` natif (@0x16589) est un **multi-loop vectorisé SoA** : il accumule vitesse/vent/gravité/
+  etc. AVANT d'appliquer aux positions. Le décoder entièrement (toutes les boucles) est LA tâche restante.
+- Résultat NN après ce commit : frame 0 **maxNN≈221 px** (ordonné 490) → l'écart est RÉEL, pas un artefact
+  d'ordre. Confirme qu'une composante physique manque.
+
+**PROCHAINES ÉTAPES CONCRÈTES (ordre)** :
+1. **Résoudre la composante -241** : via `vertextest`/`batchtest` (NpFormatOracle) patcher UN par UN les
+   champs candidats (`0x188`, `0x0`, offsets position) et observer quelle composante de `drawX` bouge — ne
+   PAS deviner (§4). Puis décoder les boucles d'application position de `updateParticles` (disasm.py `trace`).
+2. Une fois positions à 0 diff (NN ≤ 0.5) : généraliser tous frames/émetteurs (`goldenall`).
+3. **Couleurs** : tint gradient × transparency, packing ABGR (cf. `cspine_jni.c` packColor). **UV** : parser
+   l'atlas pour la région `atlasTag`.
+4. Régression 535 fichiers → écrire `cparticle_jni.c` (câbler np_parse+np_sim+render, remplacer le stub) →
+   étendre `native/build-hostspine.sh` + `-win.sh` → router Java `cparticle.Native`→natif → **certifier EN
+   COMBAT + mesurer FPS** (§8).
+
+**Commandes clés** :
+```
+# build harnais :
+export PATH="/c/Users/fromt/scoop/apps/gcc/15.2.0/bin:$PATH"
+gcc -O2 -o native/tools/np_certify.exe native/tools/np_certify.c native/src/np_parser.c native/src/np_sim.c -Inative/src -lm
+# lancer (env debug : NP_DBG_RNG, NP_DBG_CENTERS, NP_DBG_PHYS, NP_DBG_START) :
+./native/tools/np_certify.exe native/unidbg/goldens/ralph_skill1_impact.golden \
+   desktop-port/build/apk/assets/ETC/world/units/ralph/vfx/ralph_skill1_impact.np
+# oracle unidbg (modes : golden, goldenall, rngprobe, activorder, scaledprobe, vertextest) :
+cd native/unidbg && CP=$(cat build/runtime.cp) && CPW=$(cygpath -wp "$CP") && javac -cp "$CPW" NpFormatOracle.java
+java -Xverify:none -cp "$CPW;." NpFormatOracle ../reference/libspine-native.so <mode> ...
+```
+Tout est committé/poussé jusqu'à `e5c4279`. Fichiers de travail : `native/src/np_sim.{c,h}`,
+`native/tools/np_certify.c`, `native/unidbg/NpFormatOracle.java`, `native/tools/disasm.py`.
+
 ## 2026-09-04 (g264-PHYS) — Sim particules : RNG en SYNC PARFAIT (mapping validé), physique partielle — point de reprise précis
 
 Suite du travail sur `native/src/np_sim.c` (voir « g264-ÉTAT » ci-dessous pour le contexte complet + commandes).
