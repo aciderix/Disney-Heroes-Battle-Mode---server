@@ -1,5 +1,37 @@
 # JOURNAL — journal détaillé des modifications
 
+## 2026-09-04 (g268) — Cross-validation RÉFUTE scaledB[3]=yOffset ; le spawn est PAR-ÉMETTEUR et CALCULÉ (pas stocké)
+
+**Suite g267, §8 : vérifier avant d'implémenter.** Suivi simultané des particules[0] des émetteurs #3 ET #5 :
+```
+frame 0 em3 : drawX=-251.33 drawY=100.00 | disp0x34=-11.33 | vel=100  velZ=-300  (angle=-180, pur -X)
+frame 0 em5 : drawX=  2.50 drawY=  0.00 | disp0x34=  0.00 0x38=0.25 | vel=4.12 velZ=1
+```
+- Émetteur #5 a `scaledB[3]=500*` (actif) mais **drawY spawn = 0**, pas 500 → **`scaledB[3] ≠ yOffset`,
+  hypothèse g267 RÉFUTÉE** (bien vu d'avoir cross-validé plutôt que committé). De même em3 drawY=100 n'est
+  donc PAS scaledB[3].
+- **Scan du struct émetteur #3 (0x904 octets) pour -240/-251** : ABSENTS. (Des `100.00` sont présents à
+  0xdc/0xe0/0x12c/0x130/0x4b4/… = paires low/high de champs, pas une position.) ⇒ **le spawn (-240,100)
+  n'est pas stocké : il est CALCULÉ au spawn.**
+
+**ÉTAT NET (tout vérifié par l'oracle, rien de deviné)** :
+- La particule spawn à une **position PAR-ÉMETTEUR calculée** : em3=(-240,100), em5≈(0,0). Puis drawX évolue
+  par le displacement velocity (0x34) le long de l'angle ; drawY reste constant (velocityZ n'agit pas,
+  zToYMultiplier=0). Ma sim spawn à (0,0) → tout l'écart position = **ce spawn calculé non modélisé**.
+- Sources ÉCARTÉES par les faits : rangedC[0]/[1] (inactifs partout), velocityZ→drawY (drawY constant),
+  scaledB[3]=yOffset (réfuté par em5).
+- Source RESTANTE (hypothèse à décoder, NON committée) : la **logique de forme de spawn** d'`activateParticles`
+  (spawnShape/spawnWidth/spawnHeight + xOffset/yOffset SCALED, ou une position d'émetteur calculée depuis la
+  disposition des 12 émetteurs). Em3 (angle -180, velZ -300, spawn -240/100) vs em5 (spawn ~0) diffèrent par
+  leur bloc de champs → la forme de spawn dépend de champs par-émetteur.
+
+**PROCHAINE ÉTAPE (successeur)** : décoder la portion SPAWN d'`activateParticles`@0x17331 (là où drawX/drawY
+0x40/0x44 sont ÉCRITS la 1ère fois) via `disasm.py trace` en hookant l'écriture de 0x40 — repérer quels
+champs émetteur alimentent le calcul (WriteHook sur part+0x40 pendant le spawn, puis remonter les registres
+source). C'est un décodage ARM ciblé (une seule écriture à tracer), pas l'entièreté de la fonction. Une fois
+la formule connue → l'implémenter dans `activateParticle` (np_sim.c), attention à l'ORDRE RNG (re-`NP_DBG_RNG`).
+Outil `scaledprobe` suit maintenant em3+em5 et scanne le struct émetteur (réutilisable).
+
 ## 2026-09-04 (g267) — CORRECTION de g266 + LA cause position trouvée : le spawn est (-240,100), offsets = champs SCALED
 
 **AUTO-CORRECTION honnête de g266** (§8, ne jamais laisser une conclusion fausse) : en suivant la

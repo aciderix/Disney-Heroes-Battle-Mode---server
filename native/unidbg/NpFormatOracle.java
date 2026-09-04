@@ -517,20 +517,28 @@ public class NpFormatOracle {
         cPart.callStaticJniMethod(emu, "Effect_start(I)V", effH);
         // Suivi de la particule[0] de l'émetteur #3 (module off 0x21cb0c) sur 6 frames : si velocityZ(0x188)
         // pilote la position, drawY(0x44) doit croître vers la valeur golden. drawX(0x40) = velocity.
-        long em3 = mod.base + 0x21cb0c;
-        UnidbgPointer emp = UnidbgPointer.pointer(emu, em3);
-        for (int frame = 0; frame < 6; frame++) {
+        long[] ems = { mod.base + 0x21cb0c, mod.base + 0x21dd14 };  // émetteur #3 et #5
+        for (int frame = 0; frame < 3; frame++) {
             cPart.callStaticJniMethodInt(emu, "Effect_update(IF)Z", effH, Float.floatToRawIntBits(0.1f));
-            long pa = emp.getInt(0x8bc) & 0xffffffffL;
-            if (pa == 0) { System.out.printf("frame %d : pas de particule%n", frame); continue; }
-            UnidbgPointer p0 = UnidbgPointer.pointer(emu, pa);
-            System.out.printf("frame %d em3 part[0] : drawX(0x40)=%.2f drawY(0x44)=%.2f | 0x34=%.2f 0x38=%.2f | vel0xc=%.2f velZ0x28=%.2f life0x4=%.3f%n",
-                frame,
-                Float.intBitsToFloat(p0.getInt(0x40)), Float.intBitsToFloat(p0.getInt(0x44)),
-                Float.intBitsToFloat(p0.getInt(0x34)), Float.intBitsToFloat(p0.getInt(0x38)),
-                Float.intBitsToFloat(p0.getInt(0xc)), Float.intBitsToFloat(p0.getInt(0x28)),
-                Float.intBitsToFloat(p0.getInt(0x4)));
+            for (int ei = 0; ei < ems.length; ei++) {
+                UnidbgPointer emp2 = UnidbgPointer.pointer(emu, ems[ei]);
+                long pa = emp2.getInt(0x8bc) & 0xffffffffL;
+                if (pa == 0) continue;
+                UnidbgPointer p0 = UnidbgPointer.pointer(emu, pa);
+                System.out.printf("frame %d em%d part[0] : drawX=%.2f drawY=%.2f | disp0x34=%.2f 0x38=%.2f | vel=%.2f velZ=%.2f%n",
+                    frame, ei==0?3:5,
+                    Float.intBitsToFloat(p0.getInt(0x40)), Float.intBitsToFloat(p0.getInt(0x44)),
+                    Float.intBitsToFloat(p0.getInt(0x34)), Float.intBitsToFloat(p0.getInt(0x38)),
+                    Float.intBitsToFloat(p0.getInt(0xc)), Float.intBitsToFloat(p0.getInt(0x28)));
+            }
         }
+        // scan du struct émetteur #3 : cherche -240 et 100 (source du spawn) parmi les 0x904 octets
+        UnidbgPointer em3p = UnidbgPointer.pointer(emu, ems[0]);
+        System.out.print("em3 struct : offsets contenant ~-240 ou ~100 : ");
+        for (int o = 0; o < 0x904; o += 4) { float v = Float.intBitsToFloat(em3p.getInt(o));
+            if (Math.abs(v-(-240))<2 || Math.abs(v-100)<0.5 || Math.abs(v-(-251))<2) System.out.printf("[0x%x]=%.2f ", o, v); }
+        System.out.println();
+        UnidbgPointer emp = UnidbgPointer.pointer(emu, ems[0]);
         UnidbgPointer pp = UnidbgPointer.pointer(emu, emp.getInt(0x8bc) & 0xffffffffL);
         System.out.print("particle0 floats @0..0x100 (fin) : ");
         for (int o = 0; o < 0x100; o += 4) { float v = Float.intBitsToFloat(pp.getInt(o));
