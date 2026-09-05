@@ -103,6 +103,9 @@ void np_sim_start(NpEmitterRuntime* e, NpEmitter* def) {
         fprintf(stderr, " | rangedC[0] act=%d lowMin=%.1f lowMax=%.1f | rangedC[1] act=%d lowMin=%.1f lowMax=%.1f\n",
             def->rangedC[0].active, def->rangedC[0].lowMin, def->rangedC[0].lowMax,
             def->rangedC[1].active, def->rangedC[1].lowMin, def->rangedC[1].lowMax);
+        fprintf(stderr, "   lowUsesLinked: velB4=%d angB6=%d sizeB8=%d  highUsesLinked: velB4=%d | relative velB4=%d\n",
+            def->scaledB[4].low.lowUsesLinkedRange, def->scaledB[6].low.lowUsesLinkedRange,
+            def->scaledB[8].low.lowUsesLinkedRange, def->scaledB[4].highUsesLinkedRange, def->scaledB[4].relative);
         g_startN++;
     }
     e->maxParticleCount = def->maxParticleCount > 0 ? def->maxParticleCount : 4;

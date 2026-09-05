@@ -1,5 +1,44 @@
 # JOURNAL — journal détaillé des modifications
 
+## 2026-09-06 (g284) — ⭐ RÉORIENTATION MAJEURE : la « sync RNG » de g264 était ILLUSOIRE — ma sim SOUS-CONSOMME les tirages
+
+En cherchant à corréler tirage→drawY, découverte capitale sur la RNG :
+
+**La RNG est UN flux LCG déterministe unique** (seed=1, ×16807) → la VALEUR `draw[k]` est TOUJOURS la même
+séquence, identique entre ma sim et le natif QUELLE QUE SOIT la consommation. **Donc comparer les 16 premières
+valeurs (g264) ne prouvait RIEN** — ça confirmait juste que les deux utilisent le même LCG (trivial). La vraie
+question = **CHAQUE champ consomme-t-il le MÊME tirage (même position dans le flux) ?**
+
+**Mesure décisive** :
+- Ma sim : **297 tirages au TOTAL sur 30 frames** (compté en levant le plafond de debug g_dbgCount).
+- Le natif : **342 tirages pour la SEULE frame 0** (g264) ; et le 1er store de position est à **drawIdx=236**
+  (236 tirages pendant Effect_start AVANT la 1ʳᵉ particule !), puis **~11-17 tirages par émetteur** (deltas
+  mesurés g283 : 17,14,13,13,11,13,13,12).
+- Ma `restart()` ne fait que ~6 tirages/émetteur ; mon `activateParticle` quelques-uns.
+
+⇒ **Ma sim consomme BEAUCOUP MOINS de tirages que le natif à CHAQUE étape** (restart ET par particule). Comme
+c'est un flux partagé, chaque champ de ma sim lit un tirage à une POSITION DIFFÉRENTE de celle du natif →
+**toutes les valeurs randomisées (velocity, angle, offsets, position de spawn) sont FAUSSES** même si le
+mapping des champs est correct. **C'est LA cause racine profonde** des positions fausses (plus fondamentale
+que la formule de spawn).
+
+**Sémantique VÉRIFIÉE correcte** (game.jar `RangedNumericValue.newLowValue(float)`) : si `lowUsesLinkedRange`
+→ utilise la valeur liée passée (PAS de tirage) ; sinon `MathUtils.random()` (1 tirage). Mon `ranged_newLow`
+fait exactement ça, et les flags parsés sont FALSE (vérifié) pour velocity/angle/sizeX → ma sim TIRE pour eux.
+Donc la sous-consommation vient d'AILLEURS : le natif fait des tirages que ma sim NE FAIT PAS — candidats :
+(a) champs INACTIFS quand même tirés côté natif ? (b) la forme de spawn (spawnShape random) ; (c) le brownian/
+tangential/centripetal en phase update ; (d) des tirages dans restart/emission que ma sim omet ; (e) l'ORDRE
+des tirages diffère.
+
+**PROCHAINE ÉTAPE (LA priorité absolue)** : rendre la consommation de tirages BIT-POUR-BIT identique au natif.
+Méthode : instrumenter finement — pour l'émetteur 0, hooker chaque `rng_next` natif (déjà possible via seed
+WriteHook) ET tracer l'instruction/fonction qui le consomme (CodeHook) → obtenir la LISTE ORDONNÉE des tirages
+du natif (restart puis activateParticle) avec quel champ/rôle. Répliquer EXACTEMENT dans np_sim (restart +
+activateParticle), vérifier que le compteur total matche (342 frame 0) ET que les positions convergent. Tant
+que la consommation ne matche pas, aucun mapping/formule ne peut donner les bonnes valeurs. Note : les COMPTES
+de particules restent exacts car ils dépendent de life/emission (peu sensibles aux valeurs), pas de la
+position — d'où l'illusion que « tout allait bien ».
+
 ## 2026-09-06 (g283) — DÉCISIF : 3 émetteurs BYTE-IDENTIQUES → drawY différent ⇒ la position de spawn a un tirage RNG par particule
 
 Dump du header (0x0..0x48) des 3 émetteurs 0x220124/0x220a28/0x22132c : **STRICTEMENT identiques** (tout à
