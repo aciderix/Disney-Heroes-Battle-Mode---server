@@ -57,23 +57,21 @@ static float scaled_getScale(const NpScaled* s, const float* pool, float percent
 }
 
 /* ------------------------------------------------------------------------------ mapping semantique -> slot */
-#define F_EMISSION     (&e->def.scaledA[0])
-#define F_LIFE         (&e->def.scaledA[1])
-#define F_WIND         (&e->def.scaledA[3])
-#define F_GRAVITY      (&e->def.scaledA[4])
-#define F_TANGENTIAL   (&e->def.scaledA[5])
-#define F_CENTRIPETAL  (&e->def.scaledB[0])
-#define F_BROWNIAN     (&e->def.scaledB[1])
-#define F_VELOCITY     (&e->def.scaledB[4])
-#define F_VELOCITYZ    (&e->def.scaledB[5])
-#define F_ANGLE        (&e->def.scaledB[6])
-/* NB (g279) : scaledB[2]=0x98 / scaledB[3]=0xc0 NE SONT PAS xOffset/yOffset (hypothèse g276 RÉFUTÉE par
- * NP_DBG_CENTERS : émetteur 2 a scaledB[2]=500 mais reste près de l'origine dans l'oracle). Rôle réel à
- * déterminer. Ne pas ré-utiliser comme offset sans validation multi-émetteurs. */
-#define F_SIZEX        (&e->def.scaledB[8])
-#define F_SIZEY        (&e->def.scaledB[9])
-#define F_TRANSPARENCY (&e->def.scaledB[11])
-#define F_ROTATION     (&e->def.scaledD)
+/* g287 : mapping CORRIGÉ via l'ordre de tirage natif (g286) + l'ordre des champs game.jar. Les anciennes
+ * macros (force/taille) étaient scramblées. velocity/angle/emission/life restent, le reste change. */
+#define F_EMISSION     (&e->def.scaledA[0])   /* 0x70  */
+#define F_LIFE         (&e->def.scaledA[1])   /* 0x48  */
+#define F_TANGENTIAL   (&e->def.scaledA[3])   /* 0x210 = tangentialInfluence */
+#define F_CENTRIPETAL  (&e->def.scaledA[4])   /* 0x238 = centripetalInfluence */
+#define F_BROWNIAN     (&e->def.scaledA[5])   /* 0x260 = brownian (probable, à confirmer) */
+#define F_SIZEX        (&e->def.scaledB[2])   /* 0x98  */
+#define F_SIZEY        (&e->def.scaledB[3])   /* 0xc0  */
+#define F_VELOCITY     (&e->def.scaledB[4])   /* 0x110 */
+#define F_VELOCITYZ    (&e->def.scaledB[5])   /* 0x138 */
+#define F_ANGLE        (&e->def.scaledB[6])   /* 0x160 */
+#define F_ROTATION     (&e->def.scaledB[7])   /* 0xe8  */
+#define F_WIND         (&e->def.scaledB[8])   /* 0x188 */
+#define F_GRAVITY      (&e->def.scaledD)      /* 0x1d8 */
 
 /* Helpers de CONSOMMATION RNG (g287) : tirent le bon nb de randoms pour un champ sans stocker la valeur.
  * Scaled -> newLow + newHigh (2 tirages) ; Ranged -> newLow (1). Nécessaire pour aligner le flux RNG sur le
@@ -142,7 +140,10 @@ static void activateParticle(NpEmitterRuntime* e, int index) {
     if (life < 1) life = 1;
     p->life = life; p->currentLife = life;
 
-    float value = rng_next();   /* random partagé "linked" (Java local 6) */
+    /* g287 : PAS de tirage partagé ici (game.jar activateParticle n'en fait pas ; les flags lowUsesLinkedRange
+     * sont FALSE -> chaque champ tire son propre random). `value` = valeur liée passée à newLow/newHigh, non
+     * utilisée quand le flag est FALSE. */
+    float value = 0.0f;
 
     /* velocity (active-gated) */
     if (F_VELOCITY->low.active) {
@@ -170,12 +171,10 @@ static void activateParticle(NpEmitterRuntime* e, int index) {
     p->scaleX = ranged_newLow((const NpRanged*)F_SIZEX, value);
     p->scaleXDiff = scaled_newHigh(F_SIZEX, value);
     if (!F_SIZEX->relative) p->scaleXDiff -= p->scaleX;
-    /* sizeY (si !uniformScale ; HYPOTHÈSE uniform = !sizeY.active) */
-    if (F_SIZEY->low.active) {
-        p->scaleY = ranged_newLow((const NpRanged*)F_SIZEY, value);
-        p->scaleYDiff = scaled_newHigh(F_SIZEY, value);
-        if (!F_SIZEY->relative) p->scaleYDiff -= p->scaleY;
-    } else { p->scaleY = p->scaleX; p->scaleYDiff = p->scaleXDiff; }
+    /* sizeY : UNCONDITIONNEL (game.jar tire toujours newLow+newHigh, g285) */
+    p->scaleY = ranged_newLow((const NpRanged*)F_SIZEY, value);
+    p->scaleYDiff = scaled_newHigh(F_SIZEY, value);
+    if (!F_SIZEY->relative) p->scaleYDiff -= p->scaleY;
 
     /* rotation (active-gated) */
     if (F_ROTATION->low.active) {
@@ -190,18 +189,11 @@ static void activateParticle(NpEmitterRuntime* e, int index) {
     ACT(F_WIND) ACT(F_GRAVITY) ACT(F_TANGENTIAL) ACT(F_CENTRIPETAL) ACT(F_BROWNIAN)
     #undef ACT
 
-    /* transparency : UNCONDITIONNEL */
-    p->transparency = ranged_newLow((const NpRanged*)F_TRANSPARENCY, value);
-    p->transparencyDiff = scaled_newHigh(F_TRANSPARENCY, value) - p->transparency;
-
-    /* xOffset/yOffset : RÉVOQUÉ (g279) le mapping scaledB[2]/[3] de g276/g277. RÉFUTÉ par NP_DBG_CENTERS :
-     * scaledB[2] collait à em3 (-200≈oracle -238) mais l'émetteur 2 a scaledB[2]=500 alors que l'oracle le
-     * garde près de l'origine (O[2]=(7,34)) -> un mapping fixe ne peut être xOffset pour l'un et pas l'autre.
-     * Donc scaledB[2] != xOffset. Source réelle de la position de spawn d'em3 (-220) encore à identifier
-     * (cf. activateParticles 0x179da, g273-g276). Spawn laissé à l'origine (rangedC inactifs) en attendant. */
-    float sx = e->def.rangedC[0].active ? ranged_newLow(&e->def.rangedC[0], value) : 0;
-    float sy = e->def.rangedC[1].active ? ranged_newLow(&e->def.rangedC[1], value) : 0;
-    p->drawX = e->x + sx; p->drawY = e->y + sy;
+    /* g287 : game.jar activateParticle NE tire PAS transparency/xOffset/yOffset ici (cf. JOURNAL g285). La
+     * transparency est gérée ailleurs ; la position de spawn vient de spawnWidth/spawnHeight+spawnShape (tirés
+     * en restart) -> À IMPLÉMENTER. En attendant : transparency=1, spawn à l'origine émetteur. */
+    p->transparency = 1.0f; p->transparencyDiff = 0.0f;
+    p->drawX = e->x; p->drawY = e->y;
 }
 
 void np_sim_add(NpEmitterRuntime* e, int count) {

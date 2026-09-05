@@ -1,5 +1,28 @@
 # JOURNAL — journal détaillé des modifications
 
+## 2026-09-06 (g288) — FIX activateParticle() : mapping corrigé + tirages fidèles (parasites retirés) — non-régressif
+
+Suite g287. `activateParticle()` réécrit : (1) macros F_* corrigées (sizeX=scaledB[2], sizeY=scaledB[3],
+rotation=scaledB[7], wind=scaledB[8], gravity=scaledD, tangentialInfluence=scaledA[3], centripetalInfluence=
+scaledA[4], brownian=scaledA[5]) ; (2) tirage `value` partagé PARASITE retiré (→ 0, non utilisé car flags
+FALSE) ; (3) sizeY rendu INCONDITIONNEL (game.jar) ; (4) transparency/xOffset/yOffset RETIRÉS (game.jar ne les
+tire pas en activate). Ordre : velocity, velocityZ, angle, sizeX, sizeY, rotation, wind, gravity,
+tangentialInfluence, centripetalInfluence, brownian.
+
+**Mesuré (non-régressif)** : total tirages 405→**375** (retrait des parasites), **comptes de particules
+TOUJOURS EXACTS (9,9,9,3,1)**, POS(ordonné) 490→**392** (léger mieux). POS(centres NN) reste 221 car le spawn
+est encore à l'origine (drawX/Y=e->x/y). La consommation RNG (restart+activate) est maintenant fidèle à
+game.jar ; les champs physiques (wind/gravity/velocityZ/size/rotation) pointent enfin sur les bons slots.
+
+**RESTE = la position de spawn** : vient de spawnWidth(scaledB[0])/spawnHeight(scaledB[1]) [tirés en restart,
+par-émetteur] + **spawnShape** avec un TIRAGE ALÉATOIRE PAR PARTICULE (g283). ⚠️ Ce tirage de spawn utilise
+`MathUtils.random()` DIRECT (pas newLowValue) → NON capté par le hook newLowValue@0x16368, et NON encore
+répliqué dans np_sim → c'est des tirages supplémentaires à identifier (dans activateParticle après les champs,
+la logique de forme de spawn). PROCHAINE ÉTAPE : décoder la logique spawnShape de game.jar `activateParticle`
+(après brownian : selon spawnShapeValue, position = random dans le rectangle/ellipse spawnWidth×spawnHeight),
+l'implémenter (avec les bons tirages directs), puis viser POS NN → 0. Vérifier alors que le total de tirages
+matche le natif (342 frame0).
+
 ## 2026-09-06 (g287) — FIX restart() (tirages 297→405, comptes exacts) + RE-CARTOGRAPHIE majeure des champs activate
 
 **Implémentation restart() fidèle** (np_sim.c) : réécrit dans l'ordre natif exact (delay, duration, emission,
