@@ -1,5 +1,45 @@
 # JOURNAL — journal détaillé des modifications
 
+## 2026-09-06 (g280) — Carte SPAWN par émetteur (vérité terrain) : position calculée AU SPAWN depuis les champs (corrige g279)
+
+Nouveau hook (drawxhook, store spawn 0x17c5c) : logue **par émetteur** (r8) la position de spawn drawX/drawY.
+CORRIGE g279 : les particules SPAWNENT directement à ces positions (mesuré au store d'`activateParticles`),
+donc **c'est une position de spawn calculée depuis les champs, PAS un problème de timing/âge**.
+
+**Carte (ralph_skill1_impact, 9 émetteurs qui spawnent frame 0)** :
+```
+émetteur    drawX   drawY   | champs clés (valeur constante)
+0x21cb0c    -50      0      | 0x98=-200 0xc0=100 0xe8=8 velocity(0x110)=100 angle(0x160)=-180 0x188=-300
+0x21d410   -220    100      | 0x98=-400 0xc0=400 0xe8=0 velocity=300      angle=-180      0x188=-300
+0x21dd14      0     30      | (angle ±90 : velocity en Y)
+0x21e618      0    150
+0x21ef1c      0     30
+0x21f820      0    -30
+0x220124      0    130
+0x220a28      0     70
+0x22132c      0    -20
+```
+Ces positions expliquent le golden (O[0]=(-54,-5)≈émetteur 0x21cb0c ; O[1]=(-238,74)≈0x21d410 ; etc.).
+
+**Analyse formule** (angle=-180 → cos=-1, sin=0 pour les 2 gros) :
+- velocity le long de -X → drawX négatif, drawY non affecté par velocity (sin=0).
+- MAIS drawY≠0xc0 directement : e1 0xc0=100→drawY=0 ; e2 0xc0=400→drawY=100 → **les coefficients VARIENT par
+  émetteur** (getScale de la timeline propre à chaque champ). ⇒ la position n'est PAS une combinaison linéaire
+  à coefficients fixes des champs : c'est `Σ champ·getScale(timeline)·direction` (architecture g273-276).
+- Fit 2-points drawX = 1.2·velocity·cos − 0.35·(0x98) marche pour les 2 mais coefficients non-clean →
+  artefact de sous-détermination (2 pts, timelines différentes), PAS la vraie loi.
+
+**CE QUE ÇA CLARIFIE** : (1) g279 « timing/âge » est FAUX — c'est bien la position de spawn ; (2) 0x98/0xc0
+SONT impliqués (donc xOffset≈0x98 n'est pas à jeter), mais couplés à velocity ET pondérés par la timeline
+getScale de chaque émetteur ; (3) pour reproduire, il FAUT implémenter la vraie accumulation de spawn
+(`activateParticles` 0x179da : Σ des champs de force ×getScale, direction sincos), pas un mapping linéaire.
+
+**PROCHAINE ÉTAPE** : implémenter dans `np_sim.c::activateParticle` l'accumulation de spawn fidèle
+(pour chaque champ actif : contribution = getScaled(champ)·direction, où la direction vient de l'angle en
+radians), en s'appuyant sur les valeurs getScale que np_sim calcule déjà (scaled_getScale + timelinePool).
+Valider émetteur par émetteur contre cette carte (drawX/drawY cibles ci-dessus). Le dataset ci-dessus est la
+VÉRITÉ TERRAIN pour caler. Décoder le facteur/direction exact via l'accumulation 0x179da (g273-276).
+
 ## 2026-09-04 (g279) — xOffset=scaledB[2] (g276) RÉFUTÉ par comparaison multi-émetteurs → RÉVOQUÉ ; le vrai gap = TEMPS/âge de spawn
 
 **Auto-correction rigoureuse (§8).** `NP_DBG_PHYS` montre que `updateParticle` applique la vitesse

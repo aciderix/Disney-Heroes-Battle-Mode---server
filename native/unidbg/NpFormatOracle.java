@@ -586,6 +586,23 @@ public class NpFormatOracle {
             @Override public void onAttach(com.github.unidbg.arm.backend.UnHook u) {}
             @Override public void detach() {}
         }, modbase, modbase + 0x400000, null);   // large fenêtre heap+module
+        // Carte SPAWN par émetteur : au store drawX (0x17c54, vstr s2,[r0]), lire r8=émetteur + drawX=mem[r0].
+        // r0 est le ptr drawPos élément ; drawX y est écrit à cet instant. On lit juste après (0x17c58).
+        final int[] sc2 = {0};
+        backend.hook_add_new(new CodeHook() {
+            @Override public void hook(Backend b, long address, int size, Object user) {
+                if (sc2[0] >= 40) return;
+                long r8 = b.reg_read(unicorn.ArmConst.UC_ARM_REG_R8).longValue() & 0xffffffffL;
+                long r0 = b.reg_read(unicorn.ArmConst.UC_ARM_REG_R0).longValue() & 0xffffffffL;
+                UnidbgPointer pd = UnidbgPointer.pointer(emu, r0);
+                float dx = Float.intBitsToFloat(pd.getInt(0));   // drawX @0x17c54, drawY @0x17c58 (déjà écrits)
+                float dy = Float.intBitsToFloat(pd.getInt(4));
+                System.out.printf("[SPAWN] emitter@0x%x (mod+0x%x) drawX=%.3f drawY=%.3f%n", r8, r8 - modbase, dx, dy);
+                sc2[0]++;
+            }
+            @Override public void onAttach(com.github.unidbg.arm.backend.UnHook u) {}
+            @Override public void detach() {}
+        }, modbase + 0x17c5c, modbase + 0x17c5e, null);
         System.out.println("=== Effect_start ===");
         cPart.callStaticJniMethod(emu, "Effect_start(I)V", effH);
         // Adresse de drawX de la particule em3 (déterministe) : émetteur module off 0x21cb0c, particles @+0x8bc, +0x40.
@@ -671,11 +688,15 @@ public class NpFormatOracle {
             @Override public void onAttach(com.github.unidbg.arm.backend.UnHook u) {}
             @Override public void detach() {}
         }, modbase + 0x16368, modbase + 0x1636a, null);
-        // Dump des champs sommés au spawn (0x98/0xc0/0xe8/0x110/0x160/0x188) dans le struct émetteur em3.
-        UnidbgPointer e3p = UnidbgPointer.pointer(emu, modbase + 0x21cb0c);
-        for (int off : new int[]{0x98, 0xc0, 0xe8, 0x110, 0x138, 0x160, 0x188, 0x1b0}) {
-            System.out.printf("em3 champ@0x%x : ", off);
-            for (int k = 0; k < 10; k++) System.out.printf("%.2f ", Float.intBitsToFloat(e3p.getInt(off + k*4)));
+        // Dump des champs-clés (valeur constante @+0x1c) pour les 2 émetteurs qui spawnent hors origine.
+        for (long eb : new long[]{ modbase + 0x21cb0c, modbase + 0x21d410 }) {
+            UnidbgPointer ep = UnidbgPointer.pointer(emu, eb);
+            System.out.printf("emitter mod+0x%x champs:", eb - modbase);
+            for (int off : new int[]{0x98, 0xc0, 0xe8, 0x110, 0x138, 0x160, 0x188}) {
+                float lowMin = Float.intBitsToFloat(ep.getInt(off + 0x1c));
+                float lowMax = Float.intBitsToFloat(ep.getInt(off + 0x20));
+                System.out.printf(" [0x%x]=%.1f/%.1f", off, lowMin, lowMax);
+            }
             System.out.println();
         }
         System.out.println("=== Effect_update frame0 ===");
