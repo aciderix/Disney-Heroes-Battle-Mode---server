@@ -1,5 +1,31 @@
 # JOURNAL — journal détaillé des modifications
 
+## 2026-09-06 (g282) — Raffinement : les 3 émetteurs "identiques" ont des champs CONSTANTS → la variation drawY vient du TIMING de spawn (pas du RNG de champ)
+
+Vérifié : émetteur 0x220124 a velocity=**500/500** (lowMin=lowMax) et angle=**90/90** — **constants, aucune
+plage**. Pourtant les 3 émetteurs (0x220124/0x220a28/0x22132c) donnent drawY=130/70/-20 différents.
+⇒ **la variation n'est PAS un tirage RNG sur la valeur d'un champ** (les champs sont constants). Correction de
+l'INSIGHT 1 de g281 : la variation vient d'AILLEURS — très probablement du **timing d'émission sous-frame**
+(la vitesse est appliquée sur un temps partiel `t` propre à chaque particule, dépendant de QUAND dans
+l'accumulateur elle est née — mécanisme libGDX classique : une particule émise en milieu de frame est mise à
+jour du temps restant). Les 3 émetteurs, avec des delays/phases d'émission différents, donnent des `t`
+différents → drawY différents. (Alternative à écarter : un champ brownien/aléatoire non identifié.)
+
+**CE QUE ÇA CONFIRME** : le facteur `t` du modèle `drawX/Y = velocity·dir·t` est le **temps partiel de spawn
+sous-frame**, VARIABLE par particule. C'est LA pièce manquante : ma sim spawn toutes les particules aux
+frontières de frame (t=0 ou t=delta fixe), le natif leur donne un t fractionnaire = temps écoulé depuis leur
+naissance réelle dans l'accumulateur. Cohérent avec g273-g276 (pas de temps partiel).
+
+**Pour les 2 émetteurs déterministes** (0x21cb0c/0x21d410, champs constants) : solve exact 2-points →
+`drawX = 0.85·velocity·cos(angle) + k·0x188` (t≈0.85 pour la velocity, 0x188 contribue) — les coefficients
+non-clean reflètent justement le `t` partiel + le getScale des timelines, pas une loi linéaire simple.
+
+**PROCHAINE ÉTAPE (successeur)** : décoder le calcul du temps partiel de spawn dans `activateParticles`
+(comment le natif calcule `t` par particule = fraction d'accumulateur/emission). Vérifier delay/emissionDelta
+des 3 émetteurs "identiques" (expliquent-ils 130/70/-20 ?). Puis dans `np_sim.c` : donner à chaque particule
+émise un âge sous-frame et appliquer `velocity·dir·t` + le terme 0x188. Le mapping 0x188 (≠sizeX, = velocityZ)
+est à corriger. Dataset de référence = carte g280/g281.
+
 ## 2026-09-06 (g281) — 2 insights décisifs : la position de spawn a une composante RNG par-particule + 0x188 pilote drawX
 
 Carte spawn enrichie (9 émetteurs de ralph, champs + position) :

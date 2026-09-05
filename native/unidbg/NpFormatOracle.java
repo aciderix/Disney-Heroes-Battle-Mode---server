@@ -696,7 +696,7 @@ public class NpFormatOracle {
             @Override public void detach() {}
         }, modbase + 0x16368, modbase + 0x1636a, null);
         // Dump des champs-clés (valeur constante @+0x1c) pour les 2 émetteurs qui spawnent hors origine.
-        for (long eb : new long[]{ modbase + 0x21cb0c, modbase + 0x21d410 }) {
+        for (long eb : new long[]{ modbase + 0x220124, modbase + 0x21e618 }) {
             UnidbgPointer ep = UnidbgPointer.pointer(emu, eb);
             System.out.printf("emitter mod+0x%x champs:", eb - modbase);
             for (int off : new int[]{0x98, 0xc0, 0xe8, 0x110, 0x138, 0x160, 0x188}) {
