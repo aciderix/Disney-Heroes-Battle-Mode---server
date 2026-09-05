@@ -1,5 +1,43 @@
 # JOURNAL — journal détaillé des modifications
 
+## 2026-09-06 (g287) — FIX restart() (tirages 297→405, comptes exacts) + RE-CARTOGRAPHIE majeure des champs activate
+
+**Implémentation restart() fidèle** (np_sim.c) : réécrit dans l'ordre natif exact (delay, duration, emission,
+life, lifeOffset, spawnWidth, spawnHeight, centripetalRadius, centripetalForce, tangentialRadius,
+tangentialForce), avec helpers `consume_scaled`/`consume_ranged` pour tirer le bon nb de randoms même sur les
+champs non utilisés. Retiré le tirage `value` partagé parasite. **Vérifié : total tirages 297 → 405** (vers le
+natif) et **comptes de particules TOUJOURS EXACTS (9,9,9,3,1)** — pas de régression.
+
+**⭐ RE-CARTOGRAPHIE des champs activate (déduite de l'ordre natif g286 + ordre game.jar)** : le trace natif
+activate = `0x110,0x160,0x98,0xc0,0xe8,0x188,0x1d8,0x210,0x238` (9 champs). velocityZ(0x138) ABSENT → inactif ;
+brownian aussi (dernier, non tiré). Alignement positionnel sur l'ordre game.jar (velocity, [velocityZ], angle,
+sizeX, sizeY, rotation, wind, gravity, tangentialInfluence, centripetalInfluence, [brownian]) donne le VRAI
+mapping :
+```
+velocity            = scaledB[4]  (0x110)  ✓ (inchangé)
+angle               = scaledB[6]  (0x160)  ✓ (inchangé)
+sizeX               = scaledB[2]  (0x98)   ⚠️ (mes macros : scaledB[8])
+sizeY               = scaledB[3]  (0xc0)   ⚠️ (mes macros : scaledB[9])
+rotation            = scaledB[7]  (0xe8)   ⚠️ (mes macros : scaledD)
+wind                = scaledB[8]  (0x188)  ⚠️ (mes macros : scaledA[3])
+gravity             = scaledD     (0x1d8)  ⚠️ (mes macros : scaledA[4])
+tangentialInfluence = scaledA[3]  (0x210)  ⚠️ (mes macros : F_WIND !)
+centripetalInfluence= scaledA[4]  (0x238)  ⚠️ (mes macros : F_GRAVITY !)
+velocityZ           = scaledB[5]  (0x138)  (inactif ici)
+brownian            = ?           (inactif ici, non observé)
+```
+⇒ **Presque toutes mes macros de champs de force/taille étaient SCRAMBLÉES** (les « axis-pure » de g262sexies,
+déjà rétrogradées « probables », étaient bien fausses). velocity et angle restent corrects. Ce mapping vient
+de DEUX sources autoritaires (ordre de tirage natif mesuré + ordre des champs game.jar) → fiable, mais à
+CONFIRMER par np_certify après implémentation (positions/physique).
+
+**PROCHAINE ÉTAPE** : réécrire `activateParticle()` dans l'ordre natif avec ce nouveau mapping (velocity[gated],
+velocityZ[gated], angle[incond], sizeX[incond], sizeY[incond], rotation[gated], wind[gated], gravity[gated],
+tangentialInfluence[gated], centripetalInfluence[gated], brownian[gated]) ; retirer le tirage `value` +
+transparency/xOffset/yOffset. Corriger les macros F_*. Mesurer : total tirages ≈ natif, comptes exacts,
+positions convergentes. Puis la position de spawn depuis spawnWidth(scaledB[0])/spawnHeight(scaledB[1])+
+spawnShape. **Le fix restart() est committé (vérifié non-régressif) ; l'activate est le gros morceau suivant.**
+
 ## 2026-09-06 (g286) — ⭐⭐⭐ ORDRE DE CONSOMMATION RNG AUTORITAIRE (trace native newLowValue@0x16368) + CORRECTIONS de mapping
 
 `newLowValue` est inliné à **0x16368** (r0 = champ ; tirage/seed-write à 0x16380 ; gate `lowUsesLinkedRange`

@@ -75,16 +75,30 @@ static float scaled_getScale(const NpScaled* s, const float* pool, float percent
 #define F_TRANSPARENCY (&e->def.scaledB[11])
 #define F_ROTATION     (&e->def.scaledD)
 
+/* Helpers de CONSOMMATION RNG (g287) : tirent le bon nb de randoms pour un champ sans stocker la valeur.
+ * Scaled -> newLow + newHigh (2 tirages) ; Ranged -> newLow (1). Nécessaire pour aligner le flux RNG sur le
+ * natif même pour les champs qu'on n'utilise pas encore (spawnWidth/Height/centripetal/tangential). */
+static void consume_scaled(const NpScaled* s) { (void)ranged_newLow((const NpRanged*)s, 0); (void)scaled_newHigh(s, 0); }
+static void consume_ranged(const NpRanged* r) { (void)ranged_newLow(r, 0); }
+
 /* --------------------------------------------------------------------------------------- start/restart */
+/* g287 : ORDRE DE TIRAGE FIDÈLE à ParticleEmitter::restart() (game.jar, cf. JOURNAL g285/g286). Chaque champ
+ * tire dans CET ordre pour consommer la RNG EXACTEMENT comme le natif (sinon désync du flux, cf. g284). */
 static void restart(NpEmitterRuntime* e) {
-    float linked = rng_next();
-    e->emission = (int)ranged_newLow((const NpRanged*)F_EMISSION, linked);
-    e->emissionDiff = (int)scaled_newHigh(F_EMISSION, linked) - e->emission;
-    e->life = (int)ranged_newLow((const NpRanged*)F_LIFE, linked);
-    e->lifeDiff = (int)scaled_newHigh(F_LIFE, linked) - e->life;
-    e->duration = ranged_newLow(&e->def.duration, linked);
+    e->delay = e->def.delay.active ? ranged_newLow(&e->def.delay, 0) : 0;  /* delay (gated) -- 0x0 */
+    e->duration = ranged_newLow(&e->def.duration, 0);                  /* duration -- 0x38 (Ranged) */
+    e->emission = (int)ranged_newLow((const NpRanged*)F_EMISSION, 0);  /* emission -- 0x70 (scaledA[0]) */
+    e->emissionDiff = (int)scaled_newHigh(F_EMISSION, 0) - e->emission;
+    e->life = (int)ranged_newLow((const NpRanged*)F_LIFE, 0);          /* life -- 0x48 (scaledA[1]) */
+    e->lifeDiff = (int)scaled_newHigh(F_LIFE, 0) - e->life;
+    if (e->def.scaledA[2].low.active) consume_scaled(&e->def.scaledA[2]); /* lifeOffset -- 0x10 (gated) */
+    consume_scaled(&e->def.scaledB[0]);   /* spawnWidth  -- 0x290 */
+    consume_scaled(&e->def.scaledB[1]);   /* spawnHeight -- 0x2b8 */
+    consume_scaled(&e->def.scaledB[11]);  /* centripetalRadius -- 0x2f0 (Scaled en v3) */
+    consume_ranged(&e->def.rangedC[0]);   /* centripetalForce  -- 0x318 (Ranged en v3) */
+    consume_scaled(&e->def.scaledC[1]);   /* tangentialRadius  -- 0x350 (Scaled en v3) */
+    consume_ranged(&e->def.rangedC[1]);   /* tangentialForce   -- 0x378 (Ranged en v3) */
     e->durationTimer = 0;
-    e->delay = e->def.delay.active ? ranged_newLow(&e->def.delay, linked) : 0;
     e->delayTimer = 0;
     e->emissionDelta = 0;
 }
