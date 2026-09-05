@@ -597,7 +597,14 @@ public class NpFormatOracle {
                 UnidbgPointer pd = UnidbgPointer.pointer(emu, r0);
                 float dx = Float.intBitsToFloat(pd.getInt(0));   // drawX @0x17c54, drawY @0x17c58 (déjà écrits)
                 float dy = Float.intBitsToFloat(pd.getInt(4));
-                System.out.printf("[SPAWN] emitter@0x%x (mod+0x%x) drawX=%.3f drawY=%.3f%n", r8, r8 - modbase, dx, dy);
+                UnidbgPointer ep = UnidbgPointer.pointer(emu, r8);
+                float x0 = Float.intBitsToFloat(ep.getInt(0x98 + 0x1c));   // valeur constante lowMin
+                float y0 = Float.intBitsToFloat(ep.getInt(0xc0 + 0x1c));
+                float vel = Float.intBitsToFloat(ep.getInt(0x110 + 0x1c));
+                float ang = Float.intBitsToFloat(ep.getInt(0x160 + 0x1c));
+                float f188 = Float.intBitsToFloat(ep.getInt(0x188 + 0x1c));
+                System.out.printf("[SPAWN] mod+0x%x -> draw=(%.1f,%.1f) | 0x98=%.0f 0xc0=%.0f vel=%.0f ang=%.0f 0x188=%.0f%n",
+                    r8 - modbase, dx, dy, x0, y0, vel, ang, f188);
                 sc2[0]++;
             }
             @Override public void onAttach(com.github.unidbg.arm.backend.UnHook u) {}

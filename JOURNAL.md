@@ -1,5 +1,44 @@
 # JOURNAL — journal détaillé des modifications
 
+## 2026-09-06 (g281) — 2 insights décisifs : la position de spawn a une composante RNG par-particule + 0x188 pilote drawX
+
+Carte spawn enrichie (9 émetteurs de ralph, champs + position) :
+```
+émetteur   drawX drawY | 0x98  0xc0  vel  ang  0x188
+0x21cb0c    -50   0    | -200  100   100  -180 -300
+0x21d410   -220  100   | -400  400   300  -180 -300
+0x21dd14     0    30   | 1000  500   100   90   0
+0x21e618     0   150   |  500   0    500  -90   0
+0x21ef1c     0    30   | 1500 1000    0   -90   0
+0x21f820     0   -30   | 1500  150    0    0    0
+0x220124     0   130   | 1000   0    500   90   0
+0x220a28     0    70   | 1000   0    500   90   0
+0x22132c     0   -20   | 1000   0    500   90   0
+```
+**INSIGHT 1 — composante RNG par-particule** : les émetteurs 0x220124/0x220a28/0x22132c ont des **champs
+IDENTIQUES** (0x98=1000, vel=500, ang=90, 0x188=0) mais des **drawY DIFFÉRENTS (130 / 70 / -20)**. ⇒ la
+position de spawn n'est PAS une fonction déterministe des champs : elle inclut un **tirage RNG par particule**
+(vitesse et/ou angle randomisés autour de la valeur du champ). C'est pourquoi tous les fits à coefficients
+fixes échouaient. **La bonne nouvelle** : ma sim reproduit la RNG en sync (g264) → si elle applique la vitesse
+randomisée `p->velocity·(cos,sin)(p->angle)·t` au spawn, elle retrouvera ces valeurs.
+
+**INSIGHT 2 — 0x188 pilote drawX** : SEULS les 2 émetteurs avec `0x188=-300` (0x21cb0c, 0x21d410) ont
+drawX≠0 ; les 7 avec `0x188=0` ont drawX=0. ⇒ **le champ 0x188 est un champ de VITESSE (velocityZ-like) qui
+contribue à drawX**, PAS sizeX. Ceci INFIRME `F_SIZEX=scaledB[8]=0x188` dans np_sim.c — 0x188 est
+probablement velocityZ. (Les 2 émetteurs à 0x188=-300 ont aussi angle=-180 → velocity le long de -X ; le
+0x188 s'ajoute à drawX.)
+
+**MODÈLE ÉMERGENT (à valider)** : `drawX = velocityX·t (+ 0x188·t')`, `drawY = velocityY·t (+ ...)`, où
+velocityX/Y = vitesse_randomisée·cos/sin(angle_randomisé), t un facteur temps de spawn. Les offsets 0x98/0xc0
+semblent NE PAS aller direct en position (0x21dd14 a 0x98=1000 mais drawX=0). Donc 0x98 ≠ xOffset simple —
+peut-être spawn width (forme) ou autre. À CONFIRMER.
+
+**PROCHAINE ÉTAPE** : décoder le facteur t et le rôle exact de 0x188 (velocityZ ?) via l'accumulation 0x179da,
+en tenant compte du per-particule (RNG). Vérifier dans np_sim que p->velocity/p->angle sont bien randomisés
+comme le natif (comparer une valeur par émetteur). Puis implémenter le spawn `drawX/Y += vitesse·dir·t` et
+valider émetteur par émetteur contre la carte. Corriger le mapping 0x188 (≠ sizeX). NE PAS traiter 0x98/0xc0
+comme xOffset direct (infirmé par 0x21dd14).
+
 ## 2026-09-06 (g280) — Carte SPAWN par émetteur (vérité terrain) : position calculée AU SPAWN depuis les champs (corrige g279)
 
 Nouveau hook (drawxhook, store spawn 0x17c5c) : logue **par émetteur** (r8) la position de spawn drawX/drawY.
