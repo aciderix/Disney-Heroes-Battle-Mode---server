@@ -1,5 +1,40 @@
 # JOURNAL — journal détaillé des modifications
 
+## 2026-09-06 (g286) — ⭐⭐⭐ ORDRE DE CONSOMMATION RNG AUTORITAIRE (trace native newLowValue@0x16368) + CORRECTIONS de mapping
+
+`newLowValue` est inliné à **0x16368** (r0 = champ ; tirage/seed-write à 0x16380 ; gate `lowUsesLinkedRange`
+lu à [r0+0xc]). En le hookant → **ORDRE EXACT des structOffsets tirés** par émetteur (identique pour 0x21cb0c
+et 0x21d410 ; chaque champ tire newLow PUIS newHigh) :
+
+**restart() (structOffsets, dans l'ordre)** : `0x38, 0x70, 0x48, 0x10, 0x290, 0x2b8, 0x2f0, 0x318, 0x350, 0x378`
+**activateParticle() (structOffsets)** : `0x110, 0x160, 0x98, 0xc0, 0xe8, 0x188, 0x1d8, 0x210, 0x238`
+
+**Mapping restart (via ordre game.jar : delay[inactif ici], duration, emission, life, lifeOffset, spawnWidth,
+spawnHeight, centripetalRadius, centripetalForce, tangentialRadius, tangentialForce)** :
+```
+0x38  = duration        0x70 = emission(scaledA[0]✓)   0x48 = life(scaledA[1]✓)   0x10 = lifeOffset(scaledA[2])
+0x290 = spawnWidth       0x2b8 = spawnHeight            0x2f0 = centripetalRadius   0x318 = centripetalForce
+0x350 = tangentialRadius 0x378 = tangentialForce
+```
+⚠️ **CORRECTIONS de mapping (mes macros np_sim sont FAUSSES)** : `0x290`=**spawnWidth** (pas centripetal !),
+`0x2b8`=**spawnHeight** (pas brownian !), `0x2f0`=centripetalRadius (pas transparency !). Donc `F_CENTRIPETAL`/
+`F_BROWNIAN`/`F_TRANSPARENCY` étaient mal mappés. **⇒ La position de spawn vient de spawnWidth(0x290)/
+spawnHeight(0x2b8)** (+ spawnShape) — LA vraie source, cohérent avec g283 (tirage RNG de spawn).
+
+**Mapping activate** (game.jar : velocity, velocityZ, angle, sizeX, sizeY, rotation, wind, gravity,
+tangentialInfluence, centripetalInfluence, brownian ; 2 gated inactifs ici → 9 tirés). Anchors sûrs
+velocity=0x110. Alignement à FINALISER (mes anciens anchors angle=0x160/wind=0x210/rotation=0x1d8 étaient
+partiellement « probables » g262septies et entrent en conflit avec l'ordre game.jar → à re-trancher par la
+position, en s'appuyant sur cet ordre natif qui est la VÉRITÉ). Les structOffs activate : 0x110,0x160,0x98,
+0xc0,0xe8,0x188,0x1d8,0x210,0x238.
+
+**IMPLÉMENTATION (maintenant précisément spécifiée)** : dans np_sim, réécrire restart()+activateParticle()
+pour tirer newLow+newHigh dans CET ordre de structOffsets (mappés aux slots via map g280), avec le gating
+game.jar (angle/sizeX/sizeY inconditionnels ; reste gated). Retirer le `value` parasite + transparency/
+xOffset/yOffset. Outil : hook newLowValue@0x16368 (r0=champ) déjà en place dans drawxhook. Vérif : 342 tirages
+frame0, positions np_certify. La position de spawn = fonction de spawnWidth/spawnHeight/spawnShape (à décoder
+ensuite). C'est la spec COMPLÈTE de consommation RNG — plus aucune inconnue sur l'ordre.
+
 ## 2026-09-06 (g285) — ⭐⭐ BLUEPRINT : séquences de tirages RNG AUTORITAIRES (game.jar) de restart() et activateParticle()
 
 Suite g284 (sous-consommation RNG = cause racine). Trace des PC consommateurs → **`ParticleEmitter::restart()`

@@ -586,6 +586,20 @@ public class NpFormatOracle {
             @Override public void onAttach(com.github.unidbg.arm.backend.UnHook u) {}
             @Override public void detach() {}
         }, modbase, modbase + 0x400000, null);   // large fenêtre heap+module
+        // newLowValue @0x16368 : r0 = champ. Log l'ORDRE des champs tirés (emitter 0) = spec de consommation RNG.
+        final long e0 = modbase + 0x21cb0c;
+        final int[] nlv = {0};
+        backend.hook_add_new(new CodeHook() {
+            @Override public void hook(Backend b, long address, int size, Object user) {
+                long r0 = b.reg_read(unicorn.ArmConst.UC_ARM_REG_R0).longValue() & 0xffffffffL;
+                if (r0 >= e0 && r0 < e0 + 0x904 && nlv[0] < 60) {
+                    System.out.printf("  newLow[%d] champ@0x%x%n", nlv[0], r0 - e0);
+                    nlv[0]++;
+                }
+            }
+            @Override public void onAttach(com.github.unidbg.arm.backend.UnHook u) {}
+            @Override public void detach() {}
+        }, modbase + 0x16368, modbase + 0x1636a, null);
         // RNG : compteur de tirages (WriteHook sur le seed global) pour corréler tirage->drawY au spawn.
         final long SEED = 0x40049004L;
         final int[] drawIdx = {0};
