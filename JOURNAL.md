@@ -45,6 +45,17 @@ brownianValue.newLow + newHigh          (SI active)
 3. **La position de spawn vient de spawnWidth/spawnHeight + forme de spawn**, PAS de xOffset/yOffset (qui ne
    sont même pas des champs de position tirés). ⇒ explique DÉFINITIVEMENT l'échec de g276 (xOffset=scaledB[2]).
 
+**Ordre `saveBinary` (game.jar, = ordre de lecture writer courant ; v3 DIFFÈRE mais utile pour recouper)** :
+delay, duration, emission, life, lifeOffset, xOffset, yOffset, zOffset, zToYMultiplier, spawnShape, spawnWidth,
+spawnHeight, sizeX, sizeY, velocity, velocityZ, angle, rotation, wind, gravity, tangentialInfluence,
+tangentialForce, tangentialRadius, centripetalInfluence, centripetalForce, centripetalRadius, brownian, tint,
+transparency. **Note** : xOffset/yOffset/zOffset/zToYMultiplier EXISTENT comme champs (parsés) mais ne sont PAS
+tirés en activateParticle (cf. séquence ci-dessus) — la position de spawn utilise spawnShape+spawnWidth/Height.
+Ancres structOff connues (via map/oracle) pour recouper slot↔champ : velocity=0x110=scaledB[4],
+angle=0x160=scaledB[6], wind=0x210=scaledA[3], gravity=0x238=scaledA[4], tangential=0x260=scaledA[5],
+centripetal=0x290=scaledB[0], brownian=0x2b8=scaledB[1], rotation=0x1d8=scaledD, sizeX≈0x188, +0x98/0xc0/0xe8
+lus au spawn (probables sizeX/sizeY/spawnW/H à départager).
+
 **PROCHAINE ÉTAPE (implémentation directe, spec en main)** : réécrire `restart()` et `activateParticle()` de
 np_sim pour tirer EXACTEMENT ces séquences (dans l'ordre, avec le bon gating actif/inconditionnel), même pour
 les champs non utilisés (il FAUT consommer le tirage). Mapper spawnWidth/spawnHeight/lifeOffset/centripetal*/
