@@ -593,10 +593,11 @@ public class NpFormatOracle {
             @Override public void hook(Backend b, long address, int size, long value, Object user) {
                 if (address != SEED) return;
                 drawIdx[0]++;
-                if (drawIdx[0] >= 305 && drawIdx[0] <= 343) {   // fenêtre des 3 émetteurs identiques
-                    int s = (int) value;
-                    float f = Float.intBitsToFloat(((s & 0x7fffff) | 0x3f800000)) - 1.0f;
-                    System.out.printf("  draw[%d]=%.4f%n", drawIdx[0], f);
+                if (drawIdx[0] <= 40) {   // trace PC consommateur des 40 premiers tirages
+                    long pc = b.reg_read(unicorn.ArmConst.UC_ARM_REG_PC).longValue();
+                    long lr = b.reg_read(unicorn.ArmConst.UC_ARM_REG_LR).longValue();
+                    System.out.printf("  draw[%d] PCmod=0x%x LRmod=0x%x%n", drawIdx[0],
+                        (pc & 0x3fffffL), (lr & 0x3fffffL));
                 }
             }
             @Override public void onAttach(com.github.unidbg.arm.backend.UnHook u) {}

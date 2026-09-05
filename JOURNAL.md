@@ -1,5 +1,58 @@
 # JOURNAL — journal détaillé des modifications
 
+## 2026-09-06 (g285) — ⭐⭐ BLUEPRINT : séquences de tirages RNG AUTORITAIRES (game.jar) de restart() et activateParticle()
+
+Suite g284 (sous-consommation RNG = cause racine). Trace des PC consommateurs → **`ParticleEmitter::restart()`
+(0x1623d) fait ~18-19 tirages/émetteur** (appelé par `ParticleEffect::start`), pas activateParticle. Puis
+extraction des séquences EXACTES depuis le bytecode `game.jar` (§4, source autoritaire) :
+
+**`restart()` tire dans cet ordre** (newLowValue=1 tirage si Ranged ; +newHighValue=2 si Scaled ; sauf si
+lowUsesLinkedRange) :
+```
+delayValue.newLow          (SI active)
+durationValue.newLow
+emissionValue.newLow + newHigh
+lifeValue.newLow + newHigh
+lifeOffsetValue.newLow + newHigh   (SI active)
+spawnWidthValue.newLow + newHigh
+spawnHeightValue.newLow + newHigh
+centripetalRadiusValue.newLow
+centripetalForceValue.newLow + newHigh
+tangentialRadiusValue.newLow
+tangentialForceValue.newLow + newHigh
+```
+**`activateParticle()` tire dans cet ordre** :
+```
+velocityValue.newLow + newHigh          (SI active)
+velocityZValue.newLow + newHigh         (SI active)
+angleValue.newLow + newHigh             (INCONDITIONNEL)
+sizeXValue.newLow + newHigh             (INCONDITIONNEL)
+sizeYValue.newLow + newHigh             (INCONDITIONNEL)
+rotationValue.newLow + newHigh          (SI active)
+windValue.newLow + newHigh              (SI active)
+gravityValue.newLow + newHigh           (SI active)
+tangentialInfluenceValue.newLow + newHigh   (SI active)
+centripetalInfluenceValue.newLow + newHigh  (SI active)
+brownianValue.newLow + newHigh          (SI active)
+```
+**PAS de valeur partagée initiale ; PAS de transparency/xOffset/yOffset tirés ici.**
+
+**BUGS de np_sim.c ainsi RÉVÉLÉS** :
+1. `restart()` OMET : lifeOffset, spawnWidth, spawnHeight, centripetalRadius, centripetalForce,
+   tangentialRadius, tangentialForce (~11 tirages manquants/émetteur) → décalage massif du flux dès le début.
+2. `activateParticle()` a un **tirage `value` partagé PARASITE** (game.jar n'en fait pas) + tire
+   **transparency/xOffset/yOffset** qui NE sont PAS tirés par le natif → sur-consommation ici.
+3. **La position de spawn vient de spawnWidth/spawnHeight + forme de spawn**, PAS de xOffset/yOffset (qui ne
+   sont même pas des champs de position tirés). ⇒ explique DÉFINITIVEMENT l'échec de g276 (xOffset=scaledB[2]).
+
+**PROCHAINE ÉTAPE (implémentation directe, spec en main)** : réécrire `restart()` et `activateParticle()` de
+np_sim pour tirer EXACTEMENT ces séquences (dans l'ordre, avec le bon gating actif/inconditionnel), même pour
+les champs non utilisés (il FAUT consommer le tirage). Mapper spawnWidth/spawnHeight/lifeOffset/centripetal*/
+tangential* aux slots parseur (via l'ordre saveBinary — à extraire de game.jar `saveBinary`). Retirer le
+`value` parasite + transparency/xOffset/yOffset de activateParticle. Vérifier : compteur de tirages = 342 en
+frame 0, RNG réellement synchronisée (mêmes valeurs par champ), positions convergentes (np_certify). Ensuite
+implémenter la position de spawn depuis spawnWidth/Height + spawnShape.
+
 ## 2026-09-06 (g284) — ⭐ RÉORIENTATION MAJEURE : la « sync RNG » de g264 était ILLUSOIRE — ma sim SOUS-CONSOMME les tirages
 
 En cherchant à corréler tirage→drawY, découverte capitale sur la RNG :
