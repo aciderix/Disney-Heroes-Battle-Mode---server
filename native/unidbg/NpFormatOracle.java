@@ -586,6 +586,22 @@ public class NpFormatOracle {
             @Override public void onAttach(com.github.unidbg.arm.backend.UnHook u) {}
             @Override public void detach() {}
         }, modbase, modbase + 0x400000, null);   // large fenêtre heap+module
+        // RNG : compteur de tirages (WriteHook sur le seed global) pour corréler tirage->drawY au spawn.
+        final long SEED = 0x40049004L;
+        final int[] drawIdx = {0};
+        backend.hook_add_new(new com.github.unidbg.arm.backend.WriteHook() {
+            @Override public void hook(Backend b, long address, int size, long value, Object user) {
+                if (address != SEED) return;
+                drawIdx[0]++;
+                if (drawIdx[0] >= 305 && drawIdx[0] <= 343) {   // fenêtre des 3 émetteurs identiques
+                    int s = (int) value;
+                    float f = Float.intBitsToFloat(((s & 0x7fffff) | 0x3f800000)) - 1.0f;
+                    System.out.printf("  draw[%d]=%.4f%n", drawIdx[0], f);
+                }
+            }
+            @Override public void onAttach(com.github.unidbg.arm.backend.UnHook u) {}
+            @Override public void detach() {}
+        }, SEED, SEED + 4, null);
         // Carte SPAWN par émetteur : au store drawX (0x17c54, vstr s2,[r0]), lire r8=émetteur + drawX=mem[r0].
         // r0 est le ptr drawPos élément ; drawX y est écrit à cet instant. On lit juste après (0x17c58).
         final int[] sc2 = {0};
@@ -603,8 +619,8 @@ public class NpFormatOracle {
                 float vel = Float.intBitsToFloat(ep.getInt(0x110 + 0x1c));
                 float ang = Float.intBitsToFloat(ep.getInt(0x160 + 0x1c));
                 float f188 = Float.intBitsToFloat(ep.getInt(0x188 + 0x1c));
-                System.out.printf("[SPAWN] mod+0x%x -> draw=(%.1f,%.1f) | 0x98=%.0f 0xc0=%.0f vel=%.0f ang=%.0f 0x188=%.0f%n",
-                    r8 - modbase, dx, dy, x0, y0, vel, ang, f188);
+                System.out.printf("[SPAWN] mod+0x%x drawIdx=%d -> draw=(%.1f,%.1f) | 0x98=%.0f 0xc0=%.0f vel=%.0f ang=%.0f 0x188=%.0f%n",
+                    r8 - modbase, drawIdx[0], dx, dy, x0, y0, vel, ang, f188);
                 sc2[0]++;
             }
             @Override public void onAttach(com.github.unidbg.arm.backend.UnHook u) {}
@@ -696,14 +712,11 @@ public class NpFormatOracle {
             @Override public void detach() {}
         }, modbase + 0x16368, modbase + 0x1636a, null);
         // Dump des champs-clés (valeur constante @+0x1c) pour les 2 émetteurs qui spawnent hors origine.
-        for (long eb : new long[]{ modbase + 0x220124, modbase + 0x21e618 }) {
+        for (long eb : new long[]{ modbase + 0x220124, modbase + 0x220a28, modbase + 0x22132c }) {
             UnidbgPointer ep = UnidbgPointer.pointer(emu, eb);
-            System.out.printf("emitter mod+0x%x champs:", eb - modbase);
-            for (int off : new int[]{0x98, 0xc0, 0xe8, 0x110, 0x138, 0x160, 0x188}) {
-                float lowMin = Float.intBitsToFloat(ep.getInt(off + 0x1c));
-                float lowMax = Float.intBitsToFloat(ep.getInt(off + 0x20));
-                System.out.printf(" [0x%x]=%.1f/%.1f", off, lowMin, lowMax);
-            }
+            System.out.printf("emitter mod+0x%x hdr[0x0..0x48]:", eb - modbase);
+            for (int off = 0; off <= 0x48; off += 4)
+                System.out.printf(" %.1f", Float.intBitsToFloat(ep.getInt(off)));
             System.out.println();
         }
         System.out.println("=== Effect_update frame0 ===");

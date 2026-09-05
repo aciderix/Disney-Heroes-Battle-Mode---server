@@ -1,5 +1,51 @@
 # JOURNAL — journal détaillé des modifications
 
+## 2026-09-06 (g283) — DÉCISIF : 3 émetteurs BYTE-IDENTIQUES → drawY différent ⇒ la position de spawn a un tirage RNG par particule
+
+Dump du header (0x0..0x48) des 3 émetteurs 0x220124/0x220a28/0x22132c : **STRICTEMENT identiques** (tout à
+0,0 sauf 0x3c=0x40=1,0 ; delay=0, duration/emission pareils) ET champs identiques (g282 : velocity=500/500,
+angle=90/90 constants). Pourtant drawY = 130 / 70 / -20. **Trois émetteurs byte-identiques, sorties
+différentes** → la SEULE variable est **la position dans le flux RNG global** (ils sont traités en séquence,
+chacun consomme des tirages différents).
+
+**CONCLUSION (élimine les 2 hypothèses précédentes)** : la variation n'est NI le timing sous-frame (g282 —
+delays identiques), NI une plage de champ (g281 — champs constants). **La position de spawn inclut un TIRAGE
+RNG par particule** (offset de spawn / vitesse aléatoire tiré du flux partagé). En libGDX, `newLowValue()`
+appelle `random()` même quand lowMin=lowMax (le tirage est CONSOMMÉ mais la valeur reste constante) — mais ici
+la SORTIE varie, donc un tirage alimente RÉELLEMENT la position (probablement un offset de spawn aléatoire,
+ou une composante de forme de spawn).
+
+**BONNE NOUVELLE** : ma sim a la RNG **en sync** (g264) → si j'identifie QUELS tirages alimentent l'offset de
+spawn et COMMENT ils composent drawX/drawY, ma sim les reproduira exactement (bit-exact). C'est un problème
+d'identification de tirages, pas de valeur inventée.
+
+**DONNÉES BRUTES capturées (pour la corrélation)** : compteur de tirages RNG (WriteHook seed 0x40049004) +
+valeur au spawn de chaque émetteur :
+```
+émetteur   drawIdx(au store spawn)  drawY
+0x21cb0c   236                       0
+0x21d410   253                     100
+0x21dd14   267                      30
+0x21e618   280                     150
+0x21ef1c   293                      30
+0x21f820   304                     -30
+0x220124   317                     130   (draws 305..317, ~13 tirages)
+0x220a28   330                      70   (draws 318..330, ~13)
+0x22132c   342                     -20   (draws 331..342, ~12)
+```
+Chaque émetteur consomme ~12-13 tirages (life, velocity, angle, sizeX, wind/gravity/…, xOffset/yOffset).
+⚠️ Le nb de tirages VARIE (12 vs 13) → l'alignement par index relatif est délicat (à faire par le successeur
+en identifiant l'ordre exact des tirages dans `activateParticle`). Valeurs des tirages 305-342 loguées par
+`drawxhook` (fenêtre dans le WriteHook seed) pour retrouver drawY=f(tirage).
+
+**PROCHAINE ÉTAPE (successeur, décisive)** : instrumenter la RNG pendant le spawn d'un de ces 3 émetteurs —
+hooker chaque `rng_next` (WriteHook sur le seed global 0x40049004, déjà fait en `rngprobe`) DANS
+`activateParticles`, corréler la valeur du tirage à drawY obtenu (drawY = f(tirage)). Déterminer la loi
+(ex. drawY = velocity·(rand·2-1)·k, ou un offset de spawn `rand·range`). Puis reproduire dans
+`np_sim::activateParticle` (le bon tirage au bon moment). Le mapping 0x188=velocityZ (≠sizeX) reste à corriger.
+Dataset réf : carte g280/g281 + ces 3 émetteurs identiques (même champs, drawY 130/70/-20 = 3 échantillons du
+tirage RNG).
+
 ## 2026-09-06 (g282) — Raffinement : les 3 émetteurs "identiques" ont des champs CONSTANTS → la variation drawY vient du TIMING de spawn (pas du RNG de champ)
 
 Vérifié : émetteur 0x220124 a velocity=**500/500** (lowMin=lowMax) et angle=**90/90** — **constants, aucune
