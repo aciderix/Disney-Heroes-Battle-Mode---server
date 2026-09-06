@@ -1,5 +1,35 @@
 # JOURNAL — journal détaillé des modifications
 
+## 2026-09-07 (g293) — ⭐⭐⭐ PIVOT STRATÉGIQUE VALIDÉ : réutiliser le moteur de particules JAVA du jeu (fini la réimplémentation)
+
+**Idée de l'utilisateur** (excellente, §3/§4) : plutôt que réécrire/deviner la simulation en C (np_sim) ou
+l'émuler via unidbg, **réutiliser directement le `ParticleEmitter`/`ParticleEffect` Java du jeu** (présents
+dans `libs/game-logic-framed.jar`, la vraie JVM du client desktop) et l'adapter au natif.
+
+**FAITS ÉTABLIS** :
+- `ParticleEmitter`/`ParticleEffect` implémentent `Externalizable` (`readExternal`), et ont `update(delta)` +
+  `drawPositiveDepth(TwoColorPolygonBatch)` (SIMULATION + RENDU 2-couleurs) — tout le moteur, en Java pur.
+- Le `.np` se charge presque via `readExternal` (sauter les 2 octets magic+version) MAIS le loader Java est
+  d'une version PLUS RÉCENTE que le format v3 des `.np` → désalignement (name UTF, spawnShape en enum-string,
+  timelines inline). Donc pas de `readExternal` direct.
+- **SOLUTION VALIDÉE** : peupler le `ParticleEmitter` du jeu depuis mon **parseur `.np` v3 certifié** (ordre
+  np_parser.c), via les setters (`setLow/setHigh/setTimeline/setScaling/setActive/setRelative`) + réflexion
+  pour les champs privés (`lowUsesLinkedRange`...). PROTOTYPE `ParticleV3Loader.java` : charge les 12 émetteurs,
+  et les valeurs peuplées **matchent EXACTEMENT `NP_DBG_START`** (émetteur fichier 0 : sizeX=160, velocity=300,
+  angle inactif, wind=300 — identique). ⇒ **mapping v3→champs Java CORRECT**, le moteur du jeu est pilotable.
+- **BONUS crucial** : plus besoin du match BIT-EXACT (le harnais golden ne servait qu'à valider MA
+  réimplémentation). Le moteur Java EST la référence → il produit des particules correctes avec sa propre RNG,
+  rapide (JVM/JIT), fidèle (code d'origine). **Le problème insoluble de la formule de position DISPARAÎT**
+  (l'`update()` du jeu la contient).
+
+**PLAN** : (1) compléter le loader (tous champs + résolution des timelines depuis le pool trailer + spawnShape
++ tint/transparency + flags) ; (2) `ParticleEffect.update()`/`drawPositiveDepth()` → sortie sommets ;
+(3) câbler le backend desktop `cparticle.Native`/`HostParticle` sur ce chemin Java au lieu d'unidbg ;
+(4) vérif EN JEU (visuel + FPS). Abandonne np_sim.c (réimplémentation) comme voie principale — gardé comme
+référence de format. §3/§4 pleinement respectés : on exécute le code du jeu, on n'écrit que la glue (loader
+v3→objets Java = adaptation de format, pas de règle réécrite).
+
+
 ## 2026-09-07 (g292) — ⭐ TROUVÉ : la position accumule via un bloc RNG INLINE conditionnel (le tirage 12-vs-13)
 
 En traçant les PC des tirages des 3 émetteurs point identiques : chaque particule = `value`(PC 0x1739c) +
