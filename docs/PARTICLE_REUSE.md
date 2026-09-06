@@ -31,7 +31,10 @@ jeu** → plus rien à décoder.
 
 ## Ce qui RESTE (intégration en jeu — nécessite GL + client en marche)
 
-1. **Sprite d'atlas** : `ParticleEmitter.setDrawable` exige un `TwoColorAtlasSprite`/`AtlasSprite` (région de
+1. **Sprite d'atlas** : ✅ RESOLVER ÉCRIT (`ParticleAtlasResolver`) — capture les octets `.atlas` à
+   `cspine.Native.Atlas_create`, **parse les régions/uv** (testé headless : 34 régions, uv corrects), et
+   construit le `TwoColorAtlasSprite` (Texture aux dims de page, **GL lazy** côté client ; le rendu réel
+   utilise la texture NATIVE, le sprite Java ne porte que région/uv). Reste à **tester EN JEU** (GL). Détail : `ParticleEmitter.setDrawable` exige un `TwoColorAtlasSprite`/`AtlasSprite` (région de
    l'atlas pour `atlasTag`, lu du `.np`). Il faut résoudre la `TextureRegion`/`AtlasRegion` depuis l'atlas
    référencé par `atlasHandle` de `Effect_create`. ⚠️ Aujourd'hui l'atlas côté desktop-port est géré en NATIF
    (`com.perblue.heroes.cspine.NativeAtlas`, textures côté natif/GL), pas comme un `TextureAtlas` libGDX

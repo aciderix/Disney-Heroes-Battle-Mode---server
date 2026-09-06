@@ -13,6 +13,11 @@ import java.nio.ShortBuffer;
  *    — pas d'émulation, pas de réimplémentation (docs/PARTICLE_REUSE.md, §3/§4). Câblage, pas récréation.
  */
 public class Native {
+    static {
+        // g296 : backend particules Java -> enregistre le resolver d'atlas (parse le .atlas, uv ; sprite GL lazy).
+        if ("java".equalsIgnoreCase(System.getProperty("dh.particlebackend")))
+            try { JavaParticleEngine.setResolver(new dhbackend.jparticle.ParticleAtlasResolver()); } catch (Throwable ignore) {}
+    }
     private static boolean jpe() { return JavaParticleEngine.enabled(); }
     public static void ensureLoaded() { UnidbgVM.get(); }
 

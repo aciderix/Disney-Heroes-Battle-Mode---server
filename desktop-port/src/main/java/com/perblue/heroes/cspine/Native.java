@@ -61,6 +61,14 @@ public class Native {
 
     static int Atlas_create(byte[] a, boolean pma) {
         p("Atlas_create");
+        // g296 : si le backend particules Java est actif, mémoriser les octets .atlas pour ce handle
+        // (le resolver en dérive les régions/uv, cf. ParticleAtlasResolver). Glue, no-op sinon.
+        int __h = Atlas_createImpl(a, pma);
+        if ("java".equalsIgnoreCase(System.getProperty("dh.particlebackend")))
+            try { dhbackend.jparticle.ParticleAtlasResolver.registerAtlasBytes(__h, a); } catch (Throwable ignore) {}
+        return __h;
+    }
+    private static int Atlas_createImpl(byte[] a, boolean pma) {
         if (CMP) return CB.Atlas_create(a, pma);
         if (JNI) {
             // Un atlas est PARTAGÉ spine↔particules. Le spine tourne sur HostSpine (x86), les particules sur unidbg
@@ -76,6 +84,8 @@ public class Native {
     }
     static void Atlas_dispose(int h) {
         p("Atlas_dispose");
+        if ("java".equalsIgnoreCase(System.getProperty("dh.particlebackend")))
+            try { dhbackend.jparticle.ParticleAtlasResolver.unregister(h); } catch (Throwable ignore) {}
         if (CMP) { CB.Atlas_dispose(h); return; }
         if (JNI) {
             HostSpine.Atlas_dispose(h);
