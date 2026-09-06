@@ -23,13 +23,19 @@ bloc **0x17b96**) :
 tirage qui varie (12-vs-13) et LA source du spread par-particule (drawY=130/70/-20). `[sl+0xa0]` = un champ
 par-particule (magnitude, prob. velocity ou spawn radius), `s30`≈0.001 (constante pool, cf. g280).
 
-**CE QUE ÇA DÉBLOQUE** : la position n'est PAS `velocity·sin·f` déterministe — c'est `base ± spread·random`
-avec 2 randoms inline générés dans l'accumulation. La formule `f` de g291 = ce random (× spread/velocity).
-**PROCHAINE ÉTAPE** : lire à l'exécution `[sl+0xa0]`, `s30`, et les 2 randoms pour les 3 particules (banc
-g291) → figer `drawX = base + s6·(2·randX-1)?`, `drawY = base + s6·(2·randY-1)?` (déterminer signe/forme
-exacte via vnmls). Puis dans np_sim : générer ces 2 randoms inline au bon moment (le tirage conditionnel) et
-appliquer le déplacement. Attention à reproduire la CONDITION (sinon désync du flux). C'est le dernier
-maillon pour POS NN→0.
+**⚠️ CORRECTION (mesure)** : le hook à 0x17bc2 **NE FIRE PAS** pour ces émetteurs point → le bloc 0x17b96
+n'est **PAS pris** (gardé par les 2 conditions). Donc ce n'est PAS la source du spread. Le spread vient de la
+**boucle d'accumulation de vitesse AVANT** 0x17b96 : `drawY = base(0) + accumulateur = 130` = `velocity·0.26`.
+Comme velocity=500 constant, l'accumulateur = -velocity·sin(direction) avec **sin(direction)=-0.26** → la
+DIRECTION (~195°) ≠ l'angle du champ (90°). **⇒ la vitesse est appliquée au spawn le long d'une DIRECTION avec
+un SPREAD ALÉATOIRE par-particule** (angle + random). C'est là qu'est le random (pas dans le bloc 0x17b96).
+
+**PROCHAINE ÉTAPE (single-step, g269-style)** : single-stepper `activateParticles` pour la particule de
+0x220124 en surveillant l'adresse mémoire de drawY, trouver l'instruction qui la fixe et lire (en MÉMOIRE, pas
+S-reg) la direction + le random de spread utilisés. Le banc g291 (value↔drawY, 3 particules) valide. Puis
+implémenter dans np_sim : `drawX/Y = base + velocity·(cos,sin)(angle + spread_random)·facteur` au spawn.
+C'est le dernier maillon pour POS NN→0. (Note : la boucle d'accumulation est vectorisée SoA — cf. g273-275 —
+le random de direction y entre ; l'identifier précisément est la tâche.)
 
 ## 2026-09-07 (g291) — Données GROUND-TRUTH de la position de spawn (point) : drawY = velocity·sin(angle)·f, f = facteur par-particule
 
