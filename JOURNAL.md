@@ -1,5 +1,35 @@
 # JOURNAL — journal détaillé des modifications
 
+## 2026-09-07 (g291) — Données GROUND-TRUTH de la position de spawn (point) : drawY = velocity·sin(angle)·f, f = facteur par-particule
+
+Mesure directe (hook au store de spawn 0x17c5c) de la position par émetteur + le facteur par-particule
+(tableau `emitter+0x8fc[i]`, qui contient la valeur partagée `value` du bytecode 108) :
+```
+émetteur   drawX drawY | vel  ang  | value(arr8fc[0]) | f = drawY/(vel·sin(ang))
+0x21cb0c    -50   0    | 100 -180  | 0.2412           | (sin=0, drawX=-50 : cas angle -180)
+0x21d410   -220  100   | 300 -180  | 0.4117           | ...
+0x21dd14     0    30   | 100  90   | 0.5952           | 0.30
+0x21e618     0   150   | 500 -90   | 0.8733           | -0.30
+0x220124     0   130   | 500  90   | 0.0709           | 0.26   <- 3 émetteurs
+0x220a28     0    70   | 500  90   | 0.9247           | 0.14   <- byte-identiques
+0x22132c     0   -20   | 500  90   | 0.4404           | -0.04  <- (f varie)
+```
+**FAIT** : `drawY = velocity·sin(angle)·f` (et `drawX = velocity·cos(angle)·f`), avec `f` un facteur
+par-particule. Pour les 3 émetteurs byte-identiques (vel=500,ang=90), f = 0.26/0.14/-0.04 → **f varie
+par particule** (confirme le tirage RNG). MAIS `f` n'est PAS une fonction simple de `value` (0.0709→0.26,
+0.9247→0.14, 0.4404→-0.04 : non-monotone). ⇒ `f` provient de l'accumulation complète (0x179da) utilisant
+PLUSIEURS tirages du particule, pas seulement `value`. Note : d'autres émetteurs ont f=±0.30 (constant),
+suggérant un facteur de base ~0.30 modulé par un random pour certains.
+
+**Champs de 0x220124 tous CONSTANTS** (vel=500/500, ang=90/90, wind=0/0, grav=1/1) → la variation de f NE
+vient PAS d'une plage de champ ; elle vient d'un tirage direct (MathUtils.random) dans l'accumulation de
+position (g273-275), à identifier.
+
+**PROCHAINE ÉTAPE** : décoder l'accumulation 0x179da AVEC ces nombres ground-truth — trouver quel(s)
+tirage(s) du particule composent `f` (ex. f = g(value, autres draws)). Le tableau ci-dessus est le banc de
+validation (value connu, f connu). Puis implémenter `drawX/Y = velocity·(cos,sin)(angle)·f` au spawn dans
+np_sim (RNG déjà synchronisée → f reproductible). Ensuite POS NN→0.
+
 ## 2026-09-06 (g290) — Compte de tirages RNG rapproché du natif (222/369 vs 236/342) — repères de comptage ajoutés
 
 Ajout de repères (np_sim_run_frames, guardés NP_DBG_RNG) : tirages après start (restart×12) et après frame 0,
