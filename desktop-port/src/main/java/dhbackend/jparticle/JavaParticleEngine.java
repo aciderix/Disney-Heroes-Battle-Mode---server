@@ -19,12 +19,26 @@ import java.util.*;
 // drawCalls = n*3+1 shorts ; ici un draw call par effet. n retourne = nb de draw calls ; draws[n*3] = nb total
 // de sommets (cf. UnidbgVM.effectVertCount).
 public final class JavaParticleEngine {
+    private static final JavaParticleEngine INSTANCE = new JavaParticleEngine();
+    public static JavaParticleEngine get(){ return INSTANCE; }
+    // Active si -Ddh.particlebackend=java ET un resolver d'atlas a ete enregistre par le client (GL requis).
+    public static boolean enabled(){ return "java".equalsIgnoreCase(System.getProperty("dh.particlebackend")) && RESOLVER != null; }
+
+    // Le client (avec contexte GL) fournit le sprite d'atlas + la region pour un (atlasHandle, atlasTag).
+    public interface AtlasResolver {
+        BaseSprite spriteFor(int atlasHandle, String atlasTag);
+        TextureRegion regionFor(int atlasHandle, String atlasTag);
+    }
+    private static volatile AtlasResolver RESOLVER;
+    public static void setResolver(AtlasResolver r){ RESOLVER = r; }
+
     private static final Map<Integer, Handle> H = new HashMap<>();
     private static int nextId = 1;
 
     static final class Effect { final Array<ParticleEmitter> emitters = new Array<>(); }
     static final class Handle {
         final Effect eff = new Effect();
+        int atlasHandle;
         float x, y, rot;
         TextureRegion region;
     }
@@ -62,21 +76,29 @@ public final class JavaParticleEngine {
         setPriv(em,"frameDuration",f32());
         boolean att=bl(),cont=bl(),ali=bl(); int fl=b[pos++]&0xff; boolean beh=bl();
         setPriv(em,"attached",att); setPriv(em,"continuous",cont); setPriv(em,"aligned",ali); setPriv(em,"additive",(fl&1)!=0); setPriv(em,"behind",beh);
-        int poolSize=i32(),tagLen=i32(); float[] pool=new float[poolSize]; for(int i=0;i<poolSize;i++) pool[i]=f32(); pos+=tagLen;
+        int poolSize=i32(),tagLen=i32(); float[] pool=new float[poolSize]; for(int i=0;i<poolSize;i++) pool[i]=f32();
+        lastTag = tagLen>0 ? new String(b, pos, tagLen, java.nio.charset.StandardCharsets.UTF_8) : "";
+        pos+=tagLen;
         for(Tl t:tls){ if(t.n>0 && t.oa+t.n<=poolSize && t.ob+t.n<=poolSize){ t.s.setTimeline(Arrays.copyOfRange(pool,t.oa,t.oa+t.n)); t.s.setScaling(Arrays.copyOfRange(pool,t.ob,t.ob+t.n)); } }
         return em;
     }
+    private String lastTag = "";
 
     // ---- API facon cparticle.Native ----
-    // sprite = sprite d'atlas du jeu (TwoColorAtlasSprite/AtlasSprite) pour la region atlasTag ; REQUIS pour
-    // que le jeu associe la region aux particules (setDrawable). region = la TextureRegion pour l'uv du rendu.
-    public synchronized int create(byte[] np, BaseSprite sprite, TextureRegion region){
+    // Le sprite d'atlas (TwoColorAtlasSprite/AtlasSprite) et la region (uv) sont resolus par le RESOLVER du
+    // client (contexte GL requis) depuis (atlasHandle, atlasTag lu du .np par emetteur). §1/§4 glue.
+    public synchronized int create(byte[] np, int atlasHandle){
         b=np; pos=0;
         if(np.length<6||np[0]!=0||np[1]!=3) throw new RuntimeException("np: pas v3");
         pos=2; int nE=i32();
-        Handle h=new Handle(); h.region=region;
+        Handle h=new Handle(); h.atlasHandle=atlasHandle;
+        AtlasResolver r=RESOLVER;
         for(int i=0;i<nE;i++){ ParticleEmitter em=readEmitter();
-            if(sprite!=null){ try{ em.setSprite(sprite); }catch(Throwable t){ setPriv(em,"sprite",sprite); } }
+            if(r!=null){
+                BaseSprite sprite=r.spriteFor(atlasHandle, lastTag);
+                if(sprite!=null){ try{ em.setSprite(sprite); }catch(Throwable t){ setPriv(em,"sprite",sprite); } }
+                if(h.region==null) h.region=r.regionFor(atlasHandle, lastTag);
+            }
             h.eff.emitters.add(em); }
         int id=nextId++; H.put(id,h); return id;
     }

@@ -37,9 +37,11 @@ jeu** → plus rien à décoder.
    (`com.perblue.heroes.cspine.NativeAtlas`, textures côté natif/GL), pas comme un `TextureAtlas` libGDX
    accessible en Java → c'est LE point d'intégration à résoudre (charger l'atlas particules
    `*/vfx/particles-DEFAULT.atlas` comme `TextureAtlas` libGDX GL, ou exposer les régions natives).
-2. **Routage** : dans `desktop-port/.../com/perblue/heroes/cparticle/Native.java`, router les `Effect_*` vers
-   `JavaParticleEngine` (au lieu de `UnidbgVM`) derrière un flag (ex. `-Ddh.particlebackend=java`), en miroir
-   du routage spine `cspine.Native`→`HostSpine`.
+2. **Routage** : ✅ FAIT — `cparticle/Native.java` route les `Effect_*` vers `JavaParticleEngine` quand
+   `JavaParticleEngine.enabled()` (= `-Ddh.particlebackend=java` ET un `AtlasResolver` enregistré). Défaut =
+   unidbg (aucune régression si le flag/resolver absent). Reste à enregistrer un `AtlasResolver`
+   (`JavaParticleEngine.setResolver(...)`) côté client/launcher (avec GL) : `spriteFor`/`regionFor(atlasHandle,
+   atlasTag)` — c'est le point (1) ci-dessus (résoudre la région d'atlas).
 3. **Build** : le moteur est déjà dans l'arbre source desktop-port (compile avec game-logic-framed).
 4. **Vérification EN JEU (§8, obligatoire)** : lancer un combat réel, comparer visuellement à l'unidbg
    (oracle) et mesurer le FPS (le gain attendu = même levier que spine g257).
