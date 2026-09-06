@@ -25,10 +25,19 @@ suggérant un facteur de base ~0.30 modulé par un random pour certains.
 vient PAS d'une plage de champ ; elle vient d'un tirage direct (MathUtils.random) dans l'accumulation de
 position (g273-275), à identifier.
 
-**PROCHAINE ÉTAPE** : décoder l'accumulation 0x179da AVEC ces nombres ground-truth — trouver quel(s)
-tirage(s) du particule composent `f` (ex. f = g(value, autres draws)). Le tableau ci-dessus est le banc de
-validation (value connu, f connu). Puis implémenter `drawX/Y = velocity·(cos,sin)(angle)·f` au spawn dans
-np_sim (RNG déjà synchronisée → f reproductible). Ensuite POS NN→0.
+**LEAD (partiel)** : en alignant les tirages de chaque particule (draws de g283) par rang depuis le début de
+l'activate, le **4ᵉ tirage** corrèle grossièrement avec f : `f ≈ (draw[start+4] − 0.5)·~1.5`
+(0x220124 draw=0.6343→f 0.26 ; 0x220a28 draw=0.6123→f 0.14 ; 0x22132c draw=0.4629→f -0.04) — pente non
+constante (1.9/1.25/1.08). **OBSTACLE** : les 3 émetteurs byte-identiques consomment **12 vs 13 tirages**
+(0x22132c: draws 331-342=12 ; les autres 13) → il existe un **tirage CONDITIONNEL** (un champ tiré seulement
+si un random passe un seuil, ou une branche de forme de spawn), ce qui DÉSALIGNE le rang et fausse la
+corrélation. Résoudre ce conditionnel est la clé.
+
+**PROCHAINE ÉTAPE** : décoder l'accumulation 0x179da AVEC ces nombres ground-truth — (1) identifier le tirage
+conditionnel (pourquoi 12 vs 13) ; (2) trouver la formule exacte de `f` (rang 4 aligné correctement). Le
+tableau value↔f + les séquences de tirages (g283) sont le banc de validation. Puis implémenter
+`drawX/Y = velocity·(cos,sin)(angle)·f` au spawn dans np_sim (RNG déjà synchronisée → f reproductible).
+Ensuite POS NN→0.
 
 ## 2026-09-06 (g290) — Compte de tirages RNG rapproché du natif (222/369 vs 236/342) — repères de comptage ajoutés
 
