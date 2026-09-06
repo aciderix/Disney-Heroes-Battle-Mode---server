@@ -1,5 +1,20 @@
 # JOURNAL — journal détaillé des modifications
 
+**VALIDÉ DE BOUT EN BOUT (prototype `native/reuse/ParticleV3Loader.java`)** : charge les 12 émetteurs du .np
+ralph dans le `ParticleEmitter` du jeu ; valeurs peuplées = `NP_DBG_START` à l'identique (émetteur 0 : min=1
+max=1 vel=300 angle inactif sizeX=160 wind=300 emissionHi=1 lifeHi=400) ; **`em.start()` + `em.update(0.1)`
+S'EXÉCUTENT** (la simulation du jeu tourne : timing d'émission OK, la particule s'active à la bonne frame via
+`activateParticle`→`newParticle`). Seul point restant en HEADLESS : `setDrawable` exige un vrai
+`TextureRegion`/sprite d'atlas (asset GL) — fourni par le VRAI client desktop (GL + atlas), pas un problème de
+logique. Timelines résolues depuis le pool trailer (`setTimeline`/`setScaling`).
+
+**PROCHAINE ÉTAPE (intégration, pas de RE)** : câbler ce chemin dans le backend desktop là où GL+atlas
+existent : (a) `ParticleEffect`/`ParticleEmitter` peuplés via l'adaptateur v3 ; (b) sprite = région d'atlas
+(`atlasTag`) ; (c) rendu via `drawPositiveDepth(TwoColorPolygonBatch)` (déjà le batch 2-couleurs du jeu) ou
+extraction des sommets ; (d) router `com.perblue.heroes.cparticle.Native` (aujourd'hui 100% unidbg) vers ce
+moteur Java. Résultat attendu : particules fidèles (code du jeu), rapides (JVM/JIT), zéro émulation, zéro
+formule devinée. Vérif EN JEU (visuel + FPS). np_sim.c reste comme doc de format ; il n'est plus la voie.
+
 ## 2026-09-07 (g293) — ⭐⭐⭐ PIVOT STRATÉGIQUE VALIDÉ : réutiliser le moteur de particules JAVA du jeu (fini la réimplémentation)
 
 **Idée de l'utilisateur** (excellente, §3/§4) : plutôt que réécrire/deviner la simulation en C (np_sim) ou
