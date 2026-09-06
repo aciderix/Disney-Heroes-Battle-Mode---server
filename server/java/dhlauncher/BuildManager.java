@@ -671,6 +671,9 @@ public final class BuildManager {
       + "[ -f \"$DIR/native/libgdx64.so\" ] && JOPTS=\"$JOPTS -Ddh.gdxnative=$DIR/native/libgdx64.so\"\n"
       + "if [ -f \"$DIR/native/libhostspine64.so\" ] && [ \"${DH_SPINEBACKEND:-jni}\" != unidbg ]; then\n"
       + "  JOPTS=\"$JOPTS -Ddh.spinebackend=jni -Ddh.hostspine=$DIR/native/libhostspine64.so\"; fi\n"
+      // Particules : backend Java (réutilise le ParticleEmitter du jeu en natif ≈24× vs émulation unidbg,
+      // vérifié EN JEU §8 g298 ; adaptateur validé sur 2918/2918 effets). DÉFAUT ; DH_PARTICLEBACKEND=unidbg pour revenir.
+      + "[ \"${DH_PARTICLEBACKEND:-java}\" != unidbg ] && JOPTS=\"$JOPTS -Ddh.particlebackend=java\"\n"
       + "[ -n \"${DH_USERID:-}\" ] && JOPTS=\"$JOPTS -Ddh.userid=$DH_USERID\"\n"
       + "[ -n \"${DH_FRAMES:-}\" ] && JOPTS=\"$JOPTS -Ddh.frames=$DH_FRAMES\"\n"
       + "[ -n \"${DH_SHOT:-}\" ] && JOPTS=\"$JOPTS -Ddh.shot=$DH_SHOT\"\n"
@@ -696,6 +699,9 @@ public final class BuildManager {
       // natives-desktop embarque les DEUX sous leur nom natif, run-desktop.sh extrait le bon par OS, g255).
       + "if exist \"%DIR%native\\gdx64.dll\" set JOPTS=%JOPTS% -Ddh.gdxnative=\"%DIR%native\\gdx64.dll\"\r\n"
       + "if exist \"%DIR%native\\libhostspine64.dll\" set JOPTS=%JOPTS% -Ddh.spinebackend=jni -Ddh.hostspine=\"%DIR%native\\libhostspine64.dll\"\r\n"
+      // Particules : backend Java (reutilise le ParticleEmitter du jeu en natif ~24x vs emulation unidbg, verifie
+      // EN JEU §8 g298 ; adaptateur valide sur 2918/2918 effets). DEFAUT ; DH_PARTICLEBACKEND=unidbg pour revenir.
+      + "if not \"%DH_PARTICLEBACKEND%\"==\"unidbg\" set JOPTS=%JOPTS% -Ddh.particlebackend=java\r\n"
       // Bug g256 : PlayManager.java pose DH_USERID en variable d'env (identité du compte choisi dans l'onglet
       // Compte) mais ce script ne la lisait jamais — « Jouer » bootait TOUJOURS en anonyme, quel que soit le
       // compte créé. RUN_SH_CLIENT (Linux) la lit déjà (DH_USERID/DH_FRAMES/DH_SHOT) — parité rétablie ici.

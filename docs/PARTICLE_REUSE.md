@@ -64,9 +64,25 @@ framebuffer du client (`build/manual.ppm` via `-Ddh.clickfile`), pilotage par ta
   | Java (après)   | 202 | 4,9 ms | **0 ms — 0 appel** |
   → **≈ 24× FPS**, les ~103 ms/frame d'émulation ARM **éliminés** (0 appel unidbg). En combat chargé
   (VFX d'abilities), le backend Java tient ~117 fps (vs ~8-30 fps unidbg, cf. g185/PERF_PLAN). Thèse prouvée.
+## Couverture de TOUS les effets (validation headless, g298)
+
+`native/reuse/NpAdapterValidate.java` : passe **TOUS les `.np` du jeu** dans l'adaptateur v3→Java + la
+simulation (60 frames, sprite factice sans GL) et vérifie que la géométrie est finie et bornée (les
+composantes couleur des sommets sont des floats bit-packés → magnitude quelconque légitime, seules x/y/u/v
+sont bornées). **Résultat sur les 2918 `.np` du bundle : 2918 v3, 2918 chargés, 2918 simulés OK, 0 échec**
+(348 particules simultanées max). ⇒ le mapping v3→Java (y compris les champs incertains scaledB[9-11]/scaledC/
+scaledD) ne casse sur AUCUN effet du jeu. Lancer :
+`java -cp "<classes patchées>;<bundle>/lib/dhdesktop.jar;<bundle>/lib/game-logic-framed.jar;<bundle>/lib/runtime/*" NpAdapterValidate <dir Assets>`.
+
+## Activation par DÉFAUT (g298)
+
+`BuildManager.RUN_SH_CLIENT`/`RUN_BAT_CLIENT` posent `-Ddh.particlebackend=java` par DÉFAUT dans le run.sh/
+run.bat généré (override `DH_PARTICLEBACKEND=unidbg` pour revenir à l'émulation). Justifié par : vérif en jeu
+§8 (rendu + ≈24× FPS) + adaptateur validé 2918/2918. Le marqueur `~/.dh_particlebackend` reste un moyen d'
+activation alternatif (dev). ⇒ un joueur qui génère un bundle via le launcher a le backend Java d'office.
+
 - Reste (affinage) : comparer la fidélité visuelle fine effet par effet à l'oracle unidbg (non bit-exact,
-  RNG RandomXS128 ≠ LCG — attendu) ; valider d'autres écrans/effets ; câbler le backend Java par défaut dans
-  le run.bat généré (aujourd'hui activé par le marqueur `~/.dh_particlebackend`).
+  RNG RandomXS128 ≠ LCG — attendu ; validation actuelle = pas de crash / géométrie saine + visuel du 1er combat).
 
 ## Notes de fidélité
 

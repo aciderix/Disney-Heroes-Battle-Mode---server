@@ -11393,3 +11393,29 @@ Fichiers : `desktop-port/.../dhbackend/jparticle/JavaParticleEngine.java` (Handl
 `launcher-windows/tooling/desktop-port` (cohérence build launcher). **SUITE (affinage)** : câbler le backend Java par
 défaut dans le `run.bat` généré (aujourd'hui via marqueur `~/.dh_particlebackend`) ; comparer la fidélité fine
 effet-par-effet à l'oracle ; couvrir d'autres écrans/effets.
+
+## 2026-09-06 (g299) — Backend particules Java : activé PAR DÉFAUT (run.bat/run.sh généré) + validé sur 2918/2918 effets
+
+Suite g298 (vérif en jeu). Deux compléments demandés par l'utilisateur.
+
+**Validation de TOUS les effets (headless)** : `native/reuse/NpAdapterValidate.java` passe chaque `.np` du jeu
+dans l'adaptateur v3→Java + la simulation (60 frames, sprite factice sans GL) et vérifie que la géométrie est
+finie/bornée. Piège corrigé : les composantes 2/3 de chaque sommet sont des COULEURS bit-packées (float) →
+magnitude quelconque légitime, seules x/y/u/v sont bornées. **Résultat sur les 2918 `.np` du bundle v029 :
+2918 v3, 2918 chargés, 2918 simulés OK, 0 échec** (348 particules simultanées max) → le mapping v3→Java (y
+compris champs incertains scaledB[9-11]/scaledC/scaledD) ne casse sur AUCUN effet. Réponse à « couvrir d'autres
+effets » : je n'avais VU visuellement que ~4 effets (1er combat tuto) ; ce harnais couvre les 2918 headless.
+
+**Activation par défaut** : `BuildManager.RUN_SH_CLIENT`/`RUN_BAT_CLIENT` posent `-Ddh.particlebackend=java`
+par DÉFAUT (override `DH_PARTICLEBACKEND=unidbg`). Justifié par la vérif §8 (rendu + ≈24× FPS) + les 2918/2918.
+⇒ tout bundle généré via le launcher a le backend Java d'office. BuildManager compile dans le contexte exact
+du build release (liste `tools/build_launcher.sh` l.44-53). Copié dans `launcher-windows/tooling/server`.
+
+**Chaîne release vérifiée** : `tools/build_launcher.sh` copie `desktop-port/` du repo → `tooling/desktop-port`
+(l.83, → mes 4 fichiers particules) ET compile `dhlauncher.jar` depuis `server/java/dhlauncher/*.java` (l.44-53,
+→ mon BuildManager). Le workflow `launcher-release.yml` build depuis le commit d'un tag `launcher-v*`. ⇒ mes
+fixes entrent dans la release dès qu'un tag `launcher-v*` est posé sur un commit qui les contient (branche
+`claude/disney-heroes-port-rhhtuj`, actuellement). Aucune release auto n'est déclenchée par un push de branche.
+
+Fichiers : `native/reuse/NpAdapterValidate.java` (nouveau), `server/java/dhlauncher/BuildManager.java` (défaut
+particules dans run.sh/bat), `docs/PARTICLE_REUSE.md` (sections couverture + activation défaut), JOURNAL/MEMORY.
