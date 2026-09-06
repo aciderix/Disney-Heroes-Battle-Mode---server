@@ -11357,3 +11357,39 @@ Fichiers modifiés : `launcher-ui/src/views/Host.tsx` (auto-enregistrement + sé
 `cargo`) → les 2 fixes sont vérifiés au niveau daemon+frontend réels (CDP) mais **PAS ENCORE dans un `.exe` packagé** :
 prochain re-tag CI nécessaire pour que l'util. les ait dans les mains. **SUITE** : capturer le crash du daemon (bug #3),
 puis re-tag+republier, puis retester héberger→compte→jouer EN JEU sur la release packagée corrigée.
+
+## 2026-09-06 (g298) — Backend particules JAVA (réutilisation du ParticleEmitter du jeu) : VÉRIFIÉ EN JEU (§8) + fix clone
+
+Suite du pivot g293-g297 (réutiliser `com.badlogic.gdx.graphics.g2d.ParticleEmitter` du jeu en natif au lieu de
+l'émulation unidbg ARM, cf. `docs/PARTICLE_REUSE.md`). Vérification EN JEU sur CETTE machine Windows, pilotée de
+bout en bout : launcher (CDP WebView2) → serveur local `dh-server-v029` (8080/8081/8082) → compte créé via l'onglet
+Compte → client desktop v029 lancé avec `-Ddh.particlebackend=java` + classes patchées compilées à part et mises
+en tête de classpath (pas de rebuild gradle : `javac` des 4 fichiers contre les jars du bundle, dossier de classes
+prioritaire sur `dhdesktop.jar`).
+
+**Déblocage compte (util. avait raison « normalement ça marche »)** : le mint restait « hors ligne » car le serveur
+SÉLECTIONNÉ dans le launcher était l'entrée DÉMO `203.0.113.1:8082` (IP de doc non routable → « Serveur
+d'authentification injoignable »), pas le local. Sélectionner « Serveur local hébergé » (127.0.0.1) → compte
+`#7164452584429117000` créé/connecté. (Piège de pilotage : la WebView à piloter était masquée par le console du
+daemon ; il fallait minimiser le terminal java.exe.)
+
+**Bug trouvé+corrigé — `Effect_clone` non routé** : `JavaParticleEngine` n'avait pas de `clone()` → le jeu qui
+clone les effets (pooling) tombait sur `UnidbgVM.effectClone(handleJava)` → « Bad handle type: Wanted
+PARTICLE_EFFECT but is actually NONE ». Fix : `Handle.np` mémorise les octets `.np` d'origine ; `clone()` re-parse
+(= `create`) + recopie position/rotation ; `cparticle/Native.Effect_clone` route vers Java sous `jpe()`. Après fix :
+**0 « Bad handle »** en combat.
+
+**Résultat EN JEU (§8)** — capture autoritative = framebuffer client (`build/manual.ppm` via `-Ddh.clickfile`,
+la capture GDI d'écran Windows ne voit PAS la fenêtre GL → blanc trompeur) :
+- Combat tutoriel réel rendu correctement ; VFX de particules visibles (glitch de Vanellope « Lollipop Slam »,
+  aura bleue du creep, impacts). Le `ParticleEmitter` du jeu tourne en natif, zéro émulation.
+- **FPS avant/après, MÊME écran MainScreen, même machine/compte** : unidbg = **8,4 fps** (119 ms/frame, dont
+  **103,7 ms d'émulation ARM = 90 appels/frame**) ; Java = **202 fps** (4,9 ms/frame, **0 appel unidbg**). ≈ **24×**,
+  les 103 ms/frame d'émulation ARM ÉLIMINÉS. En combat chargé (abilities) le backend Java tient ~117 fps. Thèse
+  perf B (goulot = émulation particules) PROUVÉE, fidélité visuelle OK.
+
+Fichiers : `desktop-port/.../dhbackend/jparticle/JavaParticleEngine.java` (Handle.np + clone), `.../cparticle/Native.java`
+(route Effect_clone), `docs/PARTICLE_REUSE.md` (section VÉRIFIÉ EN JEU + tableau FPS). Copie des 2 fichiers dans
+`launcher-windows/tooling/desktop-port` (cohérence build launcher). **SUITE (affinage)** : câbler le backend Java par
+défaut dans le `run.bat` généré (aujourd'hui via marqueur `~/.dh_particlebackend`) ; comparer la fidélité fine
+effet-par-effet à l'oracle ; couvrir d'autres écrans/effets.

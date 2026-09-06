@@ -42,12 +42,31 @@ jeu** → plus rien à décoder.
    `*/vfx/particles-DEFAULT.atlas` comme `TextureAtlas` libGDX GL, ou exposer les régions natives).
 2. **Routage** : ✅ FAIT — `cparticle/Native.java` route les `Effect_*` vers `JavaParticleEngine` quand
    `JavaParticleEngine.enabled()` (= `-Ddh.particlebackend=java` ET un `AtlasResolver` enregistré). Défaut =
-   unidbg (aucune régression si le flag/resolver absent). Reste à enregistrer un `AtlasResolver`
-   (`JavaParticleEngine.setResolver(...)`) côté client/launcher (avec GL) : `spriteFor`/`regionFor(atlasHandle,
-   atlasTag)` — c'est le point (1) ci-dessus (résoudre la région d'atlas).
+   unidbg (aucune régression si le flag/resolver absent). `Effect_clone` DOIT aussi router vers Java
+   (`JavaParticleEngine.clone` = re-parse le `.np` stocké dans le Handle) : le jeu clone les effets pour le
+   pooling ; sans ça → « Bad handle type: Wanted PARTICLE_EFFECT but is actually NONE » (unidbg reçoit un
+   handle Java). ✅ CORRIGÉ (in-game : 0 « Bad handle » après le fix).
 3. **Build** : le moteur est déjà dans l'arbre source desktop-port (compile avec game-logic-framed).
-4. **Vérification EN JEU (§8, obligatoire)** : lancer un combat réel, comparer visuellement à l'unidbg
-   (oracle) et mesurer le FPS (le gain attendu = même levier que spine g257).
+
+## ✅ VÉRIFIÉ EN JEU (§8) — 2026-09-06
+
+Combat tutoriel réel (Ralph/Vanellope/Mme Indestructible vs creeps), client desktop v029 + serveur local
+`dh-server-v029`, backend `-Ddh.particlebackend=java`, GL logiciel (llvmpipe, pire cas). Capture autoritative =
+framebuffer du client (`build/manual.ppm` via `-Ddh.clickfile`), pilotage par taps (`x,y` top-left).
+
+- **Rendu fidèle** : combat complet rendu correctement ; VFX de particules visibles = nuage de glitch de
+  Vanellope (Lollipop Slam), aura bleue scintillante du creep encapuchonné, impacts d'attaque. Le
+  `ParticleEmitter` du jeu tourne en natif sur la JVM, aucune émulation.
+- **FPS avant/après (MÊME écran MainScreen, même machine/compte)** :
+  | backend | FPS | ms/frame | unidbg (émulation ARM) |
+  |---|---|---|---|
+  | unidbg (avant) | 8,4 | 119 ms | 103,7 ms/frame — **90 appels/frame** |
+  | Java (après)   | 202 | 4,9 ms | **0 ms — 0 appel** |
+  → **≈ 24× FPS**, les ~103 ms/frame d'émulation ARM **éliminés** (0 appel unidbg). En combat chargé
+  (VFX d'abilities), le backend Java tient ~117 fps (vs ~8-30 fps unidbg, cf. g185/PERF_PLAN). Thèse prouvée.
+- Reste (affinage) : comparer la fidélité visuelle fine effet par effet à l'oracle unidbg (non bit-exact,
+  RNG RandomXS128 ≠ LCG — attendu) ; valider d'autres écrans/effets ; câbler le backend Java par défaut dans
+  le run.bat généré (aujourd'hui activé par le marqueur `~/.dh_particlebackend`).
 
 ## Notes de fidélité
 

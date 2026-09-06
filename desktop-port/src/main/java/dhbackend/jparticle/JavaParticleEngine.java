@@ -52,6 +52,7 @@ public final class JavaParticleEngine {
         int atlasHandle;
         float x, y, rot;
         TextureRegion region;
+        byte[] np;   // octets .np d'origine -> clone = re-parse (le jeu clone les effets pour le pooling)
     }
 
     // ---- adaptateur .np v3 -> ParticleEmitter du jeu ----
@@ -102,7 +103,7 @@ public final class JavaParticleEngine {
         b=np; pos=0;
         if(np.length<6||np[0]!=0||np[1]!=3) throw new RuntimeException("np: pas v3");
         pos=2; int nE=i32();
-        Handle h=new Handle(); h.atlasHandle=atlasHandle;
+        Handle h=new Handle(); h.atlasHandle=atlasHandle; h.np=np;
         AtlasResolver r=RESOLVER;
         for(int i=0;i<nE;i++){ ParticleEmitter em=readEmitter();
             if(r!=null){
@@ -118,6 +119,13 @@ public final class JavaParticleEngine {
     public synchronized void setPosition(int id,float x,float y){ Handle h=H.get(id); if(h==null) return; h.x=x; h.y=y; for(ParticleEmitter e:h.eff.emitters) e.setPosition(x,y); }
     public synchronized void setRotation(int id,float r){ Handle h=H.get(id); if(h==null) return; h.rot=r; }
     public synchronized void dispose(int id){ H.remove(id); }
+    // Clone (pooling du jeu) : re-parse le .np d'origine dans un nouveau handle, recopie position/rotation.
+    public synchronized int clone(int id){
+        Handle src=H.get(id); if(src==null||src.np==null) return 0;
+        int nid=create(src.np, src.atlasHandle);
+        Handle nh=H.get(nid); if(nh!=null){ nh.x=src.x; nh.y=src.y; nh.rot=src.rot; for(ParticleEmitter e:nh.eff.emitters) e.setPosition(src.x,src.y); }
+        return nid;
+    }
     public synchronized int activeCount(int id){ Handle h=H.get(id); if(h==null) return 0; int n=0; for(ParticleEmitter e:h.eff.emitters) n+=e.getActiveCount(); return n; }
 
     // Remplit verts (6 floats/sommet) + draws (n*3+1 shorts) ; retourne n (draw calls).

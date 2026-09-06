@@ -26,7 +26,7 @@ public class Native {
         if (jpe()) return JavaParticleEngine.get().create(npBytes, atlasHandle);
         return UnidbgVM.get().effectCreate(npBytes, dhbackend.jnispine.AtlasBridge.toUnidbg(atlasHandle));
     }
-    static int Effect_clone(int handle) { return UnidbgVM.get().effectClone(handle); }
+    static int Effect_clone(int handle) { if (jpe()) return JavaParticleEngine.get().clone(handle); return UnidbgVM.get().effectClone(handle); }
     static void Effect_dispose(int handle) { if (jpe()) { JavaParticleEngine.get().dispose(handle); return; } UnidbgVM.get().effectDispose(handle); }
     static int Effect_getVertices(int handle, FloatBuffer verts, ShortBuffer drawCalls) { if (jpe()) return JavaParticleEngine.get().getVertices(handle, verts, drawCalls); return UnidbgVM.get().effectGetVertices(handle, verts, drawCalls); }
     static int Effect_getVerticesAboveZ(int handle, float z, FloatBuffer verts, ShortBuffer drawCalls) { if (jpe()) return JavaParticleEngine.get().getVertices(handle, verts, drawCalls); return UnidbgVM.get().effectGetVerticesAboveZ(handle, z, verts, drawCalls); }
