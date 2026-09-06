@@ -1,5 +1,36 @@
 # JOURNAL — journal détaillé des modifications
 
+## 2026-09-07 (g292) — ⭐ TROUVÉ : la position accumule via un bloc RNG INLINE conditionnel (le tirage 12-vs-13)
+
+En traçant les PC des tirages des 3 émetteurs point identiques : chaque particule = `value`(PC 0x1739c) +
+5 champs Scaled (newLow 0x1636a + newHigh 0x163cc) + 1-2 champs Ranged (0x1636a). Le **12-vs-13** = un
+DERNIER tirage conditionnel. Et surtout, désassemblage de l'accumulation de position (`activateParticles`,
+bloc **0x17b96**) :
+```
+0x17b76: ldr r0,[sp,#0x24]; cbz r0, 0x17be2         ; CONDITION 1 (flag)
+0x17b7e: vcmp [sl]==s16 ; [sl+4]==s18 ; bne 0x17be2 ; CONDITION 2 (position == accumulateur courant ?)
+0x17b96: ... GÉNÈRE 2 RANDOMS INLINE (seed*16807, mask 0x7fffff, |0x3f800000) ...
+0x17ba0: vmul s0,s0,s30      ; s0 = [sl+0xa0] * s30
+0x17bae: vadd s6,s0,s0       ; s6 = 2*s0   (= magnitude de spread)
+0x17bc2: vmov s4,r1 ; s2,r2  ; 2 randoms [1,2)
+0x17bca: s4-=1 ; s2-=1       ; -> randoms [0,1)
+0x17bd2: vnmls s0,s6,s4      ; s0 = ±(s6 * randomX)
+0x17bd6: vnmls s8,s6,s2      ; s8 = ±(s6 * randomY)
+0x17bda: s18 += s8 ; s16 += s0   ; ACCUMULE dans drawY/drawX
+```
+⇒ **La position de spawn reçoit un déplacement ALÉATOIRE `±(spread · random)` par particule**, où
+`spread = [sl+0xa0]·s30·2` et random = tirage inline [0,1). Ce bloc est **CONDITIONNEL** (2 gardes) → c'est LE
+tirage qui varie (12-vs-13) et LA source du spread par-particule (drawY=130/70/-20). `[sl+0xa0]` = un champ
+par-particule (magnitude, prob. velocity ou spawn radius), `s30`≈0.001 (constante pool, cf. g280).
+
+**CE QUE ÇA DÉBLOQUE** : la position n'est PAS `velocity·sin·f` déterministe — c'est `base ± spread·random`
+avec 2 randoms inline générés dans l'accumulation. La formule `f` de g291 = ce random (× spread/velocity).
+**PROCHAINE ÉTAPE** : lire à l'exécution `[sl+0xa0]`, `s30`, et les 2 randoms pour les 3 particules (banc
+g291) → figer `drawX = base + s6·(2·randX-1)?`, `drawY = base + s6·(2·randY-1)?` (déterminer signe/forme
+exacte via vnmls). Puis dans np_sim : générer ces 2 randoms inline au bon moment (le tirage conditionnel) et
+appliquer le déplacement. Attention à reproduire la CONDITION (sinon désync du flux). C'est le dernier
+maillon pour POS NN→0.
+
 ## 2026-09-07 (g291) — Données GROUND-TRUTH de la position de spawn (point) : drawY = velocity·sin(angle)·f, f = facteur par-particule
 
 Mesure directe (hook au store de spawn 0x17c5c) de la position par émetteur + le facteur par-particule
