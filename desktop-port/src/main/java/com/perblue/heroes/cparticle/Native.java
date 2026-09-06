@@ -15,7 +15,7 @@ import java.nio.ShortBuffer;
 public class Native {
     static {
         // g296 : backend particules Java -> enregistre le resolver d'atlas (parse le .atlas, uv ; sprite GL lazy).
-        if ("java".equalsIgnoreCase(System.getProperty("dh.particlebackend")))
+        if (JavaParticleEngine.flagJava())
             try { JavaParticleEngine.setResolver(new dhbackend.jparticle.ParticleAtlasResolver()); } catch (Throwable ignore) {}
     }
     private static boolean jpe() { return JavaParticleEngine.enabled(); }

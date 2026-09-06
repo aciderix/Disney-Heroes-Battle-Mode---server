@@ -21,8 +21,19 @@ import java.util.*;
 public final class JavaParticleEngine {
     private static final JavaParticleEngine INSTANCE = new JavaParticleEngine();
     public static JavaParticleEngine get(){ return INSTANCE; }
-    // Active si -Ddh.particlebackend=java ET un resolver d'atlas a ete enregistre par le client (GL requis).
-    public static boolean enabled(){ return "java".equalsIgnoreCase(System.getProperty("dh.particlebackend")) && RESOLVER != null; }
+    // Toggle du backend Java : propriete -Ddh.particlebackend=java, OU env DH_PARTICLEBACKEND=java, OU fichier
+    // marqueur <user.home>/.dh_particlebackend (contenu "java"). Le fichier permet de basculer sans toucher au
+    // run.bat genere par le launcher (utile pour la verif EN JEU).
+    public static boolean flagJava(){
+        if ("java".equalsIgnoreCase(System.getProperty("dh.particlebackend"))) return true;
+        if ("java".equalsIgnoreCase(System.getenv("DH_PARTICLEBACKEND"))) return true;
+        try { java.io.File f = new java.io.File(System.getProperty("user.home"), ".dh_particlebackend");
+              if (f.isFile()) { String c = new String(java.nio.file.Files.readAllBytes(f.toPath())).trim();
+                  return "java".equalsIgnoreCase(c); } } catch (Throwable ignore) {}
+        return false;
+    }
+    // Active si le toggle est mis ET un resolver d'atlas a ete enregistre (GL requis pour le sprite).
+    public static boolean enabled(){ return flagJava() && RESOLVER != null; }
 
     // Le client (avec contexte GL) fournit le sprite d'atlas + la region pour un (atlasHandle, atlasTag).
     public interface AtlasResolver {

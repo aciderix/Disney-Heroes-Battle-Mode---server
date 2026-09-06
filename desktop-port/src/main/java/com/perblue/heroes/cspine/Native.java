@@ -64,7 +64,7 @@ public class Native {
         // g296 : si le backend particules Java est actif, mémoriser les octets .atlas pour ce handle
         // (le resolver en dérive les régions/uv, cf. ParticleAtlasResolver). Glue, no-op sinon.
         int __h = Atlas_createImpl(a, pma);
-        if ("java".equalsIgnoreCase(System.getProperty("dh.particlebackend")))
+        if (dhbackend.jparticle.JavaParticleEngine.flagJava())
             try { dhbackend.jparticle.ParticleAtlasResolver.registerAtlasBytes(__h, a); } catch (Throwable ignore) {}
         return __h;
     }
@@ -84,7 +84,7 @@ public class Native {
     }
     static void Atlas_dispose(int h) {
         p("Atlas_dispose");
-        if ("java".equalsIgnoreCase(System.getProperty("dh.particlebackend")))
+        if (dhbackend.jparticle.JavaParticleEngine.flagJava())
             try { dhbackend.jparticle.ParticleAtlasResolver.unregister(h); } catch (Throwable ignore) {}
         if (CMP) { CB.Atlas_dispose(h); return; }
         if (JNI) {
