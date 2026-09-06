@@ -83,21 +83,24 @@ static void consume_ranged(const NpRanged* r) { (void)ranged_newLow(r, 0); }
 /* g287 : ORDRE DE TIRAGE FIDÈLE à ParticleEmitter::restart() (game.jar, cf. JOURNAL g285/g286). Chaque champ
  * tire dans CET ordre pour consommer la RNG EXACTEMENT comme le natif (sinon désync du flux, cf. g284). */
 static void restart(NpEmitterRuntime* e) {
+    /* g290 : la trace newLowValue (g286) montre 2 tirages PAR CHAMP en restart (même les Ranged) → tirer 2×
+     * partout pour aligner le flux (mesuré : natif ~236 après start, ~19.7/émetteur). */
     e->delay = e->def.delay.active ? ranged_newLow(&e->def.delay, 0) : 0;  /* delay (gated) -- 0x0 */
-    e->duration = ranged_newLow(&e->def.duration, 0);                  /* duration -- 0x38 (Ranged) */
-    e->emission = (int)ranged_newLow((const NpRanged*)F_EMISSION, 0);  /* emission -- 0x70 (scaledA[0]) */
+    if (e->def.delay.active) (void)rng_next();
+    e->duration = ranged_newLow(&e->def.duration, 0); (void)rng_next();     /* duration -- 0x38 (2×) */
+    e->emission = (int)ranged_newLow((const NpRanged*)F_EMISSION, 0);       /* emission -- 0x70 */
     e->emissionDiff = (int)scaled_newHigh(F_EMISSION, 0) - e->emission;
-    e->life = (int)ranged_newLow((const NpRanged*)F_LIFE, 0);          /* life -- 0x48 (scaledA[1]) */
+    e->life = (int)ranged_newLow((const NpRanged*)F_LIFE, 0);               /* life -- 0x48 */
     e->lifeDiff = (int)scaled_newHigh(F_LIFE, 0) - e->life;
-    if (e->def.scaledA[2].low.active) consume_scaled(&e->def.scaledA[2]); /* lifeOffset -- 0x10 (gated) */
-    e->spawnWidth = ranged_newLow((const NpRanged*)&e->def.scaledB[0], 0);   /* spawnWidth  -- 0x290 */
+    if (e->def.scaledA[2].low.active) consume_scaled(&e->def.scaledA[2]);   /* lifeOffset -- 0x10 (gated, 2×) */
+    e->spawnWidth = ranged_newLow((const NpRanged*)&e->def.scaledB[0], 0);   /* spawnWidth  -- 0x290 (2×) */
     e->spawnWidthDiff = scaled_newHigh(&e->def.scaledB[0], 0) - e->spawnWidth;
-    e->spawnHeight = ranged_newLow((const NpRanged*)&e->def.scaledB[1], 0);  /* spawnHeight -- 0x2b8 */
+    e->spawnHeight = ranged_newLow((const NpRanged*)&e->def.scaledB[1], 0);  /* spawnHeight -- 0x2b8 (2×) */
     e->spawnHeightDiff = scaled_newHigh(&e->def.scaledB[1], 0) - e->spawnHeight;
-    consume_scaled(&e->def.scaledB[11]);  /* centripetalRadius -- 0x2f0 (Scaled en v3) */
-    consume_ranged(&e->def.rangedC[0]);   /* centripetalForce  -- 0x318 (Ranged en v3) */
-    consume_scaled(&e->def.scaledC[1]);   /* tangentialRadius  -- 0x350 (Scaled en v3) */
-    consume_ranged(&e->def.rangedC[1]);   /* tangentialForce   -- 0x378 (Ranged en v3) */
+    consume_scaled(&e->def.scaledB[11]);  /* centripetalRadius -- 0x2f0 (2×) */
+    consume_ranged(&e->def.rangedC[0]); (void)rng_next();  /* centripetalForce -- 0x318 (2×) */
+    consume_scaled(&e->def.scaledC[1]);   /* tangentialRadius  -- 0x350 (2×) */
+    consume_ranged(&e->def.rangedC[1]); (void)rng_next();  /* tangentialForce  -- 0x378 (2×) */
     e->durationTimer = 0;
     e->delayTimer = 0;
     e->emissionDelta = 0;
@@ -324,8 +327,10 @@ void np_sim_run_frames(const unsigned char* npData, int npLen, int nframes, floa
     int ne = eff->emitterCount;
     NpEmitterRuntime* ems = calloc(ne, sizeof(NpEmitterRuntime));
     for (int i = 0; i < ne; i++) np_sim_start(&ems[i], &eff->emitters[i]);
+    if (getenv("NP_DBG_RNG")) fprintf(stderr, "== apres start (restart x%d) : %d tirages [natif ~236 avant 1er spawn] ==\n", ne, g_dbgCount);
     for (int f = 0; f < nframes; f++) {
         for (int i = 0; i < ne; i++) np_sim_update(&ems[i], dt);
+        if (f == 0 && getenv("NP_DBG_RNG")) fprintf(stderr, "== apres frame 0 : %d tirages [natif 342] ==\n", g_dbgCount);
         int total = 0;
         for (int i = 0; i < ne; i++) total += ems[i].activeCount;
         outVertCounts[f] = total * 4;

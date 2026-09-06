@@ -1,5 +1,25 @@
 # JOURNAL — journal détaillé des modifications
 
+## 2026-09-06 (g290) — Compte de tirages RNG rapproché du natif (222/369 vs 236/342) — repères de comptage ajoutés
+
+Ajout de repères (np_sim_run_frames, guardés NP_DBG_RNG) : tirages après start (restart×12) et après frame 0,
+comparés au natif (236 avant 1er spawn / 342 frame 0). Diagnostic : ma sim faisait 183/330 → **sous-conso en
+restart**. Correctif g290 : chaque champ de restart tire **2× même les Ranged** (duration, centripetalForce,
+tangentialForce) — cohérent avec la trace newLowValue (20 appels/émetteur = 10 champs × 2). Résultat : **222
+après start (natif 236), 369 frame 0 (natif 342)** — nettement plus proche. Comptes de particules TOUJOURS
+EXACTS (9,9,9,3,1).
+
+Écart résiduel (~14 en start, ~27 frame0) = nuances de GATING par-émetteur (lifeOffset actif pour certains
+émetteurs seulement ; gating de wind/gravity/tangential/centripetal en activate). Non bloquant pour la suite :
+la RNG est maintenant assez alignée pour attaquer la position. **Le blocage des POSITIONS reste l'accumulation
+de force au spawn NON IMPLÉMENTÉE** (activateParticles 0x179da) — les émetteurs point spawnent à l'origine
+dans ma sim alors que le natif y applique Σforce·dir avec un facteur par-particule.
+
+**PROCHAINE ÉTAPE** : (1) affiner le gating pour matcher 236/342 exactement (vérifier les flags active de
+lifeOffset et des champs de force par-émetteur vs le natif) ; (2) implémenter l'accumulation de position au
+spawn (drawX/Y = Σ force·dir·facteur, cf. g273-275) — c'est LE maillon pour POS NN→0. État : RNG consumption
+proche + fidèle, mapping corrigé, tout non-régressif.
+
 ## 2026-09-06 (g289) — Valeur partagée RESTAURÉE (bytecode 108) + spawn-shape implémenté + spread point localisé
 
 **Correction de g288** : le bytecode `activateParticle` fait `MathUtils.random()` au tout début (offset 108 →
