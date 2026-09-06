@@ -29,6 +29,7 @@ typedef struct {
     float delay, delayTimer;
     int firstUpdate, continuous;
     float x, y, rotationEmitter;
+    float spawnWidth, spawnWidthDiff, spawnHeight, spawnHeightDiff;   /* g288 : tirés en restart, spawn position */
 } NpEmitterRuntime;
 
 void np_sim_start(NpEmitterRuntime* em, NpEmitter* def);

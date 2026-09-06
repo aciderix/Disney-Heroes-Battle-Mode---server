@@ -90,8 +90,10 @@ static void restart(NpEmitterRuntime* e) {
     e->life = (int)ranged_newLow((const NpRanged*)F_LIFE, 0);          /* life -- 0x48 (scaledA[1]) */
     e->lifeDiff = (int)scaled_newHigh(F_LIFE, 0) - e->life;
     if (e->def.scaledA[2].low.active) consume_scaled(&e->def.scaledA[2]); /* lifeOffset -- 0x10 (gated) */
-    consume_scaled(&e->def.scaledB[0]);   /* spawnWidth  -- 0x290 */
-    consume_scaled(&e->def.scaledB[1]);   /* spawnHeight -- 0x2b8 */
+    e->spawnWidth = ranged_newLow((const NpRanged*)&e->def.scaledB[0], 0);   /* spawnWidth  -- 0x290 */
+    e->spawnWidthDiff = scaled_newHigh(&e->def.scaledB[0], 0) - e->spawnWidth;
+    e->spawnHeight = ranged_newLow((const NpRanged*)&e->def.scaledB[1], 0);  /* spawnHeight -- 0x2b8 */
+    e->spawnHeightDiff = scaled_newHigh(&e->def.scaledB[1], 0) - e->spawnHeight;
     consume_scaled(&e->def.scaledB[11]);  /* centripetalRadius -- 0x2f0 (Scaled en v3) */
     consume_ranged(&e->def.rangedC[0]);   /* centripetalForce  -- 0x318 (Ranged en v3) */
     consume_scaled(&e->def.scaledC[1]);   /* tangentialRadius  -- 0x350 (Scaled en v3) */
@@ -106,7 +108,7 @@ void np_sim_start(NpEmitterRuntime* e, NpEmitter* def) {
     e->def = *def;
     if (g_dbgStart < 0) g_dbgStart = getenv("NP_DBG_START") ? 1 : 0;
     if (g_dbgStart && g_startN < 12) {
-        fprintf(stderr, "[emit %d] scaledA hi: ", g_startN);
+        fprintf(stderr, "[emit %d] spawnShape.code=%d | scaledA hi: ", g_startN, def->spawnShape.code);
         for (int k=0;k<6;k++) fprintf(stderr,"%.0f%c ", def->scaledA[k].highMax, def->scaledA[k].low.active?'*':' ');
         fprintf(stderr, "| scaledB hi: ");
         for (int k=0;k<12;k++) fprintf(stderr,"%.0f%c ", def->scaledB[k].highMax, def->scaledB[k].low.active?'*':' ');
@@ -140,10 +142,9 @@ static void activateParticle(NpEmitterRuntime* e, int index) {
     if (life < 1) life = 1;
     p->life = life; p->currentLife = life;
 
-    /* g287 : PAS de tirage partagé ici (game.jar activateParticle n'en fait pas ; les flags lowUsesLinkedRange
-     * sont FALSE -> chaque champ tire son propre random). `value` = valeur liée passée à newLow/newHigh, non
-     * utilisée quand le flag est FALSE. */
-    float value = 0.0f;
+    /* g288-corr : game.jar activateParticle TIRE une valeur partagée au début (bytecode 108 : MathUtils.random()
+     * -> Java local 6), passée comme `value` liée à newLow/newHigh. RESTAURÉ (g288 l'avait retirée à tort). */
+    float value = rng_next();
 
     /* velocity (active-gated) */
     if (F_VELOCITY->low.active) {
@@ -189,11 +190,30 @@ static void activateParticle(NpEmitterRuntime* e, int index) {
     ACT(F_WIND) ACT(F_GRAVITY) ACT(F_TANGENTIAL) ACT(F_CENTRIPETAL) ACT(F_BROWNIAN)
     #undef ACT
 
-    /* g287 : game.jar activateParticle NE tire PAS transparency/xOffset/yOffset ici (cf. JOURNAL g285). La
-     * transparency est gérée ailleurs ; la position de spawn vient de spawnWidth/spawnHeight+spawnShape (tirés
-     * en restart) -> À IMPLÉMENTER. En attendant : transparency=1, spawn à l'origine émetteur. */
     p->transparency = 1.0f; p->transparencyDiff = 0.0f;
-    p->drawX = e->x; p->drawY = e->y;
+
+    /* g288 : POSITION DE SPAWN (game.jar activateParticle, après brownian). Dimensions = spawnWidth/Height
+     * (tirés en restart) + diff*getScale(pct). Puis selon spawnShape.code : point(0)=centre ; square(2)=
+     * rectangle uniforme (2 randoms) ; line(1)/ellipse(3) = variantes. random() = rng_next() [0,1). */
+    float spawnW = e->spawnWidth + e->spawnWidthDiff * scaled_getScale(&e->def.scaledB[0], pool, pct);
+    float spawnH = e->spawnHeight + e->spawnHeightDiff * scaled_getScale(&e->def.scaledB[1], pool, pct);
+    float px = 0, py = 0;
+    switch (e->def.spawnShape.code) {
+        case 2:  /* square : rectangle uniforme */
+            px = spawnW * (rng_next() - 0.5f);
+            py = spawnH * (rng_next() - 0.5f);
+            break;
+        case 1:  /* line */
+            { float t = rng_next(); px = spawnW * t; py = spawnH * t; }
+            break;
+        case 3:  /* ellipse (simplifié : à raffiner) */
+            { float a = rng_next() * 6.2831853f; float r = rng_next();
+              px = spawnW * 0.5f * r * cosDeg(a * 57.29578f); py = spawnH * 0.5f * r * sinDeg(a * 57.29578f); }
+            break;
+        default: /* point (0) : pas de tirage */
+            break;
+    }
+    p->drawX = e->x + px; p->drawY = e->y + py;
 }
 
 void np_sim_add(NpEmitterRuntime* e, int count) {

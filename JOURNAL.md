@@ -1,5 +1,28 @@
 # JOURNAL — journal détaillé des modifications
 
+## 2026-09-06 (g289) — Valeur partagée RESTAURÉE (bytecode 108) + spawn-shape implémenté + spread point localisé
+
+**Correction de g288** : le bytecode `activateParticle` fait `MathUtils.random()` au tout début (offset 108 →
+Java local 6) = la valeur partagée « linked », passée à tous les newLow/newHigh. g288 l'avait retirée à tort.
+**RESTAURÉ** (`float value = rng_next()`). Tirages 375→**387**, comptes toujours EXACTS (9,9,9,3,1).
+
+**Position de spawn implémentée** (np_sim) : stockage spawnWidth/spawnHeight en restart ; dans activateParticle,
+switch sur `spawnShape.code` (point=0 : centre ; square=2 : rectangle uniforme 2 randoms ; line=1 ; ellipse=3).
+Correct pour les fichiers à forme square/ellipse. **MAIS pour ralph : tous les émetteurs sont code=0 (point) et
+spawnWidth/Height=0** → aucun spread via la forme de spawn. Pourtant l'oracle spread (drawY=130/70/-20 sur 3
+émetteurs identiques, g283).
+
+**⇒ LE SPREAD DES ÉMETTEURS POINT vient de l'ACCUMULATION DE FORCES au spawn** (`activateParticles` 0x179da,
+décodée g273-g275 : `drawX/Y = Σ (force·direction)` avec vnmls), PAS de la forme de spawn. Or les champs sont
+constants (velocity=500/500, angle=90/90) → la variation 130/70/-20 doit venir d'un TIRAGE dans cette
+accumulation (un facteur temps/random par-particule appliqué à la vitesse). C'est le dernier maillon.
+
+**PROCHAINE ÉTAPE** : décoder l'accumulation de position d'`activateParticles` 0x179da AVEC la RNG maintenant
+synchronisée — quel random (parmi les tirages du particule) module drawX/Y. Réimplémenter cette accumulation
+dans np_sim (drawX/Y = Σ force·dir·facteur au spawn) au lieu du switch spawn-shape pour les émetteurs point.
+Vérifier POS NN→0. **État : RNG consumption fidèle (restart+activate+valeur partagée), mapping corrigé, tout
+non-régressif (comptes exacts) ; reste l'accumulation de position au spawn.**
+
 ## 2026-09-06 (g288) — FIX activateParticle() : mapping corrigé + tirages fidèles (parasites retirés) — non-régressif
 
 Suite g287. `activateParticle()` réécrit : (1) macros F_* corrigées (sizeX=scaledB[2], sizeY=scaledB[3],
