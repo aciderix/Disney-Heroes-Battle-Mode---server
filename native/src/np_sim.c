@@ -216,6 +216,9 @@ static void activateParticle(NpEmitterRuntime* e, int index) {
         default: /* point (0) : pas de tirage */
             break;
     }
+    /* g292 : les émetteurs point reçoivent au spawn un déplacement basé sur velocity·direction avec un facteur
+     * par-particule (mesuré g291, table value↔f) issu de la boucle d'accumulation SoA (activateParticles). La
+     * formule exacte (getScale(value) ? autre) reste à figer par single-step -> spawn laissé à l'origine. */
     p->drawX = e->x + px; p->drawY = e->y + py;
 }
 
