@@ -363,7 +363,7 @@ public final class LoginServer {
                   System.out.println("[login]     ! persistance échouée: " + e); }
                 System.out.println("[login] ==> LootResults : coffre " + bc.chestType
                     + " -> " + lr.heroesUnlocked.size() + " héros débloqué(s), joueur en possède "
-                    + user.heroCount() + " [persisté]");
+                    + user.heroCount() + " [persisté] (wasFree=" + lr.wasFree + ")");
               } catch (Throwable t) {
                 // ClientErrorCodeException (checkée, non déclarée throws par dex2jar) = REFUS anti-triche
                 // (validateChestPurchase) : ouverture illégitime (coffre gratuit hors cooldown & pas de monnaie,
@@ -372,6 +372,32 @@ public final class LoginServer {
                 if (t instanceof com.perblue.heroes.ClientErrorCodeException) {
                   System.out.println("[login]     ⛔ BuyChests REFUSÉ (anti-triche) : " + t.getMessage()
                       + " — aucun coffre accordé");
+                  // FIX (bug coffres tuto) : l'ouverture passe par le canal SERVER ROLL — le client attend un
+                  // LootResults dont le champ `roll` (ServerRollResponse) correspond à sa ServerRollRequest
+                  // (BuyChests.roll). Sur SUCCÈS, ServerUser.openChest pose lr.roll{rollId,channel}. Sur REFUS,
+                  // il n'envoyait RIEN → le client restait bloqué sur « Waiting for results ». On renvoie donc un
+                  // LootResults « vide » dont roll.error porte le ClientErrorCode : le client ferme l'overlay du
+                  // roll et affiche l'erreur (ex. « pas assez de diamants »). C'est le champ prévu pour ça
+                  // (ServerRollResponse.error : ErrorResponse). Un ErrorResponse NU (hors roll) était ignoré.
+                  try {
+                    BuyChests bcErr = (BuyChests) m;
+                    LootResults errLr = new LootResults();
+                    com.perblue.heroes.network.messages.ServerRollResponse rr =
+                        new com.perblue.heroes.network.messages.ServerRollResponse();
+                    if (bcErr.roll != null) { rr.rollId = bcErr.roll.rollId; rr.channel = bcErr.roll.channel; }
+                    com.perblue.heroes.network.messages.ErrorResponse er =
+                        new com.perblue.heroes.network.messages.ErrorResponse();
+                    er.errorType = com.perblue.heroes.network.messages.ErrorType.DEFAULT;
+                    er.forceShowMessage = true;
+                    com.perblue.heroes.util.localization.ClientErrorCode code =
+                        ((com.perblue.heroes.ClientErrorCodeException) t).getErrorCode();
+                    er.errorMessage = code != null ? code.name() : "ERROR";
+                    rr.error = er;
+                    errLr.roll = rr;
+                    errLr.setAsReplyTo(m);
+                    c.send(errLr);
+                    System.out.println("[login]     ↳ ServerRoll error renvoyé au client (roll.error=" + er.errorMessage + ")");
+                  } catch (Throwable e2) { System.out.println("[login]     ! envoi erreur roll échoué: " + e2); }
                 } else {
                   System.out.println("[login]     ! openChest échec: " + t);
                   t.printStackTrace();
