@@ -1641,6 +1641,17 @@ public final class ServerUser {
    * {@link LootResults} à envoyer au client. Les champs gardés hors {@code this.extra} (héros,
    * {@code chestUpgradeXP}) sont re-synchronisés dans le wire.
    */
+  /** Ajoute un coût de ressource à {@code lr.costs} (RewardDrop resourceType+quantity) pour que le CLIENT le DÉBITE
+   *  (ChestHelper.chargeForCompletedChest itère costs → chargeUser). Utilisé pour refléter conso free / achat. */
+  @SuppressWarnings("unchecked")
+  private static void addCost(LootResults lr, com.perblue.heroes.network.messages.ResourceType rt, long qty) {
+    if (rt == null || qty <= 0) return;
+    com.perblue.heroes.network.messages.RewardDrop d = new com.perblue.heroes.network.messages.RewardDrop();
+    d.resourceType = rt; d.quantity = qty;
+    if (lr.costs == null) lr.costs = new java.util.ArrayList();
+    lr.costs.add(d);
+  }
+
   @SuppressWarnings("unchecked")
   public synchronized LootResults openChest(BuyChests m) throws com.perblue.heroes.ClientErrorCodeException {
     ServerContext.init();
@@ -1795,6 +1806,12 @@ public final class ServerUser {
       if (fr != null && fr != com.perblue.heroes.network.messages.ResourceType.DEFAULT) {
         long cur = user.getResource(fr);
         user.setResource(fr, Math.max(0, cur - count), "free chest consumed");
+        // FIX (désync d'affichage « FREE NOW » mid-session) : REFLÉTER la conso au CLIENT via lr.costs. Le client
+        // (ChestHelper.applyChestResults → chargeForCompletedChest) DÉBITE ses ressources en itérant LootResults.costs
+        // (RewardHelper.chargeUser par RewardDrop). Sans entrée de coût, il ne décrémente PAS sa ressource de coffre
+        // gratuit → hasFreeChest reste vrai → le bouton reste « FREE NOW » jusqu'au re-login. On ajoute donc le coût
+        // (ressource free consommée) pour que le client passe le bouton en « Free in: 23h » dès l'ouverture. §3/§4.
+        addCost(lr, fr, count);
       }
     } else {
       // COFFRE PAYANT : DÉBITER la monnaie (fidélité + économie autoritative). validateChestPurchase (ci-dessus)
@@ -1809,6 +1826,7 @@ public final class ServerUser {
       if (cur != null && cur != com.perblue.heroes.network.messages.ResourceType.DEFAULT && cost > 0) {
         user.setResource(cur, Math.max(0, user.getResource(cur) - cost), "chest purchase");
         System.out.println("[chest] coffre PAYANT " + type + " x" + count + " : -" + cost + " " + cur);
+        addCost(lr, cur, cost);   // idem free : le client débite la monnaie via lr.costs (sinon pas de déduction client)
       }
     }
 
