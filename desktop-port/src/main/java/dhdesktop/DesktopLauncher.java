@@ -307,6 +307,20 @@ public final class DesktopLauncher {
                     TutorialDriver.dumpScreen(game);
                     continue;
                 }
+                if (low.startsWith("zstack ")) {                 // zstack x,y — pile d'acteurs (overlay/z-order) sous un point ÉCRAN
+                    String[] z = ln.substring(7).trim().split("[,;\\s]+");
+                    if (z.length >= 2) TutorialDriver.zStack(game,
+                        Integer.parseInt(z[0].trim()), Integer.parseInt(z[1].trim()));
+                    continue;
+                }
+                if (low.equals("ffpress")) {                     // ffpress — presser ⏩ par l'API jeu (test dispatch vs input)
+                    TutorialDriver.ffPress(game);
+                    continue;
+                }
+                if (low.equals("tutostate")) {                   // tutostate — état pause combat + tuto actif + pointeurs
+                    TutorialDriver.tutoState(game);
+                    continue;
+                }
                 if (low.startsWith("enterlevel ")) {             // enterlevel ch,lvl — ouvrir l'aperçu d'un niveau (API du jeu)
                     String[] e = ln.substring(11).trim().split("[,;\\s]+");
                     if (e.length >= 2) TutorialDriver.enterLevel(game,

@@ -15,6 +15,91 @@ extraction des sommets ; (d) router `com.perblue.heroes.cparticle.Native` (aujou
 moteur Java. Résultat attendu : particules fidèles (code du jeu), rapides (JVM/JIT), zéro émulation, zéro
 formule devinée. Vérif EN JEU (visuel + FPS). np_sim.c reste comme doc de format ; il n'est plus la voie.
 
+## 2026-09-07 (g295) — ⭐ CAUSE RACINE du gel de combat TROUVÉE + fix source : backend spine JNI rapporte le mauvais id d'événement d'animation
+
+**⚠️ SUPERSEDE g294** : l'hypothèse « pause du tuto FastForward » de g294 était FAUSSE (mesuré : `combatPauseCount=0`,
+FastForward `completed=true`, aucun pointeur/overlay tuto). La vraie cause est plus bas, dans le portage spine.
+
+**Méthode (§8, instrumentation runtime)** : commandes clickfile DEV ajoutées à `TutorialDriver`/`DesktopLauncher`
+(`tutostate`, `ffpress`, `zstack`) — introspection réflexion de l'écran de combat + IA + SimActions + spine. Cycle
+recompile `dhdesktop.jar` (javac release + `jar uf`, script `scratchpad/rebuild_client.sh`) → relance client sur le
+compte 9999 → `nav CAMPAIGN`/`enterlevel 1,1`/`fire` (FIGHT preview 1011,648 + chooser 1135,543) → combat 1-1.
+
+**CHAÎNE DE FAITS (tous mesurés en jeu)** :
+1. Combat = REPLAY : `ReplayPlayer.update` → `Scene.update(J,Z)` (sim à pas fixe) + `finishEntrance` + `doCombatUpdate`.
+   `combatTimeSec` AVANCE (sim tourne), `combatPauseCount=0`, `ReplayPlayer.paused=false`, `playSpeed=1`, `getDevSpeed=1`.
+2. **Unités JOUEUR (team=1) inertes** (`action=null`, position figée) ; **ennemi (team=2) agit** (bouge, BasicAttack).
+   Pas les particules (testé unidbg particles = idem), pas l'auto-attack (autoAttack=true = idem), pas d'IdleAIBuff,
+   abilities présentes des 2 côtés (BasicAttack), MÊME IA `BasicCombatUnitAI`, `currAIMode=COMBAT`, `ONLY_IDLE_AI=false`.
+3. `AIHelper.onIdle` (fin d'`Entity.update`) n'enfile une action QUE si la file de SimAction est vide. **Les héros sont
+   bloqués sur une `AnimateAction` `animType=entrance`/`entrance_loop`, `duration=-1` (= complétion PAR CALLBACK natif
+   uniquement), `invocationId` figé (1/2)** → file jamais vide → `onIdle` jamais appelé → inertes → timeout → LOSS.
+4. **`-Ddh.spinebackend=unidbg` → LE COMBAT MARCHE** : entrée terminée (invocationId 1→7), héros combattent, ennemi
+   `hit`→`death`, `scene.state=STAGE_FINISHED` (VICTOIRE). Donc bug SPÉCIFIQUE au backend **jni** (`libhostspine64.dll`).
+
+**CAUSE RACINE (bytecode jeu + `native/src/cspine_jni.c`)** : l'`AnimateAction` complète via le callback
+`AnimationStateListener.complete(int)`. Schéma d'id du jeu (`NativeAnimationState`) :
+`setAnimation()` renvoie `Native.AnimationState_setAnimation(...) + eventIDOffset` = **seq d'instance** (compteur 1,2,3…
+par animState) stocké comme `invocationId` ; `broadcastComplete()` appelle `complete(eventTemp[1] + eventIDOffset)`.
+**MAIS** le listener natif `_dhAnimListener` (cspine_jni.c) empilait **`entry->trackIndex`** comme `eventTemp[1]`, pas
+le seq → `complete` ne matche l'`AnimateAction` que si `trackIndex == seq` (coïncidence) → l'anim d'entrée (seq≥1 sur
+track 0) n'est jamais marquée complète. L'oracle unidbg (vrai natif PerBlue) porte le seq d'instance dans l'event → OK.
+
+**FIX APPLIQUÉ (source, `native/src/cspine_jni.c`, NON committé — build natif requis + vérif §8)** :
+`setAnimation`/`addAnimation` capturent le `spTrackEntry*` et posent `te->userData = (void*)(intptr_t)seq` ; le
+`_dhAnimListener` rapporte `(int)(intptr_t)entry->userData` (le seq) au lieu de `entry->trackIndex`. `spTrackEntry` a
+bien `userData`/`rendererObject` libres (spine-c 3.6). Symétrie `eventIDOffset` préservée (appliqué des 2 côtés).
+
+**BLOCAGE BUILD** : aucune toolchain C sur cette machine (`x86_64-w64-mingw32-gcc`/gcc/clang absents ; pas de msys64).
+`native/build-hostspine-win.sh` exige MinGW → **`libhostspine64.dll` non recompilable ici**. Options : (a) INTERIM =
+défaut spine `unidbg` (combat OK, plus lent) ; (b) installer MinGW ; (c) build via CI/release. Vérif EN JEU obligatoire
+après build (le combat 1-1 doit se jouer et se GAGNER sans auto, comme sous unidbg).
+
+## 2026-09-07 (g294) — DIAGNOSTIC : gel du PREMIER combat de campagne (tuto FastForward) — mécanisme identifié, locus du fix à trancher
+
+**Symptôme (utilisateur + repro en jeu)** : le tout premier combat de campagne (compte frais, en tuto) se
+**fige** — les persos ne bougent pas, le combat se solde par une **DÉFAITE** (timeout). Bouton ⏩ en
+surbrillance mais aucune consigne visible ; cliquer dessus ne fait rien.
+
+**FAITS établis cette session (release v0.2.11 lancée via launcher, compte 9999999999999999)** :
+- **22 s sans input → 0 mouvement** de la zone basse des unités (diff PIL = None), seul le haut change
+  (respiration spine idle = rendu delta, pas la sim). **0 exception**, **0 message** serveur (juste PerfReport).
+- **`auto` (setAutoAttack) débloque** : les unités se battent → **le moteur de combat est SAIN**, il est juste
+  en pause. (⚠️ AUTO n'est pas le défaut du vrai jeu → pas un fix, juste un discriminant.)
+- Serveur : `CampaignAttack NORMAL 1-1 outcome=LOSS` reçu (×2). Tuto serveur : INTRO_FEATURES→step 29 puis
+  HERO_FILTERS→step 1 (ma navigation `enterlevel` hors séquence a mélangé l'état — à refaire proprement).
+
+**MÉCANISME (prouvé au BYTECODE, `libs/game-logic.jar`, §8)** :
+- `FastForwardActV1` (tuto du 1ᵉʳ combat) : dispatch **`PauseCombatEvent`** (fige la sim) sur une étape, et ne
+  dispatch **`ResumeCombatEvent`** que sur réception de la transition **`BUTTON_PRESSED`** portant
+  `UIComponentName.FAST_FORWARD_BUTTON`. Utilise `TutorialFlag.PREVENT_NEXT_COMBAT_STAGE`.
+- La transition `BUTTON_PRESSED` est émise par **`CombatHUD$4`** (listener du bouton ⏩) →
+  `TutorialTransitionEvent.fireButtonPress(Actor)` → `Gdx.app.getApplicationListener()` cast `GameMain` →
+  crée l'event `BUTTON_PRESSED{FAST_FORWARD_BUTTON}` (via `addData(actor.getTutorialName())`) →
+  `EventHelper.dispatchEvent`. (7 classes seulement appellent `fireButtonPress` ; CombatHUD$4/$5 = ⏩ et AUTO.)
+- Donc : **1ᵉʳ combat = pause volontaire du tuto, relancée UNIQUEMENT par l'appui ⏩. Sur le port, l'appui
+  n'aboutit pas → jamais de ResumeCombatEvent → gel permanent → timeout → LOSS.** Comportement NORMAL du jeu
+  côté serveur (les shims serveur chest/campaign/guild sont vérifiés en jeu) ; **problème plateforme côté port**.
+
+**INCERTITUDE RESTANTE (à trancher avant de coder, §8)** — pourquoi l'appui ⏩ n'aboutit pas :
+- (A) **overlay qui absorbe le tap** : un hit-test `Stage.hit` au centre du bouton ⏩ (stage 78,107) a retourné
+  un **`ItemIconTooltip`** (`WidgetGroup`, couche d'icône d'objet, `listeners=[]`) EN DESSUS du bouton →
+  le tap n'atteint jamais `CombatHUD$4` → pas de `fireButtonPress`. **MAIS** ce tooltip peut être un artefact
+  de ma navigation désordonnée (tuto d'équip du BADGE_OF_FRIENDSHIP sur Frozone) — à confirmer sur repro propre.
+- (B) `fireButtonPress`/dispatch échoue (ex. cast `getApplicationListener`→GameMain). Peu probable (le port
+  câble `Gdx.app=DhApplication`, `getApplicationListener()=GameMain` ; animations OK = delta OK).
+
+**TEST DÉCISIF (À FAIRE)** : instrumentation minimale client (logguer Pause/ResumeCombatEvent + BUTTON_PRESSED
++ commande `zstack x,y` = pile d'acteurs sous le point avec flags touchable/visible ; commande `ffpress` =
+`fireButtonPress` sur le bouton ⏩ trouvé par nom, chemin API réel), puis repro PROPRE (compte frais, séquence
+tuto naturelle). Si `ffpress` relance le combat → cause = (A) livraison de l'input (overlay/z-order). Sinon →
+(B) dispatch. Fix = glue plateforme (§1/§2), pas une règle de jeu. Vérif EN JEU obligatoire (§8).
+
+**Outillage de repro** : release extraite `C:\Users\fromt\Desktop\dh-v0.2.11-test\launcher-windows` ; clickfile
+`scratchpad/clickfile_rel.txt` ; ⚠️ **convention `fire x,y` = coords ÉCRAN (haut-gauche), flip interne** →
+pour toucher un acteur listé à `@stage(sx,sy)` par dumpscreen : `fire sx,(720-sy)`. `enterlevel 1,1` +
+`fire 1011,648` (preview FIGHT) + `fire 1135,543` (chooser FIGHT) → CampaignAttackScreen.
+
 ## 2026-09-07 (g293) — ⭐⭐⭐ PIVOT STRATÉGIQUE VALIDÉ : réutiliser le moteur de particules JAVA du jeu (fini la réimplémentation)
 
 **Idée de l'utilisateur** (excellente, §3/§4) : plutôt que réécrire/deviner la simulation en C (np_sim) ou

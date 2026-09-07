@@ -2735,6 +2735,225 @@ public final class TutorialDriver {
         return false;
     }
 
+    /** DEV DIAGNOSTIC (g294) — Z-STACK sous un point ÉCRAN (cx,cy top-left). Pour CHAQUE stage candidat (du plus
+     *  haut au plus bas : aboveBlur si modale, root de l'écran, fenêtre), imprime (a) l'acteur TOP retourné par
+     *  {@code Stage.hit} (= celui qui capte réellement le tap) + sa chaîne d'ancêtres, et (b) TOUS les acteurs
+     *  (visibles ou non, touchables ou non) dont les bornes couvrent le point, en ordre d'arbre (les DERNIERS
+     *  listés sont dessinés AU-DESSUS). Sert à voir si un overlay recouvre un bouton (ex. FAST_FORWARD_BUTTON).
+     *  Pure lecture de la scène — aucune modif jeu. Invoqué via dh.clickfile "zstack x,y". */
+    public static void zStack(GameMain game, int cx, int cy) {
+        try {
+            Object screen = game.getScreenManager().getScreen();
+            List<Stage> stages = new ArrayList<>();
+            try {
+                Object sm = game.getScreenManager();
+                java.lang.reflect.Field f = sm.getClass().getDeclaredField("aboveBlurStage"); f.setAccessible(true);
+                Stage above = (Stage) f.get(sm);
+                if (above != null) stages.add(above);
+            } catch (Throwable ignore) {}
+            try { Group root = (Group) screen.getClass().getMethod("getRootStack").invoke(screen);
+                  if (root != null && root.getStage() != null && !stages.contains(root.getStage())) stages.add(root.getStage()); } catch (Throwable ignore) {}
+            System.out.println("[zstack] point écran(" + cx + "," + cy + ") — " + stages.size() + " stage(s)");
+            for (int si = 0; si < stages.size(); si++) {
+                Stage s = stages.get(si);
+                Vector2 p = s.screenToStageCoordinates(new Vector2(cx, cy));
+                Actor top = s.hit(p.x, p.y, true);
+                System.out.println("[zstack] stage#" + si + " stageCoords(" + (int) p.x + "," + (int) p.y
+                    + ") TOP-hit(touchable)=" + describeZ(top));
+                if (top != null) {
+                    StringBuilder chain = new StringBuilder();
+                    int d = 0;
+                    for (Actor a = top; a != null && d < 8; a = a.getParent(), d++)
+                        chain.append("\n[zstack]     ↑ ").append(describeZ(a));
+                    System.out.println("[zstack]   chaîne ancêtres:" + chain);
+                }
+                List<String> covering = new ArrayList<>();
+                coveringActors(s.getRoot(), p.x, p.y, covering, 0);
+                System.out.println("[zstack]   acteurs couvrant le point (ordre d'arbre ; DERNIER = au-dessus), "
+                    + covering.size() + " :");
+                for (String c : covering) System.out.println("[zstack]     • " + c);
+            }
+        } catch (Throwable t) { System.out.println("[zstack] échec: " + t); }
+    }
+
+    /** Décrit un acteur pour le diagnostic z-stack (classe, tag tuto, touchable, visible, #listeners, taille). */
+    private static String describeZ(Actor a) {
+        if (a == null) return "null";
+        int nl = a.getListeners() == null ? 0 : a.getListeners().size();
+        return a.getClass().getSimpleName()
+            + (a.getTutorialName() != null ? " tut=" + a.getTutorialName() : "")
+            + " touch=" + a.getTouchable() + " vis=" + a.isVisible()
+            + " listeners=" + nl + " size=" + (int) a.getWidth() + "x" + (int) a.getHeight();
+    }
+
+    /** Collecte récursivement les acteurs dont les bornes locales couvrent le point (px,py en coords stage). */
+    private static void coveringActors(Actor a, float sx, float sy, List<String> out, int depth) {
+        if (a == null || depth > 40) return;
+        Vector2 loc = a.stageToLocalCoordinates(new Vector2(sx, sy));
+        boolean inside = loc.x >= 0 && loc.y >= 0 && loc.x <= a.getWidth() && loc.y <= a.getHeight();
+        if (inside && a.getWidth() > 0 && a.getHeight() > 0) {
+            StringBuilder ind = new StringBuilder();
+            for (int i = 0; i < depth; i++) ind.append(' ');
+            out.add(ind + describeZ(a));
+        }
+        if (a instanceof Group)
+            for (Actor child : ((Group) a).getChildren()) coveringActors(child, sx, sy, out, depth + 1);
+    }
+
+    /** DEV DIAGNOSTIC (g294) — presse le bouton ⏩ FAST_FORWARD_BUTTON par le CHEMIN API DU JEU (indépendant de
+     *  l'input/overlay) : trouve l'acteur par son tag tuto sur tous les stages, puis appelle
+     *  {@code TutorialTransitionEvent.fireButtonPress(actor)} (= exactement ce que fait {@code CombatHUD$4} au clic).
+     *  Si le combat REPREND après ça → la cause du gel est la LIVRAISON du tap (overlay/z-order), pas le dispatch.
+     *  Invoqué via dh.clickfile "ffpress". */
+    public static void ffPress(GameMain game) {
+        try {
+            Object screen = game.getScreenManager().getScreen();
+            List<Stage> stages = new ArrayList<>();
+            try { Group root = (Group) screen.getClass().getMethod("getRootStack").invoke(screen);
+                  if (root != null && root.getStage() != null) stages.add(root.getStage()); } catch (Throwable ignore) {}
+            try {
+                Object sm = game.getScreenManager();
+                java.lang.reflect.Field f = sm.getClass().getDeclaredField("aboveBlurStage"); f.setAccessible(true);
+                Stage above = (Stage) f.get(sm);
+                if (above != null && !stages.contains(above)) stages.add(above);
+            } catch (Throwable ignore) {}
+            Actor ff = null;
+            for (Stage s : stages) {
+                List<Actor> found = findByName(s.getRoot(), "FAST_FORWARD_BUTTON");
+                if (!found.isEmpty()) { ff = found.get(0); break; }
+            }
+            if (ff == null) { System.out.println("[ffpress] bouton FAST_FORWARD_BUTTON introuvable sur l'écran courant"); return; }
+            System.out.println("[ffpress] bouton trouvé: " + describeZ(ff) + " → fireButtonPress (API jeu)");
+            com.perblue.heroes.game.tutorial.TutorialTransitionEvent.fireButtonPress(ff);
+            System.out.println("[ffpress] fireButtonPress(FAST_FORWARD_BUTTON) dispatché");
+        } catch (Throwable t) { System.out.println("[ffpress] échec: " + t); }
+    }
+
+    /** DEV DIAGNOSTIC (g294) — état EXACT du gel de combat : {@code combatPauseCount}/{@code combatEnded}/replay
+     *  de l'écran de combat (réflexion), + step/complétion de CHAQUE tuto non trivial + pointeurs actifs +
+     *  {@code isAnyPopupShowing}. Sert à savoir si le combat est en PAUSE (tuto) et quel tuto/étape en cause.
+     *  Pure lecture — aucune modif jeu. Invoqué via dh.clickfile "tutostate". */
+    public static void tutoState(GameMain game) {
+        try {
+            com.perblue.heroes.game.objects.User user = game.getYourUser();
+            Object screen = game.getScreenManager().getScreen();
+            System.out.println("[tutostate] screen=" + (screen == null ? "null" : screen.getClass().getSimpleName()));
+            Object scene = null;
+            if (screen != null) {
+                for (Class<?> c = screen.getClass(); c != null && c != Object.class; c = c.getSuperclass()) {
+                    for (String fn : new String[]{"combatPauseCount", "combatEnded", "currentStageReplay", "playSpeed", "autoAttack"}) {
+                        try {
+                            java.lang.reflect.Field f = c.getDeclaredField(fn); f.setAccessible(true);
+                            Object v = f.get(screen);
+                            System.out.println("[tutostate]   " + fn + "=" + v);
+                            if (fn.equals("currentStageReplay") && v != null) {
+                                java.lang.reflect.Field pf = v.getClass().getDeclaredField("player"); pf.setAccessible(true);
+                                Object pl = pf.get(v);
+                                if (pl != null) {
+                                    java.lang.reflect.Field pp = pl.getClass().getDeclaredField("paused"); pp.setAccessible(true);
+                                    java.lang.reflect.Field ps = pl.getClass().getDeclaredField("playSpeed"); ps.setAccessible(true);
+                                    System.out.println("[tutostate]   ReplayPlayer.paused=" + pp.get(pl) + " ReplayPlayer.playSpeed=" + ps.get(pl));
+                                }
+                            }
+                        } catch (Throwable ignore) {}
+                    }
+                    try { java.lang.reflect.Field f = c.getDeclaredField("scene"); f.setAccessible(true);
+                          Object sc = f.get(screen); if (sc != null) scene = sc; } catch (NoSuchFieldException ignore) {}
+                }
+            }
+            try { System.out.println("[tutostate]   getDevSpeed()="
+                + com.perblue.heroes.ui.screens.CoreAttackScreen.getDevSpeed()); } catch (Throwable ignore) {}
+            try {
+                System.out.println("[tutostate]   AIHelper.currAIMode=" + com.perblue.heroes.simulation.ai.AIHelper.currAIMode);
+            } catch (Throwable t) { System.out.println("[tutostate]   currAIMode err " + t); }
+            if (scene != null) {
+                try {
+                    System.out.println("[tutostate]   scene.state=" + scene.getClass().getMethod("getState").invoke(scene)
+                        + " hasCombatStarted=" + scene.getClass().getMethod("hasCombatStarted").invoke(scene)
+                        + " combatTimeSec=" + scene.getClass().getMethod("getCombatTimeSeconds").invoke(scene)
+                        + " isCastingFreeze=" + scene.getClass().getMethod("isCastingFreeze").invoke(scene)
+                        + " ONLY_IDLE_AI=" + scene.getClass().getMethod("isFlagSet", com.perblue.heroes.game.objects.SceneFlag.class)
+                            .invoke(scene, com.perblue.heroes.game.objects.SceneFlag.ONLY_IDLE_AI));
+                } catch (Throwable t) { System.out.println("[tutostate]   scene introspection err " + t); }
+                for (String side : new String[]{"getAttackers", "getDefenders"}) {
+                    try {
+                        Object arr = scene.getClass().getMethod(side).invoke(scene);
+                        int n = arr.getClass().getField("size").getInt(arr);
+                        for (int i = 0; i < n; i++) {
+                            Object u = arr.getClass().getMethod("get", int.class).invoke(arr, i);
+                            Object act = u.getClass().getMethod("getCurrentActionAbility").invoke(u);
+                            Object actions = u.getClass().getMethod("getActionAbilities").invoke(u);
+                            Object combats = u.getClass().getMethod("getCombatAbilities").invoke(u);
+                            Object active = u.getClass().getMethod("getActiveCombatSkill").invoke(u);
+                            int nAct = actions == null ? -1 : actions.getClass().getField("size").getInt(actions);
+                            int nComb = combats == null ? -1 : combats.getClass().getField("size").getInt(combats);
+                            StringBuilder ab = new StringBuilder();
+                            if (combats != null) for (int k = 0; k < nComb; k++)
+                                ab.append(combats.getClass().getMethod("get", int.class).invoke(combats, k).getClass().getSimpleName()).append(',');
+                            StringBuilder aa = new StringBuilder();
+                            if (actions != null) for (int k = 0; k < nAct; k++)
+                                aa.append(actions.getClass().getMethod("get", int.class).invoke(actions, k).getClass().getSimpleName()).append(',');
+                            StringBuilder bf = new StringBuilder();
+                            try {
+                                Object buffs = u.getClass().getMethod("getBuffs").invoke(u);
+                                int nb = buffs.getClass().getField("size").getInt(buffs);
+                                for (int k = 0; k < nb; k++)
+                                    bf.append(buffs.getClass().getMethod("get", int.class).invoke(buffs, k).getClass().getSimpleName()).append(',');
+                            } catch (Throwable t) { bf.append("err:").append(t); }
+                            String aiCls;
+                            try { Object ai = com.perblue.heroes.simulation.ai.AIHelper.getUnitAI((com.perblue.heroes.game.objects.Unit) u);
+                                  aiCls = ai == null ? "NULL" : ai.getClass().getSimpleName(); }
+                            catch (Throwable t) { aiCls = "err:" + t; }
+                            Object curSim = null; Object qsize = null; String simDet = "";
+                            try { curSim = u.getClass().getMethod("getCurrentAction").invoke(u);
+                                  qsize = u.getClass().getMethod("getActionQueueSize").invoke(u);
+                                  if (curSim != null && curSim.getClass().getSimpleName().contains("Animate")) {
+                                      for (String fn : new String[]{"animType", "duration", "loopCount", "shouldLoop", "invocationId", "playSpeed"}) {
+                                          try { java.lang.reflect.Field f = null;
+                                              for (Class<?> cc = curSim.getClass(); cc != null && f == null; cc = cc.getSuperclass())
+                                                  try { f = cc.getDeclaredField(fn); } catch (NoSuchFieldException e) {}
+                                              if (f != null) { f.setAccessible(true); simDet += " " + fn + "=" + f.get(curSim); }
+                                          } catch (Throwable e) {}
+                                      }
+                                  }
+                            } catch (Throwable ig) {}
+                            System.out.println("[tutostate]     " + side + "[" + i + "] team=" + u.getClass().getMethod("getTeam").invoke(u)
+                                + " action=" + (act == null ? "null" : act.getClass().getSimpleName())
+                                + " curSimAction=" + (curSim == null ? "null" : curSim.getClass().getSimpleName()) + simDet
+                                + " queueSize=" + qsize
+                                + " AI=" + aiCls
+                                + " activeSkill=" + (active == null ? "null" : active.getClass().getSimpleName())
+                                + "\n[tutostate]        combatAbilities=[" + ab + "]"
+                                + "\n[tutostate]        actionAbilities=[" + aa + "]"
+                                + "\n[tutostate]        buffs=[" + bf + "]");
+                        }
+                    } catch (Throwable t) { System.out.println("[tutostate]   " + side + " err " + t); }
+                }
+            }
+            for (com.perblue.heroes.network.messages.TutorialActType t
+                    : com.perblue.heroes.network.messages.TutorialActType.values()) {
+                com.perblue.heroes.game.objects.IUserTutorialAct a = user.getTutorialAct(t);
+                if (a == null) continue;
+                int step = a.getStep();
+                boolean done = com.perblue.heroes.game.tutorial.TutorialHelper.completedTutorialAct(user, t);
+                if (step != 0 || done)
+                    System.out.println("[tutostate] act " + t + " step=" + step + " completed=" + done
+                        + " max=" + com.perblue.heroes.game.tutorial.TutorialHelper.getMaxStep(a));
+            }
+            java.util.List<?> ptrs = com.perblue.heroes.game.tutorial.TutorialHelper.getPointers(user);
+            System.out.println("[tutostate] pointers=" + (ptrs == null ? 0 : ptrs.size())
+                + " isAnyPointerShowing=" + com.perblue.heroes.game.tutorial.TutorialHelper.isAnyPointerShowing());
+            if (ptrs != null) for (Object p : ptrs)
+                System.out.println("[tutostate]   pointer → "
+                    + ((com.perblue.heroes.game.tutorial.TutorialPointerInfo) p).getActorTutorialName());
+            try {
+                java.lang.reflect.Method m = com.perblue.heroes.game.tutorial.AbstractTutorialAct.class
+                    .getDeclaredMethod("isAnyPopupShowing"); m.setAccessible(true);
+                System.out.println("[tutostate] isAnyPopupShowing=" + m.invoke(null));
+            } catch (Throwable ignore) {}
+        } catch (Throwable t) { System.out.println("[tutostate] échec: " + t); }
+    }
+
     /** Retrouve les acteurs portant un {@code getTutorialName()} donné (helper pour BACK_BUTTON…). */
     private static List<Actor> findByName(Actor root, String name) {
         Set<String> s = new HashSet<>(); s.add(name);

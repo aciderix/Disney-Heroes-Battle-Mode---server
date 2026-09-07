@@ -488,7 +488,12 @@ static int evq_pop(EvQueue* q, int* type, int* id) {
 }
 static void _dhAnimListener(spAnimationState* state, spEventType type, spTrackEntry* entry, spEvent* event) {
     (void)event; EvQueue* q = (EvQueue*)state->rendererObject; if (!q) return;
-    evq_push(q, (int)type + 1, entry ? entry->trackIndex : 0);
+    /* out[1] = SEQ d'instance du trackEntry (posé par set/addAnimation dans entry->userData), PAS trackIndex.
+       Le jeu combine l'invocationId rendu par setAnimation (= seq+eventIDOffset) et compare à
+       complete(out[1]+eventIDOffset) : il faut donc rendre le MÊME seq ici, sinon aucun complete/end ne matche
+       son AnimateAction (bug : anim d'entrée jamais terminée -> unités inertes -> combat gelé). Sur l'oracle
+       unidbg (vrai natif PerBlue) l'event porte bien ce seq d'instance, pas le track. */
+    evq_push(q, (int)type + 1, entry ? (int)(intptr_t)entry->userData : 0);
 }
 
 /* =================================================================== AnimationState */
@@ -519,13 +524,19 @@ JNIEXPORT jint JNICALL Java_com_perblue_heroes_cspine_Native_AnimationState_1set
        l'identifiant d'instance d'animation que le jeu combine à eventIDOffset (relevé contre l'oracle unidbg :
        u=1,2,3… par animState, indépendant de l'animId et du track). */
     (void)e; (void)c; spAnimationState* st = (spAnimationState*)ht_get(&t_animState, h); if (!st) return -1;
-    spAnimation* a = animOf(st, animId); if (!a) return -1; spAnimationState_setAnimation(st, track, a, loop);
-    EvQueue* q = (EvQueue*)st->rendererObject; return q ? ++q->seq : 0;
+    spAnimation* a = animOf(st, animId); if (!a) return -1;
+    spTrackEntry* te = spAnimationState_setAnimation(st, track, a, loop);
+    EvQueue* q = (EvQueue*)st->rendererObject; int s = q ? ++q->seq : 0;
+    if (te) te->userData = (void*)(intptr_t)s;   /* tag l'instance -> rendu tel quel dans ses events (cf. _dhAnimListener) */
+    return s;
 }
 JNIEXPORT jint JNICALL Java_com_perblue_heroes_cspine_Native_AnimationState_1addAnimation(JNIEnv* e, jclass c, jint h, jint track, jint animId, jboolean loop, jfloat delay) {
     (void)e; (void)c; spAnimationState* st = (spAnimationState*)ht_get(&t_animState, h); if (!st) return -1;
-    spAnimation* a = animOf(st, animId); if (!a) return -1; spAnimationState_addAnimation(st, track, a, loop, delay);
-    EvQueue* q = (EvQueue*)st->rendererObject; return q ? ++q->seq : 0;
+    spAnimation* a = animOf(st, animId); if (!a) return -1;
+    spTrackEntry* te = spAnimationState_addAnimation(st, track, a, loop, delay);
+    EvQueue* q = (EvQueue*)st->rendererObject; int s = q ? ++q->seq : 0;
+    if (te) te->userData = (void*)(intptr_t)s;
+    return s;
 }
 JNIEXPORT void JNICALL Java_com_perblue_heroes_cspine_Native_AnimationState_1clearTracks(JNIEnv* e, jclass c, jint h) {
     (void)e; (void)c; spAnimationState* st = (spAnimationState*)ht_get(&t_animState, h); if (st) spAnimationState_clearTracks(st);
