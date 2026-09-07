@@ -1208,6 +1208,33 @@ public final class TutorialDriver {
      *  possédés (même chemin réel `unitSelected` que campQuick) puis appelle `startBattleInner()` (le bouton FIGHT
      *  vert → pousse `CampaignAttackScreen`, combat visuel). Invoqué via "campstart". Sert à la vérif B4 (scène
      *  combat combinée en mode spine natif jni) + B6 (fps combat). */
+    /** DEV (g298) : avance le combat au STAGE SUIVANT (ce que fait la flèche « > » de fin de stage) en appelant
+     *  la VRAIE méthode du jeu {@code CoreAttackScreen.startTransitionToNextStage()} par réflexion — le pilote
+     *  scene2d n'atteint pas ce bouton (overlay). Sert à dérouler un niveau multi-stages sous AUTO pour
+     *  monitorer/capturer. Invoqué via "nextstage". */
+    public static void nextStage(GameMain game) {
+        try {
+            Object screen = game.getScreenManager().getScreen();
+            if (screen == null) { System.out.println("[nextstage] pas d'écran"); return; }
+            java.lang.reflect.Method m = null;
+            for (Class<?> c = screen.getClass(); c != null && m == null; c = c.getSuperclass()) {
+                try { m = c.getDeclaredMethod("startTransitionToNextStage"); } catch (NoSuchMethodException e) {}
+            }
+            if (m == null) { System.out.println("[nextstage] startTransitionToNextStage introuvable sur " + screen.getClass().getSimpleName()); return; }
+            // état avant (getCurrStage / hasNextStage) pour log
+            Object cur = null, hasNext = null;
+            try { java.lang.reflect.Method g1 = findM(screen, "getCurrStage"); if (g1 != null) cur = g1.invoke(screen);
+                  java.lang.reflect.Method g2 = findM(screen, "hasNextStage"); if (g2 != null) hasNext = g2.invoke(screen); } catch (Throwable ignore) {}
+            m.setAccessible(true); m.invoke(screen);
+            System.out.println("[nextstage] startTransitionToNextStage() appelé (stageAvant=" + cur + " hasNext=" + hasNext + ")");
+        } catch (Throwable t) { System.out.println("[nextstage] échec: " + t); }
+    }
+    private static java.lang.reflect.Method findM(Object o, String name) {
+        for (Class<?> c = o.getClass(); c != null; c = c.getSuperclass())
+            try { java.lang.reflect.Method m = c.getDeclaredMethod(name); m.setAccessible(true); return m; } catch (NoSuchMethodException e) {}
+        return null;
+    }
+
     public static void campStart(GameMain game) {
         try {
             Object screen = game.getScreenManager().getScreen();
@@ -2841,7 +2868,7 @@ public final class TutorialDriver {
             Object scene = null;
             if (screen != null) {
                 for (Class<?> c = screen.getClass(); c != null && c != Object.class; c = c.getSuperclass()) {
-                    for (String fn : new String[]{"combatPauseCount", "combatEnded", "currentStageReplay", "playSpeed", "autoAttack"}) {
+                    for (String fn : new String[]{"combatPauseCount", "combatEnded", "currentStageReplay", "playSpeed", "autoAttack", "currentlyTransitioning", "stageEnded", "stageTimedOut"}) {
                         try {
                             java.lang.reflect.Field f = c.getDeclaredField(fn); f.setAccessible(true);
                             Object v = f.get(screen);
@@ -2866,6 +2893,16 @@ public final class TutorialDriver {
             try {
                 System.out.println("[tutostate]   AIHelper.currAIMode=" + com.perblue.heroes.simulation.ai.AIHelper.currAIMode);
             } catch (Throwable t) { System.out.println("[tutostate]   currAIMode err " + t); }
+            if (screen != null) {
+                for (String mn : new String[]{"getCurrStage", "hasNextStage", "getWinningTeam"}) {
+                    try {
+                        java.lang.reflect.Method m = null;
+                        for (Class<?> cc = screen.getClass(); cc != null && m == null; cc = cc.getSuperclass())
+                            try { m = cc.getDeclaredMethod(mn); } catch (NoSuchMethodException e) {}
+                        if (m != null) { m.setAccessible(true); System.out.println("[tutostate]   " + mn + "()=" + m.invoke(screen)); }
+                    } catch (Throwable t) {}
+                }
+            }
             if (scene != null) {
                 try {
                     System.out.println("[tutostate]   scene.state=" + scene.getClass().getMethod("getState").invoke(scene)

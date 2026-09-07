@@ -528,6 +528,10 @@ public final class DesktopLauncher {
                     TutorialDriver.campStart(game);
                     continue;
                 }
+                if (low.equals("nextstage")) {                   // nextstage → avance au stage suivant (flèche « > » via API jeu)
+                    TutorialDriver.nextStage(game);
+                    continue;
+                }
                 if (low.startsWith("heroview")) {                // heroview → HeroDetailScreen (gros héros animé, yeux) : vérif B5 spine
                     TutorialDriver.heroView(game);
                     continue;

@@ -39,6 +39,7 @@ public final class JavaParticleEngine {
     public interface AtlasResolver {
         BaseSprite spriteFor(int atlasHandle, String atlasTag);
         TextureRegion regionFor(int atlasHandle, String atlasTag);
+        int pageFor(int atlasHandle, String atlasTag);   // index de page (ordre atlas.getTextures()) ; -1 si absent
     }
     private static volatile AtlasResolver RESOLVER;
     public static void setResolver(AtlasResolver r){ RESOLVER = r; }
@@ -46,13 +47,21 @@ public final class JavaParticleEngine {
     private static final Map<Integer, Handle> H = new HashMap<>();
     private static int nextId = 1;
 
-    static final class Effect { final Array<ParticleEmitter> emitters = new Array<>(); }
+    static final class Effect { final Array<ParticleEmitter> emitters = new Array<>();
+        final Array<TextureRegion> regions = new Array<>();   // région (uv) PAR émetteur (tag propre)
+        final com.badlogic.gdx.utils.IntArray pages = new com.badlogic.gdx.utils.IntArray();  // index de page PAR émetteur
+    }
     static final class Handle {
         final Effect eff = new Effect();
         int atlasHandle;
         float x, y, rot;
         TextureRegion region;
         byte[] np;   // octets .np d'origine -> clone = re-parse (le jeu clone les effets pour le pooling)
+        boolean disposed;   // dispose DIFFERE : le jeu libere l'effet (Effect_dispose) mais le RENDU (getVertices)
+                            // continue sur des references obsolettes ; le vrai natif garde le handle rendable
+                            // jusqu'a fin des particules (recyclage). On garde donc le Handle vivant tant que ses
+                            // particules jouent, et on ne le retire de H qu'a completion (update) -> plus d'effets
+                            // invisibles (avant : dispose=H.remove immediat -> 100% des getVertices en handle mort).
     }
 
     // ---- adaptateur .np v3 -> ParticleEmitter du jeu ----
@@ -106,39 +115,76 @@ public final class JavaParticleEngine {
         Handle h=new Handle(); h.atlasHandle=atlasHandle; h.np=np;
         AtlasResolver r=RESOLVER;
         for(int i=0;i<nE;i++){ ParticleEmitter em=readEmitter();
+            TextureRegion reg=null; int page=0;
             if(r!=null){
                 BaseSprite sprite=r.spriteFor(atlasHandle, lastTag);
                 if(sprite!=null){ try{ em.setSprite(sprite); }catch(Throwable t){ setPriv(em,"sprite",sprite); } }
-                if(h.region==null) h.region=r.regionFor(atlasHandle, lastTag);
+                reg=r.regionFor(atlasHandle, lastTag);
+                int p=r.pageFor(atlasHandle, lastTag); if(p>=0) page=p;
+                if(h.region==null) h.region=reg;
             }
-            h.eff.emitters.add(em); }
-        int id=nextId++; H.put(id,h); return id;
+            h.eff.emitters.add(em); h.eff.regions.add(reg); h.eff.pages.add(page); }
+        int id=nextId++; H.put(id,h);
+        if (DBG) { Object tex=null; try{ if(h.region!=null) tex=h.region.getTexture(); }catch(Throwable t){}
+            System.err.println("[jparticle] create id="+id+" emitters="+h.eff.emitters.size+" atlas="+atlasHandle
+                +" resolver="+(r==null?"NULL":"ok")+" region="+(h.region==null?"NULL":"ok")+" tex="+(tex==null?"NULL":tex)
+                +" lastTag='"+lastTag+"'"); }
+        return id;
     }
+    static final boolean DBG = "1".equals(System.getProperty("dh.jparticle.debug"));
+    private static int gvCalls=0, gvNonEmpty=0, gvLastLog=-1;
     public synchronized void start(int id){ Handle h=H.get(id); if(h==null) return; for(ParticleEmitter e:h.eff.emitters){ e.setPosition(h.x,h.y); e.start(); } }
-    public synchronized boolean update(int id, float dt){ Handle h=H.get(id); if(h==null) return false; boolean any=false; for(ParticleEmitter e:h.eff.emitters){ e.update(dt); if(e.getActiveCount()>0) any=true; } return any; }
+    public synchronized boolean update(int id, float dt){ Handle h=H.get(id); if(h==null) return false; boolean any=false, allComplete=true;
+        for(ParticleEmitter e:h.eff.emitters){ e.update(dt); if(e.getActiveCount()>0) any=true; if(!e.isComplete()) allComplete=false; }
+        if(h.disposed && allComplete && !any){ H.remove(id); if(DBG) System.err.println("[jparticle] cleanup id="+id+" (disposed+complete)"); }
+        return any; }
     public synchronized void setPosition(int id,float x,float y){ Handle h=H.get(id); if(h==null) return; h.x=x; h.y=y; for(ParticleEmitter e:h.eff.emitters) e.setPosition(x,y); }
     public synchronized void setRotation(int id,float r){ Handle h=H.get(id); if(h==null) return; h.rot=r; }
-    public synchronized void dispose(int id){ H.remove(id); }
+    public synchronized void dispose(int id){ Handle h=H.get(id);
+        if(h!=null){ h.disposed=true; for(ParticleEmitter e:h.eff.emitters){ try{ setPriv(e,"continuous",false); }catch(Throwable t){} } }
+        // NE PAS retirer de H : le rendu (getVertices) suit sur des refs obsoletes ; le Handle vit jusqu'a
+        // completion des particules (retire dans update()). Mirror du dispose differe du vrai natif.
+    }
     // Clone (pooling du jeu) : re-parse le .np d'origine dans un nouveau handle, recopie position/rotation.
     public synchronized int clone(int id){
-        Handle src=H.get(id); if(src==null||src.np==null) return 0;
+        Handle src=H.get(id); if(src==null||src.np==null){ if(DBG) System.err.println("[jparticle] clone src="+id+" -> 0 (src absent)"); return 0; }
         int nid=create(src.np, src.atlasHandle);
+        if(DBG) System.err.println("[jparticle] clone src="+id+" -> "+nid);
         Handle nh=H.get(nid); if(nh!=null){ nh.x=src.x; nh.y=src.y; nh.rot=src.rot; for(ParticleEmitter e:nh.eff.emitters) e.setPosition(src.x,src.y); }
         return nid;
     }
     public synchronized int activeCount(int id){ Handle h=H.get(id); if(h==null) return 0; int n=0; for(ParticleEmitter e:h.eff.emitters) n+=e.getActiveCount(); return n; }
 
     // Remplit verts (6 floats/sommet) + draws (n*3+1 shorts) ; retourne n (draw calls).
+    private static int gvFound=0, gvNull=0, gvNonEmptyReal=0;
     public synchronized int getVertices(int id, FloatBuffer verts, ShortBuffer draws){
-        Handle h=H.get(id); if(h==null) return 0;
-        verts.clear(); int vcount=0;
-        for(ParticleEmitter em:h.eff.emitters){
+        Handle h=H.get(id);
+        if (DBG) { if(h==null) gvNull++; else gvFound++;
+            if ((gvFound+gvNull)%100==0) System.err.println("[jparticle] getVertices STATS found="+gvFound+" null="+gvNull+" nonEmpty="+gvNonEmptyReal); }
+        if(h==null) return 0;
+        verts.clear(); if(draws!=null) draws.clear();
+        // Format drawCalls attendu par NativeParticleEffectRenderer (relevé au bytecode) : 3 shorts/draw-call =
+        //   [count = nb d'INDICES (6/quad, mesh indexé), blendFlags (&1=srcONE, &2=dstONE, &4=multiply DST_COLOR),
+        //    pageIndex (index dans atlas.getTextures())], PUIS 1 short = nb TOTAL de sommets (effectVertCount).
+        //   Mesh.render(GL_TRIANGLES, offset, count) avec offset d'indices accumulé. Un draw-call par émetteur
+        //   (blend/page propres). (Avant : [0,0,vcount,vcount] -> vcount lu comme pageIndex -> crash Array.get.)
+        int totalVerts=0, n=0;
+        for(int ei=0; ei<h.eff.emitters.size; ei++){
+            ParticleEmitter em=(ParticleEmitter)h.eff.emitters.get(ei);
+            TextureRegion reg = (ei<h.eff.regions.size && h.eff.regions.get(ei)!=null) ? (TextureRegion)h.eff.regions.get(ei) : h.region;
+            int page = ei<h.eff.pages.size ? h.eff.pages.get(ei) : 0;
             Object parts=getPriv(em,"particles"); if(!(parts instanceof Object[])) continue;
-            for(Object p:(Object[])parts){ if(p==null) continue; if(emitQuad(p,h.region,verts)) vcount+=4; }
+            int emVerts=0;
+            for(Object p:(Object[])parts){ if(p==null) continue; if(emitQuad(p,reg,verts)) emVerts+=4; }
+            if(emVerts>0){
+                boolean additive = Boolean.TRUE.equals(getPriv(em,"additive"));
+                if(draws!=null){ draws.put((short)(emVerts/4*6)); draws.put((short)(additive?3:0)); draws.put((short)page); }
+                totalVerts+=emVerts; n++;
+            }
         }
-        int n = vcount>0 ? 1 : 0;
-        if(draws!=null){ draws.clear(); if(n>0){ draws.put((short)0); draws.put((short)0); draws.put((short)vcount); draws.put((short)vcount); } draws.flip(); }
+        if(draws!=null){ if(n>0) draws.put((short)totalVerts); draws.flip(); }
         verts.flip();
+        if (DBG && totalVerts>0) gvNonEmptyReal++;
         return n;
     }
     private static Object getPriv(Object o,String f){ try{ Field fl=findF(o.getClass(),f); fl.setAccessible(true); return fl.get(o);}catch(Exception e){ return null; } }

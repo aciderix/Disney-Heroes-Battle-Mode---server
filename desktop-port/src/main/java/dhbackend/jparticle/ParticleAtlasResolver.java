@@ -85,6 +85,12 @@ public final class ParticleAtlasResolver implements JavaParticleEngine.AtlasReso
     @Override public TextureRegion regionFor(int atlasHandle, String atlasTag) {
         AtlasRegion r = atlasRegion(atlasHandle, atlasTag); return r;
     }
+    /** Index de PAGE (dans l'ordre de {@code atlas.getTextures()}) de la région du tag — pour que le drawCall
+     *  binde la bonne texture (l'ordre des pages de notre .atlas parsé == celui du jeu, même fichier). -1 si absent. */
+    public int pageFor(int atlasHandle, String atlasTag) {
+        Atlas a = ATLASES.get(atlasHandle); if (a == null || atlasTag == null) return -1;
+        Region reg = a.regions.get(atlasTag); return reg == null ? -1 : reg.page;
+    }
     @Override public BaseSprite spriteFor(int atlasHandle, String atlasTag) {
         AtlasRegion r = atlasRegion(atlasHandle, atlasTag); if (r == null) return null;
         try { return new TwoColorAtlasSprite(r); } catch (Throwable t) { return null; }

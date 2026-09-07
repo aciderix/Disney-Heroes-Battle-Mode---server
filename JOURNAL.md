@@ -15,6 +15,41 @@ extraction des sommets ; (d) router `com.perblue.heroes.cparticle.Native` (aujou
 moteur Java. Résultat attendu : particules fidèles (code du jeu), rapides (JVM/JIT), zéro émulation, zéro
 formule devinée. Vérif EN JEU (visuel + FPS). np_sim.c reste comme doc de format ; il n'est plus la voie.
 
+## 2026-09-07 (g296) — Gel combat VALIDÉ en jeu (niveau gagné) + outil nextstage + particules Java (dispose différé + drawCalls) ; effets manquants = pipeline de DESSIN (backend-indépendant)
+
+**Fix gel combat (g295) VALIDÉ EN JEU** : niveau NORMAL 1-1 **gagné en entier** (outcome=WIN, tous les stages)
+sous jni spine corrigé — l'utilisateur a aussi terminé un combat lui-même. Héros combattent, entrées se
+terminent. Confirmé end-to-end.
+
+**Outillage `nextstage` (DEV)** : `TutorialDriver.nextStage` appelle `CoreAttackScreen.startTransitionToNextStage()`
+par réflexion (chemin API réel) — la flèche « > » de fin de stage n'est pas atteignable par le pilote scene2d
+(overlay). Permet de dérouler un niveau multi-stages sous `auto` pour monitorer/capturer/piloter à distance.
+Diag combat ajoutés à `tutostate` (combatPauseCount, scene.state, currStage/hasNextStage, IA/SimActions/buffs).
+
+**Particules Java — 2 correctifs RÉELS mais insuffisants pour les effets visibles** :
+- **Dispose DIFFÉRÉ** (`JavaParticleEngine`) : le jeu pool les effets et les REND (getVertices) sur des handles
+  qu'il a déjà `dispose()` (le vrai natif garde le handle rendable jusqu'à fin des particules) ; avant, Java
+  faisait `H.remove` immédiat → **100 % des getVertices en handle mort** (found=0). Corrigé : `dispose` marque
+  `disposed`+stoppe l'émission continue, le Handle vit jusqu'à complétion (retiré dans `update`). Après : found>0.
+- **Format `drawCalls` corrigé** (relevé au bytecode de `NativeParticleEffectRenderer.renderInternal`) : 3 shorts/
+  draw-call = **[count(indices 6/quad), blendFlags(&1 srcONE,&2 dstONE,&4 mult), pageIndex]** + 1 short total
+  sommets. Avant `[0,0,vcount,vcount]` → vcount lu comme pageIndex → **crash `Array.get idx>=size`**. + **index de
+  page PAR émetteur** (`ParticleAtlasResolver.pageFor`, ordre des pages == atlas.getTextures()).
+
+**⚠️ CONSTAT CLÉ (test EN JEU utilisateur, vue live)** : les effets **impact/flocons/éclairs/regen**
+(`standard_impact`,`energy_gain_lightning`,`regen_heart`,`splash`…) **restent INVISIBLES sous JAVA *ET* sous
+UNIDBG** (le vrai natif) → **ce n'est PAS le backend de particules**. Les effets sont bien CRÉÉS et le jeu
+demande à les dessiner (stats Java : getVertices non-vides), mais rien ne s'affiche quel que soit le moteur.
+⇒ Le problème est dans le **pipeline de DESSIN des particules du port** (shader particules / état GL / mesh de
+`NativeParticleEffectRenderer` / channels), backend-indépendant. Investigation dédiée à faire, **en AUTOMATISANT
+le mapping complet** (dériver systématiquement du renderer/oracle, ne pas câbler à la main par effet).
+
+**Setup pilotage/vue à distance (DEV, scratchpad)** : `live_view.py` (serve `build/manual.ppm`→JPEG + contrôle
+tactile : /tap écrit `x,y`, /cmd écrit auto/nextstage/drive/center/gocombat dans le clickfile) + tunnel
+`cloudflared` (MinGW+cloudflared installés via scoop cette session). Le `manual.ppm` = framebuffer réel (la
+capture GDI/PrintWindow de la fenêtre OpenGL renvoie du blanc — d'où le PPM). ⚠️ crash vu 1× : NPE
+`SideMenu…getTint()` au hub après enchaînement de combats (à surveiller, cause non confirmée).
+
 ## 2026-09-07 (g295) — ⭐ CAUSE RACINE du gel de combat TROUVÉE + fix source : backend spine JNI rapporte le mauvais id d'événement d'animation
 
 **⚠️ SUPERSEDE g294** : l'hypothèse « pause du tuto FastForward » de g294 était FAUSSE (mesuré : `combatPauseCount=0`,
