@@ -532,6 +532,10 @@ public final class DesktopLauncher {
                     TutorialDriver.nextStage(game);
                     continue;
                 }
+                if (low.equals("camdump")) {                     // camdump → dump caméra combat (étendue monde visible)
+                    TutorialDriver.camDump(game);
+                    continue;
+                }
                 if (low.startsWith("heroview")) {                // heroview → HeroDetailScreen (gros héros animé, yeux) : vérif B5 spine
                     TutorialDriver.heroView(game);
                     continue;

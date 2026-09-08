@@ -1235,6 +1235,129 @@ public final class TutorialDriver {
         return null;
     }
 
+    // helpers réflexion pour lire des champs (Vector2/Vector3/float/int) sur un objet
+    private static java.lang.reflect.Field rfield(Object o, String name){
+        for (Class<?> c=o.getClass(); c!=null; c=c.getSuperclass())
+            try { java.lang.reflect.Field f=c.getDeclaredField(name); f.setAccessible(true); return f; } catch (NoSuchFieldException e) {}
+        return null;
+    }
+    private static String rv2(Object o, String name){ try{ Object v=rfield(o,name).get(o); if(v==null) return "null";
+        return "("+(int)v.getClass().getField("x").getFloat(v)+","+(int)v.getClass().getField("y").getFloat(v)+")"; }catch(Throwable t){ return "?"; } }
+    private static String rv3(Object o, String name){ try{ Object v=rfield(o,name).get(o); if(v==null) return "null";
+        return "("+(int)v.getClass().getField("x").getFloat(v)+","+(int)v.getClass().getField("y").getFloat(v)+","+(int)v.getClass().getField("z").getFloat(v)+")"; }catch(Throwable t){ return "?"; } }
+    private static String rf(Object o, String name){ try{ return String.valueOf(rfield(o,name).getFloat(o)); }catch(Throwable t){ return "?"; } }
+    private static String ri(Object o, String name){ try{ return String.valueOf(rfield(o,name).getInt(o)); }catch(Throwable t){ return "?"; } }
+
+    /** DEV : dump de la caméra de combat (position + viewport + zoom → étendue MONDE visible), pour
+     *  vérifier si les positions d'émetteurs de particules (~5000-12599) tombent dans le champ visible. */
+    public static void camDump(GameMain game) {
+        try {
+            Object screen = game.getScreenManager().getScreen();
+            if (screen == null) { System.out.println("[camdump] pas d'écran"); return; }
+            java.lang.reflect.Method mc = findM(screen, "getRaidCamera");
+            if (mc == null) mc = findM(screen, "getCamera");
+            if (mc == null) { System.out.println("[camdump] pas de getRaidCamera/getCamera sur " + screen.getClass().getSimpleName()); return; }
+            Object cam = mc.invoke(screen);
+            if (cam == null) { System.out.println("[camdump] caméra null"); return; }
+            Object pos = cam.getClass().getField("position").get(cam);
+            float px = pos.getClass().getField("x").getFloat(pos);
+            float py = pos.getClass().getField("y").getFloat(pos);
+            float vw = cam.getClass().getField("viewportWidth").getFloat(cam);
+            float vh = cam.getClass().getField("viewportHeight").getFloat(cam);
+            float zoom = cam.getClass().getField("zoom").getFloat(cam);
+            float hw = vw*zoom/2f, hh = vh*zoom/2f;
+            System.out.println("[camdump] " + cam.getClass().getSimpleName() + " pos=(" + px + "," + py + ") vw=" + vw + " vh=" + vh
+                + " zoom=" + zoom + " -> visibleX[" + (px-hw) + ".." + (px+hw) + "] visibleY[" + (py-hh) + ".." + (py+hh) + "]");
+            // positions SIM des unités (à comparer aux positions d'émetteurs de particules)
+            java.lang.reflect.Method ms = findM(screen, "getScene");
+            if (ms != null) {
+                Object scene = ms.invoke(screen);
+                for (String fld : new String[]{"attackers","defenders"}) {
+                    try {
+                        java.lang.reflect.Field f = null;
+                        for (Class<?> c=scene.getClass(); c!=null && f==null; c=c.getSuperclass())
+                            try { f=c.getDeclaredField(fld); } catch(NoSuchFieldException e){}
+                        if (f==null) continue; f.setAccessible(true);
+                        Object arr = f.get(scene);
+                        int sz = arr.getClass().getField("size").getInt(arr);
+                        Object items = arr.getClass().getField("items").get(arr);
+                        StringBuilder sb = new StringBuilder("[camdump] " + fld + ": ");
+                        for (int i=0;i<sz;i++){
+                            Object ent = java.lang.reflect.Array.get(items, i);
+                            if (ent==null) continue;
+                            java.lang.reflect.Method gp = findM(ent, "getPosition");
+                            if (gp==null) continue;
+                            Object v = gp.invoke(ent);
+                            float ex=v.getClass().getField("x").getFloat(v), ey=v.getClass().getField("y").getFloat(v), ez=v.getClass().getField("z").getFloat(v);
+                            sb.append(ent.getClass().getSimpleName()).append("(").append((int)ex).append(",").append((int)ey).append(",z=").append((int)ez).append(") ");
+                        }
+                        System.out.println(sb.toString());
+                    } catch (Throwable ig) {}
+                }
+                // diag ÉCHELLE du squelette du 1er héros : currentScale, bounds, et bone brut (worldX/Y)
+                try {
+                    java.lang.reflect.Field fa=null;
+                    for (Class<?> c=scene.getClass(); c!=null&&fa==null; c=c.getSuperclass())
+                        try{ fa=c.getDeclaredField("attackers"); }catch(NoSuchFieldException e){}
+                    fa.setAccessible(true); Object arr=fa.get(scene);
+                    int sz=arr.getClass().getField("size").getInt(arr); Object items=arr.getClass().getField("items").get(arr);
+                    if (sz>0){ Object ent=java.lang.reflect.Array.get(items,0);
+                        Object ae=findM(ent,"getAnimationElement").invoke(ent);
+                        if (ae!=null){
+                            float cs=(Float)findM(ae,"getCurrentScale").invoke(ae);
+                            Object sb2=findM(ae,"getScaledBounds").invoke(ae);
+                            float bw=sb2.getClass().getField("width").getFloat(sb2), bh=sb2.getClass().getField("height").getFloat(sb2);
+                            Object nsk=findM(ae,"getNativeSkeleton").invoke(ae);
+                            java.lang.reflect.Method gbt=null;
+                            for (Class<?> c=nsk.getClass(); c!=null&&gbt==null; c=c.getSuperclass())
+                                try{ gbt=c.getDeclaredMethod("getBoneTransform", int.class, float[].class, int.class); }catch(NoSuchMethodException e){}
+                            System.out.println("[camdump] hero0 currentScale="+cs+" scaledBounds="+bw+"x"+bh);
+                            // Comparaison getBoneLocation (RENDU) vs getBoneTransform (BRUT) pour quelques os
+                            java.lang.reflect.Method gbl=null;
+                            for (Class<?> c=ae.getClass(); c!=null&&gbl==null; c=c.getSuperclass())
+                                try{ gbl=c.getDeclaredMethod("getBoneLocation", int.class, com.badlogic.gdx.math.Vector3.class); }catch(NoSuchMethodException e){}
+                            if (gbt!=null) gbt.setAccessible(true);
+                            if (gbl!=null) gbl.setAccessible(true);
+                            for (int bid : new int[]{0,1,2,3,5,8,12,20}) {
+                                try {
+                                    String loc="?", raw="?";
+                                    if (gbl!=null){ com.badlogic.gdx.math.Vector3 out=new com.badlogic.gdx.math.Vector3(); gbl.invoke(ae, bid, out);
+                                        loc="("+(int)out.x+","+(int)out.y+","+(int)out.z+")"; }
+                                    if (gbt!=null){ float[] bt=new float[6]; gbt.invoke(nsk, bid, bt, 0);
+                                        raw="("+(int)bt[4]+","+(int)bt[5]+") a="+bt[0]; }
+                                    System.out.println("[camdump]   bone"+bid+" LOCATION(rendu)="+loc+"  RAW(worldXY)="+raw);
+                                } catch (Throwable e){}
+                            }
+                        }
+                    }
+                } catch (Throwable ig){ System.out.println("[camdump] diagScale échec: "+ig); }
+            }
+            // dump des ParticleEffectRenderable actifs (décomposition de la position)
+            try {
+                Object rm = findM(screen,"getRepManager").invoke(screen);
+                int shown=0;
+                for (String arrName : new String[]{"transformUpdaters","updaters"}) {
+                    java.lang.reflect.Field uf = rfield(rm, arrName); if (uf==null) continue;
+                    Object ua=uf.get(rm);
+                    int usz=ua.getClass().getField("size").getInt(ua); Object uit=ua.getClass().getField("items").get(ua);
+                    for (int i=0;i<usz && shown<3;i++){
+                        Object u=java.lang.reflect.Array.get(uit,i);
+                        if (u==null || !u.getClass().getName().contains("EntityComponent")) continue;
+                        String wt="?";
+                        try { Object sp=rfield(u,"sceneParent").get(u); Object w=rfield(sp,"worldTransform").get(sp);
+                            wt="m00="+w.getClass().getField("m00").getFloat(w)+" m01="+w.getClass().getField("m01").getFloat(w)
+                              +" m10="+w.getClass().getField("m10").getFloat(w)+" m11="+w.getClass().getField("m11").getFloat(w)
+                              +" tx="+w.getClass().getField("m02").getFloat(w)+" ty="+w.getClass().getField("m12").getFloat(w); } catch(Throwable e){ wt="wt?"+e; }
+                        System.out.println("[camdump] EC["+arrName+"] VFXoff=("+rf(u,"VFXGroundXOffset")+","+rf(u,"VFXGroundYOffset")+")"
+                            + " lastSim=" + rv3(u,"lastSimPosition") + " scale=" + rf(u,"scale") + " nodeTransform{" + wt + "}");
+                        shown++;
+                    }
+                }
+                if (shown==0) System.out.println("[camdump] aucun EntityComponent trouvé");
+            } catch (Throwable ig){ System.out.println("[camdump] dump EC échec: "+ig); }
+        } catch (Throwable t) { System.out.println("[camdump] échec: " + t); }
+    }
+
     public static void campStart(GameMain game) {
         try {
             Object screen = game.getScreenManager().getScreen();

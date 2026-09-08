@@ -11539,3 +11539,51 @@ fixes entrent dans la release dès qu'un tag `launcher-v*` est posé sur un comm
 
 Fichiers : `native/reuse/NpAdapterValidate.java` (nouveau), `server/java/dhlauncher/BuildManager.java` (défaut
 particules dans run.sh/bat), `docs/PARTICLE_REUSE.md` (sections couverture + activation défaut), JOURNAL/MEMORY.
+
+## g297 — Effets de combat invisibles : cause racine = POSITION de l'effet (render-Y trop haut)
+
+**Contexte** : les effets de particules de combat (flocons de Frozone, impacts, heal, éclairs) restent
+invisibles sous LES DEUX backends (java ET unidbg). L'utilisateur a confirmé : « c'est pareil » → pas le backend.
+
+**Investigation (tout prouvé en jeu, instrumentation `-Ddh.jparticle.debug` + commande pilote `camdump`)** :
+
+1. **Ce sont bien des PARTICULES** (pas des squelettes spine d'effet) : tags créés en combat =
+   `snow_flake2`, `snow_small`, `energy_gain_lightning` (heal/regen), `punch_head`, `standard_impact`,
+   `heal_plus_c`. (Le moteur a AUSSI des spawners de squelettes d'effet — `ControlledSpineSpawner`,
+   `ElastigirlArmSpawner`, `FozzieHookSpawner`… — mais pas pour ces effets-là.)
+
+2. **Le pipeline de rendu des particules FONCTIONNE** : un quad de test forcé (`-Ddh.jparticle.testquad`)
+   à la position de l'émetteur s'affiche correctement (draw + coords + texture + couleur OK). Sonde GL
+   (`DhGL20.glDrawElements` sous `-Ddh.gldbg`) : les draws de 6 indices (quads de particules) s'exécutent
+   SANS erreur GL en combat (`errCount` figé, `lastErr=0`).
+
+3. **Bug tint corrigé (réel mais insuffisant)** : `JavaParticleEngine.rGrad()` JETAIT le dégradé de couleur
+   (tint) du `.np` → couleur packée alpha=0 → 100% transparent. Corrigé : résolution couleurs(3n)+timeline(n)
+   depuis le pool comme les ScaledNumericValue. Mesuré : `maxAlpha` 0 → 254. **N'a PAS rendu les effets
+   visibles** car le vrai bug est la position.
+
+4. **CAUSE RACINE = POSITION (render-Y de l'effet trop haut)** :
+   - Caméra combat (`RaidCamera2D`, via `camdump`) : monde-RENDU visible **X[0..2000] Y[187.5..1312.5]**,
+     pos=(1000,750), zoom=1.5625. STABLE.
+   - Unités (sim, `Scene.attackers/defenders`) : (945,1018),(400,600),(433,828) héros, (1616,962) ennemi.
+   - Émetteurs de particules (avec tags) : `heal_plus_c`(896,1203), `entrance_puff`(1346,1231) → collés au
+     BORD HAUT (max 1312.5) ; `firew_purple`(-874,895), `leg_mblur`(-1262,2761), `2dot_circle`(28,0) → hors
+     champ. Les héros RENDUS sont vers render-Y~700 ; leurs effets sont placés à Y~1200-2800 → au-dessus /
+     hors du haut de l'écran. Les particules qui montent (heal, flocons) sortent par le haut.
+   - `forcebig` (gros quads blancs à la position réelle des particules) → AUCUN blob même avec effets
+     on-screen actifs → confirme que les particules réelles tombent hors champ (haut).
+   - **Le X est CORRECT** : `effetX = unitX(945) + boneX(~560) × currentScale(0.59) = 1276`. L'échelle 0.59
+     et le suivi d'os marchent pour X. **Seul le Y (projection hauteur 2.5D) est faux.**
+   - `getBoneLocation` (RENDU) vs `getBoneTransform` (BRUT, validé unidbg) : **LOCATION = RAW × 0.59**, et le
+     **worldY BRUT de l'os → z (HAUTEUR), pas Y** ; LOCATION.y=0. Jeu en 3D : x=horizontal, y=profondeur,
+     z=hauteur. `getBoneTransform` JNI (`[a,c,b,d,worldX,worldY]`) est CORRECT.
+
+5. **Point de blocage** : le Y fautif est dans `ParticleEffectRenderable.updateEntityTransform` (jeu), nourri
+   par une entrée côté port (transform du nœud `SceneNodeData.worldTransform` m11 ? `EntityComponent.VFXGroundYOffset`
+   ? `lastSimPosition.z` ?). `getBoneTransform` est validé. Mais ces internes (EntityComponent, renderable,
+   SceneNodeData) ne sont PAS dans `RepresentationManager.updaters/transformUpdaters/effectMap`, et `Entity`
+   (sim) est découplé du visuel → la réflexion ne les atteint pas. Isoler l'entrée Y exacte demande un autre
+   angle (hook `updateLocalTransform`/setup du nœud côté port, ou décompilation complète du calcul Y 2.5D).
+
+**Outils ajoutés (tous flag-gated, off par défaut)** : `camdump` (caméra + positions unités + échelle/os),
+`-Ddh.gldbg` (sonde glDrawElements), `-Ddh.jparticle.{testquad,forcewhite,forcebig,calib}` + logs ACTIVE/tag/STATS.

@@ -92,11 +92,17 @@ public final class DhGL20 implements com.badlogic.gdx.graphics.GL20 {
     public void glDisableVertexAttribArray(int index) { GL20.glDisableVertexAttribArray(index); }
     public void glDrawArrays(int mode, int first, int count) { GL11.glDrawArrays(mode, first, count); }
     public void glDrawElements(int mode, int count, int type, int indices) { GL11.glDrawElements(mode, count, type, indices); }
+    private static final boolean GLDBG = "1".equals(System.getProperty("dh.gldbg"));
+    private static long glDeCalls=0, glDeErr=0; private static int glDeMinC=Integer.MAX_VALUE, glDeMaxC=0;
     public void glDrawElements(int mode, int count, int type, Buffer indices) {
         if (indices instanceof ByteBuffer) GL11.glDrawElements(mode, (ByteBuffer) indices);
         else if (indices instanceof ShortBuffer) GL11.glDrawElements(mode, (ShortBuffer) indices);
         else if (indices instanceof IntBuffer) GL11.glDrawElements(mode, (IntBuffer) indices);
         else throw new IllegalArgumentException("index buffer type");
+        if (GLDBG) { glDeCalls++; int rem=indices.remaining(); if(rem<glDeMinC)glDeMinC=rem; if(rem>glDeMaxC)glDeMaxC=rem;
+            int e=GL11.glGetError(); if(e!=0) glDeErr++;
+            if (glDeCalls%400==0){ System.err.println("[gldbg] drawElements(Buffer) calls="+glDeCalls+" errCount="+glDeErr+" countRange["+glDeMinC+".."+glDeMaxC+"] lastErr="+e);
+                glDeMinC=Integer.MAX_VALUE; glDeMaxC=0; } }
     }
     public void glEnable(int cap) { GL11.glEnable(cap); }
     public void glEnableVertexAttribArray(int index) { GL20.glEnableVertexAttribArray(index); }
