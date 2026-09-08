@@ -11626,3 +11626,19 @@ spark_impact/snow_small2) sont à des positions hors champ (X négatif ~-3130) d
 (`ParticleSpawner.spawn`/`RepresentationManager.spawnParticle`/spawn-triggers) pour capturer la source de
 position AVANT `setPosition`, ou hooker `updateLocalTransform` du nœud parent. La réflexion sur l'état vivant
 ne suffit pas (objets dans le graphe de scène, pas les tableaux du RepresentationManager).
+
+### g297quater — Le -3130 vient de offset/boneOffset de l'effet, pas d'un nœud (walk de scène négatif)
+
+Walk complet de l'arbre `getCombatRoot()` (via `NodeData.children`/`components`/`name`) : SEUL `combat-root`
+(t=(0,0), 55+ `SpawnTriggerComponent` + `ProjectileSpawnTrigger`) est hors des bornes ; AUCUN nœud à ~-3130.
+⇒ la position -3130 des effets mal placés n'est PAS un nœud de scène mal placé — elle est PRODUITE par le
+terme `offset.x` (config) ou `boneOffset` du calcul `updateEntityTransform` du `ParticleEffectRenderable`
+runtime. Or ce runtime (champs `offset`/`followBoneID`/`boneOffset`) est créé/détruit par effet et
+INATTEIGNABLE par réflexion : ni dans les tableaux `RepresentationManager` (updaters/transformUpdaters/
+effectMap), ni dans les composants-DATA de l'arbre de scène (qui portent la `ParticleEffectConfiguration`,
+pas le renderable). **Limite de l'approche réflexion atteinte.**
+
+**Angle requis pour finir** : instrumenter le jeu au niveau bytecode (ex. agent Java / ASM sur
+`ParticleEffectRenderable.updateEntityTransform` ou `.setPosition`) pour logger offset/boneOffset/followBoneID
+au moment du calcul, OU tracer `ParticleSpawner.spawn`/`RunSpawners` (création) pour capturer la config
+d'offset de ces effets précis (spark_impact, snow_small2). Le fix sera côté port (une entrée de ce calcul).

@@ -1246,6 +1246,28 @@ public final class TutorialDriver {
     private static String rv3(Object o, String name){ try{ Object v=rfield(o,name).get(o); if(v==null) return "null";
         return "("+(int)v.getClass().getField("x").getFloat(v)+","+(int)v.getClass().getField("y").getFloat(v)+","+(int)v.getClass().getField("z").getFloat(v)+")"; }catch(Throwable t){ return "?"; } }
     private static String v3s(Object v){ try{ if(v==null) return "null"; return "("+(int)v.getClass().getField("x").getFloat(v)+","+(int)v.getClass().getField("y").getFloat(v)+","+(int)v.getClass().getField("z").getFloat(v)+")"; }catch(Throwable t){ return "?"; } }
+    // marche l'arbre de scène et imprime les nœuds HORS CHAMP (source probable des effets mal placés) + leurs composants
+    private static void dumpBadNodes(Object node, int depth, int[] budget){
+        if (node==null || budget[0]<=0 || depth>10) return;
+        try {
+            Object w = rfield(node,"worldTransform").get(node);
+            float tx=w.getClass().getField("m02").getFloat(w), ty=w.getClass().getField("m12").getFloat(w);
+            if (tx < -100 || tx > 2100 || ty < 150 || ty > 1360){
+                java.lang.reflect.Field nmF = rfield(node,"name"); String nm = nmF!=null ? String.valueOf(nmF.get(node)) : "?";
+                StringBuilder comps=new StringBuilder();
+                Object cs = rfield(node,"components").get(node);
+                int csz=cs.getClass().getField("size").getInt(cs); Object cit=cs.getClass().getField("items").get(cs);
+                for (int i=0;i<csz;i++){ Object c=java.lang.reflect.Array.get(cit,i); if(c!=null) comps.append(c.getClass().getSimpleName()).append(","); }
+                System.out.println("[camdump] NODEoff '"+nm+"' depth="+depth+" t=("+(int)tx+","+(int)ty+") comps=["+comps+"]");
+                budget[0]--;
+            }
+        } catch (Throwable e){}
+        try {
+            Object ch = rfield(node,"children").get(node);
+            int chz=ch.getClass().getField("size").getInt(ch); Object cit=ch.getClass().getField("items").get(ch);
+            for (int i=0;i<chz;i++) dumpBadNodes(java.lang.reflect.Array.get(cit,i), depth+1, budget);
+        } catch (Throwable e){}
+    }
     private static String rf(Object o, String name){ try{ return String.valueOf(rfield(o,name).getFloat(o)); }catch(Throwable t){ return "?"; } }
     private static String ri(Object o, String name){ try{ return String.valueOf(rfield(o,name).getInt(o)); }catch(Throwable t){ return "?"; } }
 
@@ -1386,6 +1408,12 @@ public final class TutorialDriver {
                 }
                 if (shown==0) System.out.println("[camdump] aucun EntityComponent trouvé");
             } catch (Throwable ig){ System.out.println("[camdump] dump EC échec: "+ig); }
+            // walk de l'arbre de scène : nœuds hors champ + composants (source des effets mal placés)
+            try {
+                Object sctl2 = findM(screen,"getSceneController").invoke(screen);
+                Object root = findM(sctl2,"getCombatRoot").invoke(sctl2);
+                dumpBadNodes(root, 0, new int[]{25});
+            } catch (Throwable e){ System.out.println("[camdump] walk échec: "+e); }
         } catch (Throwable t) { System.out.println("[camdump] échec: " + t); }
     }
 
