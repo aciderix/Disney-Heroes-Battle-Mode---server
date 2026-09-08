@@ -58,6 +58,7 @@ public final class JavaParticleEngine {
         TextureRegion region;
         byte[] np;   // octets .np d'origine -> clone = re-parse (le jeu clone les effets pour le pooling)
         String tag="";  // tag du 1er émetteur (diag : quel effet)
+        int posLogN=0;
         boolean disposed;   // dispose DIFFERE : le jeu libere l'effet (Effect_dispose) mais le RENDU (getVertices)
                             // continue sur des references obsolettes ; le vrai natif garde le handle rendable
                             // jusqu'a fin des particules (recyclage). On garde donc le Handle vivant tant que ses
@@ -149,7 +150,9 @@ public final class JavaParticleEngine {
         for(ParticleEmitter e:h.eff.emitters){ e.update(dt); if(e.getActiveCount()>0) any=true; if(!e.isComplete()) allComplete=false; }
         if(h.disposed && allComplete && !any){ H.remove(id); if(DBG) System.err.println("[jparticle] cleanup id="+id+" (disposed+complete)"); }
         return any; }
-    public synchronized void setPosition(int id,float x,float y){ Handle h=H.get(id); if(h==null) return; h.x=x; h.y=y; for(ParticleEmitter e:h.eff.emitters) e.setPosition(x,y); }
+    public synchronized void setPosition(int id,float x,float y){ Handle h=H.get(id); if(h==null) return; h.x=x; h.y=y; for(ParticleEmitter e:h.eff.emitters) e.setPosition(x,y);
+        if(DBG && h.posLogN<5 && h.tag!=null && h.tag.matches("(?i).*(snow|flake|punch|impact|splash|ice|energy|frost|hand_mist|icewave|snowball).*")){
+            h.posLogN++; System.err.println("[jparticle] SETPOS id="+id+" tag='"+h.tag+"' pos=("+x+","+y+")"); } }
     public synchronized void setRotation(int id,float r){ Handle h=H.get(id); if(h==null) return; h.rot=r; }
     public synchronized void dispose(int id){ Handle h=H.get(id);
         if(h!=null){ h.disposed=true; for(ParticleEmitter e:h.eff.emitters){ try{ setPriv(e,"continuous",false); }catch(Throwable t){} } }

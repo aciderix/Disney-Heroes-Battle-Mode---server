@@ -1289,7 +1289,10 @@ public final class TutorialDriver {
                             if (gp==null) continue;
                             Object v = gp.invoke(ent);
                             float ex=v.getClass().getField("x").getFloat(v), ey=v.getClass().getField("y").getFloat(v), ez=v.getClass().getField("z").getFloat(v);
-                            sb.append(ent.getClass().getSimpleName()).append("(").append((int)ex).append(",").append((int)ey).append(",z=").append((int)ez).append(") ");
+                            String hit="";
+                            try { java.lang.reflect.Method gh=findM(ent,"getHitBonePosition"); if(gh!=null){ Object hv=gh.invoke(ent);
+                                if(hv!=null) hit="/hit("+(int)hv.getClass().getField("x").getFloat(hv)+","+(int)hv.getClass().getField("y").getFloat(hv)+","+(int)hv.getClass().getField("z").getFloat(hv)+")"; } } catch(Throwable e){}
+                            sb.append(ent.getClass().getSimpleName()).append("(").append((int)ex).append(",").append((int)ey).append(",z=").append((int)ez).append(")").append(hit).append(" ");
                         }
                         System.out.println(sb.toString());
                     } catch (Throwable ig) {}
@@ -1302,6 +1305,20 @@ public final class TutorialDriver {
                     fa.setAccessible(true); Object arr=fa.get(scene);
                     int sz=arr.getClass().getField("size").getInt(arr); Object items=arr.getClass().getField("items").get(arr);
                     if (sz>0){ Object ent=java.lang.reflect.Array.get(items,0);
+                        // transform du NŒUD de scène de l'unité (base des effets) : getEntityNode -> worldTransform
+                        try {
+                            Object sctl = findM(screen,"getSceneController").invoke(screen);
+                            java.lang.reflect.Method gen=null;
+                            for (Class<?> c=sctl.getClass(); c!=null&&gen==null; c=c.getSuperclass())
+                                for (java.lang.reflect.Method mm : c.getDeclaredMethods())
+                                    if (mm.getName().equals("getEntityNode") && mm.getParameterCount()==1){ gen=mm; gen.setAccessible(true); break; }
+                            Object node = gen.invoke(sctl, ent);
+                            if (node!=null){ Object w=rfield(node,"worldTransform").get(node);
+                                System.out.println("[camdump] hero0 NODE worldTransform m00="+w.getClass().getField("m00").getFloat(w)
+                                    +" m01="+w.getClass().getField("m01").getFloat(w)+" m10="+w.getClass().getField("m10").getFloat(w)
+                                    +" m11="+w.getClass().getField("m11").getFloat(w)+" tx="+w.getClass().getField("m02").getFloat(w)
+                                    +" ty="+w.getClass().getField("m12").getFloat(w)); }
+                        } catch (Throwable e){ System.out.println("[camdump] node échec: "+e); }
                         Object ae=findM(ent,"getAnimationElement").invoke(ent);
                         if (ae!=null){
                             float cs=(Float)findM(ae,"getCurrentScale").invoke(ae);

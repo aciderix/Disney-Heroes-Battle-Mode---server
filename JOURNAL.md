@@ -11587,3 +11587,23 @@ invisibles sous LES DEUX backends (java ET unidbg). L'utilisateur a confirmé : 
 
 **Outils ajoutés (tous flag-gated, off par défaut)** : `camdump` (caméra + positions unités + échelle/os),
 `-Ddh.gldbg` (sonde glDrawElements), `-Ddh.jparticle.{testquad,forcewhite,forcebig,calib}` + logs ACTIVE/tag/STATS.
+
+### g297bis — Précision : effets mal placés = ceux suivant un PROJECTILE (pas le suivi d'os)
+
+Correction de g297 (l'inflation Y systématique était fausse). Instrumentation affinée (`SETPOS` par tag
+d'effet de combat + `camdump` avec transform du nœud `getEntityNode(entity).worldTransform` + `getHitBonePosition`) :
+
+- **Transform du nœud d'unité CORRECT** : `m00=m11=0.5156` (échelle UNIFORME), `tx=951.9 ty=634.4` pour
+  l'unité sim (945,1018) → la base Y projetée (634) est bonne. `getHitBonePosition` correcte (sur l'unité,
+  ex hit(1043,1018,292)). Les effets **suivant un os d'unité** sont bien placés : `heal_plus_c`(896,1203)=tête,
+  `snow_group1`(400,141) a X=400=unit sim X.
+- **Les effets MAL placés (hors champ) suivent un PROJECTILE** : `spark_impact`(-3127,1630) — X très négatif
+  ET **se déplace** (-3165→-3127→…) comme un projectile ; `snow_small2`(-174,1057) X négatif. La position du
+  projectile visuel (snowball) est fausse (~-3000, hors du viewport [0,2000]). Ce sont les impacts + flocons
+  liés aux projectiles = exactement ce que le user ne voit pas (« je vois la traînée mais pas les impacts/flocons »).
+- Calcul Y de `updateEntityTransform` décodé (branche GROUND `PARTICLES_GROUND`) :
+  `y = nodeTranslation.y + offset.y − lastSimPosition.z + VFXGroundYOffset (+ boneOffset.y × scale)`.
+
+**Prochaine étape** : tracer/corriger le positionnement VISUEL des PROJECTILES côté port (`ProjectileData`/
+`G2DSceneRenderer.startProjectile`, position du `Projectile` sim → nœud de scène). C'est un sous-système
+distinct du suivi d'os. Outil ajouté : `-Ddh.jparticle.debug` log `SETPOS tag=… pos=…` (position à la création).
