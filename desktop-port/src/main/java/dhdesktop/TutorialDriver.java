@@ -1245,6 +1245,7 @@ public final class TutorialDriver {
         return "("+(int)v.getClass().getField("x").getFloat(v)+","+(int)v.getClass().getField("y").getFloat(v)+")"; }catch(Throwable t){ return "?"; } }
     private static String rv3(Object o, String name){ try{ Object v=rfield(o,name).get(o); if(v==null) return "null";
         return "("+(int)v.getClass().getField("x").getFloat(v)+","+(int)v.getClass().getField("y").getFloat(v)+","+(int)v.getClass().getField("z").getFloat(v)+")"; }catch(Throwable t){ return "?"; } }
+    private static String v3s(Object v){ try{ if(v==null) return "null"; return "("+(int)v.getClass().getField("x").getFloat(v)+","+(int)v.getClass().getField("y").getFloat(v)+","+(int)v.getClass().getField("z").getFloat(v)+")"; }catch(Throwable t){ return "?"; } }
     private static String rf(Object o, String name){ try{ return String.valueOf(rfield(o,name).getFloat(o)); }catch(Throwable t){ return "?"; } }
     private static String ri(Object o, String name){ try{ return String.valueOf(rfield(o,name).getInt(o)); }catch(Throwable t){ return "?"; } }
 
@@ -1297,6 +1298,19 @@ public final class TutorialDriver {
                         System.out.println(sb.toString());
                     } catch (Throwable ig) {}
                 }
+                // projectiles (source probable des effets mal placés)
+                try {
+                    Object projs = findM(scene,"getProjectiles").invoke(scene);
+                    int psz=projs.getClass().getField("size").getInt(projs); Object pit=projs.getClass().getField("items").get(projs);
+                    StringBuilder pb=new StringBuilder("[camdump] projectiles("+psz+"): ");
+                    for (int i=0;i<psz && i<6;i++){ Object p=java.lang.reflect.Array.get(pit,i); if(p==null) continue;
+                        Object ppos=findM(p,"getPosition").invoke(p);
+                        Object lp=findM(p,"getLaunchPosition").invoke(p);
+                        Object lt=findM(p,"getLaunchTarget").invoke(p);
+                        pb.append(p.getClass().getSimpleName()).append(" pos="+v3s(ppos)+" launch="+v3s(lp)+" target="+v3s(lt)+" | ");
+                    }
+                    System.out.println(pb.toString());
+                } catch (Throwable e){ System.out.println("[camdump] projectiles échec: "+e); }
                 // diag ÉCHELLE du squelette du 1er héros : currentScale, bounds, et bone brut (worldX/Y)
                 try {
                     java.lang.reflect.Field fa=null;

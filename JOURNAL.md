@@ -11607,3 +11607,22 @@ d'effet de combat + `camdump` avec transform du nœud `getEntityNode(entity).wor
 **Prochaine étape** : tracer/corriger le positionnement VISUEL des PROJECTILES côté port (`ProjectileData`/
 `G2DSceneRenderer.startProjectile`, position du `Projectile` sim → nœud de scène). C'est un sous-système
 distinct du suivi d'os. Outil ajouté : `-Ddh.jparticle.debug` log `SETPOS tag=… pos=…` (position à la création).
+
+### g297ter — Piste projectile écartée ; source des effets mal placés non identifiée
+
+`Scene.getProjectiles()` est TOUJOURS vide au moment des effets mal placés (92 dumps en rafale, 0 projectile)
+→ `spark_impact`(-3130,1630)/`snow_small2`(-174,1057) ne suivent PAS un projectile de la Scene. Et X=-3130
+n'est atteignable par AUCUN os d'unité normal (nodeTransX~951 + boneRawX×0.59 = -3130 ⇒ boneRawX≈-6917,
+absurde pour un squelette ~1000 de large). Donc ces effets sont attachés à une source (nœud/offset) à
+~-3130, non identifiée par la réflexion (renderable/EntityComponent/SceneNodeData hors des tableaux
+`RepresentationManager`, `Entity` sim découplé du visuel).
+
+**Bilan factuel certain** : (a) effets = particules ; (b) pipeline de rendu OK ; (c) tint corrigé (alpha 0→254) ;
+(d) transform du nœud d'unité CORRECT (échelle uniforme 0.5156, Y projeté) ; (e) effets suivant un OS d'unité
+bien placés (heal_plus, snow_group1 X=400) ; (f) les effets manquants du user (flocons/impacts type
+spark_impact/snow_small2) sont à des positions hors champ (X négatif ~-3130) depuis une source non tracée.
+
+**Prochaine étape** (autre angle requis) : instrumenter le point de CRÉATION/attachement du renderable
+(`ParticleSpawner.spawn`/`RepresentationManager.spawnParticle`/spawn-triggers) pour capturer la source de
+position AVANT `setPosition`, ou hooker `updateLocalTransform` du nœud parent. La réflexion sur l'état vivant
+ne suffit pas (objets dans le graphe de scène, pas les tableaux du RepresentationManager).
