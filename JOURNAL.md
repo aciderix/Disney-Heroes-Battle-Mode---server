@@ -11666,3 +11666,22 @@ alpha packé 0 → transparent), corrigé (alpha 0→254). **Reste à confirmer 
 maintenant : capture par polling de `manual.ppm` (~8 fps) trop lente pour des effets brefs (quelques frames) —
 163 frames = 0 burst vif capturé, MAIS non probant (échantillonnage trop lent). Confirmation fiable = œil humain
 sur un vrai combat (vue live) OU capture frame-perfect. Outils : agent `scratchpad/dhagent.jar` (hors repo).
+
+### g298bis — Preuve frame-perfect : les effets FONT FEU mais ne rendent AUCUN pixel (bug de TEXTURE)
+
+Capture frame-perfect (lecture serrée de `build/manual.ppm`, dédup par hash md5, ~65 fps → 318 frames DISTINCTES
+sur un combat) pendant que l'agent confirme une rafale complète d'effets de combat (frozone_attack_snowflake_burst,
+ralph_attack_punch_impact, elastigirl_attack_impact, energy_gain, frozone_attack_hand_mist, impact_physical,
+snowball_proj…) → **0 burst de pixels vifs localisé** (seuil 80–60000 px). Les captures précédentes à ~8 fps
+étaient trop lentes ; à 65 fps c'est concluant.
+
+**Conclusion : effets bien positionnés (agent) + alpha OK (fix tint) + `glDrawElements` exécuté sans erreur GL
+(sonde gldbg, count=6/quad) MAIS aucun pixel peint.** forcebig (gros quad blanc opaque à la position réelle
+on-screen) ne montrait rien non plus → couleur/taille/position écartées. **Le shader échantillonne une texture
+TRANSPARENTE** → le bug est la TEXTURE des particules (le renderer binde `effect.atlas.getTextures().get(page)`).
+
+Pistes texture à vérifier (prochaine étape, côté port) : (a) `NativeParticleEffect.atlas` est-il peuplé pour le
+backend Java (sinon getTextures() vide) ? (b) la texture ETC2 RGBA de l'atlas d'effets (`.../vfx/particles-DEFAULT.etc2`)
+est-elle décodée non-vide ? (c) `pageFor`/l'index de page du drawCall pointe-t-il la bonne texture ? (d) l'UV
+par-particule échantillonne-t-elle une zone opaque ? Le testquad rendait car il utilisait region[0] direct ;
+les vraies particules passent par emitQuad (UV/région par-émetteur).
