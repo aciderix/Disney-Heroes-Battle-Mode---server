@@ -11642,3 +11642,27 @@ pas le renderable). **Limite de l'approche réflexion atteinte.**
 `ParticleEffectRenderable.updateEntityTransform` ou `.setPosition`) pour logger offset/boneOffset/followBoneID
 au moment du calcul, OU tracer `ParticleSpawner.spawn`/`RunSpawners` (création) pour capturer la config
 d'offset de ces effets précis (spark_impact, snow_small2). Le fix sera côté port (une entrée de ce calcul).
+
+### g298 — CORRECTION MAJEURE : la position n'a JAMAIS été le bug (effets bien à l'écran)
+
+Agent Java bytecode (ASM 9.7.1 de la distrib gradle) instrumentant `ParticleEffectRenderable.updateEntityTransform`
+(exit) pour logger les champs runtime (worldPosition/nodePosition/boneOffset/flipX/followBoneID/parent/particlePath)
+— seul moyen d'atteindre le renderable runtime (inatteignable par réflexion). Chargé via `-javaagent:dhagent.jar`.
+
+**Découverte qui invalide g297** : en logguant AUSSI la **position caméra courante** (la RaidCamera2D **PANE** :
+camX 1000→3250→5500 selon le stage), le vrai test on/off donne **22 effets de combat ON vs 2 OFF** (les 2 OFF
+sont à wp=(0,0), état d'init transitoire). TOUS les effets manquants du user sont **bien positionnés à l'écran** :
+`frozone_attack_snowflake_burst` (dx=289,726), `ralph_attack_punch_impact` (dx=272,721), `frozone_attack_hand_mist`,
+`frozone_attack_snowball_proj`, `energy_gain`, `elastigirl_attack_impact`, `impact_physical` — tous dx ∈ ±1000.
+
+**Mon enquête "position" (g297*) était FAUSSE**, confondue par : (1) les effets d'ENTRÉE (`*_entrance_*`) et de
+DÉCOR (`ships_vfx`, `stars`, `winter_mainscreen_snow`, parallaxe) légitimement hors du viewport combat ; (2) le
+**panoramique de la caméra** (mon hypothèse d'un champ fixe [0,2000] était fausse — camX varie de 1000 à 5500).
+Le `parallaxOffsetX = camX×(1−worldParallax)` n'affecte QUE les nœuds de décor (worldParallax<1) ; les nœuds
+d'unité ont worldParallax=1.0 → offset 0.
+
+**Donc : la position est correcte. Le seul vrai bug identifié reste le TINT** (`rGrad` jetait le dégradé →
+alpha packé 0 → transparent), corrigé (alpha 0→254). **Reste à confirmer visuellement** si les effets rendent
+maintenant : capture par polling de `manual.ppm` (~8 fps) trop lente pour des effets brefs (quelques frames) —
+163 frames = 0 burst vif capturé, MAIS non probant (échantillonnage trop lent). Confirmation fiable = œil humain
+sur un vrai combat (vue live) OU capture frame-perfect. Outils : agent `scratchpad/dhagent.jar` (hors repo).

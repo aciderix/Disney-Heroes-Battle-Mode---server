@@ -1270,6 +1270,40 @@ public final class TutorialDriver {
     }
     private static String rf(Object o, String name){ try{ return String.valueOf(rfield(o,name).getFloat(o)); }catch(Throwable t){ return "?"; } }
     private static String ri(Object o, String name){ try{ return String.valueOf(rfield(o,name).getInt(o)); }catch(Throwable t){ return "?"; } }
+    private static String rb(Object o, String name){ try{ return String.valueOf(rfield(o,name).getBoolean(o)); }catch(Throwable t){ return "?"; } }
+    // marche l'arbre : trouve les composants ayant 'spawnedParticles' (ParticleSpawner...) et dump les
+    // ParticleEffectRenderable runtime -> offset/boneOffset/flipX/followBoneID (source EXACTE de la position)
+    private static void dumpSpawners(Object node, int depth, int[] budget){
+        if (node==null || budget[0]<=0 || depth>12) return;
+        try {
+            java.lang.reflect.Field nmF=rfield(node,"name"); String nm=nmF!=null?String.valueOf(nmF.get(node)):"?";
+            Object cs = rfield(node,"components").get(node);
+            int csz=cs.getClass().getField("size").getInt(cs); Object cit=cs.getClass().getField("items").get(cs);
+            for (int i=0;i<csz;i++){ Object c=java.lang.reflect.Array.get(cit,i); if(c==null) continue;
+                String cn=c.getClass().getSimpleName();
+                // renderable direct sur le composant ? (champ 'effect'/'renderable'/'spawnedParticles')
+                java.lang.reflect.Field spF=rfield(c,"spawnedParticles");
+                if (spF!=null){ Object sp=spF.get(c);
+                    if(sp!=null){ try {
+                        int msz=sp.getClass().getField("size").getInt(sp);
+                        Object vals=sp.getClass().getField("values").get(sp);
+                        for (int j=0;j<msz && budget[0]>0;j++){ Object r=java.lang.reflect.Array.get(vals,j); if(r==null) continue;
+                            System.out.println("[camdump] SPAWNED node='"+nm+"' "+cn+" -> "+r.getClass().getSimpleName()
+                                +" wp="+rv2(r,"worldPosition")+" off="+rv3(r,"offset")+" boneOff="+rv2(r,"boneOffset")
+                                +" flipX="+rb(r,"flipX")+" boneID="+ri(r,"followBoneID")+" scale="+rf(r,"scale")); budget[0]--; }
+                    } catch(Throwable e){} } }
+                // localiser tout composant Spawner/Particle/Effect (pour comprendre où ils vivent)
+                if (budget[0]>0 && cn.matches("(?i).*(Spawner|Particle|Effect|Projectile).*") && !cn.contains("SpawnTrigger")){
+                    System.out.println("[camdump] COMP node='"+nm+"' d="+depth+" comp="+cn); budget[0]--;
+                }
+            }
+        } catch(Throwable e){}
+        try {
+            Object ch = rfield(node,"children").get(node);
+            int chz=ch.getClass().getField("size").getInt(ch); Object cit=ch.getClass().getField("items").get(ch);
+            for (int i=0;i<chz;i++) dumpSpawners(java.lang.reflect.Array.get(cit,i), depth+1, budget);
+        } catch(Throwable e){}
+    }
 
     /** DEV : dump de la caméra de combat (position + viewport + zoom → étendue MONDE visible), pour
      *  vérifier si les positions d'émetteurs de particules (~5000-12599) tombent dans le champ visible. */
@@ -1353,7 +1387,23 @@ public final class TutorialDriver {
                                 System.out.println("[camdump] hero0 NODE worldTransform m00="+w.getClass().getField("m00").getFloat(w)
                                     +" m01="+w.getClass().getField("m01").getFloat(w)+" m10="+w.getClass().getField("m10").getFloat(w)
                                     +" m11="+w.getClass().getField("m11").getFloat(w)+" tx="+w.getClass().getField("m02").getFloat(w)
-                                    +" ty="+w.getClass().getField("m12").getFloat(w)); }
+                                    +" ty="+w.getClass().getField("m12").getFloat(w));
+                                // EntityComponent dans les components du nœud (entrées du calcul Y des effets)
+                                try {
+                                    Object cs2 = rfield(node,"components").get(node);
+                                    int csz2=cs2.getClass().getField("size").getInt(cs2); Object cit2=cs2.getClass().getField("items").get(cs2);
+                                    for (int i2=0;i2<csz2;i2++){ Object c2=java.lang.reflect.Array.get(cit2,i2); if(c2==null) continue;
+                                        if (c2.getClass().getSimpleName().equals("EntityComponent")){
+                                            System.out.println("[camdump] hero0 EC VFXGround=("+rf(c2,"VFXGroundXOffset")+","+rf(c2,"VFXGroundYOffset")+")"
+                                                +" lastSim="+rv3(c2,"lastSimPosition")+" scale="+rf(c2,"scale")); }
+                                        // renderables d'effet portés par ce composant ?
+                                        java.lang.reflect.Field spF=rfield(c2,"spawnedParticles");
+                                        if (spF!=null){ Object sp=spF.get(c2); if(sp!=null){ int msz=sp.getClass().getField("size").getInt(sp); Object vs=sp.getClass().getField("values").get(sp);
+                                            for(int j=0;j<msz;j++){ Object r=java.lang.reflect.Array.get(vs,j); if(r==null) continue;
+                                                System.out.println("[camdump] EC-SPAWNED "+r.getClass().getSimpleName()+" wp="+rv2(r,"worldPosition")+" off="+rv3(r,"offset")+" boneOff="+rv2(r,"boneOffset")+" flipX="+rb(r,"flipX")+" boneID="+ri(r,"followBoneID")); } } }
+                                    }
+                                } catch (Throwable e2){}
+                            }
                         } catch (Throwable e){ System.out.println("[camdump] node échec: "+e); }
                         Object ae=findM(ent,"getAnimationElement").invoke(ent);
                         if (ae!=null){
@@ -1412,7 +1462,7 @@ public final class TutorialDriver {
             try {
                 Object sctl2 = findM(screen,"getSceneController").invoke(screen);
                 Object root = findM(sctl2,"getCombatRoot").invoke(sctl2);
-                dumpBadNodes(root, 0, new int[]{25});
+                dumpSpawners(root, 0, new int[]{40});
             } catch (Throwable e){ System.out.println("[camdump] walk échec: "+e); }
         } catch (Throwable t) { System.out.println("[camdump] échec: " + t); }
     }
