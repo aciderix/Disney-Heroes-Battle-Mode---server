@@ -11871,3 +11871,33 @@ victoire, combat auto trop rapide — besoin d'un combat LENT capturé, ou captu
 **PROCHAINES ÉTAPES** : (1) capturer une frame EN PLEIN combat (pas victoire) pour voir si impacts/flocons rendent
 (même en carrés) ; (2) diagnostiquer la forme carrée = UV par-frame correct ? alpha ETC2 vfx unité décodé ? comparer
 au sprite attendu ; (3) mono-frame (mist) : rendent-ils ? Outils inchangés + log `[jparticle] ANIM`.
+
+### g304 — PERF particules : mesures FPS (spine jni + particules unidbg) + verdict dynarmic = IMPASSE
+
+**Contexte** : après 2 semaines sur le backend java (effets cassés), pivot demandé par l'utilisateur : mesurer les FPS
+de la config QUI MARCHE (spine=jni Java + particules=unidbg) et étudier dynarmic pour optimiser. Décision : si dynarmic
+inexploitable, on assume effets OFF côté port (débogage) + livraison finale via l'APK.
+
+**⚠️ Piège backend** : `-Ddh.particlebackend=unidbg` NE FORCE PAS unidbg. `JavaParticleEngine.flagJava()` ne teste que
+`== "java"` puis retombe sur le marqueur `~/.dh_particlebackend`. Pour unidbg : marqueur != "java" (`printf unidbg > ~/.dh_particlebackend`).
+
+**MESURES FPS** (`-Ddh.fps=60`, log `[fps] … unidbg=X ms/frame (N appels) … screen=…`) :
+- Hub (java) : ~185 fps, 0 appel unidbg. | Hub (unidbg, neige ambiante) : **13-14 fps**, unidbg 48-60 ms (37-51 appels).
+- Combat sans effet : ~185-205 fps. | Combat effets lourds : **17-33 fps**, unidbg 23-48 ms (17-34 appels).
+- « reste » (hors unidbg) TOUJOURS 5-20 ms (50-200 fps). ⇒ **unidbg = 40-80% du temps de frame, ~1,3-1,5 ms/appel**.
+  C'est LE goulot. Sans unidbg tout serait fluide.
+
+**DYNARMIC (JIT ARM, `-Ddh.dynarmic=1`) = IMPASSE (démontré)** :
+- On est déjà sur la DERNIÈRE version unidbg **0.9.8** (Maven, sept. 2024) — pas de montée possible.
+- Crash au 1er `effectCreate` : `ExceptionRaised[dynarmic.cpp:233] pc=0x4001a196 exception=0 code=0x0620FFFB`. Les
+  octets à cet offset (`FB FF 20 06`) = mot `0x0620FFFB` = zone **Advanced SIMD/NEON THUMB-2**. Unicorn l'exécute,
+  dynarmic ne la décode pas → `UndefinedInstruction`.
+- `DynarmicBackend.handleExceptionRaised(pc, ex)` : si ex==8 (SVC) → géré ; SINON → `emulator.attach().debug()` =
+  debugger interactif → `NoSuchElementException: No line found` (stdin EOF headless) → **blocage**. Pas de fallback
+  par-instruction vers Unicorn (backend fixé au build). Windows dynarmic.dll sous-maintenue (issue #476).
+- ⇒ dynarmic non exploitable pour libspine-native.so sur ce setup. **unidbg reste sur Unicorn (interpréteur), lent par nature.**
+
+**DÉCISION (utilisateur)** : ne pas s'acharner. Port = **outil de débogage** (effets off/imparfaits acceptés), **livraison
+finale du jeu via l'APK réel**. Le backend Java (185 fps, 0 unidbg) reste le SEUL vrai 10× si un jour on veut des effets
+fluides côté port (fix flipbook g303 fait avancer, mais rendu incomplet) — non prioritaire vs les milliers d'utilisateurs
+qui attendent le serveur. **Ne PAS reprendre le backend java particules sans nouvelle raison forte.**
