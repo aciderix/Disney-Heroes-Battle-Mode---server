@@ -95,7 +95,9 @@ cp "$W/AndroidManifest.xml" "$APKTMP/AndroidManifest.xml"
 cp "$W/$GNAME" "$APKTMP/$GNAME"
 cp "$W/picker.dex" "$APKTMP/classes${NEXT}.dex"
 rm -f "$APKTMP"/META-INF/*.RSA "$APKTMP"/META-INF/*.SF "$APKTMP"/META-INF/*.MF 2>/dev/null || true
-( cd "$APKTMP" && jar cf "$W/out.apk" . )
+# Ré-empaquetage : `jar cf` compressait resources.arsc → refus sur targetSdk 30+ (-124). On le STOCKE non-compressé
+# (+ .so) ; zipalign (uber-apk-signer) aligne sur 4 octets ensuite.
+"$PY" "$ROOT/tools/apk_repack_stored.py" "$APKTMP" "$W/out.apk"
 rm -rf "$APKTMP"
 
 # --- 5) zipalign + re-signer ---

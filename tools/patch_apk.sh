@@ -74,7 +74,10 @@ APKTMP="$WORK/app-extract"; rm -rf "$APKTMP"; mkdir -p "$APKTMP"
 ( cd "$APKTMP" && unzip -oq "$WORK/app.apk" )
 cp "$WORK/$DEXNAME" "$APKTMP/$DEXNAME"
 rm -f "$APKTMP"/META-INF/*.RSA "$APKTMP"/META-INF/*.SF "$APKTMP"/META-INF/*.MF 2>/dev/null || true
-( cd "$APKTMP" && jar cf "$WORK/app.apk" . )
+# Ré-empaquetage : `jar cf` compressait TOUT (dont resources.arsc) → APK refusé sur targetSdk 30+
+# (INSTALL_PARSE_FAILED_RESOURCES_ARSC_COMPRESSED). On STOCKE resources.arsc (+ .so) non-compressés ; zipalign
+# (uber-apk-signer) fera l'alignement 4 octets ensuite.
+"$PY" "$ROOT/tools/apk_repack_stored.py" "$APKTMP" "$WORK/app.apk"
 rm -rf "$APKTMP"
 
 # --- 4) zipalign + re-signer (clé debug intégrée ; le signer vérifie lui-même la signature à la fin) ---
