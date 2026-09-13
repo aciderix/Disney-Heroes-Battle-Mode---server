@@ -94,7 +94,17 @@ public final class DhGL20 implements com.badlogic.gdx.graphics.GL20 {
     public void glDrawElements(int mode, int count, int type, int indices) { GL11.glDrawElements(mode, count, type, indices); }
     private static final boolean GLDBG = "1".equals(System.getProperty("dh.gldbg"));
     private static long glDeCalls=0, glDeErr=0; private static int glDeMinC=Integer.MAX_VALUE, glDeMaxC=0;
+    private static final boolean GLPDBG = "1".equals(System.getProperty("dh.glpdbg"));
+    private static int glpN=0;
     public void glDrawElements(int mode, int count, int type, Buffer indices) {
+        if (GLPDBG && indices!=null) { int rem=indices.remaining();
+            if (rem>0 && rem<=48 && rem%6==0 && glpN<14) { glpN++;
+                int[] vp=new int[4]; GL11.glGetIntegerv(0x0BA2, vp);
+                System.err.println("[glpdbg] draw rem="+rem+" prog="+GL11.glGetInteger(0x8B8D)+" tex2D="+GL11.glGetInteger(0x8069)
+                    +" blendOn="+(GL11.glIsEnabled(0x0BE2)?1:0)+" src="+GL11.glGetInteger(0x0BE1)+" dst="+GL11.glGetInteger(0x0BE0)
+                    +" depthTest="+(GL11.glIsEnabled(0x0B71)?1:0)+" scissor="+(GL11.glIsEnabled(0x0C11)?1:0)
+                    +" arrBuf="+GL11.glGetInteger(0x8894)+" elemBuf="+GL11.glGetInteger(0x8895)
+                    +" viewport=["+vp[0]+","+vp[1]+","+vp[2]+","+vp[3]+"]"); } }
         if (indices instanceof ByteBuffer) GL11.glDrawElements(mode, (ByteBuffer) indices);
         else if (indices instanceof ShortBuffer) GL11.glDrawElements(mode, (ShortBuffer) indices);
         else if (indices instanceof IntBuffer) GL11.glDrawElements(mode, (IntBuffer) indices);

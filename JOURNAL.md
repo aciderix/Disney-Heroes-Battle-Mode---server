@@ -11756,3 +11756,88 @@ et une image « op1 » montrant des cristaux de glace bleus sous Frozone censés
 
 **Leçon (§8)** : j'ai 2 diagnostics faux à mon actif sur ce bug (position, puis alpha), les deux étayés par une
 **lecture visuelle** erronée de ma part. Prochaine preuve = **numérique/oracle**, jamais « je crois voir ».
+
+### g301 — BISECTION TRANCHÉE : bug DANS le moteur java ; diff sommets → parse .np pool désaligné
+
+**Bisection (g300) résolue EN JEU par l'utilisateur** : backend **unidbg** (natif réel) → TOUS les effets de combat
+rendent (flocons/impacts/énergie). Backend **java** → invisibles. ⇒ bug **DANS `JavaParticleEngine`**, pas en aval
+(shader/blend/GL/texture/position/alpha innocentés : unidbg passe par les mêmes). Fini les fausses pistes.
+
+**Harnais de comparaison** (nouveau, `-Ddh.jparticle.compare=1`, `cparticle.Native`) : en backend java, chaque
+appel Effect_* est dupliqué vers unidbg en lockstep (create/clone/start/update/position/rotation) ; sur
+getVertices on appelle LES DEUX et on diffe les sommets. Oracle unidbg = vérité terrain. (Compilé avec le JDK 21
+**embarqué du launcher** `launcher-windows/runtime/jdk` — le projet est en classes v65 ; le JDK 17 système ne suffit pas.)
+
+**Diff sur 8 effets de combat (flocons, mist, punch, snow, spark)** — motif SYSTÉMATIQUE :
+- **UV identiques** java↔unidbg partout ⇒ atlas/région OK. Nb de sommets identique ⇒ émission/vie/taille OK.
+- **Couleur (tint) light décalée d'un cran** : java (R,G,B)=(0, unidbg.R, unidbg.G). Ex mist : java(0,194,239) vs
+  unidbg(194,239,255). Le vrai B (souvent 255) est perdu, un 0 est injecté en tête.
+- **Alpha (transparency) faux** : java a=0 sur 7/8 effets (unidbg rampe 6→255) ; spark_impact a=254 (valeur parasite).
+- **Blend faux** : là où unidbg=1 (alpha premultiplié, srcONE), java=3 (additif) ; ailleurs 0↔0.
+- draw calls : java 1/émetteur (idx=6 chacun) vs unidbg 1 gros (idx=6n) — structurel, pas la cause d'invisibilité.
+
+**Cause racine (hypothèse forte, à confirmer par dump)** : le tint ET la transparency tirent leurs
+couleurs/scaling/timeline du **pool** de floats (`readEmitter` : couleurs @`pool[oa..oa+3n]`, scaling @`pool[ob..]`).
+Le décalage « prepend 0 » identique partout ⇒ mon tableau `pool` est **désaligné d'un float** vs les offsets `oa/ob`
+du .np (un float en trop en tête, ou offsets 1-based/base différente). Une seule correction d'offset devrait
+rétablir tint + alpha ensemble. Le blend (additive) est un 2ᵉ point (encodage 1 vs 3) à aligner ensuite.
+
+**Statut** : moteur java = rendu cassé (attendu, on voit le bug) ; harnais compare opérationnel ; dump du pool en cours
+pour pinner l'offset exact AVANT de corriger (§8 : sur faits). Backup jar : `dhdesktop.jar.bak`.
+
+### g302 — Effets combat java : DONNÉE corrigée (tint+alpha) mais rendu TOUJOURS vide ; état GL identique à unidbg (paradoxe non résolu)
+
+Session longue de diagnostic (backend particules java). **Point d'arrêt : pause utilisateur.** Serveur laissé up.
+
+**FIXES RÉELS trouvés & appliqués dans `JavaParticleEngine.readEmitter()` (à GARDER) :**
+1. **Tint décalé d'un cran** — les couleurs du dégradé étaient lues à `pool[oa]` (= offset TIMELINE, un 0 en tête)
+   au lieu de `pool[ob]` (= offset DONNÉES). Règle certifiée par dump (`-Ddh.jparticle.npdump`) : pour un dégradé
+   comme pour un ScaledNumericValue, **1er offset (oa)=timeline, 2e (ob)=données**. Corrigé : couleurs @ob, timeline @oa.
+   Avant : java tint=(0, U.R, U.G) ; après : java=(U.R,U.G,U.B) = unidbg. ✅ vérifié via harnais compare.
+2. **Transparency au mauvais slot** — je la parsais AVANT le tint (slot inactif → alpha 0 = invisible). En réalité
+   elle est APRÈS le tint (ordre libGDX standard tint→transparency ; le dump montre ce slot `active=true high=1 n=4`
+   courbe de fondu). Corrigé : `rGrad(getTint()); rScaled(getTransparency())`. Après : java alpha=254 = unidbg 255. ✅
+
+**MAIS visuellement TOUJOURS RIEN** (utilisateur, en vrai combat). Donc la donnée n'était pas la cause finale.
+
+**CE QUI EST INNOCENTÉ (définitivement, cette session) :** tint ✓ alpha ✓ position (CMP java=unidbg) ✓ timing
+(`dt` en SECONDES 0.0016–0.039, life normale spark=300/punch=200/icicle=1000 ms) ✓ blend (renderer lu au bytecode :
+0→normal 770/771, 1→SRC_ALPHA/ONE, 3→ONE/ONE, 4→multiply : tous visibles ; offset d'indices CUMULÉ → multi-draw-call OK) ✓.
+
+**PREUVE FORTE — l'état GL au `glDrawElements` de particule est BYTE-POUR-BYTE IDENTIQUE entre unidbg (REND) et
+java (REND PAS)** : `prog=3 tex2D=10 blendOn=1 src=770 dst=771 depthTest=0 scissor=0 arrBuf=0 elemBuf=0
+viewport=[0,0,1280,720]` (sonde `-Ddh.glpdbg` ajoutée à `DhGL20.glDrawElements(Buffer)`). Agent bytecode : `render()`
+EST appelé, atlas texture VALIDE (`NativeAtlas nTex=1 1024x1024 ETC2TextureData`). gldbg : draws exécutés, 0 err.
+
+**⇒ PARADOXE : état GL identique + donnée correcte, pourtant java ne peint aucun pixel.** Logiquement impossible →
+il manque un fait. Deux pistes restantes :
+- (a) **Les sommets java sont hors champ au rendu réel.** Indice JOURNAL g298bis : `testquad` (1 quad blanc opaque à
+  la position ÉMETTEUR, region0, hors boucle) REND ; `forcebig` (quad blanc à la position PARTICULE `drawX/drawY`)
+  ne rend RIEN. ⇒ l'émetteur est à l'écran mais les PARTICULES peut-être pas (drawX/drawY dans un mauvais repère ?).
+  (forcebig « confondable » car 0 particule active au moment capturé — à re-tester proprement).
+- (b) Un détail du VertexArray client-side non capté.
+
+**TEST renderunidbg (rendre les sommets unidbg via la session java-active) = INVALIDE** : en compare l'effet unidbg
+miroir renvoyait `n=0` (pas simulé), ET le combat rend via `getVerticesAboveZ`/`BelowZ` (tri Z) pas `getVertices`
+(que j'avais patché) — `[RU] used=1`. Donc le « Non » de ce test ne prouvait rien. (Note : `Effect_getVerticesBelowZ`
+renvoie **0 en dur** côté java — à corriger éventuellement, mais AboveZ renvoie déjà tout.)
+
+**PROCHAINE ÉTAPE (à froid) — le test décisif reste l'idée utilisateur** : un build qui dessine SIMULTANÉMENT (1) un
+marqueur BLANC à la position ÉMETTEUR (repère on-screen connu, = testquad) et (2) un marqueur d'une AUTRE couleur à la
+position PARTICULE réelle (`drawX/drawY`). Capture en vrai combat → si blanc visible mais pas l'autre = **particules
+hors champ** (bug de position particule, piste (a)). Si les deux visibles = pipeline OK → creuser (b)/VertexArray.
+**Prérequis : un VRAI combat.** ⚠️ Le pilote auto `gocombat` du live_view N'ATTEINT PAS le combat (reste sur la carte
+« THE CITY ») → il faut l'utilisateur en pilotage manuel, OU réparer la séquence gocombat (coords périmées).
+
+**Ops / incidents résolus :** PC a redémarré en cours (tout fermé, cloudflared/serveur/live_view relancés). Le compte
+`9999999999999999` a paru « reset » (chapitre verrouillé, énergie 0/0) → en fait **glitch de resync CLIENT** (mes
+relances rapides + serveur down transitoire) ; la base serveur était **intacte** (`individualUserExtra`=8192o, màj du
+jour) → **redémarrage client propre = état restauré** (500 gems, 13340 coins, énergie 39.96M). Serveur relancé via
+`generated-server/run.bat` (jre+python EMBARQUÉS, db `data/dh-server.db` + WAL). **Compiler le port :** JDK **21**
+EMBARQUÉ du launcher `launcher-windows/runtime/jdk` (classes v65 ; le JDK 17 système ne lit pas) ; recompiler les 2-3
+fichiers touchés + `jar uf` dans `generated-client/lib/dhdesktop.jar` + relancer. Backup `dhdesktop.jar.bak`.
+
+**Outils de diag ajoutés cette session (dans le code, réutilisables) :** `-Ddh.jparticle.compare=1` (miroir unidbg +
+diff sommets, `cparticle.Native`), `-Ddh.jparticle.renderunidbg=1`, `-Ddh.jparticle.npdump=1` (pool+offsets),
+`-Ddh.jparticle.dtdbg=1` (dt+life), compteurs `[PATH]` getVertices/AboveZ/BelowZ, `-Ddh.glpdbg=1` (état GL au draw,
+`DhGL20`), `JavaParticleEngine.tagOf()`. Existants : `testquad/forcebig/forcewhite/calib`, `-Ddh.gldbg`, `dhagent.jar`.

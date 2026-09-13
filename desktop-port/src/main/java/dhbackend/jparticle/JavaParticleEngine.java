@@ -95,11 +95,13 @@ public final class JavaParticleEngine {
         rNumeric(em.getZToYMultiplierValue()); rSpawn(em.getSpawnShape());
         rScaled(em.getSpawnWidth()); rScaled(em.getSpawnHeight()); rScaled(em.getSizeX()); rScaled(em.getSizeY());
         rScaled(em.getVelocity()); rScaled(em.getVelocityZ()); rScaled(em.getAngle()); rScaled(em.getRotation()); rScaled(em.getWind());
-        rScaled(em.getGravity()); rScaled(em.getTransparency());
+        // g301 : le slot ici (avant tint) N'EST PAS la transparency (dump : active=false/0 sur tous les effets).
+        // La VRAIE transparency est le slot APRÈS le tint (ordre libGDX standard tint->transparency), cf. plus bas.
+        rScaled(em.getGravity()); ScaledNumericValue dPreTint=new ScaledNumericValue(); rScaled(dPreTint);
         ScaledNumericValue d1=new ScaledNumericValue(); rScaled(d1);
         rRanged(em.getCentripetalRadiusValue()); rScaled(em.getCentripetalForceValue()); rScaled(em.getTangentialForceValue()); rRanged(em.getTangentialRadiusValue());
         ScaledNumericValue d2=new ScaledNumericValue(); rScaled(d2);
-        rGrad(em.getTint()); ScaledNumericValue d3=new ScaledNumericValue(); rScaled(d3);
+        rGrad(em.getTint()); rScaled(em.getTransparency());   // g301 : transparency = slot APRÈS le tint (courbe alpha 0..1, high=1, n>1)
         setPriv(em,"frameDuration",f32());
         boolean att=bl(),cont=bl(),ali=bl(); int fl=b[pos++]&0xff; boolean beh=bl();
         setPriv(em,"attached",att); setPriv(em,"continuous",cont); setPriv(em,"aligned",ali); setPriv(em,"additive",(fl&1)!=0); setPriv(em,"behind",beh);
@@ -107,11 +109,21 @@ public final class JavaParticleEngine {
         lastTag = tagLen>0 ? new String(b, pos, tagLen, java.nio.charset.StandardCharsets.UTF_8) : "";
         pos+=tagLen;
         for(Tl t:tls){ if(t.n>0 && t.oa+t.n<=poolSize && t.ob+t.n<=poolSize){ t.s.setTimeline(Arrays.copyOfRange(pool,t.oa,t.oa+t.n)); t.s.setScaling(Arrays.copyOfRange(pool,t.ob,t.ob+t.n)); } }
-        // tint : n points -> couleurs = 3n floats RGB @colorsOff, timeline = n floats @timelineOff
+        // tint : comme les ScaledNumericValue (tls), le 1er offset (oa) = TIMELINE (n floats), le 2e (ob) = DONNÉES
+        // = COULEURS (3n floats RGB). g301 : j'avais inversé (couleurs @oa) -> couleurs décalées d'un cran
+        // (R prenait la valeur timeline=0, canaux glissés) -> tint faux. Corrigé : couleurs @ob, timeline @oa.
         for(Object[] g:gts){ GradientColorValue gc=(GradientColorValue)g[0]; int n=(int)g[1],oa=(int)g[2],ob=(int)g[3];
-            if(n>0 && oa+3*n<=poolSize && ob+n<=poolSize){ float[] cols=Arrays.copyOfRange(pool,oa,oa+3*n), tml=Arrays.copyOfRange(pool,ob,ob+n);
+            if(n>0 && ob+3*n<=poolSize && oa+n<=poolSize){ float[] cols=Arrays.copyOfRange(pool,ob,ob+3*n), tml=Arrays.copyOfRange(pool,oa,oa+n);
                 gc.setColors(cols); setPriv(gc,"timeline",tml);
                 if(DBG && !dbgTintDone){ dbgTintDone=true; System.err.println("[jparticle] TINT n="+n+" colors="+Arrays.toString(cols)+" timeline="+Arrays.toString(tml)); } } }
+        if(NPDUMP && lastTag!=null && lastTag.matches("(?i).*(snow|flake|punch|impact|mist|spark|ice|energy|frost).*") && npdumpSeen.add(lastTag)){
+            StringBuilder sb=new StringBuilder("[NPDUMP] tag='"+lastTag+"' poolSize="+poolSize+"\n  pool=[");
+            for(int i=0;i<poolSize && i<64;i++){ sb.append(String.format("%d:%.4g ", i, pool[i])); } sb.append("]\n");
+            for(Object[] g:gts){ sb.append("  GRAD n="+(int)g[1]+" colorsOff(oa)="+(int)g[2]+" timelineOff(ob)="+(int)g[3]+"\n"); }
+            int ti=0; for(Tl t:tls){ sb.append("  SCL["+(ti++)+"] active="+getPriv(t.s,"active")+" low=("+getPriv(t.s,"lowMin")+","+getPriv(t.s,"lowMax")+") high=("+getPriv(t.s,"highMin")+","+getPriv(t.s,"highMax")+") tOff="+t.oa+" sOff="+t.ob+" n="+t.n+"\n"); }
+            try{ ScaledNumericValue tr=em.getTransparency(); sb.append("  TRANSP active="+getPriv(tr,"active")+" low=("+getPriv(tr,"lowMin")+","+getPriv(tr,"lowMax")+") high=("+getPriv(tr,"highMin")+","+getPriv(tr,"highMax")+") scaling="+Arrays.toString((float[])getPriv(tr,"scaling"))+" timeline="+Arrays.toString((float[])getPriv(tr,"timeline"))+"\n"); }catch(Throwable t){}
+            System.err.println(sb.toString());
+        }
         return em;
     }
     private String lastTag = "";
@@ -144,12 +156,23 @@ public final class JavaParticleEngine {
         return id;
     }
     static final boolean DBG = "1".equals(System.getProperty("dh.jparticle.debug"));
+    static final boolean NPDUMP = "1".equals(System.getProperty("dh.jparticle.npdump"));
+    private static final java.util.Set<String> npdumpSeen = java.util.Collections.synchronizedSet(new java.util.HashSet<>());
     private static int gvCalls=0, gvNonEmpty=0, gvLastLog=-1;
     public synchronized void start(int id){ Handle h=H.get(id); if(h==null) return; for(ParticleEmitter e:h.eff.emitters){ e.setPosition(h.x,h.y); e.start(); } }
     public synchronized boolean update(int id, float dt){ Handle h=H.get(id); if(h==null) return false; boolean any=false, allComplete=true;
+        // DTDBG : mesure de la vitesse de vieillissement (dt + life/currentLife d'une particule de combat) — vérifie
+        // si le dt est dans la bonne unité (secondes pour ParticleEmitter libGDX qui fait dt*1000 en interne).
+        Object lpBefore=null;
+        if(DTDBG && h.tag!=null && dtLogN<50 && h.tag.matches("(?i).*(snow|impact|punch|spark|mist|energy|icicle|frost).*")){
+            for(ParticleEmitter e:h.eff.emitters){ Object pa=getPriv(e,"particles"); if(pa instanceof Object[]){ for(Object p:(Object[])pa){ if(p!=null){ lpBefore=p; break; } } } if(lpBefore!=null) break; } }
         for(ParticleEmitter e:h.eff.emitters){ e.update(dt); if(e.getActiveCount()>0) any=true; if(!e.isComplete()) allComplete=false; }
+        if(DTDBG && lpBefore!=null){ dtLogN++;
+            System.err.println("[jparticle] UPD dt="+dt+" tag='"+h.tag+"' active="+(any?"Y":"n")+" life(après)="+getPriv(lpBefore,"life")+"/"+getPriv(lpBefore,"currentLife")); }
         if(h.disposed && allComplete && !any){ H.remove(id); if(DBG) System.err.println("[jparticle] cleanup id="+id+" (disposed+complete)"); }
         return any; }
+    static int dtLogN=0;
+    static final boolean DTDBG = "1".equals(System.getProperty("dh.jparticle.dtdbg"));
     public synchronized void setPosition(int id,float x,float y){ Handle h=H.get(id); if(h==null) return; h.x=x; h.y=y; for(ParticleEmitter e:h.eff.emitters) e.setPosition(x,y);
         if(DBG && h.posLogN<5 && h.tag!=null && h.tag.matches("(?i).*(snow|flake|punch|impact|splash|ice|energy|frost|hand_mist|icewave|snowball).*")){
             h.posLogN++; System.err.println("[jparticle] SETPOS id="+id+" tag='"+h.tag+"' pos=("+x+","+y+")"); } }
@@ -168,6 +191,7 @@ public final class JavaParticleEngine {
         return nid;
     }
     public synchronized int activeCount(int id){ Handle h=H.get(id); if(h==null) return 0; int n=0; for(ParticleEmitter e:h.eff.emitters) n+=e.getActiveCount(); return n; }
+    public synchronized String tagOf(int id){ Handle h=H.get(id); return h==null?null:h.tag; }   // diag : tag du 1er émetteur (comparaison unidbg)
 
     // Remplit verts (6 floats/sommet) + draws (n*3+1 shorts) ; retourne n (draw calls).
     private static final boolean TESTQUAD = "1".equals(System.getProperty("dh.jparticle.testquad"));
