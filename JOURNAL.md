@@ -15,6 +15,44 @@ extraction des sommets ; (d) router `com.perblue.heroes.cparticle.Native` (aujou
 moteur Java. Résultat attendu : particules fidèles (code du jeu), rapides (JVM/JIT), zéro émulation, zéro
 formule devinée. Vérif EN JEU (visuel + FPS). np_sim.c reste comme doc de format ; il n'est plus la voie.
 
+## 2026-09-14 (g305) — DISTRIBUTION : Git EMBARQUÉ dans la release Windows (PortableGit) → autonomie totale de la génération + tag launcher-v0.2.17
+
+**Contexte (transcript ami)** : des amis n'arrivaient pas à générer serveur/port avec la release ; cause n°1 =
+le launcher supposait « Git for Windows » installé (il n'embarquait PAS de bash), or un PC lambda ne l'a pas →
+`bash introuvable` / `dirname: command not found`. **Fix : embarquer PortableGit dans la release.**
+
+**`tools/build_launcher.sh` (bloc Windows, après le setup python)** : télécharge PortableGit 2.47.1
+(`.7z.exe`) et l'extrait via **`7z x` (SYNCHRONE)**. ⚠️ Découverte importante vérifiée sur faits :
+l'auto-extraction `PortableGit.exe -o<dir> -y` est un exe **sous-système GUI** que bash MSYS **N'ATTEND PAS**
+(retour immédiat, processus orphelin → extraction s'arrête à ~90 Mo sur 403) — inutilisable en script. `7z x`
+(outil console) décompresse le SFX de bout en bout (vérifié : **6491 fichiers, 403 Mo, EXIT 0**). ⇒ **7-Zip
+devient un prérequis de la machine de BUILD Windows** (pas du joueur ; message d'erreur explicite avec la
+commande d'install si absent — §2, pas de rustine). On **retire `mingw64`** (~205 Mo) : ni `git.exe` ni le
+compilateur C ne sont requis côté joueur (hostspine pré-compilé/embarqué, aucun script joueur n'appelle `git`,
+vérifié). `curl` vit dans mingw64 mais **Windows 10 1803+/11 fournit `curl.exe` dans System32** (toujours sur
+le PATH hérité) → les téléchargements d'outils (dex2jar, baksmali…) marchent quand même. Release : **~199 Mo**
+au lieu de ~403.
+
+**`BuildManager.windowsBashCandidates()`** : place le git embarqué **EN TÊTE** des candidats
+(`runtime/git/usr/bin/bash.exe`, dérivé de `java.home` = `runtime/jdk`), avant registre/Program Files/PATH.
+On référence `usr/bin/bash.exe` (vrai bash MSYS, marche SANS mingw64) et **pas** `bin/bash.exe` (wrapper
+git-bash qui exige la structure complète → échoue « Top-level not found » sans mingw64). Ancienne release ou
+build sans PortableGit → repli transparent sur les candidats système.
+
+**Robustesse UTF-8** : `export PYTHONIOENCODING=utf-8` ajouté à `patch_apk.sh` + `apk_inject_picker.sh` (pour
+un usage standalone hors launcher ; `embeddedToolsEnv()` le posait déjà côté launcher).
+
+**Vérifié sur faits (§8, hors « en jeu » car build-tooling)** : (a) `7z x` extrait 403 Mo EXIT 0, bash.exe
+présent ; (b) après retrait mingw64 = 199 Mo ; (c) **bundled bash + coreutils (dirname/mkdir/cp/unzip/sed/
+grep/find/gawk) résolvent tous depuis `usr/bin`** dans un PATH POSIX façon BuildManager (mingw64 absent) ;
+(d) **`curl` System32 télécharge OK** (test 7746 octets) dans ce même PATH ; (e) BuildManager compile
+(javac, JDK 21 défaut UTF-8). Config déjà validée E2E en amont (picker APK avec usr/bin/bash sans mingw64).
+
+**Livré** : commit `dcd3df0`, poussé, **tag annoté `launcher-v0.2.17` poussé**. ⚠️ **RESTE (utilisateur)** :
+régénérer + publier la release à partir de ce tag pour que les amis en bénéficient (le build embarque
+maintenant PortableGit — 7-Zip requis sur la machine de build). **OUVERT** : lag chez certains amis (l'util.
+tourne à ~200 fps sans lag) — besoin de leur `native/` + `run.bat` + ligne `[fps]` pour diagnostiquer.
+
 ## 2026-09-07 (g296) — Gel combat VALIDÉ en jeu (niveau gagné) + outil nextstage + particules Java (dispose différé + drawCalls) ; effets manquants = pipeline de DESSIN (backend-indépendant)
 
 **Fix gel combat (g295) VALIDÉ EN JEU** : niveau NORMAL 1-1 **gagné en entier** (outcome=WIN, tous les stages)
