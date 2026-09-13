@@ -11685,3 +11685,33 @@ backend Java (sinon getTextures() vide) ? (b) la texture ETC2 RGBA de l'atlas d'
 est-elle décodée non-vide ? (c) `pageFor`/l'index de page du drawCall pointe-t-il la bonne texture ? (d) l'UV
 par-particule échantillonne-t-elle une zone opaque ? Le testquad rendait car il utilisait region[0] direct ;
 les vraies particules passent par emitQuad (UV/région par-émetteur).
+
+### g299 — Bilan : effets de combat TOUJOURS invisibles (œil utilisateur) — bug de RENDU confirmé, position exclue
+
+L'utilisateur confirme À L'ŒIL (2×, via vue live) : AUCUN changement, les effets de combat (impacts/flocons/énergie)
+ne rendent toujours rien. ⇒ ce n'est PAS une limite de ma capture : c'est bien un bug de RENDU réel.
+
+**Récapitulatif complet de l'investigation (2 sessions) — CE QUI A ÉTÉ TESTÉ ET ÉLIMINÉ :**
+- ✅ FIX RÉEL : tint `.np` (rGrad jetait le dégradé → alpha 0 → transparent) → corrigé, alpha 0→254 mesuré. INSUFFISANT.
+- ❌ Position (2 sessions dessus) = FAUSSE PISTE. Agent bytecode + vraie caméra : 22/24 effets ON-screen. Confondu par
+  effets d'entrée/décor (parallaxe) + PAN caméra (camX 1000→5500). Le `getParallaxOffsetX=camX×(1−worldParallax)`
+  n'affecte QUE le décor (worldParallax<1) ; unités = worldParallax=1.0 → offset 0.
+- ✅ Texture RÉELLE bindée (ETC2TextureData, NativeAtlas, dims réelles) — PAS la neutre transparente du resolver.
+- ✅ `glDrawElements` s'exécute sans erreur GL (count=6/quad, sonde gldbg).
+- ✅ Frame-perfect 65fps (318 frames distinctes, rafale d'effets agent) = 0 burst → rend RIEN.
+- ✅ Node transform d'unité correct (échelle uniforme 0.5156, Y projeté). getBoneTransform validé (unidbg).
+- ❌ forcebig (gros quad blanc à la position réelle) = rien (mais confondable : 0 particule active au moment capturé).
+- Le `testquad` (1 quad direct region[0], hors boucle émetteurs) REND ; les vraies particules (emitQuad dans la
+  boucle) NON → la différence est dans les DONNÉES sommets/drawCall par-particule OU l'UV par-particule.
+
+**RESTE À TRANCHER (rendu)** : (a) UV par-particule (emitQuad utilise la région d'ÉMETTEUR, ignore `particle.region`
+animé → peut échantillonner du transparent) ; (b) alpha ETC2-RGBA décodé (les squelettes RGBA ETC2 rendent, mais
+vérifier ces atlas d'effets précis) ; (c) pageIndex drawCall↔UV ; (d) blend par-particule. Méthode recommandée :
+diff des sommets réels (emitQuad) vs testquad-qui-marche, ou glReadPixels sur la texture GPU, ou décoder le .etc2.
+
+**Outils construits (réutilisables)** : agent bytecode `scratchpad/dhagent.jar` (src `scratchpad/agent/`, ASM 9.7.1
+de la distrib gradle, Premain-Class dhagent.Agent) instrumentant updateEntityTransform (champs runtime) + render
+(texture) ; commande pilote `camdump` (caméra+unités+os+transform nœud+arbre scène) ; `-Ddh.gldbg` (glDrawElements) ;
+`-Ddh.jparticle.{testquad,forcewhite,forcebig,calib}`. **Ops** : serveur `run.sh` cassé Windows (python3 stub +
+classpath) → lancer content_server.py avec vrai python.exe + game server avec CP explicite ; manual.ppm fige après
+N combats → client frais.
