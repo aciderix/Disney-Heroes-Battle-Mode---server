@@ -40,6 +40,8 @@ public final class JavaParticleEngine {
         BaseSprite spriteFor(int atlasHandle, String atlasTag);
         TextureRegion regionFor(int atlasHandle, String atlasTag);
         int pageFor(int atlasHandle, String atlasTag);   // index de page (ordre atlas.getTextures()) ; -1 si absent
+        // g303 flipbooks : toutes les frames du tag (triees par index) ; 1 seul element si region unique ; null si absent.
+        default TextureRegion[] framesFor(int atlasHandle, String atlasTag) { return null; }
     }
     private static volatile AtlasResolver RESOLVER;
     public static void setResolver(AtlasResolver r){ RESOLVER = r; }
@@ -146,6 +148,16 @@ public final class JavaParticleEngine {
                 reg=r.regionFor(atlasHandle, lastTag);
                 int p=r.pageFor(atlasHandle, lastTag); if(p>=0) page=p;
                 if(h.region==null) h.region=reg;
+                // g303 FLIPBOOK : si le tag a plusieurs frames, construire l'Animation du jeu -> son update fait
+                // defiler particle.region (sinon particules figees sur 1 frame, souvent quasi vide = invisibles).
+                try { TextureRegion[] frames=r.framesFor(atlasHandle, lastTag);
+                    if(frames!=null && frames.length>1){
+                        float fd; try{ fd=em.getFrameDuration(); }catch(Throwable t){ fd=0f; } if(fd<=0f) fd=0.05f;
+                        com.badlogic.gdx.utils.Array<TextureRegion> arr=new com.badlogic.gdx.utils.Array<>(frames);
+                        em.setAnimation(new com.badlogic.gdx.graphics.g2d.Animation<TextureRegion>(fd, arr));
+                        if(DBG) System.err.println("[jparticle] ANIM tag='"+lastTag+"' frames="+frames.length+" fd="+fd);
+                    }
+                } catch(Throwable t){ if(DBG) System.err.println("[jparticle] anim echec '"+lastTag+"': "+t); }
             }
             h.eff.emitters.add(em); h.eff.regions.add(reg); h.eff.pages.add(page); }
         int id=nextId++; H.put(id,h);
@@ -307,8 +319,12 @@ public final class JavaParticleEngine {
             // TEST (-Ddh.jparticle.opaque=1) : force l'alpha du light a 255 (garde le RGB) pour confirmer que
             // l'alpha 0 (transparency parsee a 0) est le tueur. Le shader two-color prend l'opacite dans light.a.
             if(OPAQUE){ int lb=Float.floatToRawIntBits(light); lb=(lb|0xff000000)&0xfeffffff; light=Float.intBitsToFloat(lb); }
+            // g303 FLIPBOOK : privilegier particle.region (frame courante de l'animation, mise a jour par l'update
+            // du jeu via animation.getKeyFrame) ; fallback sur la region d'emetteur (effets mono-frame).
+            TextureRegion useReg=region;
+            try{ Object pr=getPriv(p,"region"); if(pr instanceof TextureRegion) useReg=(TextureRegion)pr; }catch(Throwable t){}
             float u=0,v=0,u2=1,v2=1;
-            if(region!=null){ u=region.getU(); v=region.getV(); u2=region.getU2(); v2=region.getV2(); }
+            if(useReg!=null){ u=useReg.getU(); v=useReg.getV(); u2=useReg.getU2(); v2=useReg.getV2(); }
             if (DBG && !dbgQuadDone) { dbgQuadDone=true;
                 StringBuilder fl=new StringBuilder();
                 for(Field f: p.getClass().getDeclaredFields()) fl.append(f.getName()).append('(').append(f.getType().getSimpleName()).append(") ");

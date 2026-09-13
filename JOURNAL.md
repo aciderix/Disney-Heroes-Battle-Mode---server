@@ -11841,3 +11841,33 @@ fichiers touchés + `jar uf` dans `generated-client/lib/dhdesktop.jar` + relance
 diff sommets, `cparticle.Native`), `-Ddh.jparticle.renderunidbg=1`, `-Ddh.jparticle.npdump=1` (pool+offsets),
 `-Ddh.jparticle.dtdbg=1` (dt+life), compteurs `[PATH]` getVertices/AboveZ/BelowZ, `-Ddh.glpdbg=1` (état GL au draw,
 `DhGL20`), `JavaParticleEngine.tagOf()`. Existants : `testquad/forcebig/forcewhite/calib`, `-Ddh.gldbg`, `dhagent.jar`.
+
+### g303 — FLIPBOOK : cause majeure trouvée (Superagent) — particules figées sur 1 frame ; fix = Animation + particle.region
+
+**Diag (agent externe Superagent, confirmé par code+atlas+mon propre diff)** : beaucoup d'effets de combat sont des
+**flipbooks** (plusieurs régions même nom, champ `index:` 0,1,2… dans le .atlas). Ex CONFIRMÉ `spark_impact` = 3 frames
+(elastigirl/vfx/particles-DEFAULT.atlas : index0 55x68 → index1 131x137 → index2 159x170). Aussi icicle_impact,
+snow_flake_anim, energyimpact, hand_splash, regen_heart(8), stun(8), regen_cylinder(9)…
+- **Bug 1** : `ParticleAtlasResolver.parse()` ne gardait que la 1re région par nom → frames jetées.
+- **Bug 2** : `JavaParticleEngine.emitQuad()` utilisait la région STATIQUE de l'émetteur, ignorait `particle.region`.
+- ⇒ particules figées sur 1 frame (souvent quasi-vide) → invisibles. **Réconcilie mon propre CMP** : au 1er diff,
+  spark_impact avait `java uv0=(0.345,..)` vs `unidbg uv0=(0.970,..)` — UV différentes = frames différentes (j'avais
+  mis ça sur le bruit à tort). Cohérent aussi avec état-GL-identique (l'UV est dans la donnée sommet, pas l'état GL).
+
+**FIX (appliqué, SS3 = on réutilise l'anim du jeu)** :
+1. `ParticleAtlasResolver` : collecte TOUTES les frames par nom, triées par `index` ; nouvelle API `framesFor()`.
+2. `JavaParticleEngine.create()` : si >1 frame → `new Animation(frameDuration, frames)` + `em.setAnimation()`. Le jeu
+   (bytecode ParticleEmitter L1206-1262 : `animation.getKeyFrame()` → `updateAtlasRegion(particle,…)`) fait alors
+   défiler `particle.region` dans son update.
+3. `emitQuad()` : lit `particle.region` (frame courante) en priorité, fallback région d'émetteur (mono-frame).
+
+**RÉSULTAT (partiel, à approfondir)** : log `[jparticle] ANIM tag=… frames=N` confirme les animations construites. EN
+JEU : les particules **PEIGNENT enfin** (avant : 0 pixel) — visible sur l'écran de VICTOIRE (confettis = losanges
+colorés semi-transparents, invisibles avant). MAIS : (a) apparence = **carrés/losanges uniformes**, pas la forme du
+sprite → l'**alpha par-texel de la texture ne ressort pas** (le quad a l'alpha global mais pas la forme ; UV ou
+décodage alpha ETC2 des atlas vfx unité à vérifier) ; (b) **combat non confirmé** (captures tombent sur l'écran de
+victoire, combat auto trop rapide — besoin d'un combat LENT capturé, ou capture au tout début du combat).
+
+**PROCHAINES ÉTAPES** : (1) capturer une frame EN PLEIN combat (pas victoire) pour voir si impacts/flocons rendent
+(même en carrés) ; (2) diagnostiquer la forme carrée = UV par-frame correct ? alpha ETC2 vfx unité décodé ? comparer
+au sprite attendu ; (3) mono-frame (mist) : rendent-ils ? Outils inchangés + log `[jparticle] ANIM`.
