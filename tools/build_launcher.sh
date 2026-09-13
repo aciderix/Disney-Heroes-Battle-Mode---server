@@ -110,7 +110,10 @@ fi
 
 # --- 4) tooling repo nécessaire au launcher (aucun code de jeu ; game-data/APK gitignorés) ---
 echo "== copie du tooling repo =="
-for d in server desktop-port tools native; do
+# NB : `mobile` est REQUIS — tools/apk_inject_picker.sh lit mobile/{DhServerPicker,Ed25519,MobileIdentity,MobileAuth,
+# MobileInfoVerifier}.java pour compiler l'écran de sélection injecté dans l'APK (cible « APK avec annuaire »). Sans lui,
+# `target=apk mode=picker` échoue « picker.dex ne contient pas DhServerPicker » (vérifié EN JEU sur la release v0.2.17).
+for d in server desktop-port tools native mobile; do
   mkdir -p "$OUT/tooling/$d"
   # exclut les artefacts lourds/gitignorés (build/, libs/*.jar, game-data/, caches). `git ls-files`
   # liste aussi les GITLINKS de sous-modules (ex. native/spine-c) — non copiables par cp → on saute

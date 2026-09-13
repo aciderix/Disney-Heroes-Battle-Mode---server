@@ -105,12 +105,19 @@ public final class BuildManager {
             // seul d'un XAPK n'a que le code jeu, pas forcément les assets nécessaires selon la source ; miroir
             // du même correctif déjà appliqué côté patch APK g230 et côté build client g244).
             File resolved = resolveApk(apk, new File(out));
-            // 1) données .tab (léger, unzip) → <out>/game-data
-            runStep("extract", new String[]{bashBin(), tool("extract_game_data.sh"), resolved.getPath()},
-                    "DH_DATA_DEST", new File(out, "game-data").getPath());
+            // 1) données .tab (léger, unzip) → <out>/game-data.
+            // env = embeddedToolsEnv() (PATH avec le Git EMBARQUÉ usr/bin : dirname/mktemp/unzip… + curl System32) +
+            // DH_DATA_DEST. SANS embeddedToolsEnv() ici, un PC LAMBDA (sans Git for Windows installé, désormais le cas
+            // par défaut puisqu'on embarque PortableGit) échoue « dirname/mktemp: command not found » (code 127) :
+            // bashBin() trouve le bash EMBARQUÉ mais son PATH n'a PAS les coreutils MSYS. Vérifié EN JEU (release
+            // v0.2.17, conditions lambda). Ça « marchait » avant UNIQUEMENT quand le Git système était sur le PATH.
+            java.util.Map<String,String> extractEnv = embeddedToolsEnv();
+            extractEnv.put("DH_DATA_DEST", new File(out, "game-data").getPath());
+            runStep("extract", new String[]{bashBin(), tool("extract_game_data.sh"), resolved.getPath()}, extractEnv);
             if (full) {
-                // 2) décompilation dex2jar (LOURD, Maven/réseau) → libs/game.jar (emplacement standard du pipeline)
-                runStep("decompile", new String[]{bashBin(), tool("decompile.sh"), resolved.getPath()}, null, null);
+                // 2) décompilation dex2jar (LOURD, Maven/réseau) → libs/game.jar (emplacement standard du pipeline).
+                //    embeddedToolsEnv() : même raison (coreutils + curl pour télécharger dex2jar sur PC lambda).
+                runStep("decompile", new String[]{bashBin(), tool("decompile.sh"), resolved.getPath()}, embeddedToolsEnv());
                 // 3) reframe (StackMapTable valides) → libs/game-framed.jar. AUTO-SUFFISANT : sur un package FRAIS,
                 //    ni ASM ni ReframeJar.class ne sont présents (artefacts dérivés) → on les prépare ici (télécharge
                 //    ASM 9.7 + compile ReframeJar.java) avant de lancer, comme run-desktop.sh. Utilise le JDK EMBARQUÉ.
@@ -153,7 +160,9 @@ public final class BuildManager {
                       + pd + "/libs/game.jar " + pd + "/libs/game-framed.jar\n";
                 new File(projectDir, "tools/reframe").mkdirs();
                 java.nio.file.Files.write(scriptFile.toPath(), script.getBytes(java.nio.charset.StandardCharsets.UTF_8));
-                runStep("reframe", new String[]{bashBin(), scriptFile.getPath()}, null, null);
+                // embeddedToolsEnv() : le script reframe utilise curl (télécharge ASM) + javaBin() ; sur PC lambda
+                // le PATH doit porter le Git EMBARQUÉ + curl System32 (même raison qu'extract/decompile).
+                runStep("reframe", new String[]{bashBin(), scriptFile.getPath()}, embeddedToolsEnv());
                 }
             }
             // 4) PACKAGING clé-en-main : assemble un serveur AUTONOME lançable hors dev (C2a-4-pkg).

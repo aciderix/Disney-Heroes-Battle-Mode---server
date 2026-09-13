@@ -142,7 +142,11 @@ fi
 # seulement quand une extraction est nécessaire (assets ou ressources manquants).
 EXTRACT_APK="$APK"
 if [ ! -d "$ASSETS" ] || [ ! -d "$RESD" ]; then
-  if unzip -l "$APK" 2>/dev/null | grep -qE '\.apk$'; then
+  # `unzip -Z1` (noms d'entrées SEULEMENT) et PAS `unzip -l` : `unzip -l` imprime une ligne d'en-tête
+  # « Archive:  <chemin>.apk » qui se termine par « .apk » → `grep '\.apk$'` la matchait TOUJOURS (tout .apk
+  # passé était pris pour un XAPK) → fusion APKEditor forcée, qui ÉCHOUE sur un APK de base seul (1 seul apk).
+  # Vérifié EN JEU (release v0.2.17, APK de base). `-Z1` ne liste que les entrées → 0 pour un APK universel.
+  if unzip -Z1 "$APK" 2>/dev/null | grep -qE '\.apk$'; then
     APKEDITOR="../libs/apktools/APKEditor.jar"
     if [ ! -s "$APKEDITOR" ]; then
       echo "[desktop] téléchargement APKEditor (fusion XAPK) ..."

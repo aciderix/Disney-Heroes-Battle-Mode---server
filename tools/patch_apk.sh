@@ -40,7 +40,10 @@ fetch "https://github.com/REAndroid/APKEditor/releases/download/V1.4.3/APKEditor
 
 WORK="$(mktemp -d)"; trap 'rm -rf "$WORK"' EXIT
 # XAPK (base + config splits) → FUSION en universel d'abord (sinon install « incompatible » + pas de .so)
-if unzip -l "$IN" 2>/dev/null | grep -qE '\.apk$'; then
+# `unzip -Z1` (noms d'entrées SEULEMENT), PAS `unzip -l` : l'en-tête « Archive:  <chemin>.apk » de `unzip -l`
+# finit par « .apk » → faux positif systématique (tout .apk vu comme XAPK) → fusion APKEditor qui échoue sur un
+# APK de base seul. `-Z1` ne liste que les entrées internes (0 pour un universel). Vérifié EN JEU (v0.2.17).
+if unzip -Z1 "$IN" 2>/dev/null | grep -qE '\.apk$'; then
   echo "[apk] XAPK détecté → fusion en APK universel (APKEditor) ..."
   java -jar "$CACHE/APKEditor.jar" m -i "$IN" -o "$WORK/app.apk" >/dev/null 2>&1 || { echo "[apk] ✖ fusion XAPK"; exit 1; }
 else

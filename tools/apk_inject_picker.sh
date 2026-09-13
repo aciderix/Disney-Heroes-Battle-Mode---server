@@ -37,7 +37,10 @@ W="$(mktemp -d)"; trap 'rm -rf "$W"' EXIT
 
 # --- 0) XAPK ? (zip contenant plusieurs .apk) → fusion en universel ---
 APK="$IN"
-if unzip -l "$IN" 2>/dev/null | grep -qE '\.apk$'; then
+# `unzip -Z1` (noms d'entrées SEULEMENT), PAS `unzip -l` : l'en-tête « Archive:  <chemin>.apk » de `unzip -l`
+# finit par « .apk » → faux positif systématique (tout .apk vu comme XAPK) → fusion APKEditor qui échoue sur un
+# APK de base seul. `-Z1` ne liste que les entrées internes (0 pour un universel). Vérifié EN JEU (v0.2.17).
+if unzip -Z1 "$IN" 2>/dev/null | grep -qE '\.apk$'; then
   echo "[inj] XAPK détecté → fusion en APK universel (APKEditor) ..."
   java -jar "$CACHE/APKEditor.jar" m -i "$IN" -o "$W/universal.apk" >/dev/null 2>&1 || { echo "[inj] ✖ fusion XAPK"; exit 1; }
   APK="$W/universal.apk"
