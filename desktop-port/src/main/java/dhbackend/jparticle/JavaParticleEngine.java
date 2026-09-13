@@ -173,6 +173,9 @@ public final class JavaParticleEngine {
     private static final boolean TESTQUAD = "1".equals(System.getProperty("dh.jparticle.testquad"));
     private static final boolean FORCEWHITE = "1".equals(System.getProperty("dh.jparticle.forcewhite"));
     private static final boolean CALIB = "1".equals(System.getProperty("dh.jparticle.calib"));
+    private static final boolean PDBG = "1".equals(System.getProperty("dh.jparticle.pdbg"));
+    private static final boolean OPAQUE = "1".equals(System.getProperty("dh.jparticle.opaque"));
+    private static final java.util.Set<String> pdbgSeen = java.util.Collections.synchronizedSet(new java.util.HashSet<>());
     private static final boolean FORCEBIG = "1".equals(System.getProperty("dh.jparticle.forcebig"));
     private static int gvFound=0, gvNull=0, gvNonEmptyReal=0, gvAlphaPos=0, gvMaxAlpha=0;
     private static float bbMinX=1e9f,bbMaxX=-1e9f,bbMinY=1e9f,bbMaxY=-1e9f;
@@ -232,12 +235,32 @@ public final class JavaParticleEngine {
             TextureRegion reg = (ei<h.eff.regions.size && h.eff.regions.get(ei)!=null) ? (TextureRegion)h.eff.regions.get(ei) : h.region;
             int page = ei<h.eff.pages.size ? h.eff.pages.get(ei) : 0;
             Object parts=getPriv(em,"particles"); if(!(parts instanceof Object[])) continue;
-            int emVerts=0;
+            int emVerts=0; int emStart=verts.position();
             for(Object p:(Object[])parts){ if(p==null) continue; if(emitQuad(p,reg,verts)) emVerts+=4; }
             if(emVerts>0){
                 boolean additive = Boolean.TRUE.equals(getPriv(em,"additive"));
                 if(draws!=null){ draws.put((short)(emVerts/4*6)); draws.put((short)(additive?3:0)); draws.put((short)page); }
                 totalVerts+=emVerts; n++;
+                // PDBG (-Ddh.jparticle.pdbg=1) : dump COMPLET d'une particule de combat (RGB decode + UV + region + blend)
+                if(PDBG && h.tag!=null && h.tag.matches("(?i).*(snow|flake|punch|impact|splash|ice|energy|frost|snowball|blast|spark).*") && pdbgSeen.add(h.tag)){
+                    // 1ère particule non-nulle : dump transparency + tint + sprite color
+                    Object p0=null; for(Object pp:(Object[])parts){ if(pp!=null){ p0=pp; break; } }
+                    String pd="?"; if(p0!=null){ Object tint=getPriv(p0,"tint"); String ts="?";
+                        if(tint instanceof float[]){ float[] tf=(float[])tint; ts=java.util.Arrays.toString(tf); }
+                        pd="p.transparency="+fp(p0,"transparency")+" p.tint="+ts; }
+                    // emetteur transparencyValue
+                    String et="?"; try{ Object tv=em.getClass().getMethod("getTransparency").invoke(em);
+                        Object sc=tv.getClass().getMethod("getScaling").invoke(tv); Object tl=tv.getClass().getMethod("getTimeline").invoke(tv);
+                        et="high=("+getPriv(tv,"highMin")+","+getPriv(tv,"highMax")+") scaling="+(sc instanceof float[]?java.util.Arrays.toString((float[])sc):"?")+" timeline="+(tl instanceof float[]?java.util.Arrays.toString((float[])tl):"?"); }catch(Throwable t){ et="err:"+t; }
+                    System.err.println("[jparticle] PALPHA tag='"+h.tag+"' "+pd+" | transp:"+et);
+                    int lb=Float.floatToRawIntBits(verts.get(emStart+2)), db=Float.floatToRawIntBits(verts.get(emStart+3));
+                    String rt="?"; try{ if(reg!=null && reg.getTexture()!=null) rt=reg.getTexture().getWidth()+"x"+reg.getTexture().getHeight()+"@"+System.identityHashCode(reg.getTexture()); }catch(Throwable t){}
+                    System.err.println("[jparticle] PDBG tag='"+h.tag+"' em="+ei+" page="+page+" additive="+additive
+                        +" light=RGBA("+(lb&0xff)+","+((lb>>>8)&0xff)+","+((lb>>>16)&0xff)+",a="+((lb>>>24)&0xff)+")"
+                        +" dark=RGBA("+(db&0xff)+","+((db>>>8)&0xff)+","+((db>>>16)&0xff)+",a="+((db>>>24)&0xff)+")"
+                        +" vtx0=("+verts.get(emStart)+","+verts.get(emStart+1)+") uv0=("+verts.get(emStart+4)+","+verts.get(emStart+5)+")"
+                        +" region:"+(reg==null?"NULL":("u="+reg.getU()+" v="+reg.getV()+" u2="+reg.getU2()+" v2="+reg.getV2()+" tex="+rt)));
+                }
             }
         }
         if(draws!=null){ if(n>0) draws.put((short)totalVerts); draws.flip(); }
@@ -257,6 +280,9 @@ public final class JavaParticleEngine {
             float rot=fp(p,"drawRotation");
             float light=fp(p,"drawColorPacked"), dark=fp(p,"drawTintPacked");
             if(FORCEWHITE){ light=com.badlogic.gdx.graphics.Color.WHITE.toFloatBits(); dark=0f; }
+            // TEST (-Ddh.jparticle.opaque=1) : force l'alpha du light a 255 (garde le RGB) pour confirmer que
+            // l'alpha 0 (transparency parsee a 0) est le tueur. Le shader two-color prend l'opacite dans light.a.
+            if(OPAQUE){ int lb=Float.floatToRawIntBits(light); lb=(lb|0xff000000)&0xfeffffff; light=Float.intBitsToFloat(lb); }
             float u=0,v=0,u2=1,v2=1;
             if(region!=null){ u=region.getU(); v=region.getV(); u2=region.getU2(); v2=region.getV2(); }
             if (DBG && !dbgQuadDone) { dbgQuadDone=true;

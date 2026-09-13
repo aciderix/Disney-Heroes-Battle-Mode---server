@@ -11715,3 +11715,44 @@ de la distrib gradle, Premain-Class dhagent.Agent) instrumentant updateEntityTra
 `-Ddh.jparticle.{testquad,forcewhite,forcebig,calib}`. **Ops** : serveur `run.sh` cassé Windows (python3 stub +
 classpath) → lancer content_server.py avec vrai python.exe + game server avec CP explicite ; manual.ppm fige après
 N combats → client frais.
+
+### g300 — 2 corrections majeures : l'« alpha » n'est pas le bug ; bisection unidbg↔java lancée
+
+**Contexte** : reprise après compression. Le handoff affirmait avoir « diagnostiqué définitivement » la cause
+(transparency `.np` parsée high=0 → alpha packé 0 → shader `ambient_gradient_glitch` fait `a=tex.a*v_light.a`
+→ transparent), « confirmée » par `-Ddh.jparticle.opaque=1` (force light.a=255) : bursts frame-perfect 0→61519,
+et une image « op1 » montrant des cristaux de glace bleus sous Frozone censés être un effet nouvellement rendu.
+
+**CORRECTION 1 — l'alpha n'est PAS (l'essentiel du) bug. Le diagnostic « transparency » est écarté :**
+- L'utilisateur : les « cristaux de glace bleus » sont **le SKIN de Frozone**, pas un effet. Ma lecture visuelle
+  (déjà source d'erreur avec la « position ») était encore fausse.
+- L'utilisateur a regardé **tout un combat** avec le flag opaque → **aucune différence** (impacts/flocons/énergie
+  toujours absents ; il a dû passer ~1/3 car l'auto-clic « suivant » ne marchait pas — détail d'ergonomie, pas VFX).
+- ⇒ **Raisonnement décisif** : si l'invisibilité venait de `light.a=0`, forcer `light.a=255` (opaque) aurait
+  rendu les effets. Ça ne l'a pas fait → **l'alpha n'est pas la cause**. Le seul « signal » de l'opaque (delta
+  0→61519 px) n'était que le **sur-rendu du fond en NOIR** (effet de bord documenté du flag). Faux positif.
+- **Action §2 (anti-rustine)** : le fix `transparency high=1` (re-mettre high à 1 quand parsé à 0), que j'avais
+  staged au tout début de ce tour dans `JavaParticleEngine.readEmitter()`, a été **RETIRÉ** — guess non prouvé.
+  Le parse est revenu à son état propre (`rScaled(em.getGravity()); rScaled(em.getTransparency());`).
+
+**CORRECTION 2 — vérification d'une HYPOTHÈSE que j'avais prise pour acquise** : « le backend java est actif ».
+- Vérifié : `JavaParticleEngine.enabled() = flagJava() && RESOLVER!=null` ; `flagJava()` lit la propriété
+  `dh.particlebackend`, l'env `DH_PARTICLEBACKEND`, ou le marqueur `~/.dh_particlebackend`.
+- Le run.bat du bundle **actif** (`~/Desktop/dh-client-v029`, le plus récent) **ne pose PAS** `-Ddh.particlebackend`
+  (contrairement au *template* `BuildManager.RUN_BAT_CLIENT` récent, ligne 704). Donc pour v029 le backend est
+  choisi **uniquement par le marqueur** `~/.dh_particlebackend` (contenu lu = `java`). ⇒ backend java bien actif. ✓
+
+**TEST DE BISECTION LANCÉ (zéro rebuild, réversible)** — la question jamais tranchée en 2+ sessions :
+*ces effets rendent-ils sous le VRAI natif (unidbg) ?*
+- Marqueur basculé **`java`→`unidbg`** (`printf unidbg > ~/.dh_particlebackend` ; backup `~/.dh_particlebackend.bak`).
+- Demande à l'utilisateur : relancer `dh-client-v029`, 1 combat, dire si flocons/impacts/énergie apparaissent.
+- **Arbre de décision** :
+  - Visibles sous unidbg → bug **DANS `JavaParticleEngine`** (parse/sommets). Suite : diff numérique des sommets
+    `JavaParticleEngine.getVertices` vs `UnidbgVM.getVertices` sur le MÊME effet (composant par composant :
+    position/light/dark/uv/count) — oracle objectif, pas de lecture visuelle (cf. plan Étape 4, CompareBackend).
+  - Toujours invisibles sous unidbg → bug **EN AVAL des 2 moteurs** (shader/blend/état GL commun) → toute la
+    chasse « parse .np / sommets » est dans la mauvaise couche ; réorienter vers le pipeline de rendu partagé.
+- **Restaurer le backend java** : `printf java > ~/.dh_particlebackend` (ou depuis le backup).
+
+**Leçon (§8)** : j'ai 2 diagnostics faux à mon actif sur ce bug (position, puis alpha), les deux étayés par une
+**lecture visuelle** erronée de ma part. Prochaine preuve = **numérique/oracle**, jamais « je crois voir ».
