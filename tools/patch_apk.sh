@@ -24,6 +24,7 @@ mkdir -p "$CACHE"
 # EN ÉCHEC (code 49) sans rien faire. Seul un test d'EXÉCUTION réelle (`--version`) distingue un vrai Python de
 # ce stub. Vérifié EN JEU.
 PY=python3; "$PY" --version >/dev/null 2>&1 || PY=python
+export PYTHONIOENCODING=utf-8   # print Python en UTF-8 meme si locale cp1252 (evite UnicodeEncodeError sur les fleches/emojis)
 export JAVA_TOOL_OPTIONS=
 
 # --- 0) outils (téléchargés une fois, comme dex2jar dans decompile.sh) ---

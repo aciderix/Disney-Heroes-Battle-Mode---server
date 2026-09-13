@@ -22,6 +22,7 @@ export JAVA_TOOL_OPTIONS=
 # EN ÉCHEC (code 49) sans rien faire. Seul un test d'EXÉCUTION réelle (`--version`) distingue un vrai Python de
 # ce stub. Vérifié EN JEU.
 PY=python3; "$PY" --version >/dev/null 2>&1 || PY=python
+export PYTHONIOENCODING=utf-8   # print Python en UTF-8 meme si locale cp1252 (evite UnicodeEncodeError sur les fleches/emojis)
 
 fetch() { [ -s "$2" ] && return 0; echo "[inj] dl $(basename "$2")"; curl -sSL --retry 3 --max-time 300 -o "$2" "$1" || { echo "[inj] ✖ dl $1"; exit 1; }; }
 fetch "https://bitbucket.org/iBotPeaches/apktool/downloads/apktool_2.9.3.jar"                          "$CACHE/apktool.jar"

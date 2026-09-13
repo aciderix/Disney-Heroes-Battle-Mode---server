@@ -78,6 +78,36 @@ PY_URL="https://github.com/astral-sh/python-build-standalone/releases/download/$
 echo "== smoke python embarqué =="
 "$OUT/runtime/python/$PY_EXE" --version
 
+# --- 3bis) Git PORTABLE (bash + coreutils MSYS2) embarqué → runtime/git (Windows uniquement). AUTONOMIE : plus AUCUN
+# « Git for Windows » à installer côté joueur — c'était LA cause n°1 des échecs de génération (« decompile ») sur PC
+# vierge (le launcher n'embarquait pas bash). BuildManager.bashBin() préfère runtime/git/usr/bin/bash.exe (dérivé de
+# java.home). On RETIRE mingw64 (~205 Mo) : ni le compilateur C ni git.exe lui-même ne sont requis côté joueur
+# (hostspine est pré-compilé/embarqué, aucun script joueur n'appelle `git` — vérifié). `curl` vit dans mingw64 mais
+# Windows 10 1803+/11 fournit curl.exe dans System32 (toujours sur le PATH hérité) → les téléchargements d'outils
+# (dex2jar, baksmali…) marchent quand même (config déjà validée E2E : usr/bin/bash sans mingw64 + curl System32).
+# Résultat : ~199 Mo au lieu de ~403.
+if [ "$OSKIND" = windows ]; then
+  # Extraction du SFX 7z : on utilise `7z x` (SYNCHRONE, fiable en script). L'auto-extraction `PortableGit.exe -y`
+  # est un exe SOUS-SYSTÈME GUI que bash MSYS n'ATTEND PAS (retour immédiat, extraction orpheline s'arrêtant à
+  # ~90 Mo) → inutilisable ici. `7z x` est un outil console qui décompresse le SFX de bout en bout (vérifié :
+  # 6491 fichiers, 403 Mo, EXIT 0). 7-Zip est donc un PRÉREQUIS de la machine de BUILD (Windows) — pas du joueur.
+  SEVENZIP=""
+  for z in 7z 7za; do command -v "$z" >/dev/null 2>&1 && { SEVENZIP="$z"; break; }; done
+  [ -n "$SEVENZIP" ] || { echo "!! 7-Zip requis pour extraire PortableGit (installe : 'scoop install 7zip' ou 'winget install 7zip.7zip')" >&2; exit 1; }
+  echo "== télécharge PortableGit (bash embarqué) via $SEVENZIP =="
+  PG_VER="${DH_PORTABLEGIT_VER:-2.47.1}"
+  PG_URL="https://github.com/git-for-windows/git/releases/download/v${PG_VER}.windows.1/PortableGit-${PG_VER}-64-bit.7z.exe"
+  curl -fsSL "$PG_URL" -o "$OUT/PortableGit.exe" || { echo "!! échec dl PortableGit ($PG_URL)" >&2; exit 1; }
+  rm -rf "$OUT/runtime/git"; mkdir -p "$OUT/runtime/git"
+  # cygpath -w : 7z (natif Windows) veut un chemin Windows pour -o.
+  "$SEVENZIP" x -y -o"$(cygpath -w "$OUT/runtime/git")" "$OUT/PortableGit.exe" >/dev/null 2>&1 \
+    || { echo "!! échec extraction PortableGit ($SEVENZIP x)" >&2; exit 1; }
+  rm -f "$OUT/PortableGit.exe"
+  rm -rf "$OUT/runtime/git/mingw64"   # git.exe + compilateur mingw inutiles côté joueur → ~205 Mo économisés
+  [ -f "$OUT/runtime/git/usr/bin/bash.exe" ] || { echo "!! bash.exe absent après extraction PortableGit" >&2; exit 1; }
+  echo "== PortableGit embarqué (usr/bin/bash.exe OK, mingw64 retiré) — $(du -sh "$OUT/runtime/git" 2>/dev/null | cut -f1) =="
+fi
+
 # --- 4) tooling repo nécessaire au launcher (aucun code de jeu ; game-data/APK gitignorés) ---
 echo "== copie du tooling repo =="
 for d in server desktop-port tools native; do

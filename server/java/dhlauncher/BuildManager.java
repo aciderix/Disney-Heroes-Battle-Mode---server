@@ -485,6 +485,20 @@ public final class BuildManager {
 
     private static java.util.List<String> windowsBashCandidates() {
         java.util.List<String> out = new java.util.ArrayList<>();
+        // PRIORITÉ : PortableGit EMBARQUÉ dans la release (runtime/git, à côté de runtime/jdk) → autonomie totale,
+        // aucun Git for Windows à installer par le joueur (c'était LA cause n°1 des échecs « decompile » sur PC vierge).
+        // Dérivé de java.home = <release>/runtime/jdk → <release>/runtime/git/usr/bin/bash.exe. On le met EN TÊTE pour
+        // qu'il l'emporte sur un éventuel Git système (comportement identique pour tous). Absent (ancienne release
+        // ou build sans PortableGit) → on retombe sur le registre/Program Files/PATH ci-dessous.
+        try {
+            File runtime = new File(System.getProperty("java.home")).getParentFile();   // <release>/runtime
+            if (runtime != null && runtime.isDirectory()) {
+                // usr/bin/bash.exe = le VRAI bash MSYS2 (marche même sans le sous-arbre mingw64, qu'on retire du
+                // bundle pour alléger). On NE référence PAS <git>/bin/bash.exe : c'est un wrapper « git-bash » qui
+                // exige la structure complète (échoue « Top-level not found » sans mingw64).
+                out.add(new File(runtime, "git\\usr\\bin\\bash.exe").getPath());
+            }
+        } catch (Exception ignore) { /* pas d'embarqué → candidats système ci-dessous */ }
         for (String hive : new String[]{"HKLM", "HKCU"}) {
             String p = readRegistry(hive, "SOFTWARE\\GitForWindows", "InstallPath");
             if (p != null) { out.add(p + "\\bin\\bash.exe"); out.add(p + "\\usr\\bin\\bash.exe"); }
