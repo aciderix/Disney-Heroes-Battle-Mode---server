@@ -56,9 +56,15 @@ sed 's/^package dhserver.auth;/package com.perblue.dhlauncher;/' \
 javac -encoding UTF-8 -bootclasspath "$CACHE/android.jar" -source 8 -target 8 -d "$W/cls" \
     $(find "$W/src/com/perblue/dhlauncher" -name '*.java') 2>"$W/javac.log" \
   || { echo "[inj] ✖ javac picker"; grep -v warning "$W/javac.log" | head; exit 1; }
-java -cp "$CACHE/r8.jar" com.android.tools.r8.D8 --min-api 26 --lib "$CACHE/android.jar" --output "$W" $(find "$W/cls" -name '*.class') >/dev/null 2>&1 \
+# D8 : passer un JAR des classes (1 argument), PAS `$(find ... *.class)` — la liste des ~42 .class dépasse la limite
+# de longueur de ligne de commande Windows (~8191) → arguments TRONQUÉS → dex INCOMPLET (bug non-déterministe :
+# marchait sur certaines machines, pas d'autres ; symptôme = ClassNotFoundException DhServerPicker au lancement).
+( cd "$W/cls" && jar cf "$W/picker-cls.jar" . )
+java -cp "$CACHE/r8.jar" com.android.tools.r8.D8 --min-api 26 --lib "$CACHE/android.jar" --output "$W" "$W/picker-cls.jar" >/dev/null 2>&1 \
   || { echo "[inj] ✖ d8 picker"; exit 1; }
 mv "$W/classes.dex" "$W/picker.dex"
+# Garde-fou : le dex DOIT contenir DhServerPicker (sinon le manifeste pointe une classe absente → crash au lancement).
+grep -aql "DhServerPicker" "$W/picker.dex" || { echo "[inj] ✖ picker.dex ne contient pas DhServerPicker (compilation incomplète)"; exit 1; }
 
 # --- 2) manifeste édité : décoder (apktool -s), picker=LAUNCHER, recompiler → EXTRAIRE le manifeste binaire ---
 echo "[inj] édition du manifeste ..."
@@ -108,7 +114,9 @@ cp "$W/out.apk" "$OUT"
 
 # --- 6) vérifications structurelles ---
 V="$W/v"; mkdir -p "$V"; unzip -o -q "$OUT" "classes${NEXT}.dex" "$GNAME" -d "$V"
-grep -aql "com/perblue/dhlauncher/DhServerPicker" "$V/classes${NEXT}.dex" && echo "[inj] ✅ écran de sélection présent (classes${NEXT}.dex)"
+grep -aql "com/perblue/dhlauncher/DhServerPicker" "$V/classes${NEXT}.dex" \
+  && echo "[inj] ✅ écran de sélection présent (classes${NEXT}.dex)" \
+  || { echo "[inj] ✖ DhServerPicker ABSENT de l'APK final (classes${NEXT}.dex) — abandon (éviterait un APK qui crashe)"; exit 1; }
 grep -aql "setLive" "$V/$GNAME" && echo "[inj] ✅ ServerType.setLive + hook dans $GNAME"
 echo "[inj] ✅ APK universel patché : $OUT  ($(unzip -l "$OUT" | grep -c '\.so$') .so, $(du -h "$OUT" | cut -f1))"
 echo "[inj]   → installer HORS store ; au lancement, l'écran de choix s'affiche."
