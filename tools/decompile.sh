@@ -88,7 +88,12 @@ if command -v cygpath >/dev/null 2>&1; then
   for j in "$WORK"/lib/*.jar; do CP="$CP;$(cygpath -w "$j")"; done
   CP="${CP#;}"
 fi
-JAVA_TOOL_OPTIONS= java -cp "$CP" com.googlecode.dex2jar.tools.Dex2jarCmd \
+# Mémoire : l'APK Disney Heroes a ~65k classes → le heap JVM par DÉFAUT (≈1/4 RAM) provoque un
+# `OutOfMemoryError: GC overhead limit exceeded` sur un PC à faible RAM (marchait sur une machine
+# bien dotée, échouait chez d'autres). On alloue un heap dédié (surchargeable via DH_DEX2JAR_XMX) et
+# on désactive la limite GC-overhead (repli plus lent mais qui ABOUTIT au lieu d'échouer).
+DEX2JAR_XMX="${DH_DEX2JAR_XMX:-2g}"
+JAVA_TOOL_OPTIONS= java -Xmx"$DEX2JAR_XMX" -XX:-UseGCOverheadLimit -cp "$CP" com.googlecode.dex2jar.tools.Dex2jarCmd \
     -f -o "$OUT/game.jar" "$APK"
 
 echo "[decompile] OK → $OUT/game.jar (+ $OUT/commons-logging.jar)"
