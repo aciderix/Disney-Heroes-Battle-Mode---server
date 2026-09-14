@@ -77,6 +77,7 @@ public final class LauncherDaemon {
         http.createContext("/host/start", this::hostStart);     // C2a-3 : héberger en local
         http.createContext("/host/stop", this::hostStop);
         http.createContext("/host/status", this::hostStatus);
+        http.createContext("/host/publicip", this::hostPublicIp); // ANNUAIRE : pré-remplit l'adresse publique
         http.createContext("/build/start", this::buildStart);   // C2a-4 : générer le serveur depuis l'APK
         http.createContext("/build/status", this::buildStatus);
         http.createContext("/play", this::playStart);           // C2b : lancer le CLIENT sur le serveur choisi
@@ -252,10 +253,23 @@ public final class LauncherDaemon {
         boolean strict = "true".equalsIgnoreCase(f.getOrDefault("strict", "false")) || "1".equals(f.getOrDefault("strict", ""));
         String bundleDir = f.getOrDefault("bundleDir", "");
         int cp = intOr(f, "contentPort", 8080), gp = intOr(f, "gamePort", 8081), ap = intOr(f, "authPort", 8082);
+        // ANNUAIRE (opt-in) — « rendre mon serveur public ». publicHost = adresse PUBLIQUE (IP/domaine, port
+        // optionnel) ; serverName = nom affiché dans l'annuaire. L'URL/clé viennent de directory.env (jamais du
+        // client) → un launcher sans annuaire configuré refuse explicitement plutôt que de démarrer sans publier.
+        boolean publish = "true".equalsIgnoreCase(f.getOrDefault("publish", "false")) || "1".equals(f.getOrDefault("publish", ""));
+        String publicHost = f.getOrDefault("publicHost", "").trim();
+        String serverName = f.getOrDefault("serverName", "").trim();
+        if (publish && (directoryUrl == null || directoryKey == null)) {
+            send(ex, 400, "{\"error\":\"annuaire non configuré (DH_DIRECTORY_URL/ANON_KEY) — publication impossible\"}"); return;
+        }
+        if (publish && bundleDir.isEmpty()) {
+            send(ex, 400, "{\"error\":\"publication annuaire : disponible uniquement en mode bundle (serveur généré)\"}"); return;
+        }
         try {
             send(ex, 200, bundleDir.isEmpty() ? host.start(cp, gp, ap, strict)
-                                              : host.startBundle(bundleDir, cp, gp, ap, strict));
-        } catch (Exception e) { send(ex, 500, "{\"error\":\"" + e.getClass().getSimpleName() + "\"}"); }
+                                              : host.startBundle(bundleDir, cp, gp, ap, strict,
+                                                    publish, publicHost, serverName, directoryUrl, directoryKey));
+        } catch (Exception e) { send(ex, 500, "{\"error\":" + jstr(e.getMessage() == null ? e.getClass().getSimpleName() : e.getMessage()) + "}"); }
     }
 
     /** POST /host/stop → arrête le serveur local hébergé. */
@@ -267,6 +281,28 @@ public final class LauncherDaemon {
     /** GET /host/status → état du serveur local hébergé (running, écoute, ports, PIDs, uptime). */
     private void hostStatus(HttpExchange ex) throws IOException {
         send(ex, 200, host.status());
+    }
+
+    /**
+     * GET /host/publicip → IP PUBLIQUE (WAN) détectée, pour PRÉ-REMPLIR le champ « adresse publique » de l'option
+     * « rendre mon serveur public ». Best-effort : service externe + timeout court ; en cas d'échec on renvoie
+     * {@code {"ip":null}} (jamais une erreur dure) car la saisie MANUELLE reste le chemin valide — un hébergeur
+     * derrière un domaine/DDNS/tunnel n'a de toute façon pas envie de son IP brute. Ne publie RIEN par lui-même :
+     * c'est l'hébergeur qui coche la case et valide l'adresse (une IP détectée ne prouve PAS que les ports sont
+     * redirigés sur la box).
+     */
+    private void hostPublicIp(HttpExchange ex) throws IOException {
+        try {
+            java.net.http.HttpClient c = java.net.http.HttpClient.newBuilder()
+                    .connectTimeout(java.time.Duration.ofSeconds(4)).build();
+            java.net.http.HttpResponse<String> r = c.send(
+                    java.net.http.HttpRequest.newBuilder(java.net.URI.create("https://api.ipify.org"))
+                            .timeout(java.time.Duration.ofSeconds(4)).GET().build(),
+                    java.net.http.HttpResponse.BodyHandlers.ofString());
+            String ip = r.body() == null ? "" : r.body().trim();
+            if (r.statusCode() == 200 && ip.matches("[0-9A-Fa-f.:]{3,45}")) { send(ex, 200, "{\"ip\":" + jstr(ip) + "}"); return; }
+        } catch (Exception ignore) { /* hors-ligne / service injoignable → saisie manuelle */ }
+        send(ex, 200, "{\"ip\":null}");
     }
 
     /**

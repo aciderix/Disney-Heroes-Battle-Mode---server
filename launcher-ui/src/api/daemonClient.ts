@@ -77,6 +77,8 @@ export const daemonClient = {
   hostStart: (p: HostStartParams) => post<HostStatus>("/host/start", p as Record<string, unknown>),
   hostStop: () => post<HostStatus>("/host/stop"),
   hostStatus: () => get<HostStatus>("/host/status"),
+  /** IP publique (WAN) détectée — pré-remplissage du champ « adresse publique ». {ip:null} si indisponible. */
+  hostPublicIp: () => get<{ ip: string | null }>("/host/publicip"),
 
   // --- génération depuis l'APK ---
   buildStart: (p: BuildStartParams) => post<BuildStatus>("/build/start", p as Record<string, unknown>),

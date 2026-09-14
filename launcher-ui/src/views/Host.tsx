@@ -27,6 +27,10 @@ export function Host() {
   const [gamePort, setGamePort] = useState(8081);
   const [authPort, setAuthPort] = useState(8082);
   const [strict, setStrict] = useState(false);
+  // ANNUAIRE (brique 2) — publication OPT-IN du serveur dans l'annuaire communautaire.
+  const [publish, setPublish] = useState(false);
+  const [publicHost, setPublicHost] = useState("");
+  const [serverName, setServerName] = useState("");
   const timer = useRef<number | null>(null);
   const registeredForRunRef = useRef(false);
 
@@ -54,9 +58,28 @@ export function Host() {
     } catch { /* pas bloquant : ajoutable manuellement depuis « Serveurs » */ }
   }
 
+  // ANNUAIRE (opt-in) — pré-remplit l'adresse publique avec l'IP WAN détectée, UNE SEULE FOIS et seulement si
+  // l'hébergeur coche la case (aucun appel réseau tant qu'il ne demande rien). Échec → champ laissé vide, la
+  // saisie manuelle (domaine/DDNS/tunnel) reste le chemin normal.
+  useEffect(() => {
+    if (!publish || publicHost) return;
+    let dead = false;
+    void daemonClient.hostPublicIp()
+      .then((r) => { if (!dead && r.ip) setPublicHost(r.ip); })
+      .catch(() => { /* hors-ligne → saisie manuelle */ });
+    return () => { dead = true; };
+  }, [publish, publicHost]);
+
   async function start() {
     setErr(null); setBusy(true);
-    try { setStatus(await daemonClient.hostStart({ bundleDir: bundleDir || undefined, contentPort, gamePort, authPort, strict })); }
+    try {
+      setStatus(await daemonClient.hostStart({
+        bundleDir: bundleDir || undefined, contentPort, gamePort, authPort, strict,
+        publish: publish || undefined,
+        publicHost: publish ? publicHost : undefined,
+        serverName: publish ? serverName : undefined,
+      }));
+    }
     catch { setErr("Démarrage impossible (voir les logs du daemon)"); } finally { setBusy(false); }
   }
   async function stop() {
@@ -80,6 +103,25 @@ export function Host() {
         </div>
         <label className="row"><input type="checkbox" style={{ width: "auto" }} checked={strict} onChange={(e) => setStrict(e.target.checked)} disabled={running} />
           <span>Mode strict (auth mnémonique obligatoire)</span></label>
+        <label className="row"><input type="checkbox" style={{ width: "auto" }} checked={publish} onChange={(e) => setPublish(e.target.checked)} disabled={running} />
+          <span>Rendre mon serveur public (annuaire communautaire)</span></label>
+        {publish && (
+          <div className="stack" style={{ gap: 6, paddingLeft: 24 }}>
+            <label className="stack" style={{ gap: 4 }}>
+              Nom affiché dans l'annuaire
+              <input value={serverName} onChange={(e) => setServerName(e.target.value)} placeholder="Serveur de …" disabled={running} />
+            </label>
+            <label className="stack" style={{ gap: 4 }}>
+              Adresse publique (IP ou domaine ; port {contentPort} par défaut)
+              <input value={publicHost} onChange={(e) => setPublicHost(e.target.value)} placeholder="ex. 88.120.4.17 ou monserveur.ddns.net" disabled={running} />
+            </label>
+            <Banner kind="info">
+              Ton serveur n'apparaîtra utilement que si les ports <strong>{contentPort}</strong>, <strong>{gamePort}</strong> et <strong>{authPort}</strong> sont
+              redirigés vers ce PC sur ta box. L'adresse détectée automatiquement ne prouve pas que la redirection est faite.
+              Ta fiche est signée par ton serveur et rafraîchie toutes les 10 min ; décoche pour cesser de publier.
+            </Banner>
+          </div>
+        )}
         <div className="row">
           <button className="primary" disabled={busy || running} onClick={start}>Héberger</button>
           <button disabled={busy || !running} onClick={stop}>Arrêter</button>

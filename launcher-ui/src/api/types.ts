@@ -63,7 +63,10 @@ export type AuditLog = { lines: string[] };
 export type AdminTarget = { mode: "local" | "remote"; baseUrl?: string; tls?: boolean };
 
 // Paramètres d'appel (côté front → daemon).
-export type HostStartParams = { bundleDir?: string; contentPort?: number; gamePort?: number; authPort?: number; strict?: boolean };
+// publish/publicHost/serverName : ANNUAIRE (opt-in). L'URL + la clé de l'annuaire ne transitent JAMAIS par le
+// client — le daemon les tient de directory.env et refuse la publication s'il n'en a pas.
+export type HostStartParams = { bundleDir?: string; contentPort?: number; gamePort?: number; authPort?: number; strict?: boolean;
+  publish?: boolean; publicHost?: string; serverName?: string };
 export type BuildStartParams = { apkPath: string; target?: BuildTarget; outDir?: string; full?: boolean; pkg?: boolean;
   serverHost?: string; serverPort?: number; apkMode?: "redirect" | "picker" };
 export type PlayStartParams = { clientDir: string; serverId?: string; serverHost?: string; contentPort?: number; userID?: number; strict?: boolean };

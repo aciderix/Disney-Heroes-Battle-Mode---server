@@ -44,6 +44,20 @@ public final class HostManager {
      * Un seul process géré (le script lance content_server + serveur en interne, et les arrête ensemble au SIGTERM).
      */
     public synchronized String startBundle(String bundleDir, int contentPort, int gamePort, int authPort, boolean strict) throws IOException {
+        return startBundle(bundleDir, contentPort, gamePort, authPort, strict, false, null, null, null, null);
+    }
+
+    /**
+     * Variante avec PUBLICATION dans l'annuaire communautaire (opt-in, case « rendre mon serveur public »).
+     * {@code publicHost} = adresse PUBLIQUE de l'hébergeur ({@code "88.120.4.17"} ou {@code "monserveur.ddns.net"},
+     * éventuellement déjà suffixée {@code ":port"}) ; {@code dirUrl}/{@code dirKey} = annuaire (le daemon les tient de
+     * {@code directory.env}). Le serveur du bundle lit ces variables d'environnement au boot ({@code LoginServer},
+     * §ANNUAIRE brique 2) : il SIGNE sa fiche (Ed25519) et l'Edge Function {@code register-server} vérifie la signature
+     * avant d'écrire — aucune écriture directe possible, la clé anon ne donne que la LECTURE. Glue uniquement (§1) :
+     * on ne modifie NI le script du bundle (les variables sont héritées par le process Java) NI la logique serveur.
+     */
+    public synchronized String startBundle(String bundleDir, int contentPort, int gamePort, int authPort, boolean strict,
+            boolean publish, String publicHost, String serverName, String dirUrl, String dirKey) throws IOException {
         if (isRunning()) return status();
         stopQuiet();
         File dir = new File(bundleDir);
@@ -74,6 +88,28 @@ public final class HostManager {
         pb.environment().put("DH_ADMIN_PORT", String.valueOf(adminPort));
         pb.environment().put("DH_ADMIN_TOKEN", adminToken);
         if (strict) pb.environment().put("DH_SERVER_OPTS", "-Ddh.auth=on");
+        // ANNUAIRE (opt-in) — les 5 variables attendues par LoginServer. Elles sont HÉRITÉES par le java du bundle
+        // (run.bat/run.sh ne les filtre pas) → aucun changement de script nécessaire. Si l'une manque, LoginServer
+        // affiche « publication demandée mais config incomplète » et n'inscrit rien : on valide donc AVANT (§2,
+        // échouer clairement plutôt que démarrer un serveur qui ne publiera jamais en silence).
+        if (publish) {
+            String h = publicHost == null ? "" : publicHost.trim();
+            if (h.isEmpty()) throw new IOException("publication annuaire : adresse publique requise (IP ou domaine joignable depuis Internet)");
+            if (dirUrl == null || dirUrl.isEmpty() || dirKey == null || dirKey.isEmpty())
+                throw new IOException("publication annuaire : annuaire non configuré sur ce launcher (directory.env absent)");
+            // Accepte « host » ou « host:port » ; sans port explicite on publie le port de CONTENU (celui que le
+            // client/APK utilise pour /login, cf. redirection patch_apk).
+            int c = h.lastIndexOf(':');
+            String hostOnly = c > 0 ? h.substring(0, c) : h;
+            String address  = c > 0 ? h : h + ":" + contentPort;
+            pb.environment().put("DH_SERVER_PUBLISH", "1");
+            pb.environment().put("DH_DIRECTORY_URL", dirUrl);
+            pb.environment().put("DH_DIRECTORY_ANON_KEY", dirKey);
+            pb.environment().put("DH_SERVER_ADDRESS", address);
+            pb.environment().put("DH_SERVER_INFO_URL", "http://" + hostOnly + ":" + authPort);
+            if (serverName != null && !serverName.trim().isEmpty())
+                pb.environment().put("DH_SERVER_NAME", serverName.trim());
+        }
         server = pb.start();
         startedAt = System.currentTimeMillis();
         return status();
