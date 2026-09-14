@@ -58,6 +58,30 @@ composant null**. Et `MainScreen.updateSceneVisuals` **boucle sur TOUTES les `Ma
 assets déjà chauds) avec un compte EXISTANT. Le parcours **nouveau joueur → tutoriel → hub depuis un bundle
 généré** n'avait JAMAIS été exercé. L'ami l'a pris de plein fouet, comme le fera chaque nouveau joueur.
 
+### ⭐ g308bis — ICÔNE FAUTIVE IDENTIFIÉE par sonde JDI : c'est **`MainIconType.PORT`**, et le halo est en **PARTICULES**
+Sonde de debug écrite pour l'occasion (`scratchpad/DhGlowProbe.java`, JDI/`getArgumentValues()` — le jar dex2jar
+n'a **pas** de `LocalVariableTable`, donc `jdb locals` est inutilisable ; les ARGUMENTS de frame, eux, restent
+lisibles). Lancement du client avec `-agentpath:<jdk21>/bin/jdwp.dll` (⚠️ la JRE jlink du bundle n'embarque PAS
+`jdk.jdwp.agent`, et un `-agentlib:jdwp` nu charge le `jdwp.dll` du JDK **17** système → « needs JVMTI 17.0 »).
+```
+updateEnabledGlow(MainIconType."PORT", false)  →  setPersistantGlowAlpha(String[1], 0.0)  →  NPE
+```
+**Mécanique EXACTE (bytecode)** — `setPersistantGlowAlpha` a DEUX chemins :
+- **générique** : `r = node.getComponent(DHSpriteRenderable)` puis **`ifnonnull`** ⇒ protégé si absent ;
+- **spécial `features/port/port1-glow`** : itère `node.children` et fait
+  `child.getComponent(ParticleEffectRenderable).getTint()` **SANS AUCUN test de null** ⇒ c'est LÀ que ça casse.
+⇒ **un enfant du nœud port1-glow n'a pas de composant `ParticleEffectRenderable`.**
+
+**Éliminé en plus** : ce n'est PAS le backend de particules — crash **identique** avec `DH_PARTICLEBACKEND=unidbg`
+ET avec `java`. Les `.np` du port existent bien (`world/env/mainscreen/vfx/mainscreen_port_*_glow.np`, 535 `.np`
+dans l'APK). Notre port ne touche PAS à `ParticleEffectRenderable` (vérifié : aucune référence hors outil de debug).
+**Fausse piste écartée** : l'avertissement `No environment found for type DEFAULT/UI, using CITY_ROOFTOPS_1` est le
+comportement NORMAL du jeu (ni `DEFAULT` ni `UI` ne sont enregistrés parmi les 63 `addEnvironment` du `<clinit>`).
+
+**PROCHAINE ÉTAPE** : comprendre pourquoi ce composant n'est pas attaché à l'enfant lors du chargement de scène
+(le composant est créé par du code JEU ; suspecter l'échec de création de l'effet à partir du `.np`, en amont du
+choix de backend). Piste : instrumenter la création des composants de scène / `cparticle.Native` au chargement.
+
 **Éléments pour la suite** : le hub est `world/env/city_rooftops`, présent **UNIQUEMENT dans l'APK sous `ETC/`**
 (40 fichiers) et absent de l'arbre téléchargé `ETC2/` ; ses atlas ne contiennent **aucune région « glow »**. Les
 catégories `UI_INITIAL`, `UI_PARTICLES_INITIAL`, `WORLD_INITIAL_INTERNAL` existent dans l'index mais ne sont
