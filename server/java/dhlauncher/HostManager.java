@@ -107,6 +107,12 @@ public final class HostManager {
             pb.environment().put("DH_DIRECTORY_ANON_KEY", dirKey);
             pb.environment().put("DH_SERVER_ADDRESS", address);
             pb.environment().put("DH_SERVER_INFO_URL", "http://" + hostOnly + ":" + authPort);
+            // INDISPENSABLE pour un joueur DISTANT : ce que `/login` renvoie comme adresse de jeu (TCP) et ce qui
+            // est écrit dans les URLs d'assets. Par défaut le bundle annonce 127.0.0.1 → le client distant tenterait
+            // de se connecter à LUI-MÊME. Publier sans ça donne une fiche d'annuaire INUTILISABLE (vérifié : le
+            // transport de jeu est du TCP brut vers l'adresse annoncée, cf. docs/PROTOCOL.md §1).
+            pb.environment().put("DH_PUBLIC_GAME", hostOnly + ":" + gamePort);
+            pb.environment().put("DH_PUBLIC_CONTENT", hostOnly + ":" + contentPort);
             if (serverName != null && !serverName.trim().isEmpty())
                 pb.environment().put("DH_SERVER_NAME", serverName.trim());
         }

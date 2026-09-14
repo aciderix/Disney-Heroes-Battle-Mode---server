@@ -667,8 +667,16 @@ public final class BuildManager {
       + "[ -n \"${DH_ADMIN_BIND:-}\" ] && ADMIN_OPTS=\"$ADMIN_OPTS -Ddh.admin.bind=$DH_ADMIN_BIND\"\n"
       + "[ -n \"${DH_ADMIN_PORT:-}\" ] && ADMIN_OPTS=\"$ADMIN_OPTS -Ddh.admin.port=$DH_ADMIN_PORT\"\n"
       + "mkdir -p \"$DIR/data\"\n"
-      + "\"$PY\" \"$DIR/content_server.py\" --port \"$CONTENT_PORT\" --rewrite-host \"127.0.0.1:$CONTENT_PORT\" \\\n"
-      + "        --index \"$DIR/index.txt\" --game-server \"127.0.0.1:$GAME_PORT\" & CPID=$!\n"
+      // ADRESSES PUBLIQUES (serveur ouvert à des joueurs DISTANTS). `--game-server` est l'adresse TCP que
+      // `/login` RENVOIE au client, et `--rewrite-host` celle écrite dans les URLs d'assets : codées en dur sur
+      // 127.0.0.1, un joueur distant se voyait répondre « connecte-toi à 127.0.0.1:8081 » = SON PROPRE appareil
+      // → connexion impossible MÊME avec les ports ouverts/redirigés. On permet de les surcharger
+      // (DH_PUBLIC_GAME / DH_PUBLIC_CONTENT, posés par le launcher quand on publie dans l'annuaire) ; par défaut
+      // on garde 127.0.0.1 (jeu en local, comportement historique inchangé).
+      + "PUB_GAME=\"${DH_PUBLIC_GAME:-127.0.0.1:$GAME_PORT}\"\n"
+      + "PUB_CONTENT=\"${DH_PUBLIC_CONTENT:-127.0.0.1:$CONTENT_PORT}\"\n"
+      + "\"$PY\" \"$DIR/content_server.py\" --port \"$CONTENT_PORT\" --rewrite-host \"$PUB_CONTENT\" \\\n"
+      + "        --index \"$DIR/index.txt\" --game-server \"$PUB_GAME\" & CPID=$!\n"
       + "\"$JAVA\" -XX:TieredStopAtLevel=1 ${DH_SERVER_OPTS:-} $ADMIN_OPTS -Ddh.db=\"$DIR/data/dh-server.db\" \\\n"
       + "     -Ddh.stats=\"$DIR/game-data/stats\" -Ddh.auth.port=\"$AUTH_PORT\" \\\n"
       + "     -cp \"$DIR/lib/*\" dhserver.LoginServer \"$GAME_PORT\" & JPID=$!\n"
@@ -754,7 +762,13 @@ public final class BuildManager {
       + "if not \"%DH_ADMIN_BIND%\"==\"\" set ADMIN_OPTS=%ADMIN_OPTS% -Ddh.admin.bind=%DH_ADMIN_BIND%\r\n"
       + "if not \"%DH_ADMIN_PORT%\"==\"\" set ADMIN_OPTS=%ADMIN_OPTS% -Ddh.admin.port=%DH_ADMIN_PORT%\r\n"
       + "if not exist \"%DIR%data\" mkdir \"%DIR%data\"\r\n"
-      + "start \"dh-content\" \"%PY%\" \"%DIR%content_server.py\" --port %DH_CONTENT_PORT% --rewrite-host 127.0.0.1:%DH_CONTENT_PORT% --index \"%DIR%index.txt\" --game-server 127.0.0.1:%DH_GAME_PORT%\r\n"
+      // Adresses PUBLIQUES surchargeables — cf. commentaire détaillé dans RUN_SH (sans ça un joueur DISTANT
+      // reçoit « 127.0.0.1 » comme adresse de jeu/assets et ne peut pas se connecter, ports ouverts ou non).
+      + "set PUB_GAME=127.0.0.1:%DH_GAME_PORT%\r\n"
+      + "set PUB_CONTENT=127.0.0.1:%DH_CONTENT_PORT%\r\n"
+      + "if not \"%DH_PUBLIC_GAME%\"==\"\" set PUB_GAME=%DH_PUBLIC_GAME%\r\n"
+      + "if not \"%DH_PUBLIC_CONTENT%\"==\"\" set PUB_CONTENT=%DH_PUBLIC_CONTENT%\r\n"
+      + "start \"dh-content\" \"%PY%\" \"%DIR%content_server.py\" --port %DH_CONTENT_PORT% --rewrite-host %PUB_CONTENT% --index \"%DIR%index.txt\" --game-server %PUB_GAME%\r\n"
       + "\"%JAVA%\" -XX:TieredStopAtLevel=1 %ADMIN_OPTS% -Ddh.db=\"%DIR%data\\dh-server.db\" -Ddh.stats=\"%DIR%game-data\\stats\" -Ddh.auth.port=%DH_AUTH_PORT% -cp \"%DIR%lib\\*\" dhserver.LoginServer %DH_GAME_PORT%\r\n";
 
     private void runStep(String name, String[] cmd, String envKey, String envVal) throws Exception {
