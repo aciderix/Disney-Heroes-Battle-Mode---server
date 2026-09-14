@@ -98,5 +98,15 @@ if grep -aql "$HOST" "$V/$DEXNAME" && ! grep -aql "login.disneyheroesgame.com" "
 else
   echo "[apk] ✖ vérification de la redirection échouée"; exit 1
 fi
-echo "[apk] ✅ APK patché prêt : $OUT"
+NSO="$(unzip -l "$OUT" | grep -c '\.so$')"
+# GARDE-FOU (§2, même raison que dans apk_inject_picker.sh) : 0 .so → Android REFUSE l'installation
+# (« incompatible avec votre téléphone »). Cause : APK de BASE seul au lieu du XAPK complet (les .so vivent dans
+# le split `config.<abi>.apk`). Vécu EN JEU. On échoue au lieu de livrer un APK ininstallable.
+if [ "$NSO" -eq 0 ]; then
+  echo "[apk] ✖ APK SANS bibliothèque native (0 .so) — Android refusera l'installation (« incompatible »)."
+  echo "[apk]   Cause : l'entrée fournie est un APK de BASE seul. Fournis le XAPK COMPLET (base + config.<abi>.apk"
+  echo "[apk]   + config.<textures>.apk), tel que téléchargé depuis APKPure/APKMirror."
+  rm -f "$OUT"; exit 1
+fi
+echo "[apk] ✅ APK patché prêt : $OUT  ($NSO .so, $(du -h "$OUT" | cut -f1))"
 echo "[apk]   → installer HORS store (autoriser les sources inconnues) ; le jeu se connectera à http://$HOST:$PORT"

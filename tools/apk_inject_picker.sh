@@ -122,5 +122,17 @@ grep -aql "com/perblue/dhlauncher/DhServerPicker" "$V/classes${NEXT}.dex" \
   && echo "[inj] ✅ écran de sélection présent (classes${NEXT}.dex)" \
   || { echo "[inj] ✖ DhServerPicker ABSENT de l'APK final (classes${NEXT}.dex) — abandon (éviterait un APK qui crashe)"; exit 1; }
 grep -aql "setLive" "$V/$GNAME" && echo "[inj] ✅ ServerType.setLive + hook dans $GNAME"
-echo "[inj] ✅ APK universel patché : $OUT  ($(unzip -l "$OUT" | grep -c '\.so$') .so, $(du -h "$OUT" | cut -f1))"
+NSO="$(unzip -l "$OUT" | grep -c '\.so$')"
+# GARDE-FOU (§2 : échouer FORT plutôt que livrer un APK cassé en silence). 0 .so = aucune bibliothèque native
+# → Android REFUSE l'installation (« application incompatible avec votre téléphone »). Cause quasi certaine : on a
+# reçu un APK de BASE seul (sans les splits `config.*.apk` qui portent les .so et les textures) au lieu du XAPK
+# complet. Le script l'AFFICHAIT (« 0 .so ») sans échouer → APK ininstallable livré silencieusement (vécu EN JEU :
+# APK 90 Mo « incompatible », au lieu de ~163 Mo). On refuse désormais.
+if [ "$NSO" -eq 0 ]; then
+  echo "[inj] ✖ APK SANS bibliothèque native (0 .so) — Android refusera l'installation (« incompatible »)."
+  echo "[inj]   Cause : l'entrée fournie est un APK de BASE seul. Fournis le XAPK COMPLET (base + config.<abi>.apk"
+  echo "[inj]   + config.<textures>.apk), tel que téléchargé depuis APKPure/APKMirror."
+  rm -f "$OUT"; exit 1
+fi
+echo "[inj] ✅ APK universel patché : $OUT  ($NSO .so, $(du -h "$OUT" | cut -f1))"
 echo "[inj]   → installer HORS store ; au lancement, l'écran de choix s'affiche."
