@@ -15,6 +15,48 @@ extraction des sommets ; (d) router `com.perblue.heroes.cparticle.Native` (aujou
 moteur Java. Résultat attendu : particules fidèles (code du jeu), rapides (JVM/JIT), zéro émulation, zéro
 formule devinée. Vérif EN JEU (visuel + FPS). np_sim.c reste comme doc de format ; il n'est plus la voie.
 
+## 2026-09-14 (g306) — PILOTAGE de la release v0.2.17 EN CONDITIONS LAMBDA (sans Git système) → 3 bugs BLOQUANTS de génération corrigés + annuaire APK diagnostiqué → tag launcher-v0.2.18
+
+**Méthode (§8)** : téléchargé la release CI `launcher-v0.2.17` (dh-launcher-windows.zip, 325 Mo → 694 Mo extraite),
+démarré le daemon avec le JDK EMBARQUÉ et un PATH **sans Git système** (System32 + JDK seulement = vrai PC lambda,
+log « OK aucun git systeme conditions lambda »), puis piloté `/build/start` par HTTP (même chemin que l'UI Tauri).
+Vérifié dans la release : `runtime/git/usr/bin/bash.exe` présent, **mingw64 retiré (0 entrée)**, `directory.env`
+embarqué avec l'URL/clé RÉELLES → la brique Git de g305 a bien fonctionné en CI.
+
+**3 bugs BLOQUANTS trouvés (invisibles jusqu'ici car MASQUÉS par le Git système des amis qui « réussissaient ») :**
+1. **`mobile/` pas embarqué dans `tooling/`** (`build_launcher.sh` : `for d in server desktop-port tools native`)
+   → `target=apk mode=picker` échoue « picker.dex ne contient pas DhServerPicker » (apk_inject_picker.sh lit
+   mobile/{DhServerPicker,Ed25519,MobileIdentity,MobileAuth,MobileInfoVerifier}.java). Fix : ajout de `mobile`.
+2. **extract/decompile/reframe passaient un env null** (ou juste DH_DATA_DEST) à `runStep` → le bash n'avait PAS le
+   PATH d'`embeddedToolsEnv()` (Git embarqué usr/bin + curl System32) → `dirname/mktemp: command not found` (code
+   127) sur PC lambda. **= LA cause n°1 des échecs de génération une fois le Git bundlé.** Fix : les 3 étapes
+   utilisent `embeddedToolsEnv()` (extract y ajoute DH_DATA_DEST).
+3. **Détection XAPK `unzip -l | grep -qE '\.apk$'`** matchait la ligne d'EN-TÊTE `Archive:  <chemin>.apk` de
+   `unzip -l` → tout .apk pris pour un XAPK → fusion APKEditor forcée qui ÉCHOUE sur un APK de base seul. Fix :
+   `unzip -Z1` (noms d'entrées uniquement) dans run-desktop.sh + apk_inject_picker.sh + patch_apk.sh.
+
+**Après fix (mêmes conditions lambda) : APK-picker + SERVEUR + PORT générés de bout en bout.** Port : `run.bat`
+met `-Ddh.spinebackend=jni` (libhostspine64.dll présent) + `-Ddh.particlebackend=java` par défaut = **Java pour
+spine ET particules, pas unidbg** (demande util.). APK-picker vérifié : classes7.dex contient l'URL
+`rzsdzmykqaycpyddmajh.supabase.co` + le JWT anon + `/rest/v1/servers?select=…`, **zéro placeholder `__DH_…__`**.
+
+**ANNUAIRE (diagnostic complet, backend Supabase « Dhbm » `rzsdzmykqaycpyddmajh`)** :
+- **« Annuaire non configuré » dans l'APK** = l'APK avait été bâti SANS l'URL d'annuaire (placeholder non substitué
+  → `DhServerPicker:452` early-return). Cause : l'APK servi précédemment était mon build E2E manuel (args annuaire
+  vides). **Résolu** : la release embarque `directory.env` → tout APK-picker généré depuis v0.2.17+ est configuré.
+- **« serveur de test invisible »** = même cause. La ligne EST en base (1 row RLS public-read) : `DÉMO Legion (test
+  liste)`, adresse `203.0.113.1:8080` (IP RFC 5737 de DOC, injoignable — insérée pour tester l'affichage). La
+  requête REST du picker (avec la clé anon) la renvoie ; le picker liste sans re-vérif de vivacité → un APK
+  CONFIGURÉ l'affiche.
+- **Publication de SON serveur depuis le launcher = NON câblée** : le code serveur sait publier (opt-in
+  `DH_SERVER_PUBLISH=1` + DH_DIRECTORY_URL/ANON_KEY + DH_SERVER_ADDRESS + DH_SERVER_INFO_URL, `LoginServer:3327`),
+  mais `HostManager` ne pose rien et l'UI n'a aucune case → héberger via le launcher ne publie JAMAIS.
+  **Fonctionnalité manquante** (à ajouter si demandé : case « rendre public » dans l'onglet Héberger).
+
+**Livré** : commit `664eb32`, tag **`launcher-v0.2.18`** poussé → **CI a publié la release** (dh-launcher-windows.zip).
+C'est la v0.2.18 (pas la v0.2.17) qu'il faut donner aux amis. APK de démo servi via cloudflared pour test util.
+⚠️ **OUVERT** : lag chez certains amis (besoin de leur `native/`+`run.bat`+`[fps]`+GPU — message EN prêt).
+
 ## 2026-09-14 (g305) — DISTRIBUTION : Git EMBARQUÉ dans la release Windows (PortableGit) → autonomie totale de la génération + tag launcher-v0.2.17
 
 **Contexte (transcript ami)** : des amis n'arrivaient pas à générer serveur/port avec la release ; cause n°1 =
