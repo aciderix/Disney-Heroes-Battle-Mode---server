@@ -15,6 +15,57 @@ extraction des sommets ; (d) router `com.perblue.heroes.cparticle.Native` (aujou
 moteur Java. Résultat attendu : particules fidèles (code du jeu), rapides (JVM/JIT), zéro émulation, zéro
 formule devinée. Vérif EN JEU (visuel + FPS). np_sim.c reste comme doc de format ; il n'est plus la voie.
 
+## 2026-09-14 (g308) — ⭐ CACHE D'ASSETS corrigé (cause des archives tronquées) + 🔴 CRASH HUB « nouveau joueur » : diagnostic avancé, 5 pistes ÉLIMINÉES (ne pas les refaire)
+
+### ✅ CORRIGÉ ET VÉRIFIÉ — le cache d'assets était SILENCIEUSEMENT désactivé (commit `fa80cae`)
+`content_server.py` : `cache = args.cache if os.path.isdir(args.cache) else None` n'activait le cache QUE si le
+dossier PRÉEXISTAIT — or rien ne le créait. Sur tout bundle neuf ⇒ repli sur `_relay_stream`, **sans reprise ni
+retries**. Les archives de ~450 Mo (`COMPLETE_LIVE_WORLD_ADDITIONAL` = assets du hub) cassaient en cours ⇒ zip
+TRONQUÉ ⇒ `502` ⇒ contenu incomplet. Symptôme dans le log : `GET …WORLD_ADDITIONAL…zip 200` PUIS `502` sur la
+MÊME requête (send_response(200), exception en cours de flux, puis `_send(502)`). Second défaut : le chemin par
+défaut visait `os.path.dirname(here)` = le dossier PARENT du bundle. **Fix** : création du dossier (`makedirs`),
+échec explicite si impossible, et `--cache "<bundle>/assets-cache"` posé par RUN_SH/RUN_BAT.
+**Vérifié EN RÉEL** : 453 239 641 o = exactement le Content-Length d'archive.org, zip valide (10 310 entrées,
+`testzip()` OK), servi ensuite en local en 6 ms, **0 erreur 502** (contre échec systématique avant).
+
+### 🔴 OUVERT — crash au HUB pour un compte NEUF (bloquant pour TOUT nouveau joueur)
+```
+NullPointerException: BaseRenderable.getTint() car <local8> est null
+  at MainScreenDisplay.setPersistantGlowAlpha / updateEnabledGlow
+  at MainScreen.updateSceneVisuals → UIScreen.updateUI → BaseScreen.tutorialUIUpdate
+  at IntroFeaturesActV2.onTutorialTransition ← déclenché par NarratorView.doClick (clic réel)
+```
+**Mécanique exacte (bytecode lu)** : `setPersistantGlowAlpha` fait `getGlowPaths(icon)` → `nodeFromPath(path)`
+→ `node.getComponent(DHSpriteRenderable.class)` → `.getTint()`. Le jeu **protège `node == null`** mais **PAS le
+composant null**. Et `MainScreen.updateSceneVisuals` **boucle sur TOUTES les `MainIconType.values()`** et appelle
+`updateEnabledGlow` pour chacune ⇒ il suffit d'UN nœud de halo sans sprite pour planter.
+
+**⛔ PISTES ÉLIMINÉES (preuves à l'appui — NE PAS LES REFAIRE) :**
+1. **Assets manquants/tronqués** : NON. Vérif zip↔disque = `intacts=17866, absents=0, tronqués=0` ; log du jeu
+   `Not Missing` sur TOUTES les catégories, `nothing to download`, `playerEncounteredMissingAssets: false`.
+2. **Course d'extraction** (le jeu irait plus vite que zip4j) : NON. Testé avec TOUT pré-extrait (0 extraction
+   pendant le run, 0 erreur de son) ⇒ **crash identique**. (J'y avais cru à tort après un test biaisé : le run
+   « sans clic » ne prouvait rien puisque c'est le CLIC qui déclenche la transition.)
+3. **Fichier corrompu** : NON. Un seul trouvé (`oasis/scene-8.sceneb` à 4096 o au lieu de 24330) — c'était une
+   **conséquence** du crash (extraction tuée en plein écriture), pas la cause : supprimé/ré-extrait ⇒ crash idem.
+4. **Décalage version contenu↔code** : NON. `index.txt` mappe **rev 335 ↔ GameVersion 8.0** = exactement l'APK de
+   l'utilisateur (8.0 public = 12.1.0 interne). Les `GRAVE: Missing row/Unknown row` dans les `.tab` sont du bruit
+   habituel, non fatal (le jeu poursuit longtemps après).
+5. **État serveur du nouveau joueur** : NON. `updateSceneVisuals` itère **inconditionnellement** sur toutes les
+   icônes ; le glow ne dépend donc pas de ce que le serveur déclare débloqué.
+
+**Pourquoi « c'est nouveau »** : les vérifs en jeu passées utilisaient le chemin DEV (`desktop-port/build/run`,
+assets déjà chauds) avec un compte EXISTANT. Le parcours **nouveau joueur → tutoriel → hub depuis un bundle
+généré** n'avait JAMAIS été exercé. L'ami l'a pris de plein fouet, comme le fera chaque nouveau joueur.
+
+**Éléments pour la suite** : le hub est `world/env/city_rooftops`, présent **UNIQUEMENT dans l'APK sous `ETC/`**
+(40 fichiers) et absent de l'arbre téléchargé `ETC2/` ; ses atlas ne contiennent **aucune région « glow »**. Les
+catégories `UI_INITIAL`, `UI_PARTICLES_INITIAL`, `WORLD_INITIAL_INTERNAL` existent dans l'index mais ne sont
+JAMAIS téléchargées (attendues dans l'APK). Le jeu choisit `ETC2` comme compression mais `buildVariantPath: ETC/`.
+**PROCHAINE ÉTAPE** : instrumenter à l'exécution pour identifier QUELLE `MainIconType`/quel nœud a un
+`DHSpriteRenderable` nul (l'analyse statique a atteint sa limite : le `switch` de `getGlowPaths` passe par une
+table `$SwitchMap`, et les noms de nœuds ne sont pas en clair dans les `.sceneb`).
+
 ## 2026-09-14 (g307) — ANNUAIRE livré (publication + vérification + purge) ; ⛔ VERDICT « hébergement public sans manip » : IMPASSE documentée — NE PAS RE-EXPLORER
 
 **LIVRÉ ET VÉRIFIÉ EN RÉEL** (détail dans les commits `d67ac51`, `f1d9626`, `7648221`) :
