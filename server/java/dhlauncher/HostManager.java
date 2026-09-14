@@ -181,15 +181,30 @@ public final class HostManager {
     }
 
     private void stopQuiet() {
-        if (content != null) { content.destroy(); }
-        if (server != null)  { server.destroy(); }
-        // laisse une chance à l'arrêt propre puis force
-        try {
-            if (content != null && !content.waitFor(2, java.util.concurrent.TimeUnit.SECONDS)) content.destroyForcibly();
-            if (server != null && !server.waitFor(2, java.util.concurrent.TimeUnit.SECONDS)) server.destroyForcibly();
-        } catch (InterruptedException e) { Thread.currentThread().interrupt(); }
+        destroyTree(content);
+        destroyTree(server);
         server = null; content = null; startedAt = 0;
         adminPort = 0; adminToken = null;
+    }
+
+    /**
+     * Détruit un process ET TOUTE SA DESCENDANCE, puis attend. {@code Process.destroy()} ne tue QUE le process visé :
+     * en mode bundle on lance {@code cmd /c run.bat} (ou {@code bash run.sh}), qui démarre le {@code java} du serveur
+     * en ENFANT — tuer le script laissait donc le serveur VIVANT alors que {@code /host/stop} rapportait
+     * {@code running:false}. Conséquence concrète (constatée EN JEU) : le serveur continuait d'écouter ET de
+     * s'inscrire dans l'annuaire toutes les 10 min après un « Arrêter » — une fiche impossible à retirer.
+     * On capture les descendants AVANT de tuer le parent (sinon l'arborescence est déjà perdue), on demande l'arrêt
+     * propre, puis on force ce qui résiste.
+     */
+    private static void destroyTree(Process p) {
+        if (p == null) return;
+        java.util.List<ProcessHandle> kids = p.descendants().collect(java.util.stream.Collectors.toList());
+        p.destroy();
+        for (ProcessHandle h : kids) h.destroy();
+        try {
+            if (!p.waitFor(2, java.util.concurrent.TimeUnit.SECONDS)) p.destroyForcibly();
+        } catch (InterruptedException e) { Thread.currentThread().interrupt(); }
+        for (ProcessHandle h : kids) if (h.isAlive()) h.destroyForcibly();
     }
 
     /** ADMIN — base de l'AdminService du serveur hébergé (proxy {@code /admin/*}), ou {@code null} si indisponible
