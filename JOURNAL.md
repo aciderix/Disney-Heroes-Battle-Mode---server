@@ -15,6 +15,51 @@ extraction des sommets ; (d) router `com.perblue.heroes.cparticle.Native` (aujou
 moteur Java. Résultat attendu : particules fidèles (code du jeu), rapides (JVM/JIT), zéro émulation, zéro
 formule devinée. Vérif EN JEU (visuel + FPS). np_sim.c reste comme doc de format ; il n'est plus la voie.
 
+## 2026-09-14 (g307) — ANNUAIRE livré (publication + vérification + purge) ; ⛔ VERDICT « hébergement public sans manip » : IMPASSE documentée — NE PAS RE-EXPLORER
+
+**LIVRÉ ET VÉRIFIÉ EN RÉEL** (détail dans les commits `d67ac51`, `f1d9626`, `7648221`) :
+- **Publication opt-in** « Rendre mon serveur public » : `HostManager` pose les 5 variables attendues par
+  `LoginServer` (DH_SERVER_PUBLISH / DH_DIRECTORY_* / DH_SERVER_ADDRESS / DH_SERVER_INFO_URL) — variables HÉRITÉES
+  par le java du bundle, donc aucun script modifié (§1). UI : case + nom + adresse publique pré-remplie.
+- **L'annuaire REFUSE les serveurs injoignables** : l'Edge Function `register-server` (v2) va chercher le `/info`
+  SIGNÉ depuis le cloud Supabase avec un nonce frais, et rejette les adresses non routables (privé/CGNAT 100.64).
+  **Testé les 2 chemins** : injoignable → `HTTP 422`, 0 ligne ; joignable (via tunnel HTTP) → `HTTP 200`, ligne écrite.
+- **Purge auto** des serveurs morts : `pg_cron` toutes les 10 min, seuil 30 min (3 refresh manqués). **Testé** : a
+  supprimé la fiche de démo de 12 jours. Sources versionnées dans `supabase/` (elles n'existaient que déployées).
+- **2 bugs corrigés au passage** : (a) le bundle annonçait `127.0.0.1` comme adresse de JEU et d'ASSETS → tout
+  joueur distant était renvoyé vers lui-même (surchargeable `DH_PUBLIC_GAME`/`DH_PUBLIC_CONTENT`) ; (b) « Arrêter »
+  ne tuait que le script, pas le java → serveur vivant qui continuait à publier (`destroyTree`, vérifié).
+- **UPnP IGD IPv4** (`UpnpPortMapper`, JDK pur) : SSDP multi-interfaces **vérifié correct** (trouve la même annonce
+  qu'une implémentation indépendante en PowerShell), + diagnostic en 3 causes exposé par `GET /host/upnp`.
+
+**⛔ VERDICT (recherche menée à fond, NE PAS RECOMMENCER) — « n'importe qui héberge en public, sans manip, sans
+frais » est IMPOSSIBLE en l'état.** Contrainte physique : accepter des entrants depuis n'importe où exige une IP
+publique quelque part. Constaté sur la machine de test (neufbox NB6VAC, FTTH SFR) :
+- **IPv4 = CGNAT** (annoncé par la box : « IPv6 & IPv4 CGNAT ») → redirection de ports et UPnP IPv4 **inutiles par
+  construction** (IP publique partagée). Ce n'est pas un réglage à trouver.
+- **UPnP IPv4** : la box annonce bien (MiniUPnPd/1.9) mais son port de CONTRÔLE TCP 49152 est FERMÉ → aucun mapping.
+  ⚠️ Erreur commise puis corrigée : j'avais d'abord conclu « box sans UPnP » en sondant le port 1900 en **TCP** —
+  or SSDP est en **UDP**. Test invalide.
+- **IPv6** : le PC a bien des IPv6 publiques et `IPv6Connectivity: Internet` ; le serveur écoute en IPv6 sur 8081
+  et 8082 (seul `content_server.py` est IPv4-only, `AF_INET`). Le pare-feu **Windows n'est PAS en cause** (règle
+  entrante Public/Autoriser vérifiée pour le java exact du bundle). C'est **la box qui bloque l'entrant IPv6**
+  (défaut FAI) → il faut aller cocher un réglage dans `Réseau v6 > Pare-feu` ⇒ **ce n'est plus « sans manip »**.
+- **Tunnels tiers gratuits** : tous bloqués sur le TCP ARBITRAIRE, qui est justement ce dont on a besoin (le
+  transport de jeu est du TCP brut, cf. PROTOCOL.md §1). **playit.gg** : TCP personnalisé = Premium (issue #127),
+  gratuit seulement via presets de jeux. **Tailscale Funnel** : ports 443/8443/10000 ET **TLS obligatoire** — le
+  TCP brut est une demande de fonctionnalité OUVERTE (issue #14240) ; y passer imposerait de faire parler TLS au
+  client du jeu = modification lourde de l'APK, contraire à §1.
+- **VPN embarqué** : ne résout rien — il faudrait le VPN sur le téléphone du JOUEUR (plus lourd qu'ouvrir un port),
+  et l'embarquer dans l'APK est exclu (VpnService, consentement, §1).
+- **Relais mutualisé** (frp sur VM gratuite type Oracle Always Free) = seule combinaison *gratuite + universelle +
+  sans manip côté hébergeur*, mais demande d'administrer une VM. **DÉCISION UTILISATEUR : refusé (« trop
+  compliqué »). Chantier CLOS.**
+
+⇒ **Ce qui reste vrai et utilisable** : l'annuaire fonctionne et ne contient que des serveurs réellement joignables.
+Un hébergeur **non-CGNAT** est publié automatiquement (UPnP). Un hébergeur CGNAT ne peut pas être public — et le
+launcher le lui DIT clairement au lieu de le laisser chercher. Le jeu en LAN / adresse manuelle marche sans rien de
+tout ça. **Ne pas rouvrir ce chantier sans un élément NOUVEAU** (ex. un hébergeur prêt à payer/administrer un relais).
+
 ## 2026-09-14 (g306) — PILOTAGE de la release v0.2.17 EN CONDITIONS LAMBDA (sans Git système) → 3 bugs BLOQUANTS de génération corrigés + annuaire APK diagnostiqué → tag launcher-v0.2.18
 
 **Méthode (§8)** : téléchargé la release CI `launcher-v0.2.17` (dh-launcher-windows.zip, 325 Mo → 694 Mo extraite),
