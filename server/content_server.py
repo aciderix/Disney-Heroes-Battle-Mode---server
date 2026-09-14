@@ -361,7 +361,21 @@ def main(argv=None):
 
     if not os.path.isfile(args.index):
         ap.error(f"index introuvable: {args.index}")
-    cache = args.cache if args.cache and os.path.isdir(args.cache) else None
+    # CACHE D'ASSETS — on CRÉE le dossier s'il manque au lieu d'exiger qu'il préexiste.
+    # BUG TROUVÉ EN JEU : `args.cache if os.path.isdir(args.cache) else None` désactivait SILENCIEUSEMENT le cache
+    # sur tout bundle neuf (le dossier n'était créé nulle part) → repli sur `_relay_stream`, qui n'a NI reprise NI
+    # retries. Or certaines archives font ~450 Mo (COMPLETE_LIVE_WORLD_ADDITIONAL) : le flux archive.org casse en
+    # cours, le client reçoit un zip tronqué → 502 puis CRASH DU JEU à l'arrivée au hub (reproduit sur 2 machines).
+    # Avec le cache : `_download_to_file` fait reprise (Range) + retries, écrit en .part puis renomme atomiquement,
+    # et les lancements suivants sont servis en LOCAL (plus aucun aller-retour archive.org).
+    # `--cache ""` (ou DH_ASSETS_CACHE="") reste possible pour désactiver explicitement.
+    cache = args.cache or None
+    if cache:
+        try:
+            os.makedirs(cache, exist_ok=True)
+        except OSError as e:
+            sys.stderr.write("[content] ! cache désactivé (création impossible: %s)\n" % e)
+            cache = None
 
     Handler.cfg = Config(args.index, cache, args.archive_base, args.rewrite_host, args.game_server)
     httpd = ThreadingHTTPServer((args.host, args.port), Handler)

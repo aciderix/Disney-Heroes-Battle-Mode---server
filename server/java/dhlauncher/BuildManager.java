@@ -675,7 +675,12 @@ public final class BuildManager {
       // on garde 127.0.0.1 (jeu en local, comportement historique inchangé).
       + "PUB_GAME=\"${DH_PUBLIC_GAME:-127.0.0.1:$GAME_PORT}\"\n"
       + "PUB_CONTENT=\"${DH_PUBLIC_CONTENT:-127.0.0.1:$CONTENT_PORT}\"\n"
+      // --cache EXPLICITE dans le bundle : sans lui, le défaut de content_server.py pointe vers le dossier PARENT
+      // du bundle (os.path.dirname(here)) — hors du bundle, donc au mieux il pollue le Bureau. Le cache est VITAL :
+      // il apporte reprise+retries sur les archives de plusieurs centaines de Mo (sinon flux cassé → zip tronqué →
+      // crash du jeu au hub) et sert les lancements suivants en local.
       + "\"$PY\" \"$DIR/content_server.py\" --port \"$CONTENT_PORT\" --rewrite-host \"$PUB_CONTENT\" \\\n"
+      + "        --cache \"$DIR/assets-cache\" \\\n"
       + "        --index \"$DIR/index.txt\" --game-server \"$PUB_GAME\" & CPID=$!\n"
       + "\"$JAVA\" -XX:TieredStopAtLevel=1 ${DH_SERVER_OPTS:-} $ADMIN_OPTS -Ddh.db=\"$DIR/data/dh-server.db\" \\\n"
       + "     -Ddh.stats=\"$DIR/game-data/stats\" -Ddh.auth.port=\"$AUTH_PORT\" \\\n"
@@ -768,7 +773,9 @@ public final class BuildManager {
       + "set PUB_CONTENT=127.0.0.1:%DH_CONTENT_PORT%\r\n"
       + "if not \"%DH_PUBLIC_GAME%\"==\"\" set PUB_GAME=%DH_PUBLIC_GAME%\r\n"
       + "if not \"%DH_PUBLIC_CONTENT%\"==\"\" set PUB_CONTENT=%DH_PUBLIC_CONTENT%\r\n"
-      + "start \"dh-content\" \"%PY%\" \"%DIR%content_server.py\" --port %DH_CONTENT_PORT% --rewrite-host %PUB_CONTENT% --index \"%DIR%index.txt\" --game-server %PUB_GAME%\r\n"
+      // --cache explicite : cf. commentaire dans RUN_SH (sans lui le cache atterrit hors du bundle ; et sans cache
+      // du tout, les grosses archives cassent en streaming → zip tronqué → crash du jeu au hub).
+      + "start \"dh-content\" \"%PY%\" \"%DIR%content_server.py\" --port %DH_CONTENT_PORT% --rewrite-host %PUB_CONTENT% --cache \"%DIR%assets-cache\" --index \"%DIR%index.txt\" --game-server %PUB_GAME%\r\n"
       + "\"%JAVA%\" -XX:TieredStopAtLevel=1 %ADMIN_OPTS% -Ddh.db=\"%DIR%data\\dh-server.db\" -Ddh.stats=\"%DIR%game-data\\stats\" -Ddh.auth.port=%DH_AUTH_PORT% -cp \"%DIR%lib\\*\" dhserver.LoginServer %DH_GAME_PORT%\r\n";
 
     private void runStep(String name, String[] cmd, String envKey, String envVal) throws Exception {
