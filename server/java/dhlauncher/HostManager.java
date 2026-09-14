@@ -94,7 +94,15 @@ public final class HostManager {
         // échouer clairement plutôt que démarrer un serveur qui ne publiera jamais en silence).
         if (publish) {
             String h = publicHost == null ? "" : publicHost.trim();
-            if (h.isEmpty()) throw new IOException("publication annuaire : adresse publique requise (IP ou domaine joignable depuis Internet)");
+            // UPnP : on tente d'ouvrir AUTOMATIQUEMENT les 3 ports sur la box et de récupérer l'IP publique, pour
+            // que « cocher la case » suffise (objectif : aucune manip de redirection de ports côté hébergeur).
+            // Best-effort : si la box n'a pas d'UPnP (ou l'a désactivé), on n'échoue PAS ici — l'hébergeur peut
+            // avoir redirigé ses ports à la main ou saisi un domaine/DDNS. C'est l'annuaire qui tranche (il refuse
+            // les serveurs qu'il n'arrive pas à joindre depuis Internet), donc aucune illusion possible.
+            String upnpIp = tryUpnp(contentPort, gamePort, authPort);
+            if (h.isEmpty() && upnpIp != null) h = upnpIp;
+            if (h.isEmpty()) throw new IOException("publication annuaire : adresse publique requise — UPnP indisponible sur ta box "
+                    + "(active-le, ou redirige les ports " + contentPort + "/" + gamePort + "/" + authPort + " et saisis ton IP publique ou un domaine)");
             if (dirUrl == null || dirUrl.isEmpty() || dirKey == null || dirKey.isEmpty())
                 throw new IOException("publication annuaire : annuaire non configuré sur ce launcher (directory.env absent)");
             // Accepte « host » ou « host:port » ; sans port explicite on publie le port de CONTENU (celui que le
@@ -186,7 +194,63 @@ public final class HostManager {
         return status();
     }
 
+    /** Passerelle UPnP + ports mappés par CETTE session (pour les retirer à l'arrêt — pas de trou laissé ouvert). */
+    private volatile UpnpPortMapper.Gateway upnpGw;
+    private volatile int[] upnpPorts;
+
+    /**
+     * Ouvre les 3 ports via UPnP et renvoie l'IP publique vue par la box, ou {@code null} si UPnP est indisponible
+     * (box sans UPnP / désactivé) ou si on détecte du CGNAT — dans ce dernier cas rediriger des ports ne sert à
+     * RIEN (l'opérateur NAT encore derrière), donc mieux vaut ne pas faire croire que ça a marché.
+     */
+    private String tryUpnp(int contentPort, int gamePort, int authPort) {
+        try {
+            UpnpPortMapper.Gateway g = UpnpPortMapper.discover(4000);
+            if (g == null) return null;
+            String boxIp = UpnpPortMapper.externalIp(g);
+            if (boxIp == null) return null;
+            if (UpnpPortMapper.isCgnat(boxIp, publicIpFromInternet())) {
+                System.out.println("[host] UPnP : box derrière un CGNAT opérateur (" + boxIp
+                        + ") → la redirection de ports ne peut pas rendre le serveur joignable.");
+                return null;
+            }
+            int[] ports = { contentPort, gamePort, authPort };
+            int ok = 0;
+            for (int p : ports) if (UpnpPortMapper.addMapping(g, p, p, "TCP", "Disney Heroes serveur")) ok++;
+            if (ok == 0) return null;
+            upnpGw = g; upnpPorts = ports;
+            System.out.println("[host] UPnP : " + ok + "/" + ports.length + " port(s) ouvert(s) sur la box, IP publique " + boxIp);
+            return boxIp;
+        } catch (Exception e) {
+            System.out.println("[host] UPnP indisponible : " + e);
+            return null;
+        }
+    }
+
+    /** IP publique vue depuis Internet (sert à détecter le CGNAT en la comparant à celle de la box). */
+    private static String publicIpFromInternet() {
+        try {
+            java.net.http.HttpClient c = java.net.http.HttpClient.newBuilder()
+                    .connectTimeout(java.time.Duration.ofSeconds(3)).build();
+            java.net.http.HttpResponse<String> r = c.send(
+                    java.net.http.HttpRequest.newBuilder(java.net.URI.create("https://api.ipify.org"))
+                            .timeout(java.time.Duration.ofSeconds(3)).GET().build(),
+                    java.net.http.HttpResponse.BodyHandlers.ofString());
+            return r.statusCode() == 200 ? r.body().trim() : null;
+        } catch (Exception e) { return null; }
+    }
+
+    /** Retire les redirections UPnP posées au démarrage (best-effort : une box injoignable ne doit pas bloquer l'arrêt). */
+    private void releaseUpnp() {
+        UpnpPortMapper.Gateway g = upnpGw; int[] ports = upnpPorts;
+        upnpGw = null; upnpPorts = null;
+        if (g == null || ports == null) return;
+        for (int p : ports) { try { UpnpPortMapper.deleteMapping(g, p, "TCP"); } catch (Exception ignore) { } }
+        System.out.println("[host] UPnP : redirections retirées de la box");
+    }
+
     private void stopQuiet() {
+        releaseUpnp();
         destroyTree(content);
         destroyTree(server);
         server = null; content = null; startedAt = 0;
