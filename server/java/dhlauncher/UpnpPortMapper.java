@@ -95,12 +95,44 @@ public final class UpnpPortMapper {
         return good;
     }
 
+    /**
+     * DIAGNOSTIC (UI + support) — distingue les 3 échecs possibles, qui appellent des actions TRÈS différentes :
+     * aucune annonce SSDP (UPnP absent/désactivé/bloqué par le pare-feu), annonce SSDP mais description injoignable
+     * (cas vu EN RÉEL sur une neufbox/MiniUPnPd : SSDP répond en UDP mais le port de contrôle TCP est fermé —
+     * typiquement UPnP désactivé dans les réglages alors que le démon annonce encore), ou description lisible mais
+     * sans service WAN*Connection. Sans ça l'utilisateur ne voit qu'un « UPnP indisponible » inexploitable.
+     */
+    public static String diagnose(int timeoutMs) {
+        List<String> locs = new ArrayList<>();
+        for (InetAddress local : localIpv4Candidates()) {
+            locs = searchLocations(local, Math.max(600, timeoutMs / 2));
+            if (!locs.isEmpty()) break;
+        }
+        if (locs.isEmpty()) return "aucune annonce UPnP sur le réseau (UPnP désactivé sur la box, ou bloqué par le pare-feu)";
+        for (String loc : locs) {
+            if (httpGet(loc, 4000) == null)
+                return "UPnP annoncé par la box mais son service est INJOIGNABLE (" + loc + ") — active l'UPnP dans les réglages de ta box";
+            if (fromDescription(loc) != null) return "OK";
+        }
+        return "UPnP présent mais aucun service de redirection (WANIPConnection/WANPPPConnection) exposé";
+    }
+
     /** M-SEARCH émis depuis UNE interface précise. */
     private static Gateway discoverFrom(InetAddress local, int timeoutMs) {
+        for (String loc : searchLocations(local, timeoutMs)) {
+            Gateway g = fromDescription(loc);
+            if (g != null) return g;
+        }
+        return null;
+    }
+
+    /** Envoie les M-SEARCH depuis {@code local} et renvoie les URL de description (en-tête LOCATION) reçues. */
+    private static List<String> searchLocations(InetAddress local, int timeoutMs) {
         List<String> locations = new ArrayList<>();
+        int per = Math.max(400, timeoutMs / SEARCH_TARGETS.length);
         for (String st : SEARCH_TARGETS) {
             try (DatagramSocket sock = new DatagramSocket(0, local)) {
-                sock.setSoTimeout(Math.max(400, timeoutMs / SEARCH_TARGETS.length));
+                sock.setSoTimeout(per);
                 String req = "M-SEARCH * HTTP/1.1\r\n"
                         + "HOST: " + SSDP_ADDR + ":" + SSDP_PORT + "\r\n"
                         + "MAN: \"ssdp:discover\"\r\n"
@@ -108,7 +140,7 @@ public final class UpnpPortMapper {
                         + "ST: " + st + "\r\n\r\n";
                 byte[] out = req.getBytes(StandardCharsets.US_ASCII);
                 sock.send(new DatagramPacket(out, out.length, InetAddress.getByName(SSDP_ADDR), SSDP_PORT));
-                long deadline = System.currentTimeMillis() + Math.max(400, timeoutMs / SEARCH_TARGETS.length);
+                long deadline = System.currentTimeMillis() + per;
                 while (System.currentTimeMillis() < deadline) {
                     byte[] buf = new byte[2048];
                     DatagramPacket p = new DatagramPacket(buf, buf.length);
@@ -120,11 +152,7 @@ public final class UpnpPortMapper {
             } catch (Exception ignore) { /* interface sans multicast, pare-feu… → on tente la cible suivante */ }
             if (!locations.isEmpty()) break;   // une box a répondu, inutile d'insister
         }
-        for (String loc : locations) {
-            Gateway g = fromDescription(loc);
-            if (g != null) return g;
-        }
-        return null;
+        return locations;
     }
 
     /** Lit la description XML du device et en extrait (serviceType, controlURL) du service WAN*Connection. */

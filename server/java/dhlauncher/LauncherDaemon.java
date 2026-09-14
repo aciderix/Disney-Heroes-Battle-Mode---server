@@ -78,6 +78,7 @@ public final class LauncherDaemon {
         http.createContext("/host/stop", this::hostStop);
         http.createContext("/host/status", this::hostStatus);
         http.createContext("/host/publicip", this::hostPublicIp); // ANNUAIRE : pré-remplit l'adresse publique
+        http.createContext("/host/upnp", this::hostUpnp);         // ANNUAIRE : l'UPnP peut-il ouvrir les ports ?
         http.createContext("/build/start", this::buildStart);   // C2a-4 : générer le serveur depuis l'APK
         http.createContext("/build/status", this::buildStatus);
         http.createContext("/play", this::playStart);           // C2b : lancer le CLIENT sur le serveur choisi
@@ -281,6 +282,19 @@ public final class LauncherDaemon {
     /** GET /host/status → état du serveur local hébergé (running, écoute, ports, PIDs, uptime). */
     private void hostStatus(HttpExchange ex) throws IOException {
         send(ex, 200, host.status());
+    }
+
+    /**
+     * GET /host/upnp → l'UPnP de la box peut-il ouvrir les ports tout seul ? Renvoie {@code {"ok":bool,
+     * "detail":"…"}}. Permet à l'UI de dire AVANT de démarrer ce qui va se passer, et surtout POURQUOI ça ne
+     * marchera pas le cas échéant (« UPnP désactivé sur la box » ≠ « UPnP annoncé mais service injoignable » ≠
+     * « pas de service de redirection ») — trois causes qui appellent trois actions différentes.
+     */
+    private void hostUpnp(HttpExchange ex) throws IOException {
+        String d;
+        try { d = UpnpPortMapper.diagnose(6000); }
+        catch (Exception e) { d = "diagnostic impossible (" + e.getClass().getSimpleName() + ")"; }
+        send(ex, 200, "{\"ok\":" + "OK".equals(d) + ",\"detail\":" + jstr(d) + "}");
     }
 
     /**
