@@ -707,8 +707,10 @@ public final class BuildManager {
       + "[ -f \"$DIR/native/libgdx64.so\" ] && JOPTS=\"$JOPTS -Ddh.gdxnative=$DIR/native/libgdx64.so\"\n"
       + "if [ -f \"$DIR/native/libhostspine64.so\" ] && [ \"${DH_SPINEBACKEND:-jni}\" != unidbg ]; then\n"
       + "  JOPTS=\"$JOPTS -Ddh.spinebackend=jni -Ddh.hostspine=$DIR/native/libhostspine64.so\"; fi\n"
-      // Particules : backend Java (réutilise le ParticleEmitter du jeu en natif ≈24× vs émulation unidbg,
-      // vérifié EN JEU §8 g298 ; adaptateur validé sur 2918/2918 effets). DÉFAUT ; DH_PARTICLEBACKEND=unidbg pour revenir.
+      // ⚠️ HISTORIQUE — le backend Java des particules a été le DÉFAUT jusqu'au 2026-09-15 (≈24× plus rapide que
+      // l'émulation unidbg, adaptateur validé sur 2918/2918 effets, g298). Il est REPASSÉ EN OPTION : il fait
+      // CRASHER LE HUB (détail ci-dessous). Ne PAS le remettre par défaut sans corriger d'abord la création des
+      // effets côté JavaParticleEngine.
       // PARTICULES : défaut = unidbg (moteur ARM d'origine). Le backend « java » est RAPIDE mais INCOMPLET : il
       // n'arrive pas à créer certains effets (ex. le halo de l'icône PORT du hub), si bien que le jeu obtient un
       // nœud de scène SANS composant ParticleEffectRenderable. Or MainScreenDisplay.setPersistantGlowAlpha teste
@@ -742,8 +744,8 @@ public final class BuildManager {
       // natives-desktop embarque les DEUX sous leur nom natif, run-desktop.sh extrait le bon par OS, g255).
       + "if exist \"%DIR%native\\gdx64.dll\" set JOPTS=%JOPTS% -Ddh.gdxnative=\"%DIR%native\\gdx64.dll\"\r\n"
       + "if exist \"%DIR%native\\libhostspine64.dll\" set JOPTS=%JOPTS% -Ddh.spinebackend=jni -Ddh.hostspine=\"%DIR%native\\libhostspine64.dll\"\r\n"
-      // Particules : backend Java (reutilise le ParticleEmitter du jeu en natif ~24x vs emulation unidbg, verifie
-      // EN JEU §8 g298 ; adaptateur valide sur 2918/2918 effets). DEFAUT ; DH_PARTICLEBACKEND=unidbg pour revenir.
+      // ⚠️ HISTORIQUE : le backend Java a été le défaut jusqu'au 2026-09-15 (g298) ; repassé en OPTION car il fait
+      // crasher le hub. Ne pas le remettre par défaut sans corriger JavaParticleEngine (cf. RUN_SH_CLIENT).
       // Défaut = unidbg — cf. commentaire détaillé dans RUN_SH_CLIENT (le backend « java » fait CRASHER le hub :
       // halo PORT sans composant particules → NPE non protégée côté jeu). « java » seulement sur demande explicite.
       + "if \"%DH_PARTICLEBACKEND%\"==\"java\" set JOPTS=%JOPTS% -Ddh.particlebackend=java\r\n"

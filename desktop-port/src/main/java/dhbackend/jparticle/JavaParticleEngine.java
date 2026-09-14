@@ -24,6 +24,23 @@ public final class JavaParticleEngine {
     // Toggle du backend Java : propriete -Ddh.particlebackend=java, OU env DH_PARTICLEBACKEND=java, OU fichier
     // marqueur <user.home>/.dh_particlebackend (contenu "java"). Le fichier permet de basculer sans toucher au
     // run.bat genere par le launcher (utile pour la verif EN JEU).
+    //
+    // ⛔ CE BACKEND FAIT CRASHER LE HUB — il n'est PLUS le defaut depuis le 2026-09-15 (cf. BuildManager,
+    //    RUN_SH_CLIENT/RUN_BAT_CLIENT). Cause : il n'arrive pas a creer certains effets (ex. le halo de l'icone
+    //    PORT du hub, world/env/mainscreen/vfx/mainscreen_port_*_glow.np) ; le jeu se retrouve alors avec un
+    //    noeud de scene SANS composant ParticleEffectRenderable. Or MainScreenDisplay.setPersistantGlowAlpha
+    //    teste la nullite dans son chemin generique (ifnonnull sur DHSpriteRenderable) mais PAS dans la branche
+    //    speciale "features/port/port1-glow", qui itere node.children et appelle
+    //    child.getComponent(ParticleEffectRenderable).getTint() directement => NullPointerException. Et comme
+    //    MainScreen.updateSceneVisuals boucle sur TOUTES les MainIconType, le hub plante a chaque affichage.
+    //    Verifie EN JEU par test differentiel : "java" => crash systematique ; "unidbg" => aucun crash.
+    //    ⇒ Avant de reactiver ce backend par defaut, corriger d'abord la CREATION des effets ici.
+    //
+    // ⚠️ PIEGE DE TEST (m'a fait conclure a tort "ce n'est pas le backend") : la resolution est une CASCADE, et
+    //    chaque etape ne teste QUE l'egalite a "java" — elle ne permet pas de DESACTIVER. Poser
+    //    DH_PARTICLEBACKEND=unidbg ne suffit donc PAS : on retombe sur le fichier marqueur, qui peut contenir
+    //    "java" d'une session precedente. Pour tester unidbg pour de vrai : verifier/ecraser le marqueur
+    //    (`printf unidbg > ~/.dh_particlebackend`) ou le supprimer.
     public static boolean flagJava(){
         if ("java".equalsIgnoreCase(System.getProperty("dh.particlebackend"))) return true;
         if ("java".equalsIgnoreCase(System.getenv("DH_PARTICLEBACKEND"))) return true;

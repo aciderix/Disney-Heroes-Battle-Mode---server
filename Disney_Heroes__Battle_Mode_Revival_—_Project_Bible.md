@@ -181,6 +181,20 @@ Spine and particle behavior has two principal strategies:
 
 The Java backend remains **experimental/partial**. Source comments identify known parity-sensitive areas such as transparency slot order, gradient color/timeline offsets, flipbooks, `AboveZ`/`BelowZ` behavior, multiply/Z-offset flags, lifecycle/disposal, and exact vertex output. The native/unidbg path should remain the reference until the comparison corpus demonstrates parity across the full effect set.
 
+#### 8.1 The Java particle backend crashes the hub (2026-09-15) — why unidbg is the default
+
+The Java backend was briefly made the **default** in generated client bundles. This made the game unusable: it crashed on the main hub screen for **every** player, on **every** hub display. The default was reverted to unidbg.
+
+Mechanism, established by differential test and a JDI probe rather than inference:
+
+- `JavaParticleEngine` fails to create some effects — specifically the glow of the hub's **PORT** icon (`world/env/mainscreen/vfx/mainscreen_port_*_glow.np`). The scene node is therefore present **without** a `ParticleEffectRenderable` component.
+- `MainScreenDisplay.setPersistantGlowAlpha` has two code paths. The generic one null-checks the component (`ifnonnull` on `DHSpriteRenderable`). The special case for `features/port/port1-glow` does **not**: it iterates `node.children` and calls `child.getComponent(ParticleEffectRenderable).getTint()` directly.
+- `MainScreen.updateSceneVisuals` loops over **all** `MainIconType` values unconditionally, so a single missing component is enough to throw a `NullPointerException` every time the hub refreshes.
+
+Evidence: with `java`, the crash is systematic; with `unidbg`, the hub renders and the crash disappears. Assets were verified complete (zip↔disk: 17 866 intact, 0 missing, 0 truncated), so this is a backend defect, not missing content.
+
+**Testing trap worth knowing.** `JavaParticleEngine.flagJava()` is a *cascade*: system property, then `DH_PARTICLEBACKEND`, then the marker file `<user.home>/.dh_particlebackend`. Every step only tests equality to `"java"` — none of them can *disable* the backend. Setting `DH_PARTICLEBACKEND=unidbg` therefore does **not** select unidbg: resolution falls through to the marker file, which may still contain `"java"` from an earlier session. An initial round of testing was invalidated this way and wrongly cleared the backend. To test unidbg for real, overwrite or delete the marker.
+
 The CI workflow also builds a game-free host Spine native library for Linux and Windows, intended to provide a faster JNI backend without requiring a compiler on the player's machine. This improves distribution but does not remove the need for runtime integration validation.
 
 ## 9. Launcher
@@ -418,6 +432,8 @@ Complete the protocol for both PC self-hosting and remote/cloud hosting. Define 
 ### 18.2 Complete the Java particle port
 
 Build a representative effect corpus and compare Java output against unidbg/native for lifecycle, timing, vertex positions, two-color values, UVs, blend modes, pages, Z behavior, flipbooks, transparency, gradients, and disposal. Resolve the `BelowZ` and multiply/Z-offset differences visible in the dispatch code. Only promote Java as default after repeatable in-game parity evidence.
+
+**Concrete starting point (from the 2026-09-15 hub crash, see §8.1).** The first defect to fix is not a *rendering* discrepancy but an outright **effect-creation failure**: for at least one real effect set — the hub PORT glow (`world/env/mainscreen/vfx/mainscreen_port_*_glow.np`) — the Java backend produces no usable effect, so the game never gets a `ParticleEffectRenderable` component. This is a sharper and more tractable target than pixel parity, because the failure is binary and reproducible: load that specific `.np` set through `JavaParticleEngine` and determine why creation fails (parsing, atlas/region resolution, or handle registration), comparing against the unidbg path on the same files. Fixing creation is a prerequisite to any parity work, and it is also the gate for ever restoring Java as the default — which must not happen until the hub is verified in game.
 
 ### 18.3 APK reliability
 
