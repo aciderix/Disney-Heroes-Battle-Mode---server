@@ -709,7 +709,14 @@ public final class BuildManager {
       + "  JOPTS=\"$JOPTS -Ddh.spinebackend=jni -Ddh.hostspine=$DIR/native/libhostspine64.so\"; fi\n"
       // Particules : backend Java (réutilise le ParticleEmitter du jeu en natif ≈24× vs émulation unidbg,
       // vérifié EN JEU §8 g298 ; adaptateur validé sur 2918/2918 effets). DÉFAUT ; DH_PARTICLEBACKEND=unidbg pour revenir.
-      + "[ \"${DH_PARTICLEBACKEND:-java}\" != unidbg ] && JOPTS=\"$JOPTS -Ddh.particlebackend=java\"\n"
+      // PARTICULES : défaut = unidbg (moteur ARM d'origine). Le backend « java » est RAPIDE mais INCOMPLET : il
+      // n'arrive pas à créer certains effets (ex. le halo de l'icône PORT du hub), si bien que le jeu obtient un
+      // nœud de scène SANS composant ParticleEffectRenderable. Or MainScreenDisplay.setPersistantGlowAlpha teste
+      // la nullité dans son chemin générique mais PAS dans la branche spéciale « features/port/port1-glow » (qui
+      // itère les enfants et appelle getTint() directement) ⇒ NullPointerException ⇒ CRASH AU HUB, pour TOUT
+      // joueur. Vérifié EN JEU : crash systématique en « java », aucun crash en « unidbg ».
+      // On ne met donc « java » que si l'utilisateur le DEMANDE explicitement (DH_PARTICLEBACKEND=java).
+      + "[ \"${DH_PARTICLEBACKEND:-}\" = java ] && JOPTS=\"$JOPTS -Ddh.particlebackend=java\"\n"
       + "[ -n \"${DH_USERID:-}\" ] && JOPTS=\"$JOPTS -Ddh.userid=$DH_USERID\"\n"
       + "[ -n \"${DH_FRAMES:-}\" ] && JOPTS=\"$JOPTS -Ddh.frames=$DH_FRAMES\"\n"
       + "[ -n \"${DH_SHOT:-}\" ] && JOPTS=\"$JOPTS -Ddh.shot=$DH_SHOT\"\n"
@@ -737,7 +744,9 @@ public final class BuildManager {
       + "if exist \"%DIR%native\\libhostspine64.dll\" set JOPTS=%JOPTS% -Ddh.spinebackend=jni -Ddh.hostspine=\"%DIR%native\\libhostspine64.dll\"\r\n"
       // Particules : backend Java (reutilise le ParticleEmitter du jeu en natif ~24x vs emulation unidbg, verifie
       // EN JEU §8 g298 ; adaptateur valide sur 2918/2918 effets). DEFAUT ; DH_PARTICLEBACKEND=unidbg pour revenir.
-      + "if not \"%DH_PARTICLEBACKEND%\"==\"unidbg\" set JOPTS=%JOPTS% -Ddh.particlebackend=java\r\n"
+      // Défaut = unidbg — cf. commentaire détaillé dans RUN_SH_CLIENT (le backend « java » fait CRASHER le hub :
+      // halo PORT sans composant particules → NPE non protégée côté jeu). « java » seulement sur demande explicite.
+      + "if \"%DH_PARTICLEBACKEND%\"==\"java\" set JOPTS=%JOPTS% -Ddh.particlebackend=java\r\n"
       // Bug g256 : PlayManager.java pose DH_USERID en variable d'env (identité du compte choisi dans l'onglet
       // Compte) mais ce script ne la lisait jamais — « Jouer » bootait TOUJOURS en anonyme, quel que soit le
       // compte créé. RUN_SH_CLIENT (Linux) la lit déjà (DH_USERID/DH_FRAMES/DH_SHOT) — parité rétablie ici.
