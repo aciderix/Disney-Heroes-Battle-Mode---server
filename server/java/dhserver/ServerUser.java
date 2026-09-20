@@ -1786,6 +1786,16 @@ public final class ServerUser {
       drops = dt.rollNode("ROOT", ctx, new Random());   // vrai roll de la table du jeu
       lr.lootDrops = new DropConverter(user).convert(drops);
     }
+    // Journal d'exploitation OPTIONNEL (guardé -Ddh.chestlog) : résumé du butin roulé — sert au diagnostic
+    // (ex. vérifier EN JEU que le rig de 1ᵉʳ tirage ne se répète plus, cf. issue #1 bug 2). Silencieux par défaut.
+    if (System.getProperty("dh.chestlog") != null && lr.lootDrops != null) {
+      StringBuilder sb = new StringBuilder();
+      for (Object o : lr.lootDrops) {
+        com.perblue.heroes.network.messages.RewardDrop d = (com.perblue.heroes.network.messages.RewardDrop) o;
+        sb.append(d.resourceType).append('/').append(d.itemType).append('x').append(d.quantity).append(' ');
+      }
+      System.out.println("[chest] roll " + type + " -> " + sb.toString().trim());
+    }
     lr.wasFree = freeChest(user, type, count, chestSnap);
     // CONTEST live-ops : PRÉ-PEUPLER la map contest du user AVANT giveChestRewards, pour que ses crédits INTERNES de contest
     // (RewardHelper.giveReward → ContestHelper.onItemEarn → tâches ITEM_EARN_*) ET l'appel onChestOpen ci-dessous mutent le

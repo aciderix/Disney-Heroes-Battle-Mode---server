@@ -32,11 +32,23 @@ sans contournement**. Repro headless via le VRAI drop table du jeu + code du jeu
   (`updateChestRollCounters`) et persisté (`resyncCounts` ligne 1844) — mais le roll ne le consultait pas.
 - **Fix (2 lignes, §3 code du jeu)** : `ctx.setChestRollFlag(ChestHelper.getChestFlag(type, m.hasBulkBonus))`
   (exactement le flag qu'incrémente `updateChestRollCounters`) + `ctx.setIsPaidRoll(!free)` (nœud `ROOT_1X_A`).
-- **Preuve** : 12 ouvertures → **12 drops distincts** (1ᵉʳ = héros garanti, puis loot varié héros/stones/gear/xp).
+- **Preuve headless** : 12 ouvertures → **12 drops distincts** (1ᵉʳ = héros garanti, puis loot varié héros/stones/gear/xp).
   Test assertif `ChestRollRigTest` ajouté à `regression.sh` (échoue avant, passe après). Régression : 179/182
   (les 3 échecs — BattlePassPoints flaky d'ordre, ArenaConcurrency/ArenaRealPvP = dossier `server/smoke/out`
   absent en standalone — PRÉ-EXISTENT, identiques sans mon changement).
-- ⏳ **§8 EN JEU pas encore fait** (pas de bundle client construit dans ce conteneur neuf ; build complet lourd).
+- **✅ VÉRIFIÉ EN JEU (§8)** — client RÉEL (Xvfb + LWJGL3 maison, spine jni, particules unidbg) → notre serveur,
+  compte semé TL60 (`ScratchSeedChestAccount`, DB serveur). ⚠️ **APK DÉFICIENT** : l'ancien `game/disney-heroes-12.1.0.apk`
+  (96 Mo) N'AVAIT AUCUN asset monde (pas d'`ETC/ETC2`, crash boot `ETC2/world/color_mask.png`). L'utilisateur a fourni
+  le **BON XAPK** (164 Mo, base + `config.etc2.apk` + `config.armeabi_v7a.apk`) → `game/disney-heroes-12.1.0.xapk` (fusion
+  APKEditor auto par run-desktop). Boot au HUB OK (plus de crash hub). Pilote B-bis `openchest <TYPE>` (chemin client réel
+  `ChestHelper.openChestInner`) + journal serveur `-Ddh.chestlog`. **COFFRE OR (SILVER)** : 6 ouvertures → 6 drops
+  DIFFÉRENTS (BADGE_OF_FRIENDSHIP[gratuit], STONE_YAX, POPPIN_CARPET_BAG×2, FISHING_POLE, TOUGH_COOKIE, EXTRACT_OF_LLAMA) ;
+  chaque payant **−10000 OR**. **COFFRE DIAMANT (GOLD)** : 5 ouvertures → 5 drops DIFFÉRENTS (HERO_FROZONE[gratuit],
+  HERO_PLEAKLEY, EXP_VIAL×20, TOUGH_PETAL, VOLCANIC_ORE×4) ; chaque payant **−288 DIAMANTS**. HUD final : **OR 50M→49,95M**
+  (−50k = 5×10k) et **DIAMANTS 200000→198848** (−1152 = 4×288) — l'or DÉCROÎT et la récompense est DONNÉE (bug #1 ne se
+  produit PAS) ET les récompenses sont VARIÉES (bug #2 corrigé). Popup « CRATE REWARDS » affiché. ⇒ **bug #2 = 🟢🔵✅ ; bug #1
+  = confirmé résolu côté serveur+client**. Diag serveur `-Ddh.chestlog` (guardé, silencieux par défaut) conservé + outil DEV
+  `server/smoke/ScratchSeedChestAccount.java`.
 
 ### 🟡 BUG #1 « coffre OR : ni or débité, ni récompense (diamant OK) » — NE SE REPRODUIT PAS CÔTÉ SERVEUR
 Le coffre « or » de l'UI = `ChestType.SILVER` (payé en OR) ; « diamant » = `ChestType.GOLD` (payé en DIAMANTS).

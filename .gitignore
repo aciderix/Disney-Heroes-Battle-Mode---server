@@ -53,3 +53,5 @@ tools/screentool/server-classes/
 # built C harness binaries (regenerables)
 native/tools/np_certify.exe
 native/tools/np_parser_test.exe
+*.xapk
+*.apks
