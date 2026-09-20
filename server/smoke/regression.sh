@@ -22,7 +22,7 @@ TESTS=(
   ResourceTest RosterTest
   SigninTest SigninMultiDayTest SigninAllRewardsTest
   EquipTest CampaignAttackTest CampaignPersistTest EliteCampaignRaidTest EliteRaidAuthorityTest
-  ChestWireTest ChestChargeTest ChestPaidDebitTest ChestValidateTest FreeChestTest ViewedChestsTest
+  ChestWireTest ChestChargeTest ChestPaidDebitTest ChestRollRigTest ChestValidateTest FreeChestTest ViewedChestsTest
   BattlePassTest BattlePassClaimTest BattlePassPointsTest BattlePassRolloverTest
   CompleteQuestTest WeeklyBoxTest WeeklyQuestTest
   MailboxTest ItemsTest SkillUpgradeTest AlchemyTest SetFlagTest UnlockHeroTest

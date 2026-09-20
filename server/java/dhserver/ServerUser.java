@@ -1771,6 +1771,18 @@ public final class ServerUser {
       ChestContext ctx = new ChestContext(user);
       ctx.setChestType(type);
       ctx.setCount(count);
+      // FIX (issue #1 bug 2 — « les coffres rendent la MÊME récompense en boucle ») : les tables de drop des
+      // coffres (gold_chest_drops.tab / silver_chest_drops.tab …) RIGGENT les premiers tirages via des nœuds
+      // « ? PreviousRolls(N) ? <RIG> ? <suite> » (ex. ROOT_1X_FIRST : PreviousRolls(0) → HERO_FROZONE truqué).
+      // Le prédicat PreviousRolls lit le COMPTEUR de tirages : user.getCount(ctx.getChestRollFlag()) (bytecode
+      // ChestContextDTCode$1). Sans flag posé sur le contexte, getChestRollFlag()==null → getCount(null)==0 →
+      // PreviousRolls(0) TOUJOURS vrai → le héros truqué du 1ᵉʳ tirage est rendu à CHAQUE ouverture (le
+      // compteur GOLD/SILVER_CHEST_ROLLS est pourtant bien incrémenté par updateChestRollCounters et persisté
+      // par resyncCounts, mais le roll ne le consultait pas). On pose le flag EXACTEMENT comme la logique du jeu
+      // l'incrémente : ChestHelper.getChestFlag(type, hasBulkBonus) (§3 : code du jeu, rien d'inventé). On pose
+      // aussi isPaidRoll (nœud ROOT_1X_A : « ? !IsPaidRoll & PreviousFreeRolls(1) ? … ») pour la fidélité.
+      ctx.setChestRollFlag(ChestHelper.getChestFlag(type, m.hasBulkBonus));
+      ctx.setIsPaidRoll(!freeChest(user, type, count, chestSnap));
       drops = dt.rollNode("ROOT", ctx, new Random());   // vrai roll de la table du jeu
       lr.lootDrops = new DropConverter(user).convert(drops);
     }
