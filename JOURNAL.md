@@ -15,6 +15,44 @@ extraction des sommets ; (d) router `com.perblue.heroes.cparticle.Native` (aujou
 moteur Java. Résultat attendu : particules fidèles (code du jeu), rapides (JVM/JIT), zéro émulation, zéro
 formule devinée. Vérif EN JEU (visuel + FPS). np_sim.c reste comme doc de format ; il n'est plus la voie.
 
+## 2026-09-20 (g309) — Issue #1 « Currency bug » : bug #2 (récompense en boucle) ROOT-CAUSÉ + FIXÉ + PROUVÉ ; bug #1 (coffre or) non-reproductible serveur ; bug #3 (plein écran) diagnostiqué
+
+Requête user : issue GitHub #1 (OswaldTLR101). 3 sous-bugs. Règles : reproduire → enquêter → fixer → **prouver
+sans contournement**. Repro headless via le VRAI drop table du jeu + code du jeu (aucune valeur inventée, §3/§4).
+
+### ✅ BUG #2 « free boxes / diamond crates donnent la MÊME récompense en boucle » — CORRIGÉ (commit `512e32f`)
+- **Repro** : ouvrir le même coffre 10-50× → **1 seul drop distinct** (GOLD→HERO_FROZONE, SILVER→BADGE_OF_FRIENDSHIP),
+  même avec `new Random()` neuf ET 50 graines distinctes → **déterministe** (pas un bug de seed).
+- **Cause racine (FAITS : données + bytecode)** : `gold_chest_drops.tab`/`silver_chest_drops.tab` riggent les
+  premiers tirages via des nœuds `? PreviousRolls(N) ? <RIG> ? <suite>` (ex. `ROOT_1X_FIRST : PreviousRolls(0) →
+  HERO_FROZONE`). Le prédicat `PreviousRolls` lit `user.getCount(ctx.getChestRollFlag())` (bytecode
+  `ChestContextDTCode$1`). `openChest` construisait `new ChestContext(user)` **SANS** poser le flag →
+  `getChestRollFlag()==null` → `getCount(null)==0` → `PreviousRolls(0)` TOUJOURS vrai → héros truqué du 1ᵉʳ tirage
+  rendu à CHAQUE ouverture. Le compteur `GOLD/SILVER_CHEST_ROLLS` était pourtant bien incrémenté
+  (`updateChestRollCounters`) et persisté (`resyncCounts` ligne 1844) — mais le roll ne le consultait pas.
+- **Fix (2 lignes, §3 code du jeu)** : `ctx.setChestRollFlag(ChestHelper.getChestFlag(type, m.hasBulkBonus))`
+  (exactement le flag qu'incrémente `updateChestRollCounters`) + `ctx.setIsPaidRoll(!free)` (nœud `ROOT_1X_A`).
+- **Preuve** : 12 ouvertures → **12 drops distincts** (1ᵉʳ = héros garanti, puis loot varié héros/stones/gear/xp).
+  Test assertif `ChestRollRigTest` ajouté à `regression.sh` (échoue avant, passe après). Régression : 179/182
+  (les 3 échecs — BattlePassPoints flaky d'ordre, ArenaConcurrency/ArenaRealPvP = dossier `server/smoke/out`
+  absent en standalone — PRÉ-EXISTENT, identiques sans mon changement).
+- ⏳ **§8 EN JEU pas encore fait** (pas de bundle client construit dans ce conteneur neuf ; build complet lourd).
+
+### 🟡 BUG #1 « coffre OR : ni or débité, ni récompense (diamant OK) » — NE SE REPRODUIT PAS CÔTÉ SERVEUR
+Le coffre « or » de l'UI = `ChestType.SILVER` (payé en OR) ; « diamant » = `ChestType.GOLD` (payé en DIAMANTS).
+4 hypothèses ÉLIMINÉES AVEC PREUVE : (1) validate/cost throw → non (SILVER débite **−10000 OR**, GOLD −288 DIAM) ;
+(2) abort sur héros DUPLIQUÉ (giveChestRewards avant le débit l.1785 vs débit l.1827) → non (joueur possédant
+Frozone PURPLE_4/5★/120 : ouverture OK, dupe géré, débit OK) ; (3) fix débit absent de la release → non (toutes
+les releases v0.2.15→v0.2.22 contiennent `169723b`) ; (4) asymétrie `addCost` OR/DIAM → non (symétrique, `lr.costs`).
+⇒ Le chemin serveur du coffre or est CORRECT. Symptôme restant = **côté client** (application de `lr.costs`
+pour l'OR / affichage) OU déjà résolu par le build courant. À confirmer EN JEU / re-test reporter (build neuf).
+
+### 🔵 BUG #3 « plein écran ne marche pas / crashe / lag » — GAP PLATEFORME identifié
+`DhGraphics implements Graphics` = interface **RÉDUITE** de PerBlue (aucun moniteur / liste de modes /
+`setFullscreenMode`). La fenêtre est un contexte fenêtré fixe ; aucune bascule plein écran possible via l'API
+libGDX standard. Fix = gérer le mode fenêtre au niveau GLFW/LWJGL3 dans le backend (`DhApplication`,
+`glfwSetWindowMonitor`). Tâche plateforme DISTINCTE (plus lourde) du bug monnaie.
+
 ## 2026-09-14 (g308) — ⭐ CACHE D'ASSETS corrigé (cause des archives tronquées) + 🔴 CRASH HUB « nouveau joueur » : diagnostic avancé, 5 pistes ÉLIMINÉES (ne pas les refaire)
 
 ### ✅ CORRIGÉ ET VÉRIFIÉ — le cache d'assets était SILENCIEUSEMENT désactivé (commit `fa80cae`)
