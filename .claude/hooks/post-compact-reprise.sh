@@ -1,14 +1,15 @@
 #!/bin/bash
-# Post-compaction reprise hook (double sécurité — exigence utilisateur).
+# Reprise hook (double sécurité — exigence utilisateur).
 #
-# Se déclenche sur SessionStart *après* une compression de contexte (manuelle
-# via /compact OU automatique) : Claude Code relance la session avec
-# source="compact". Ce hook injecte alors, dans le tout nouveau contexte, une
-# consigne EXPLICITE et OBLIGATOIRE d'exécuter le RITUEL DE REPRISE EN ENTIER
-# AVANT TOUTE CHOSE — en y intégrant les derniers commits (git log). C'est une
-# sécurité redondante qui s'ajoute au handoff de compression écrit explicitement.
+# Se déclenche sur SessionStart en DÉBUT DE SESSION (source="startup"/"resume"/
+# "clear") ET *après* une compression de contexte (manuelle via /compact OU
+# automatique → source="compact"). Ce hook injecte alors, dans le nouveau
+# contexte, une consigne EXPLICITE et OBLIGATOIRE d'exécuter le RITUEL DE REPRISE
+# EN ENTIER AVANT TOUTE CHOSE — en y intégrant les derniers commits (git log).
+# C'est une sécurité redondante qui s'ajoute au handoff de compression écrit.
 #
-# Registered in .claude/settings.json under hooks.SessionStart (matcher "compact").
+# Registered in .claude/settings.json under hooks.SessionStart
+# (matcher "startup|resume|clear|compact").
 set -euo pipefail
 
 # --- Lire l'entrée du hook (stdin JSON) pour récupérer la source ---------------
@@ -24,23 +25,31 @@ try:
 except Exception:
     print("")' 2>/dev/null || echo "")"
 
-# Ne rien injecter si ce N'EST PAS une reprise après compression.
-# (matcher "compact" dans settings.json le garantit déjà ; ceci est défensif.)
-if [ "$SOURCE" != "compact" ]; then
-    exit 0
+# N'injecter que sur un vrai (re)démarrage de session : startup / resume / clear
+# / compact. (Le matcher de settings.json le garantit déjà ; ceci est défensif —
+# tout autre source repart sans rien injecter.)
+case "$SOURCE" in
+    startup|resume|clear|compact) : ;;
+    *) exit 0 ;;
+esac
+
+# Libellé d'en-tête adapté à la cause du déclenchement.
+if [ "$SOURCE" = "compact" ]; then
+    HEADER='⚠️⚠️ REPRISE APRÈS COMPRESSION DE CONTEXTE — OBLIGATOIRE, EXIGENCE UTILISATEUR ⚠️⚠️'
+    CAUSE='Le contexte vient d'"'"'être compressé (compaction manuelle ou automatique).'
+else
+    HEADER='⚠️⚠️ DÉBUT DE SESSION — RITUEL DE REPRISE OBLIGATOIRE, EXIGENCE UTILISATEUR ⚠️⚠️'
+    CAUSE="Nouvelle session (source=\"$SOURCE\" : démarrage, reprise ou /clear)."
 fi
 
 # --- Derniers commits, à intégrer dans la consigne ----------------------------
 GITLOG="$(git -C "$PROJECT_DIR" log --oneline -25 2>/dev/null || echo '(git log indisponible — lance `git log --oneline -25` toi-même)')"
 
 # --- Construire la consigne de reprise (French : langue de travail du projet) --
-read -r -d '' RITUAL <<'EOF' || true
-⚠️⚠️ REPRISE APRÈS COMPRESSION DE CONTEXTE — OBLIGATOIRE, EXIGENCE UTILISATEUR ⚠️⚠️
-
-Le contexte vient d'être compressé (compaction manuelle ou automatique). AVANT
-TOUTE CHOSE — avant d'écrire la moindre ligne de code, avant de lancer le moindre
-outil — tu DOIS exécuter le RITUEL DE REPRISE **EN ENTIER**. Ne devine JAMAIS
-l'état : reconstruis-le en LISANT (règle CLAUDE.md §« reprise procedure »).
+read -r -d '' RITUAL_BODY <<'EOF' || true
+AVANT TOUTE CHOSE — avant d'écrire la moindre ligne de code, avant de lancer le
+moindre outil — tu DOIS exécuter le RITUEL DE REPRISE **EN ENTIER**. Ne devine
+JAMAIS l'état : reconstruis-le en LISANT (règle CLAUDE.md §« reprise procedure »).
 
 RITUEL DE REPRISE (dans cet ordre, intégralement) :
   1. Lis **EN ENTIER** MEMORY.md (doc de récupération ; entrées du HAUT = état courant).
@@ -66,6 +75,12 @@ pas PROUVÉ et validé par l'utilisateur. Toute vérification de mode est EN JEU
 Et rappelle à ton propre successeur, dans TON prochain handoff de compression,
 d'appliquer ce rituel en premier (double sécurité explicite, en plus de ce hook).
 EOF
+
+# Composer le rituel final : en-tête + cause (dynamiques selon la source) + corps.
+RITUAL="$HEADER
+
+$CAUSE
+$RITUAL_BODY"
 
 # --- Émettre en JSON (additionalContext) pour injection fiable dans le contexte -
 PROJECT_DIR="$PROJECT_DIR" GITLOG="$GITLOG" RITUAL="$RITUAL" python3 <<'PY'
